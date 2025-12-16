@@ -26,6 +26,7 @@ npm-debug.log*
 .env
 config.js
 secrets.yml
+data/
 
 # --- 例外规则 ---
 # 忽略所有 markdown 文件
