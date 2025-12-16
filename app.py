@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import time
+import signal
 from dotenv import load_dotenv
 
 # --- 引入自定义模块 ---
@@ -257,10 +258,19 @@ with st.sidebar:
     with st.sidebar:
         col1, col2 = st.columns([3, 1])
         with col1:
-            st.caption(f"当前User: {user if user else '无'}")
+            if st.button("❌ 关闭程序"):
+                st.toast("正在关闭 OtakuNeko，请关闭浏览器标签页...", icon="👋")
+                # 稍微延迟一下，让用户能看到上面的提示
+                time.sleep(1)
+                # 获取当前程序的进程ID (PID)，然后杀掉自己
+                os.kill(os.getpid(), signal.SIGTERM)
         with col2:
             if st.button("✏️", help="修改 API Key"):
                 configure_api_key_dialog()
+
+    with st.sidebar:
+        st.markdown("---") # 分割线
+        
 
 
 # --- 4. 主界面逻辑 ---

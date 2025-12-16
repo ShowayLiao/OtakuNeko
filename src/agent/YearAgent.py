@@ -129,12 +129,14 @@ class YearAgent(ProfileAgent):
                 # 3. 构造 Markdown 输出 (不变)
                 tags_str = " ".join([f"`{t}`" for t in user_stats.get("yearly_tags", [])])
                 stats_md = ""
-                if top_cv := user_stats.get("top_cv"):
-                    stats_md += f"- 🎙️ **年度声优**：{top_cv.get('name')} ({top_cv.get('count')}部) — *{top_cv.get('comment')}*\n"
+                if comment_tags := user_stats.get("comment_tags", [])[0]:
+                    stats_md += f"- 🏷️ **年度称号**：{comment_tags}\n"
+                # if top_cv := user_stats.get("top_cv"):
+                    # stats_md += f"- 🎙️ **年度声优**：{top_cv.get('name')} ({top_cv.get('count')}部) — *{top_cv.get('comment')}*\n"
                 if busy_month := user_stats.get("busiest_month"):
                     stats_md += f"- 📅 **最忙月份**：{busy_month.get('month')}月 — *{busy_month.get('comment')}*\n"
                 if Anime_tag := user_stats.get("Anime_tag"):
-                    stats_md += f"- 🏭 **年度动画关键词**：{Anime_tag.get('tag', 'N/A')} — *{Anime_tag.get('comment', '')}*\n"
+                    stats_md += f"- 🏭 **核心成分**：{Anime_tag.get('tag', 'N/A')[0]}、{Anime_tag.get('tag', 'N/A')[1]}、{Anime_tag.get('tag', 'N/A')[2]} — *{Anime_tag.get('comment', '')}*\n"
 
                 final_text = (
                     f"## {report.get('title', '2025 年度动画报告')}\n\n{tags_str}\n\n"
@@ -196,7 +198,8 @@ class YearAgent(ProfileAgent):
                     items_data=card_items,
                     output_filename="year_report_2025.png",
                     cols=4, 
-                    title_text=f"OtakuMate · {report.get('title', '2025 年度动画赏')}"
+                    title_text="OtakuNeko · 2025年度动画认证：",
+                    subtitle_text=f"{user_stats.get('comment_tags', ['2025年度成分鉴定'])[0]}：{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[0]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[1]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[2]}"
                 )
                 status.update(label="✅ 年度总结生成完毕", state="complete", expanded=False)
 

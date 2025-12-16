@@ -125,6 +125,8 @@ class ProfileAgent(BaseAgent):
                 result_data = json_repair.loads(raw_json_str)
                 mapping = result_data.get("mapping", {})
                 analysis = result_data.get("analysis", "")
+                comment = result_data.get("comment_tags", [""])[0]
+                anime_tag = result_data.get("Anime_tag", {})
                 
                 # 显示分析文本
                 final_text = f"{persona.get('start_msg','')}{analysis}"
@@ -216,13 +218,22 @@ class ProfileAgent(BaseAgent):
                 items_data=card_items,
                 output_filename="profile_grid.png",
                 cols=5,
-                title_text="OtakuMate · 二次元成分鉴定"
+                title_text="OtakuNeko · 二次元成分鉴定",
+                subtitle_text=f"{comment}：{anime_tag.get('tag', ['N/A'])[0]}、{anime_tag.get('tag', ['N/A'])[1]}、{anime_tag.get('tag', ['N/A'])[2]}"
             )
             
             status.update(label="✅ 完成", state="complete", expanded=False)
 
         # 🟢 4. 关键点：直接调用基类的渲染方法
-        final_text = f"{persona.get('start_msg','')}{analysis}"
+
+
+        final_text = (
+            f"## 🐾 {persona['description']} 的二次元成分鉴定结果\n\n"
+            f"### **📝 荣誉称号**：{comment}  \n"
+            f"### **🎯 核心成分**：`{', '.join(anime_tag.get('tag', []))}`  \n"
+            f"### **🔍 深度分析**：  \n"
+            f"{analysis}"
+        )
         response_placeholder.markdown(final_text)
 
         if card_items:

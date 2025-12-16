@@ -6,6 +6,8 @@ import faiss
 import pickle
 from sentence_transformers import SentenceTransformer
 
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 # 路径定义
 DATA_DIR = "data/datasets"
 INDEX_DIR = "data/vector_index"
