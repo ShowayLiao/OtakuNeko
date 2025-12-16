@@ -42,107 +42,66 @@ class RecommendAgent(BaseAgent):
         """加载库存 (想看 + 搁置)"""
         # 1. 读取想看 (Wish)
         wish_path = os.path.join(self.dataset_path, "dataset_wish.json")
-        wish_list = self._load_json_file(wish_path)
+        wish_all = self._fetch_dataset(file_path=wish_path, status_filter="wish", limit=0)
+        on_hold_path = os.path.join(self.dataset_path, "dataset_on_hold.json")
+        hold_all = self._fetch_dataset(file_path=on_hold_path, status_filter="on_hold", limit=0)
+        combined = wish_all + hold_all
+        return self._extract_data(combined, "title", "tags","summary","director","script","cv","year","month","studio")
         
-        # 2. 读取搁置 (OnHold)
-        full_records = bgm_service.load_local_records()
-        on_hold_list = [x for x in full_records if x.get('status') == 'on_hold']
+
+    
         
-        # 3. 格式化
-        inventory = []
-        for x in (wish_list + on_hold_list):
-            tags = x.get('tags', [])
-            tag_str = f"[{','.join(tags[:3])}]" if tags else ""
-            inventory.append(f"《{x['title']}》{tag_str}")
-            
-        return json.dumps(inventory, ensure_ascii=False)
-
-    def _load_recent_watched_strs(self,recent=730):
-        """加载最近看过的番剧 (用于Prompt上下文避免重复)"""
-        path = os.path.join(self.dataset_path, "dataset_recent_730.json")
-        data = self._load_json_file(path)
-        
-        if not data:
-            full_records = bgm_service.load_local_records()
-            watched = [x for x in full_records if x.get('status') == 'watched']
-            watched.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-            data = watched[:recent]
-
-        titles = [f"《{x['title']}》" for x in data]
-        return json.dumps(titles, ensure_ascii=False)
-
-
 
     def _fetch_recommend_metadata(self, rec_list, exclude_ids, exclude_titles):
         """
-        [核心逻辑] 并发抓取 + 评分过滤 + 状态修正
+        [业务逻辑] 推荐列表组装 (基于公共基类)
         """
-        def fetch_task(item):
-            raw_title = item.get('title')
-            tag_type = item.get('type')
-            
-            if not raw_title: return None
-
-            # 1. 调用 Service 搜索
-            search_res = bgm_service.search_subject(raw_title)
-
-            # # =========== 🐛 DEBUG START ===========
-            # print(f"\n📋返回的原始数据结构:")
-            # print(json.dumps(search_res, indent=4, ensure_ascii=False))
-            # raise Exception("Debug中断")
-            # # ============ 🐛 DEBUG END ============
-            
-            if not search_res:
-                print(f"⚠️ [Search Fail] 搜不到: {raw_title}") # Debug log
-                return None 
-
-            # 2. 提取核心数据
-            sid = int(search_res['id'])
-            final_title = search_res.get('name_cn') or search_res.get('name')
-            
-            # 🟢 使用新的提取函数
-            score = self._extract_score(search_res)
-            
-            # 3. [过滤逻辑] 
-            # 只有 "新推" 且 分数为 N/A 时才考虑是否过滤
-            # 为了防止推荐太少，这里我们稍微放宽一点：如果搜到了但没分，暂时保留，显示为 N/A
-            # 如果你想要严格过滤（没分就不推），把下面这行取消注释：
-            # if tag_type == "新推" and score == 'N/A': return None 
-
-            # 4. [状态变色龙] 新推 -> 重温
-            final_type = tag_type
-            if tag_type == "新推":
-                if sid in exclude_ids:
-                    final_type = "重温"
-            
-            # 5. 组装结果
-            imgs = search_res.get('images', {})
-            # 兼容 images 可能为 None 的情况
-            if not isinstance(imgs, dict): imgs = {} 
-            img_url = imgs.get('large') or imgs.get('common') or ""
-
-            return {
-                "title": final_title,
-                "category": final_type, 
-                "type": final_type,     
-                "comment": item.get('comment', ''),
-                "image": img_url,
-                "score": score,
-                "id": sid
-            }
-
-        # 并发执行
-        results = []
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(fetch_task, item) for item in rec_list]
-            for future in futures:
-                try:
-                    res = future.result()
-                    if res: results.append(res)
-                except Exception as e:
-                    print(f"Meta Fetch Error: {e}")
+        # 1. 准备标题列表
+        titles = [item.get('title') for item in rec_list if item.get('title')]
         
-        return results
+        # 2. 调用基类批量获取 (返回字典映射)
+        fetched_map = self._batch_fetch_card_items(titles)
+        
+        final_results = []
+        
+        # 3. 遍历原始推荐列表，回填数据并过滤
+        for rec_item in rec_list:
+            raw_title = rec_item.get('title')
+            base_card = fetched_map.get(raw_title) # 从缓存字典里取
+            
+            # 如果没搜到，直接跳过
+            if not base_card: continue
+            
+            # --- 业务逻辑开始 ---
+            
+            sid = base_card['id']
+            # A. ID 过滤 (如果已看过则跳过)
+            if sid in exclude_ids:
+                # 这里有一个特殊逻辑：如果是“新推”但看过了，改为“重温”；
+                # 如果是“填坑”但看过了，直接过滤掉 (假设)
+                # 按照你源代码的逻辑：
+                if rec_item.get('type') == "新推":
+                    rec_item['type'] = "重温" # 修改类型
+                else:
+                    pass
+
+            # B. 分数过滤 (原代码注释掉的部分，这里保持一致)
+            if rec_item.get('type') == "新推" and base_card['score'] == 'N/A': continue
+
+            # --- 回填字段 ---
+            # 必须使用 .copy()，因为 fetched_map 里的对象可能是引用，
+            final_item = base_card.copy()
+            
+            final_item['type'] = rec_item.get('type')
+            final_item['category'] = final_item['type'] # 保持兼容
+            final_item['comment'] = rec_item.get('comment', '')
+            
+            # 清理内部字段
+            final_item.pop('_raw_search_key', None)
+            
+            final_results.append(final_item)
+            
+        return final_results
 
     def render(self, user_query, tags=None, style="cat"):
         """
@@ -161,7 +120,7 @@ class RecommendAgent(BaseAgent):
         # Context
         user_profile = self._load_user_profile()
         inventory_str = self._load_inventory_strs()
-        recent_watched_str = self._load_recent_watched_strs()
+        recent_watched_str = self._load_recent_watched_strs(recent=730)
         
         # 2. Prompt
         persona = ROLES.get(style, ROLES["cat"])

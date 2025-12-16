@@ -16,22 +16,6 @@ class YearAgent(ProfileAgent):
             "最被过誉", "最欢乐", "最抽象", "最炒作"
         ]
 
-    # 2. 覆写：加载数据源
-    def _load_watched_data(self):
-        """仅读取最近 365 天的数据"""
-        path = os.path.join(self.dataset_path, "dataset_recent_365.json")
-        data = self._load_json_file(path)
-        
-        # 兜底：如果文件不存在，尝试从全量数据里筛 (模拟最近一年)
-        if not data:
-            full_records = bgm_service.load_local_records()
-            # 简单按 updated_at 排序取前 50 部
-            watched = [x for x in full_records if x.get('status') == 'watched']
-            watched.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-            data = watched[:50]
-            
-        return data
-
     def render(self, style="cat"):
         """
         🎨 年度总结全流程渲染
@@ -44,7 +28,7 @@ class YearAgent(ProfileAgent):
         img_path = None
         
         # 1. 准备数据
-        watched_list = self._load_watched_data()
+        watched_list = self._load_recent_watched_strs(recent=365)
         if not watched_list:
             st.error("🚫 近期无数据，无法生成年度总结。")
             return "近期无数据，无法生成年度总结。"

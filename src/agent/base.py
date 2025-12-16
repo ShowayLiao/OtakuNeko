@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 import textwrap
 from src.BgmServe  import bgm_service
 import textwrap
+from concurrent.futures import ThreadPoolExecutor
 
 class BaseAgent:
     """
@@ -197,110 +198,6 @@ class BaseAgent:
                         # 底部按钮
                         st.link_button("详情", link_url, use_container_width=True)
 
-    # def _generate_card_html(self, item):
-    #     """
-    #     🎨 生成单张卡片的 HTML (包含评分与短评 - 最终修复版)
-    #     """
-    #     # 1. 数据提取与清洗
-    #     title = item.get('title', '未知作品')
-    #     # 标签处理
-    #     tag = item.get('category') or item.get('type') or 'Anime'
-        
-    #     # 评分处理 (过滤 N/A 和 0)
-    #     score = item.get('score')
-    #     show_score = False
-    #     if score and score != 'N/A' and score != 0:
-    #         show_score = True
-            
-    #     # 短评处理 (过滤无效短评)
-    #     comment = item.get('comment', '').strip()
-    #     show_comment = True if (comment and comment != "AI未提供短评") else False
-
-    #     # 图片处理 (兼容字典或字符串)
-    #     img_val = item.get('image', '')
-    #     if isinstance(img_val, dict):
-    #         img_url = img_val.get('large') or img_val.get('common') or ''
-    #     else:
-    #         img_url = str(img_val) if img_val else ''
-            
-    #     subject_id = item.get('id')
-
-    #     # 链接构建
-    #     if subject_id:
-    #         link = f"https://bgm.tv/subject/{subject_id}"
-    #     else:
-    #         import urllib.parse
-    #         safe_title = urllib.parse.quote(str(title))
-    #         link = f"https://bgm.tv/subject_search/{safe_title}?cat=2"
-
-    #     # 2. 构建 HTML 组件 (使用 textwrap.dedent 彻底解决缩进问题)
-
-    #     # [图片组件]
-    #     if img_url:
-    #         img_div = textwrap.dedent(f"""
-    #             <div style='width:100%; height:130px; border-radius:8px 8px 0 0; overflow:hidden; background:#f4f6f8; position: relative;'>
-    #                 <img src='{img_url}' style='width:100%; height:100%; object-fit:cover; transition: transform 0.3s;'>
-    #             </div>
-    #         """).strip()
-    #     else:
-    #         img_div = textwrap.dedent(f"""
-    #             <div style='width:100%; height:130px; background:#f4f6f8; display:flex; align-items:center; justify-content:center; color:#999; font-size:12px; border-radius:8px 8px 0 0;'>
-    #                 NO IMG
-    #             </div>
-    #         """).strip()
-
-    #     # [评分组件]
-    #     score_html = ""
-    #     if show_score:
-    #         score_html = f"<span style='color:#f59e0b; font-weight:700; font-size:11px; margin-left:6px; display:flex; align-items:center;'>⭐ {score}</span>"
-
-    #     # [短评组件]
-    #     comment_html = ""
-    #     if show_comment:
-    #         comment_html = textwrap.dedent(f"""
-    #             <div style="margin-top:8px; padding:6px 8px; background:#F7FAFC; border-radius:6px; border:1px solid #EDF2F7;">
-    #                 <div style="font-size:11px; color:#5D6D7E; line-height:1.4; font-style:italic; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden;">
-    #                     “{comment}”
-    #                 </div>
-    #             </div>
-    #         """).strip()
-
-    #     # [标签颜色] (可选：根据类型改变颜色)
-    #     tag_bg = "#E3F2FD"
-    #     tag_color = "#1565C0"
-    #     if tag == "填坑":
-    #         tag_bg = "#E8F5E9" # 绿色
-    #         tag_color = "#2E7D32"
-    #     elif tag == "重温":
-    #         tag_bg = "#FFF3E0" # 橙色
-    #         tag_color = "#EF6C00"
-
-    #     # 3. 组装最终 HTML
-    #     html_template = textwrap.dedent(f"""
-    #         <a href="{link}" target="_blank" style="text-decoration:none; color:inherit; display:block; margin-bottom:16px;">
-    #             <div style="border:1px solid #EBF1F5; border-radius:10px; background:white; box-shadow: 0 4px 6px rgba(0,0,0,0.02); overflow: hidden; height:100%; transition: transform 0.2s ease;">
-                    
-    #                 {img_div}
-                    
-    #                 <div style="padding:10px;">
-                        
-    #                     <div style="display:flex; align-items:center; justify-content:center; margin-bottom:6px;">
-    #                         <span style="background-color:{tag_bg}; color:{tag_color}; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:bold;">{tag}</span>
-    #                         {score_html}
-    #                     </div>
-
-    #                     <div style="font-size:13px; font-weight:bold; text-align:center; line-height:1.4; color:#2C3E50; height:36px; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;">
-    #                         {title}
-    #                     </div>
-
-    #                     {comment_html}
-
-    #                 </div>
-    #             </div>
-    #         </a>
-    #     """)
-        
-    #     return html_template.strip()
     
     # ==========================================================
     # 🎨 通用绘图组件 (Draw Grid Image)
@@ -355,9 +252,16 @@ class BaseAgent:
 
         # 5. 循环绘制卡片
         for i, item in enumerate(items_data):
+
             # 兼容不同字段名
             cat = item.get('category') or item.get('type') or ""
-            title = item.get('title', 'Unknown')
+            raw_title = item.get('title', 'Unknown')
+
+            if raw_title is None:
+                title = "Unknown"
+            else:
+                title = str(raw_title)
+
             img_url = item.get('image')
             
             col = i % cols
@@ -463,3 +367,185 @@ class BaseAgent:
             return round(score, 1) # 保留一位小数
             
         return 'N/A'
+    
+    def _fetch_dataset(self, file_path: str = None, status_filter: str = None, limit: int = 0, days: int = 0) -> list:
+        """
+        📂 通用数据加载 (基类公共方法 - 增强版)
+        
+        策略: 
+        1. 若提供 file_path，优先尝试读取 JSON 文件。
+        2. 若文件读取为空，且提供了 status_filter，则从数据库加载。
+        3. 支持 status 过滤、时间范围过滤 (days)、数量限制 (limit)。
+        4. 返回原始 List[Dict]，不做字段裁剪。
+
+        :param file_path: JSON 文件路径
+        :param status_filter: 状态过滤 (如 'watched', 'on_hold')
+        :param limit: 数量限制 (0为不限制)
+        :param days: 时间范围限制，提取最近 X 天的记录 (0为不限制)
+        """
+        from datetime import datetime, timedelta
+
+        data = []
+
+        # --- 1. 优先读取文件 ---
+        if file_path:
+            data = self._load_json_file(file_path)
+
+        # --- 2. 数据库兜底逻辑 ---
+        if not data and status_filter:
+            try:
+                # A. 加载全量
+                full_records = bgm_service.load_local_records()
+                
+                # B. 状态过滤
+                filtered_records = [x for x in full_records if x.get('status') == status_filter]
+                
+                # C. 时间范围过滤 (新增逻辑 🟢)
+                if days > 0:
+                    now = datetime.now()
+                    cutoff_date = now - timedelta(days=days)
+                    time_filtered = []
+                    
+                    for item in filtered_records:
+                        updated_at_str = item.get('updated_at', '')
+                        if not updated_at_str: continue
+                        
+                        try:
+                            # 截取日期部分 (YYYY-MM-DD) 进行解析，兼容性更好
+                            date_str = updated_at_str[:10]
+                            item_date = datetime.fromisoformat(date_str)
+                            
+                            if item_date >= cutoff_date:
+                                time_filtered.append(item)
+                        except:
+                            continue # 解析失败则跳过
+                    
+                    filtered_records = time_filtered
+
+                # D. 排序 (始终按时间倒序)
+                filtered_records.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
+                
+                # E. 数量截取
+                if limit > 0:
+                    data = filtered_records[:limit]
+                else:
+                    data = filtered_records
+                    
+            except Exception as e:
+                print(f"❌ [BaseAgent] 读取本地数据库失败: {e}")
+
+        return data
+    
+    def _extract_data(self, items: list, *fields) -> str:
+        """
+        🧬 动态提取数据 (支持 *args 传入任意多个字段)
+        
+        :param items: 数据列表
+        :param fields: 需要提取的字段名 (字符串)。
+                       例如: "title", "director", "cv"
+        :return: JSON 字符串列表
+        """
+        import json
+
+        formatted_list = []
+        if not items:
+            return json.dumps([], ensure_ascii=False)
+
+        for item in items:
+            parts = []
+            
+            # 🔄 遍历用户传入的每一个字段名 (*args)
+            for field in fields:
+                # 1. 安全获取值
+                val = item.get(field)
+                
+                # 2. 空值跳过 (根据需求，也可以填 "无")
+                if not val and val != 0: 
+                    continue
+                
+                # 3. 类型自动处理
+                if isinstance(val, list):
+                    #如果是列表 (如 tags: []), 转成字符串 "[A,B]"
+                    val_str = f"[{','.join(str(x) for x in val)}]"
+                else:
+                    # 如果是普通值 (如 year: 2025, cv: "xxx"), 直接转字符串
+                    val_str = str(val).strip()
+                
+                # 4. 存入片段
+                # 这里做了一个小优化：如果提取的不是标题，加上 Key 前缀方便 AI 理解
+                # (你可以根据喜好决定要不要加这个 field+":")
+                if field == 'title':
+                    parts.append(f"《{val_str}》")
+                else:
+                    # 例如: "director:今井友紀子"
+                    parts.append(f"{field}:{val_str}")
+            
+            # 5. 将该条目的所有字段用空格或 | 拼起来
+            if parts:
+                formatted_list.append(" ".join(parts))
+
+        return json.dumps(formatted_list, ensure_ascii=False)
+    
+    def _batch_fetch_card_items(self, titles: list) -> dict:
+        """
+        🏭 [公共工厂] 批量并发抓取并生成基础卡片 Item
+        
+        :param titles: 需要搜索的标题列表 ["标题A", "标题B"]
+        :return: 字典映射 {"原标题": {基础卡片数据}, ...}
+        """
+        # 去重，避免重复请求
+        unique_titles = list(set([t for t in titles if t]))
+        results_map = {}
+
+        def fetch_single(raw_title):
+            # 1. 调用 Service 搜索
+            search_res = bgm_service.search_subject(raw_title,"id","name_cn","name","images","score")
+            
+            if not search_res:
+                print(f"⚠️ [Fetch Fail] 搜不到: {raw_title}")
+                return raw_title, None
+
+            # 2. 提取核心数据
+            imgs = search_res.get('images', {})
+            if not isinstance(imgs, dict): imgs = {}
+            img_url = imgs.get('large') or imgs.get('common') or ""
+
+            # 3. 构造基础卡片 (预留业务字段)
+            item = {
+                "id": int(search_res['id']),
+                # 优先用中文名
+                "title": search_res.get('name_cn') or search_res.get('name'),
+                "image": img_url,
+                # 复用你之前的提取分数逻辑
+                "score": self._extract_score(search_res),
+                
+                # ⏳ 待子类填充的字段
+                "type": "",      
+                "category": "",
+                "comment": "",
+                
+                # 保留原始搜索词，方便子类回溯
+                "_raw_search_key": raw_title 
+            }
+            return raw_title, item
+
+        # 4. 并发执行
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # 使用 map 可以稍微简化代码，但为了处理 None 方便，这里用 submit 列表也可以
+            # 这里为了简单直接用 map 获取结果迭代器
+            futures = [executor.submit(fetch_single, t) for t in unique_titles]
+            for future in futures:
+                try:
+                    r_title, r_item = future.result()
+                    if r_item:
+                        results_map[r_title] = r_item
+                except Exception as e:
+                    print(f"❌ Meta Fetch Error: {e}")
+
+        return results_map
+    
+    def _load_recent_watched_strs(self,recent=730):
+        """加载最近看过的番剧 (用于Prompt上下文避免重复)"""
+        path = os.path.join(self.dataset_path, f"dataset_recent_{recent}.json")
+        recent_all = self._fetch_dataset(file_path=path, status_filter="watched", limit=0, days=recent)
+        return self._extract_data(recent_all, "title","id")

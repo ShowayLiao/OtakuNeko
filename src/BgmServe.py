@@ -356,107 +356,117 @@ class BangumiService:
             pass
         return ""
 
-    def search_subject(self, keywords: str) -> Optional[Dict]:
+    def _lookup_id_from_local(self, keywords: str) -> Optional[int]:
         """
-        🔍 智能搜索条目 (标准流程版)
-        流程: 关键词 -> [本地查ID / 联网搜ID] -> 拿到ID -> v0接口查详情 -> 清洗数据
+        🏢 [内部工具] 步骤1: 尝试从本地数据库查找 ID
+        """
+        match = self._find_best_local_match(keywords)
+        if match:
+            sid = match['id']
+            print(f" ⚡ 本地命中关键词: '{keywords}' -> ID: {sid}")
+            return sid
+        return None
+
+    def _lookup_id_from_network(self, keywords: str) -> Optional[int]:
+        """
+        ☁️ [内部工具] 步骤2: 尝试联网搜索 ID
         """
         import urllib.parse
         
-        if not keywords: return None
+        print(f" 🔍 本地未找到，启动网络搜索 ID: {keywords} ...")
+        safe_kw = urllib.parse.quote(keywords)
+        # 仅搜索 ID，不需要太详细，所以 responseGroup=small 够了
+        url = f"https://api.bgm.tv/search/subject/{safe_kw}?type=2&responseGroup=small&max_results=1"
         
-        subject_id = None
-        
-        # --- Step 1: 获取 Subject ID (本地优先 -> 网络兜底) ---
-        
-        # 1.1 尝试本地匹配
-        local_match = self._find_best_local_match(keywords)
-        if local_match:
-            subject_id = local_match['id']
-            print(f" ⚡ 本地命中关键词: '{keywords}' -> ID: {subject_id}")
-        else:
-            # 1.2 本地未找到，启动网络关键词搜索获取 ID
-            print(f" 🔍 本地未找到，启动网络搜索 ID: {keywords} ...")
-            safe_kw = urllib.parse.quote(keywords)
-            # 仅搜索 ID，不需要太详细，所以 responseGroup=small 够了
-            search_url = f"https://api.bgm.tv/search/subject/{safe_kw}?type=2&responseGroup=small&max_results=1"
-            
-            try:
-                resp = self.session.get(search_url, timeout=8)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if 'list' in data and data['list']:
-                        first_result = data['list'][0]
-                        subject_id = first_result['id']
-                        print(f" 🌐 网络搜索命中: {first_result.get('name_cn') or first_result.get('name')} -> ID: {subject_id}")
-                    else:
-                        print(" ⚠️ 网络搜索未找到相关条目")
-            except Exception as e:
-                print(f" ❌ 网络搜索 ID 失败: {e}")
-
-        # --- Step 2 & 3: 拿到 ID 后，统一获取详情并清洗 ---
-        
-        if subject_id:
-            print(f" 🚀 正在通过 v0 接口拉取详情 (ID:{subject_id})...")
-            detail_url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
-            
-            try:
-                # v0 接口建议带上 Accept header
-                headers = {"User-Agent": "OtakuMate/1.0", "Accept": "application/json"}
-                resp = self.session.get(detail_url, headers=headers, timeout=10)
-                
-                if resp.status_code == 200:
-                    raw_data = resp.json()
-                    
-                    # --- Step 3: 数据清洗 (Data Cleaning) ---
-                    # 将 v0 的复杂结构转化为 UI 需要的扁平结构
-                    
-                    # 3.1 提取评分 (处理嵌套和缺失情况)
-                    score = 0
-                    if 'rating' in raw_data and isinstance(raw_data['rating'], dict):
-                        score = raw_data['rating'].get('score', 0)
-                        
-                    # 3.2 提取图片 (v0 返回的就是标准字典，直接用)
-                    images = raw_data.get('images', {})
-                    
-                    # 3.3 提取标题 (优先中文)
-                    title = raw_data.get('name_cn') or raw_data.get('name')
-                    
-                    # 3.4 提取简介并生成短评
-                    # summary = raw_data.get('summary', '')
-                    # 简单的短评逻辑：取简介前60字
-                    # short_comment = summary[:60] + "..." if summary else "暂无简介"
-
-                    # 3.5 构造最终清洗后的字典
-                    clean_data = {
-                        'id': raw_data.get('id'),
-                        'name_cn': title,
-                        'images': images,       # 格式: {'large': '...', 'common': '...'}
-                        'score': score,        # 格式: 7.5 (float) 或 0
-                        # 'summary': summary,    # 完整简介
-                        # 'comment': short_comment, # 用于卡片显示的短文本
-                        # 'type': raw_data.get('type'),
-                        # 保留 info_box 等其他可能需要的数据，也可以在这里加
-                    }
-                    
-                    return clean_data
-                else:
-                    print(f" ⚠️ 获取详情失败 Code: {resp.status_code}")
-                    
-            except Exception as e:
-                print(f" ❌ 详情数据拉取异常: {e}")
-
-        return None
-
-    def get_subject_detail(self, subject_id: int) -> Optional[Dict]:
-        """获取详情 (供 Agent 使用)"""
         try:
-            url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
             resp = self.session.get(url, timeout=8)
             if resp.status_code == 200:
-                return resp.json()
-        except: pass
+                data = resp.json()
+                if 'list' in data and data['list']:
+                    first_result = data['list'][0]
+                    sid = first_result['id']
+                    print(f" 🌐 网络搜索命中: {first_result.get('name_cn') or first_result.get('name')} -> ID: {sid}")
+                    return sid
+                else:
+                    print(" ⚠️ 网络搜索未找到相关条目")
+        except Exception as e:
+            print(f" ❌ 网络搜索 ID 失败: {e}")
+            
         return None
+
+    def _resolve_subject_id(self, keywords: str) -> Optional[int]:
+        """
+        ⚖️ [内部工具] 混合策略获取 ID (本地 -> 网络)
+        """
+        # 1. 优先本地
+        sid = self._lookup_id_from_local(keywords)
+        if sid: return sid
+        
+        # 2. 兜底网络
+        return self._lookup_id_from_network(keywords)
+
+    def _fetch_v0_raw(self, subject_id: int) -> Optional[dict]:
+        """
+        📦 [内部工具] 根据 ID 获取 v0 接口的原始详情
+        """
+        print(f" 🚀 正在通过 v0 接口拉取详情 (ID:{subject_id})...")
+        url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
+        headers = {"User-Agent": "OtakuMate/1.0", "Accept": "application/json"}
+        
+        try:
+            resp = self.session.get(url, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                return resp.json()
+            else:
+                print(f" ⚠️ 获取详情失败 Code: {resp.status_code}")
+        except Exception as e:
+            print(f" ❌ 详情数据拉取异常: {e}")
+            
+        return None
+
+    def search_subject(self, keywords: str, *fields) -> Optional[dict]:
+        """
+        🔍 智能搜索条目 (主入口)
+        
+        :param keywords: 搜索关键词
+        :param fields: (可选) 需要保留的字段名，如 "id", "score", "summary"。
+                       如果不传，则返回 v0 接口的全部原始数据。
+        :return: 清洗后的字典数据
+        """
+        if not keywords: return None
+        
+        # 1. 获取 ID (混合策略)
+        sid = self._resolve_subject_id(keywords)
+        if not sid: return None
+        
+        # 2. 获取 v0 详情
+        raw_data = self._fetch_v0_raw(sid)
+        if not raw_data: return None
+
+        # 3. 数据清洗 (Data Cleaning)
+        # 如果用户指定了需要的字段 (*fields)，则只返回这些字段
+        # 如果没指定，则返回全量数据
+        if fields:
+            clean_data = {}
+            for field in fields:
+                # 3.1 直接获取
+                if field in raw_data:
+                    clean_data[field] = raw_data[field]
+                
+                # 3.2 特殊字段别名处理 (兼容旧逻辑)
+                elif field == 'score':
+                    # 自动从 rating.score 提取
+                    if 'rating' in raw_data and isinstance(raw_data['rating'], dict):
+                        clean_data['score'] = raw_data['rating'].get('score', 0)
+                    else:
+                        clean_data['score'] = 0
+                
+                # 还可以根据需要添加其他别名映射
+                
+            return clean_data
+        
+        # 4. 未指定字段，直接返回原始 v0 结构 (这就是你给出的那个超长 JSON 结构)
+        return raw_data
 
     def download_image(self, url: str) -> Optional[Image.Image]:
         """

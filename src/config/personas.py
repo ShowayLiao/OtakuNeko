@@ -95,6 +95,7 @@ TEMPLATES = {
     {tone_req}
 
     # Output Format (JSON Only):
+    Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
         "mapping": {{ "标签名": "作品名", ... }},
         "analysis": "你的深度分析文本..."
@@ -134,6 +135,7 @@ TEMPLATES = {
     WRONG: ["Name", ...]
 
     # Output JSON Only 仅按照下面的json格式输出:
+    Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
         "reason": "...",
         "backlog": [...],
@@ -182,6 +184,7 @@ TEMPLATES = {
     - **字数**：不少于 800 字，分析要深入透彻。
 
     # Output Format (JSON Only):
+    Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
         "mapping": {{ "奖项名": "作品名", ... }},
         "analysis": "你的深度分析文本..."

@@ -31,50 +31,41 @@ class ProfileAgent(BaseAgent):
 
     def _fetch_card_metadata(self, mapping):
         """
-        [内部工具] 并发获取映射表中番剧的详细信息
+        [业务逻辑] 映射表组装 (基于公共基类)
+        mapping格式: {"有些胃疼": "白色相簿2", "热血战斗": "天元突破"}
         """
-        tasks = []
-        for cat, title in mapping.items():
-            tasks.append((cat, title))
-
-        def fetch_task(args):
-            cat, title = args
-            # 1. 初始化默认数据结构
-            item = {
-                "category": cat, 
-                "title": title, 
-                "image": "", 
-                "score": "N/A", 
-                "id": None
-            }
-            
-            # 2. 调用 Service
-            search_res = bgm_service.search_subject(title)
-            
-            if search_res:
-                # 3. 回填数据
-                item['id'] = search_res['id']
-                
-                # 🟢 关键修改：调用健壮的分数提取逻辑
-                item['score'] = self._extract_score(search_res)
-                
-                # 优先使用官方中文名
-                item['title'] = search_res.get('name_cn') or search_res.get('name') 
-                
-                # 统一取图逻辑
-                imgs = search_res.get('images', {})
-                # 防止 images 为 None 的防御性代码
-                if not isinstance(imgs, dict): imgs = {}
-                item['image'] = imgs.get('large') or imgs.get('common') or ""
-            
-            return item
-
-        # 并发执行 (5线程)
-        results = []
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            results = list(executor.map(fetch_task, tasks))
+        # 1. 准备标题列表
+        titles = list(mapping.values())
         
-        return results
+        # 2. 调用基类批量获取
+        fetched_map = self._batch_fetch_card_items(titles)
+        
+        final_results = []
+        
+        # 3. 遍历映射表回填
+        for category, raw_title in mapping.items():
+            base_card = fetched_map.get(raw_title)
+            
+            if base_card:
+                # 复制对象
+                final_item = base_card.copy()
+                
+                # --- 回填字段 ---
+                final_item['category'] = category
+                # 这里 Card 模式下，type 可能不需要，或者等于 category
+                final_item['type'] = category 
+                # comment 保持为空
+                
+                final_item.pop('_raw_search_key', None)
+                final_results.append(final_item)
+            else:
+                # ⚠️ 特殊处理：如果 Card 模式下没搜到，
+                # 原逻辑是完全丢弃，还是显示一个只有标题的空卡片？
+                # 原逻辑中 if search_res: ... else ... 似乎隐含了没搜到就不返回
+                # 如果你想保留没搜到的项（显示个红叉），可以在这里处理
+                pass
+                
+        return final_results
 
     def render(self, prompt, style="cat"):
         """
