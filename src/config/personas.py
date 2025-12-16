@@ -134,13 +134,8 @@ TEMPLATES = {
     1. **backlog** (3部): 从库存挑选。
     2. **new_rec** (11部): 推荐高质量作品。
     3. **reason**: "{tone_req}"
-    
-    **JSON Data Structure Restriction**:
-    Lists MUST contain objects, NOT strings.
-    CORRECT: [{{"title": "Name", "comment": "..."}}]
-    WRONG: ["Name", ...]
 
-    # Output JSON Only 仅按照下面的json格式输出:
+    # Output JSON Only 仅按照下面的json格式输出，写原始名字，不要带书名号！
     Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
         "reason": "...",
