@@ -207,6 +207,19 @@ with st.sidebar:
             
         get_cached_memory.clear()
         st.rerun()
+    
+    # === 向量库维护 ===
+
+    st.header("🧠 向量知识库", help="管理向量索引")
+    if st.button("构建/更新索引"):
+        with st.status("🚀 正在启动向量化引擎...", expanded=True) as status:
+            try:
+                msg = vector_store.build_index(log_func=lambda m: status.write(m))
+                status.update(label="✅ 索引构建成功", state="complete")
+                st.toast(msg)
+            except Exception as e:
+                status.update(label="❌ 构建失败", state="error")
+                st.error(f"详情: {e}")
 
     st.markdown("---")
 
@@ -220,20 +233,6 @@ with st.sidebar:
         index=0,
         label_visibility="collapsed"
     )
-
-    st.markdown("---")
-
-    # === 向量库维护 ===
-    st.header("🧠 向量知识库", help="管理向量索引")
-    if st.button("构建/更新索引"):
-        with st.status("🚀 正在启动向量化引擎...", expanded=True) as status:
-            try:
-                msg = vector_store.build_index(log_func=lambda m: status.write(m))
-                status.update(label="✅ 索引构建成功", state="complete")
-                st.toast(msg)
-            except Exception as e:
-                status.update(label="❌ 构建失败", state="error")
-                st.error(f"详情: {e}")
 
     st.markdown("---")
 
@@ -254,6 +253,11 @@ with st.sidebar:
         if st.button(label, key=f"plugin_btn_{plugin.key}"):
             trigger_plugin_msg(trigger)
             st.rerun()
+    
+    st.markdown("---")
+
+    # === 关闭 & 修改 Key ===
+
     
     with st.sidebar:
         col1, col2 = st.columns([3, 1])
