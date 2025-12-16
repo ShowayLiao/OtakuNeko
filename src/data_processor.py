@@ -145,9 +145,8 @@ def fetch_dataset(file_path: str = None, status_filter: str = None, limit: int =
     # --- 1. 优先读取文件 ---
     if file_path:
         # 假设有个 load_json_file 方法在上下文里
-        # data = self.load_json_file(file_path) 
+        data = load_json_file(file_path) 
         # 这里为了演示方便，假设你是在类内部，或者引入了那个函数
-        pass 
 
     # --- 2. 数据库兜底逻辑 ---
     if not data and status_filter:

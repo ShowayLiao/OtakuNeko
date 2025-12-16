@@ -1,5 +1,6 @@
-import streamlit as st
 import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+import streamlit as st
 import time
 import signal
 from dotenv import load_dotenv
@@ -11,6 +12,7 @@ from src.agent import IntentRouter, ProfileAgent, RecommendAgent, RefinerAgent
 from src.vector_store import vector_store
 from src.plugins.year_report import YearReportPlugin
 from src.BgmServe import bgm_service
+
 
 # --- 1. 基础配置 & 全局 CSS ---
 st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
@@ -210,7 +212,7 @@ with st.sidebar:
     
     # === 向量库维护 ===
 
-    st.header("🧠 向量知识库", help="管理向量索引")
+    st.header("🧠 向量知识库", help="管理向量索引，用于提取推荐标签")
     if st.button("构建/更新索引"):
         with st.status("🚀 正在启动向量化引擎...", expanded=True) as status:
             try:

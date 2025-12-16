@@ -81,7 +81,7 @@ class YearAgent(ProfileAgent):
                     clean_json = clean_json.split("```")[1].split("```")[0]
                 
                 result_data = json_repair.loads(clean_json)
-                print("Year Report LLM Raw Output:", result_data)
+                # print("Year Report LLM Raw Output:", result_data)
                 
                 # 提取基础信息
                 user_stats = result_data.get("user_stats", {})

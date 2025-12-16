@@ -87,16 +87,18 @@ Setup.bat
 ### 2. 启动程序双击运行脚本：
 
 ```bash
-Run.vbs
+Run.bat
 ```
 > 🎉 **成功**：程序将在后台静默运行，并自动在浏览器打开 `http://localhost:8501`。
 ### 3. 配置 API Key
 在弹出的框里，填入你的 DeepSeek API Key（[点击获取](https://platform.deepseek.com/)）（目前仅支持OpenAI接口的模型），Bungumi token（[点击获取](https://next.bgm.tv/demo/access-token)），Bungumi的用户名。
 > ⚠️deepseek api需要付费，请自行斟酌，bungumi api是用于获取封面使用。
 
-```ini
-DEEPSEEK_API_KEY=sk-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+<div align="center">
+    <img src="asset/api.png" width="800" alt="Dashboard Preview">
+    <br>
+    <i>OtakuNeko api界面预览</i>
+</div>
 
 ---
 
@@ -113,7 +115,7 @@ OtakuNeko/
 ├── .env                   # 🔑 配置文件
 ├── Setup.bat           # 🛠️ 环境初始化脚本
 ├── Run.bat           # 💻 调试启动脚本 (带黑窗口)
-└── Run.vbs         # ✨ 静默启动脚本 (推荐)
+└── Run.vbs         # ✨ 静默启动脚本 (暂不推荐，有问题)
 
 ```
 
