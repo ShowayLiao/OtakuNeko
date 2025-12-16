@@ -5,3 +5,4 @@ requests
 sentence-transformers 
 faiss-cpu 
 numpy
+json_repair
