@@ -97,7 +97,9 @@ TEMPLATES = {
     # Output Format (JSON Only):
     Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
-        "mapping": {{ "标签名": "作品名", ... }},
+        "mapping": {{ 
+            "标签名": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }},
+        }},
         "analysis": "你的深度分析文本..."
     }}
     """,
@@ -144,50 +146,60 @@ TEMPLATES = {
     """,
     "year_report_analysis": """
     # Role: {role_desc}
-    
-    # Data (Recent Watch History - Last 365 Days): 
+
+    # Data (Recent Watch History - Last 365 Days):
     {data_str}
 
-    # 🎯 Mission: 
-    你现在是【2025年度动画赏】的首席评审官。请基于上述观影数据，完成“年度成分审计”与“荣誉颁奖”。
+    # Keywords Pool (Reference for tone/tags):
+    {keywords_list}
 
-    # Phase 1: 数据洞察 (Internal Thinking)
-    在生成回答前，请先分析：
-    1. **成分构成**：统计这一年他看了多少部番，什么类型占比最高（是沉迷异世界、还是偏爱硬核科幻、亦或是日常废萌？）。
-    2. **评分逻辑**：分析高分作品（Score > 8）的共同基因，找出他的“审美舒适区”。
-    3. **奖项匹配**：不要随机分配！要根据作品的实际素质（作画、剧本、音乐）去匹配下方的奖项。
+    # 🎯 Mission:
+    你现在是【2025 年度动画赏】的首席大数据评审官。请基于观影数据，进行多维度的“成分审计”。
+    你的任务是挖掘数据背后的“槽点”和“真爱”，并输出一份包含**结构化统计**和**深度文本分析**的 JSON。
 
-    # Phase 2: 奖项提名 (Mapping Task)
-    请从列表中评选出以下奖项（每项 1 部，**必须**是列表里的作品）。
-    奖项列表：{categories_json}
+    # Phase 1: 多维数据计算 (Statistical Thinking)
+    在生成前，请遍历数据并找出趋势（注意：LLM 不擅长精确计算，请尽力提取最明显的趋势）：
+    1.  **CV 统计**：扫描 `cv` 字段，找出出现频率最高的 1-2 位声优。
+    2.  **时间分布**：查看 `month` 字段，找出用户看番最密集的月份。
+    3.  **年度动画关键词**：分析`tag`字段，找到用户今年看的动画的标签趋势，最喜欢看什么标签的动画。
 
-    # Phase 3: 撰写《2025 年度动画鉴赏报告》 (Analysis Output)
-    请撰写一篇有理有据、逻辑严密的年度总结报告。
-    
-    **文章结构与内容要求：**
-    
-    1. **📊 年度成分解构**：
-       - 开篇先根据 Phase 1 的分析，一针见血地指出他这一年的“二次元成分”。
-       - 例如：“这一年你显然是个‘重口味剧情党’，高分作全集中在悬疑类...” 或者 “今年的你急需治愈，日常系作品占据了半壁江山...”。
-    
-    2. **🏆 核心奖项颁奖词 (重中之重)**：
-       - **不要只报菜名！** 对于你选出的重点奖项（如最佳动画、最佳原创、最意难平），必须写出**颁奖词**。
-       - **归因分析**：解释**“为什么这部作品能拿这个奖”**。是作画张数爆炸？是剧本逻辑封神？还是单纯的整活太抽象？
-       - 结合用户的评分进行佐证（例如：“虽然大家都说烂，但你给了 9 分，说明这部作品的电波正好对上了你...”）。
+    # Phase 2: 奖项与标签生成 (Mapping & Tagging)
+    1.  **年度用户点评**：从 `{keywords_list}` 或你总结的题材中，组合出 3 个属于该用户的年度点评。
+    2.  **奖项匹配**：从{data_str}中找到对应 `{categories_json}` 奖项的作品。
+        - 每个奖项只能颁给一部作品，且不得重复。
+        - 每一个奖项都必须匹配上，不能少。
 
-    3. **📝 结语**：
-       - 用一句话总结他的 2025 动画生活。
+    # Phase 3: 撰写分析报告 (Text Generation)
+    请撰写一段风格独特的年度总结，必须包含对上述统计结果（CV、月份、公司）的犀利点评。
 
-    **语气风格要求：**
-    {tone_req}
-    
-    - **字数**：不少于 800 字，分析要深入透彻。
+    # Output Format (Modified JSON Structure):
+    Strict output rules: The output MUST be valid standard JSON. Use ASCII quotes.
 
-    # Output Format (JSON Only):
-    Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
-        "mapping": {{ "奖项名": "作品名", ... }},
-        "analysis": "你的深度分析文本..."
+        "user_stats": {{
+            "top_cv": {{ 
+                "name": "声优名字", 
+                "comment": "一句关于该声优的吐槽，如：'无处不在的劳模'" 
+            }},
+            "busiest_month": {{
+                "month": "数字(从1、4、7、10中选)", 
+                "comment": "关于该月份看番状态的描述，如：'在空调房里腐烂的夏天'"
+            }},
+            "Anime_tag": {{
+                "tag": "最能代表今年看过的动画的动画标签",
+                "comment": "简短深刻的一句话原因"
+            }},
+            "comment_tags": ["标签1"（年度用户点评）, "标签2", "标签3"] 
+        }},
+        "awards_mapping": {{ 
+            "奖项ID": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }},
+        }},
+        "analysis_report": {{
+            "title": "报告的大标题（如：2025年度·异世界失格者报告）",
+            "intro": "开篇总结，通过 tags 和 CV 分析用户的二次元成分。",
+            "body": "主体内容，详细分析重点奖项，结合 month 和 score 数据进行点评。",
+            "conclusion": "结语，一句话总结或对明年的诅咒/祝福。"
+        }}
     }}
     """,
     "chat_system": """

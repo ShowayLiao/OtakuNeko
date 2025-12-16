@@ -120,7 +120,7 @@ class RecommendAgent(BaseAgent):
         # Context
         user_profile = self._load_user_profile()
         inventory_str = self._load_inventory_strs()
-        recent_watched_str = self._load_recent_watched_strs(recent=730)
+        recent_watched_str = self._load_recent_watched_strs(730,"title","id")
         
         # 2. Prompt
         persona = ROLES.get(style, ROLES["cat"])

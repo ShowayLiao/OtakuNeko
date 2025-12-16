@@ -130,13 +130,86 @@ class ProfileAgent(BaseAgent):
                 final_text = f"{persona.get('start_msg','')}{analysis}"
                 response_placeholder.markdown(final_text)
 
+                # 1. 鲁棒性修正: 确保 raw_awards 是字典
+                llm_awards_source = {}
+                if isinstance(mapping, list):
+                    for item in mapping:
+                        if isinstance(item, dict): llm_awards_source.update(item)
+                elif isinstance(mapping, dict):
+                    llm_awards_source = mapping
+
+                 # 2. 提取核心数据 (Title & Reason)
+                # 结构: { "最佳动画": {"title": "xxx", "reason": "xxx"}, ... }
+                llm_parsed_data = {}
+                
+                for cat in self.categories:
+                    item_data = llm_awards_source.get(cat, {})
+                    
+                    # 提取标题
+                    raw_title = "N/A"
+                    if isinstance(item_data, dict):
+                        raw_title = item_data.get("title", "N/A")
+                    elif isinstance(item_data, str):
+                        raw_title = item_data
+                    
+                    # 清洗标题
+                    clean_title = "N/A"
+                    if raw_title and raw_title != "N/A":
+                        clean_title = str(raw_title).replace("《", "").replace("》", "").strip()
+
+                    # 提取理由 (Reason)
+                    reason = ""
+                    if isinstance(item_data, dict):
+                        reason = item_data.get("reason", "")
+                    
+                    # 存入中间字典
+                    llm_parsed_data[cat] = {
+                        "title": clean_title,
+                        "reason": reason
+                    }
             except:
                 st.error("解析失败")
                 return raw_json_str
 
             # (C) 抓取并渲染卡片
             status.write("📡 正在检索元数据...")
-            card_items = self._fetch_card_metadata(mapping)
+
+            search_mapping = {
+                    cat: data['title'] 
+                    for cat, data in llm_parsed_data.items() 
+                    if data['title'] != "N/A"
+                }
+
+            fetched_results = []
+            if search_mapping:
+                fetched_results = self._fetch_card_metadata(search_mapping)
+
+
+            # 3. 建立查找索引: { "最佳动画": {id:123, image:url...} }
+            fetched_lookup = {item['category']: item for item in fetched_results}
+
+            # 4. 最终合并 (Merge LLM Data + Fetched Data)
+            card_items = []
+            for cat in self.categories:
+                llm_info = llm_parsed_data.get(cat, {})
+                llm_title = llm_info.get("title", "本项空缺")
+                llm_reason = llm_info.get("reason", "AI 未能提供理由")
+
+                if cat in fetched_lookup:
+                    # Case A: 抓取成功 -> 使用抓取的数据 + 注入 LLM 理由
+                    item = fetched_lookup[cat]
+                    item['comment'] = llm_reason # 核心：把理由注入 comment
+                    card_items.append(item)
+                else:
+                    # Case B: 没抓到或 N/A -> 使用 LLM 数据构造纯文字卡片
+                    card_items.append({
+                        "category": cat,
+                        "title": llm_title,
+                        "image": "", # 无图
+                        "score": "",
+                        "id": None,
+                        "comment": llm_reason # 依然显示理由
+                    })
 
             status.write("🖌️ 正在后台绘制高清长图...")
             img_path = self.draw_grid_image(

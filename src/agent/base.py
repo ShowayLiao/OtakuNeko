@@ -4,11 +4,12 @@ import os
 import streamlit as st
 from openai import OpenAI
 import urllib.parse
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 import textwrap
 from src.BgmServe  import bgm_service
 import textwrap
 from concurrent.futures import ThreadPoolExecutor
+from src.data_processor import extract_data, fetch_dataset,load_json_file
 
 class BaseAgent:
     """
@@ -23,14 +24,11 @@ class BaseAgent:
         # 定义配置文件路径，子类可以复用
         self.profile_path = "data/user_profile_summary.txt"
         self.dataset_path = "data/datasets"
-        self.font_path = "msyh.ttc"
+        self.font_path = "./font/AlibabaPuHuiTi-3-65-Medium.ttf"
 
     def _load_json_file(self, filepath):
         """通用工具：读取 JSON"""
-        if os.path.exists(filepath):
-            with open(filepath, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return []
+        return load_json_file(filepath)
 
     def _load_user_profile(self):
         """通用工具：读取用户画像"""
@@ -205,63 +203,77 @@ class BaseAgent:
 
     def draw_grid_image(self, items_data, output_filename="grid_output.png", cols=5, title_text="OtakuMate · 成分鉴定"):
         """
-        🎨 通用方法：将数据列表绘制成网格长图并保存
-        Args:
-            items_data: 包含 {'category', 'title', 'image'} 的列表
-            output_filename: 保存的文件名
-            cols: 列数
-            title_text: 图片顶部的大标题
-        Returns:
-            str: 保存的图片绝对路径
+        🎨 [修复版] 包含 Comment 显示区域 + 修复变量缺失
         """
         print(f"🎨 [BaseAgent] 开始绘制图片: {title_text}...")
+
+        # --- 1. 基础配置 ---
+        cell_w = 220
+        cell_h = 380       # 高度 380，为 Comment 留出空间
+        margin = 30
+        card_radius = 12                
+        footer_h = 80                   
         
-        # 1. 布局计算
+        # --- 颜色配置 ---
+        bg_color = (246, 247, 249)      
+        card_bg_color = (255, 255, 255) 
+        card_outline = (225, 225, 230)  
+        
+        title_color = (40, 40, 45)       # 标题颜色 (深黑)
+        comment_color = (130, 130, 140)  # 短评颜色 (浅灰)
+        
+        # [修复点] 把这个定义加回来，用于底部声明
+        sub_text_color = (160, 160, 170) 
+        
+        tag_bg_color = (235, 245, 255)  
+        tag_text_color = (0, 100, 200)  
+        accent_line_color = (50, 120, 255) 
+
+        # --- 字体加载 ---
+        def load_font(size):
+            try:
+                return ImageFont.truetype(self.font_path, size)
+            except:
+                return ImageFont.load_default()
+
+        font_title = load_font(46)      
+        font_card_title = load_font(19) 
+        font_comment = load_font(15)    # Comment 字体
+        font_tag = load_font(14)        
+        font_footer = load_font(16)     
+        font_placeholder = load_font(24)
+
+        # --- 布局计算 ---
+        total_w = cols * (cell_w + margin) + margin
+        
+        # Header 高度动态计算
+        chars_per_line = int((total_w - margin * 2 - 20) / 48 * 1.8) 
+        title_lines = textwrap.wrap(title_text, width=chars_per_line)
+        header_top_padding = 50
+        title_line_h = 60 
+        header_h = header_top_padding + (len(title_lines) * title_line_h) + 15 
+
         count = len(items_data)
         rows = (count + cols - 1) // cols
-        
-        cell_w, cell_h = 200, 360 
-        margin = 20
-        header_h = 100 # 标题区域高度
-        
-        total_w = cols * (cell_w + margin) + margin
-        total_h = rows * (cell_h + margin) + margin + header_h
-        
-        # 2. 颜色配置 (莫兰迪暗色系)
-        bg_color = (30, 30, 35)       
-        card_bg_color = (45, 45, 50)  
-        text_color = (240, 240, 240)  
-        accent_color = (255, 100, 100) 
-        
+        total_h = header_h + rows * (cell_h + margin) + footer_h
+
         canvas = Image.new('RGB', (total_w, total_h), bg_color)
         draw = ImageDraw.Draw(canvas)
+
+        # --- 绘制 Header ---
+        line_h = len(title_lines) * title_line_h
+        draw.rounded_rectangle([margin, header_top_padding + 8, margin + 6, header_top_padding + 2 + line_h], radius=3, fill=accent_line_color)
         
-        # 3. 加载字体
-        try:
-            title_font = ImageFont.truetype(self.font_path, 40)
-            tag_font = ImageFont.truetype(self.font_path, 20)
-            name_font = ImageFont.truetype(self.font_path, 18)
-        except:
-            # 兜底字体
-            title_font = ImageFont.load_default()
-            tag_font = ImageFont.load_default()
-            name_font = ImageFont.load_default()
+        curr_y = header_top_padding
+        for line in title_lines:
+            draw.text((margin + 25, curr_y), line, font=font_title, fill=title_color)
+            curr_y += title_line_h
 
-        # 4. 绘制标题
-        draw.text((margin, 30), title_text, font=title_font, fill=text_color)
-
-        # 5. 循环绘制卡片
+        # --- 循环绘制卡片 ---
         for i, item in enumerate(items_data):
-
-            # 兼容不同字段名
             cat = item.get('category') or item.get('type') or ""
-            raw_title = item.get('title', 'Unknown')
-
-            if raw_title is None:
-                title = "Unknown"
-            else:
-                title = str(raw_title)
-
+            title = str(item.get('title', 'Unknown'))
+            comment = str(item.get('comment') or "") # 获取 comment
             img_url = item.get('image')
             
             col = i % cols
@@ -269,69 +281,90 @@ class BaseAgent:
             x = margin + col * (cell_w + margin)
             y = header_h + row * (cell_h + margin)
             
-            # 卡片背景
-            draw.rectangle([x, y, x + cell_w, y + cell_h], fill=card_bg_color)
+            # [背景]
+            draw.rounded_rectangle([x, y, x + cell_w, y + cell_h], radius=card_radius, fill=card_bg_color, outline=card_outline, width=1)
             
-            text_area_h = 70 
-            img_area_h = cell_h - text_area_h
+            # 图片高度 (240px)
+            img_area_h = 240 
             
-            # 绘制图片
+            # [图片]
             has_img = False
             if img_url:
-                # 调用 Service 下载图片 (返回 PIL 对象)
-                img = bgm_service.download_image(img_url)
-                if img:
+                dl_img = bgm_service.download_image(img_url) 
+                if dl_img:
                     try:
-                        # 居中裁剪算法 (Center Crop)
-                        img_ratio = img.width / img.height
-                        target_ratio = cell_w / img_area_h
-                        if img_ratio > target_ratio:
-                            new_h = img_area_h
-                            new_w = int(new_h * img_ratio)
-                            img = img.resize((new_w, new_h), Image.LANCZOS)
-                            left = (new_w - cell_w) // 2
-                            img = img.crop((left, 0, left + cell_w, new_h))
-                        else:
-                            new_w = cell_w
-                            new_h = int(new_w / img_ratio)
-                            img = img.resize((new_w, new_h), Image.LANCZOS)
-                            top = (new_h - img_area_h) // 2
-                            img = img.crop((0, top, cell_w, top + img_area_h))
-                        
-                        canvas.paste(img, (x, y))
+                        dl_img = ImageOps.fit(dl_img, (cell_w, img_area_h), method=Image.LANCZOS)
+                        mask = Image.new("L", (cell_w, img_area_h), 0)
+                        m_draw = ImageDraw.Draw(mask)
+                        m_draw.rounded_rectangle([(0,0), (cell_w, img_area_h + card_radius)], radius=card_radius, fill=255)
+                        canvas.paste(dl_img, (x, y), mask=mask)
                         has_img = True
-                    except Exception as e:
-                        print(f"图片处理失败: {e}")
-            
-            # 无图占位
+                    except:
+                        pass
             if not has_img:
-                draw.rectangle([x, y, x + cell_w, y + img_area_h], fill=(60, 60, 65))
-                draw.text((x + cell_w//2 - 30, y + img_area_h//2 - 10), "No Image", font=name_font, fill=(150,150,150))
+                draw.rounded_rectangle([x, y, x+cell_w, y+img_area_h], radius=card_radius, fill=(235, 235, 240))
+                draw.rectangle([x, y+img_area_h-card_radius, x+cell_w, y+img_area_h], fill=(235, 235, 240))
+                draw.text((x + cell_w//2 - 45, y + img_area_h//2 - 12), "No Image", font=font_placeholder, fill=(180, 180, 190))
 
-            # 绘制标签 (左上角)
+            # [标签]
             if cat:
-                tag_w = len(cat) * 20 + 10 # 简单估算宽度
-                tag_h = 28
-                draw.rectangle([x, y, x + tag_w, y + tag_h], fill=accent_color)
-                draw.text((x + 5, y + 2), cat, font=tag_font, fill=(0,0,0))
-            
-            # 绘制标题 (底部)
-            text_start_y = y + img_area_h + 5
-            # 自动换行
-            wrapped_title = textwrap.fill(title, width=11) 
-            lines = wrapped_title.split('\n')
-            # 最多显示2行
-            display_text = lines[0]
-            if len(lines) > 1:
-                display_text += "\n" + (lines[1][:9] + "..." if len(lines[1]) > 9 else lines[1])
-            
-            draw.text((x + 5, text_start_y), display_text, font=name_font, fill=text_color, spacing=4)
+                tag_txt = f"{cat}"
+                bbox = font_tag.getbbox(tag_txt)
+                tag_w, tag_h = bbox[2] - bbox[0] + 20, bbox[3] - bbox[1] + 10
+                draw.rounded_rectangle([x+10, y+10, x+10+tag_w, y+10+tag_h], radius=6, fill=tag_bg_color)
+                draw.text((x+20, y+15), tag_txt, font=font_tag, fill=tag_text_color)
 
-        # 6. 保存文件
+            # --- 文字区域逻辑 ---
+            text_start_x = x + 15
+            cursor_y = y + img_area_h + 12 
+            
+            # 1. 标题 (深色)
+            title_wrapper = textwrap.wrap(title, width=11)
+            
+            if len(title_wrapper) > 2:
+                line1 = title_wrapper[0]
+                line2 = title_wrapper[1]
+                if len(line2) > 9: line2 = line2[:8] + "..."
+                else: line2 = line2 + "..."
+                display_title = [line1, line2]
+            else:
+                display_title = title_wrapper
+
+            for line in display_title:
+                draw.text((text_start_x, cursor_y), line, font=font_card_title, fill=title_color)
+                cursor_y += 24 # 标题行高
+            
+            # 2. Comment (浅灰)
+            if comment and comment != "None":
+                cursor_y += 6 # 间距
+                comment_wrapper = textwrap.wrap(comment, width=13) 
+                
+                if len(comment_wrapper) > 3:
+                    c_line1 = comment_wrapper[0]
+                    c_line2 = comment_wrapper[1]
+                    if len(c_line2) > 11: c_line2 = c_line2[:10] + "..."
+                    else: c_line2 = c_line2 + "..."
+                    display_comment = [c_line1, c_line2]
+                else:
+                    display_comment = comment_wrapper
+                
+                for line in display_comment:
+                    draw.text((text_start_x, cursor_y), line, font=font_comment, fill=comment_color)
+                    cursor_y += 20 # Comment行高
+
+        # --- Footer ---
+        footer_text = "OtakuNeko 基于AI以及动画记录生成，仅供娱乐"
+        f_bbox = font_footer.getbbox(footer_text)
+        f_x = (total_w - (f_bbox[2] - f_bbox[0])) // 2
+        f_y = total_h - footer_h + 30 
+        
+        # [修复点] 现在 sub_text_color 已经定义了，不会报错了
+        draw.text((f_x, f_y), footer_text, font=font_footer, fill=sub_text_color)
+
         save_path = os.path.join("data", output_filename)
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        canvas.save(save_path)
-        print(f"✅ 图片已保存: {save_path}")
+        canvas.save(save_path, quality=95)
+        print(f"✅ 图片生成完毕: {save_path}")
         return save_path
     
     # 🟢 [新增] 健壮的分数提取函数
@@ -383,58 +416,7 @@ class BaseAgent:
         :param limit: 数量限制 (0为不限制)
         :param days: 时间范围限制，提取最近 X 天的记录 (0为不限制)
         """
-        from datetime import datetime, timedelta
-
-        data = []
-
-        # --- 1. 优先读取文件 ---
-        if file_path:
-            data = self._load_json_file(file_path)
-
-        # --- 2. 数据库兜底逻辑 ---
-        if not data and status_filter:
-            try:
-                # A. 加载全量
-                full_records = bgm_service.load_local_records()
-                
-                # B. 状态过滤
-                filtered_records = [x for x in full_records if x.get('status') == status_filter]
-                
-                # C. 时间范围过滤 (新增逻辑 🟢)
-                if days > 0:
-                    now = datetime.now()
-                    cutoff_date = now - timedelta(days=days)
-                    time_filtered = []
-                    
-                    for item in filtered_records:
-                        updated_at_str = item.get('updated_at', '')
-                        if not updated_at_str: continue
-                        
-                        try:
-                            # 截取日期部分 (YYYY-MM-DD) 进行解析，兼容性更好
-                            date_str = updated_at_str[:10]
-                            item_date = datetime.fromisoformat(date_str)
-                            
-                            if item_date >= cutoff_date:
-                                time_filtered.append(item)
-                        except:
-                            continue # 解析失败则跳过
-                    
-                    filtered_records = time_filtered
-
-                # D. 排序 (始终按时间倒序)
-                filtered_records.sort(key=lambda x: x.get('updated_at', ''), reverse=True)
-                
-                # E. 数量截取
-                if limit > 0:
-                    data = filtered_records[:limit]
-                else:
-                    data = filtered_records
-                    
-            except Exception as e:
-                print(f"❌ [BaseAgent] 读取本地数据库失败: {e}")
-
-        return data
+        return fetch_dataset(file_path, status_filter, limit, days)
     
     def _extract_data(self, items: list, *fields) -> str:
         """
@@ -447,44 +429,7 @@ class BaseAgent:
         """
         import json
 
-        formatted_list = []
-        if not items:
-            return json.dumps([], ensure_ascii=False)
-
-        for item in items:
-            parts = []
-            
-            # 🔄 遍历用户传入的每一个字段名 (*args)
-            for field in fields:
-                # 1. 安全获取值
-                val = item.get(field)
-                
-                # 2. 空值跳过 (根据需求，也可以填 "无")
-                if not val and val != 0: 
-                    continue
-                
-                # 3. 类型自动处理
-                if isinstance(val, list):
-                    #如果是列表 (如 tags: []), 转成字符串 "[A,B]"
-                    val_str = f"[{','.join(str(x) for x in val)}]"
-                else:
-                    # 如果是普通值 (如 year: 2025, cv: "xxx"), 直接转字符串
-                    val_str = str(val).strip()
-                
-                # 4. 存入片段
-                # 这里做了一个小优化：如果提取的不是标题，加上 Key 前缀方便 AI 理解
-                # (你可以根据喜好决定要不要加这个 field+":")
-                if field == 'title':
-                    parts.append(f"《{val_str}》")
-                else:
-                    # 例如: "director:今井友紀子"
-                    parts.append(f"{field}:{val_str}")
-            
-            # 5. 将该条目的所有字段用空格或 | 拼起来
-            if parts:
-                formatted_list.append(" ".join(parts))
-
-        return json.dumps(formatted_list, ensure_ascii=False)
+        return extract_data(items, *fields)
     
     def _batch_fetch_card_items(self, titles: list) -> dict:
         """
@@ -544,8 +489,8 @@ class BaseAgent:
 
         return results_map
     
-    def _load_recent_watched_strs(self,recent=730):
+    def _load_recent_watched_strs(self,recent,*fields):
         """加载最近看过的番剧 (用于Prompt上下文避免重复)"""
         path = os.path.join(self.dataset_path, f"dataset_recent_{recent}.json")
         recent_all = self._fetch_dataset(file_path=path, status_filter="watched", limit=0, days=recent)
-        return self._extract_data(recent_all, "title","id")
+        return self._extract_data(recent_all, *fields)

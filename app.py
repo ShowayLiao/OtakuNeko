@@ -53,6 +53,83 @@ st.markdown("""
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+# --- 辅助函数：安全更新 .env 文件 ---
+
+def update_env_file(key, value):
+    """安全地更新 .env 文件中的变量"""
+    env_path = ".env"
+    new_line = f'{key}="{value}"\n'
+    
+    # 如果文件不存在，直接创建
+    if not os.path.exists(env_path):
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.write(new_line)
+        return
+
+    # 读取现有内容
+    with open(env_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    # 查找并替换
+    found = False
+    with open(env_path, "w", encoding="utf-8") as f:
+        for line in lines:
+            if line.startswith(f"{key}="):
+                f.write(new_line)
+                found = True
+            else:
+                f.write(line)
+        # 如果没找到，追加到末尾
+        if not found:
+            f.write("\n" + new_line)
+
+@st.dialog("🔑 配置 API Key")
+def configure_api_key_dialog():
+    st.write("检测到本地缺少配置，或您请求修改 Key。")
+    st.caption("Key 将被保存在本地 .env 文件中。")
+    
+    # 预填当前已有的 Key (如果有)
+    current_key = os.getenv("DEEPSEEK_API_KEY", "")
+    new_key = st.text_input("DeepSeek API Key", value=current_key, type="password", help="输入 sk- 开头的密钥")
+    current_key_bgm = os.getenv("BGM_ACCESS_TOKEN", "")
+    new_key_bgm = st.text_input("Bangumi Access Token", value=current_key_bgm, type="password", help="输入你的 Bangumi Access Token")
+    user = os.getenv("BGM_USERNAME", "")
+    new_user = st.text_input("Bangumi 用户名", value=user, help="输入你的 Bangumi 用户名")
+    
+    if st.button("💾 保存并重启"):
+        if new_key.strip():
+            # 1. 更新物理文件
+            update_env_file("DEEPSEEK_API_KEY", new_key.strip())
+            update_env_file("BGM_ACCESS_TOKEN", new_key_bgm.strip())
+            update_env_file("BGM_USERNAME", new_user.strip())
+            # 2. 更新当前环境变量 (无需重启即可生效，但为了刷新服务建议rerun)
+            os.environ["DEEPSEEK_API_KEY"] = new_key.strip()
+            os.environ["BGM_ACCESS_TOKEN"] = new_key_bgm.strip()
+            os.environ["BGM_USERNAME"] = new_user.strip()
+            st.success("配置已保存！")
+            time.sleep(1)
+            st.rerun()
+        else:
+            st.error("Key 不能为空")
+
+# --- 2. 服务与 Agent 初始化 (修改版) ---
+load_dotenv(override=True) # 强制重载，确保读取最新修改
+api_key = os.getenv("DEEPSEEK_API_KEY")
+user = os.getenv("BGM_USERNAME")
+
+# 逻辑：如果没有 Key，且并未在当前这轮交互中弹出过，则强制弹窗并停止后续运行
+if not api_key:
+    st.warning("⚠️ 未检测到 API Key，请在弹窗中配置...")
+    configure_api_key_dialog()
+    st.stop() # ⛔ 只有当没有 Key 时，才在这里停止代码继续向下执行
+
+# (原有的 init_services 保持不变，但去掉了之前的 st.error/st.stop)
+@st.cache_resource
+def init_services():
+    return LLMService(api_key=api_key)
+
+llm_service = init_services()
+
 # --- 2. 服务与 Agent 初始化 ---
 api_key = os.getenv("DEEPSEEK_API_KEY")
 if not api_key:
@@ -100,7 +177,8 @@ with st.sidebar:
 
     with st.expander("🔧 高级维护", expanded=False):
         if st.button("📅 仅重生成近期记录"):
-            msg = extract_recent_watched()
+            msg = extract_recent_watched(730)
+            msg += extract_recent_watched(365)
             st.caption(f"✅ {msg}")
         if st.button("📦 仅重新分类数据集"):
             msg = export_categorized_datasets()
@@ -157,23 +235,32 @@ with st.sidebar:
                 st.error(f"详情: {e}")
 
     st.markdown("---")
-    
+
     # === 插件入口 (作为 Trigger) ===
     st.header("🧩 扩展插件")
     
     # 辅助函数：侧边栏按钮点击后的回调
     def trigger_plugin_msg(trigger_text):
         st.session_state.messages.append({"role": "user", "content": trigger_text})
-    
+          
     for plugin in active_plugins:
-        # 定义每个插件的触发关键词
-        prompt_text = f"执行插件：{plugin.key}"
-        if plugin.key == "✨ 生成 2025 年度动画报告":
-            prompt_text = "✨ 生成 2025 年度动画报告"
-            
-        if st.button(f"📊 {plugin.key}", key=f"plugin_btn_{plugin.key}"):
-            trigger_plugin_msg(prompt_text)
+        # 获取按钮显示的文字，优先用 btn_label，没有则用 key
+        label = getattr(plugin, 'btn_label', f"📊 {plugin.key}")
+        
+        # 获取触发文本，优先用 trigger_text
+        trigger = getattr(plugin, 'trigger_text', f"执行插件：{plugin.key}")
+
+        if st.button(label, key=f"plugin_btn_{plugin.key}"):
+            trigger_plugin_msg(trigger)
             st.rerun()
+    
+    with st.sidebar:
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.caption(f"当前User: {user if user else '无'}")
+        with col2:
+            if st.button("✏️", help="修改 API Key"):
+                configure_api_key_dialog()
 
 
 # --- 4. 主界面逻辑 ---
@@ -203,18 +290,32 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
         full_response = ""
         
         try:
-            # --- Phase A: 插件触发词检测 ---
-            # 简单字符串匹配，如果触发词特殊可以改用正则或 Router 里的专门字段
+            # --- Phase A: 插件触发词检测 (通用化重构) ---
             matched_plugin = None
-            if "年度动画报告" in last_user_prompt:
-                matched_plugin = next((p for p in active_plugins if p.key == "YEAR_REPORT"), None)
+            
+            for plugin in active_plugins:
+                # 1. 获取插件定义的触发词 (如果没有定义，默认用 None 跳过)
+                # 兼容性处理：优先用 trigger_text，其次尝试匹配 key
+                trigger = getattr(plugin, 'trigger_text', None)
+                
+                # 2. 匹配逻辑
+                # 这里使用 "in" 包含匹配，允许用户输入 "请帮我生成年度动画报告" 也能触发
+                # 如果想要更严格，可以用 last_user_prompt.strip() == trigger
+                if trigger and trigger in last_user_prompt:
+                    matched_plugin = plugin
+                    break  # 找到一个匹配的插件就停止，避免冲突
             
             if matched_plugin:
                 # 🚀 执行插件逻辑
-                with st.status(f"🧩 正在启动 {matched_plugin.key}...", expanded=True) as status:
+                # 获取插件名称用于显示，如果没有 label 就用 key
+                plugin_name = getattr(matched_plugin, 'btn_label', matched_plugin.key)
+                
+                with st.status(f"🧩 正在启动插件 [{plugin_name}]...", expanded=True) as status:
                     # 插件内部自行处理 UI 渲染，并返回最终 Markdown 结果
+                    # 传入 status 容器，允许插件内部更新 "正在抓取..." 这种状态
                     full_response = matched_plugin.execute(response_placeholder)
-                    status.update(label="✅ 执行完成", state="complete", expanded=False)
+                    
+                    status.update(label=f"✅ {plugin_name} 执行完成", state="complete", expanded=False)
 
             # --- Phase B: 常规 Agent 路由 ---
             else:

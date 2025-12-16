@@ -1,64 +1,41 @@
-# src/plugins/year_report.py
 import streamlit as st
-from .base import BasePlugin
-from src.agent.YearAgent import YearAgent
+from .base import BasePlugin # 假设你有一个基类，如果没有可以去掉继承
+from src.agent.YearAgent import YearAgent # 假设你的 YearAgent 在这里
 
-class YearReportPlugin(BasePlugin):
+class YearReportPlugin:
     def __init__(self, client):
-        super().__init__(client)
-        self.key = "YEAR_REPORT"
+        # 1. 基础属性配置
+        self.key = "YEAR_REPORT"                # 程序的唯一标识 ID
+        self.btn_label = "🏆 2025 年度动画报告"   # 侧边栏按钮显示的文字
+        self.trigger_text = "✨ 生成 2025 年度动画报告" # 点击后发送给对话框的指令
+        
+        # 2. 初始化内部 Agent
         self.agent = YearAgent(client)
 
-    def render_button(self):
-        """渲染悬浮按钮 (UI)"""
-        # 1. 注入专属 CSS (只针对这个按钮，使其悬浮在左侧边栏底部上方)
-        st.markdown("""
-        <style>
-            div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div:has(div#floating-year-btn) {
-                position: fixed;
-                bottom: 20px;
-                left: 20px;
-                width: 260px; /* Sidebar width adjustment */
-                z-index: 999;
-                pointer-events: none;
-            }
-            div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div:has(div#floating-year-btn) button {
-                pointer-events: auto;
-                width: 100%;
-                background-color: #F0F7FF !important; 
-                color: #5A7C98 !important;
-                border: 1px solid #DDE6ED !important; 
-                border-radius: 12px !important;
-                padding: 0.5rem 1rem !important; 
-                font-weight: 600 !important;
-                box-shadow: 0 4px 12px rgba(90, 124, 152, 0.15) !important;
-                transition: all 0.2s ease !important;
-            }
-            div[data-testid="stSidebar"] div[data-testid="stVerticalBlock"] > div:has(div#floating-year-btn) button:hover {
-                background-color: #FFFFFF !important; 
-                color: #4A6C88 !important;
-                border-color: #B0C4DE !important; 
-                transform: translateY(-2px);
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
-        # 2. 渲染锚点和按钮 (放在 Sidebar 中)
-        with st.sidebar:
-            st.markdown('<div id="floating-year-btn"></div>', unsafe_allow_html=True)
-            if st.button("🏆 生成 2025 年度动画报告", key="btn_year_report"):
-                st.session_state['active_plugin'] = self.key
-                st.rerun()
-
-    def execute(self, chat_container):
+    def execute(self, response_placeholder):
         """
-        插件执行逻辑
-        Args:
-            chat_container: 主界面的 st.empty() 容器，虽然 Agent 内部使用了 st.write，
-                            但这个参数保留以符合接口规范。
+        执行插件逻辑
+        :param response_placeholder:用于流式输出或状态显示的 st.empty() 容器
+        :return: Final Markdown string (用于存入历史记录)
         """
-        # 直接调用 Agent 的 render 方法
-        # 这里的 style 参数可以根据 session_state 动态获取，默认 "cat"
-        style = "cat" # 或者 st.session_state.get('selected_style', 'cat')
+        # 1. 动态获取当前风格 (从 session_state)
+        # 默认为 'cat'，如果未设置
+        style = st.session_state.get('selected_style', 'cat')
         
-        return self.agent.render(style=style)
+        # 2. 调用 Agent 进行渲染
+        # 注意：Agent 内部应该处理 heavy lifting (绘图、数据分析)
+        # 并利用 response_placeholder 更新进度 (如果 Agent 支持传参)
+        try:
+            # 假设 YearAgent.render 接收 style 参数，并返回最终的 markdown 结果
+            # 如果你的 YearAgent 需要显示进度条，建议传 response_placeholder 进去
+            final_report_markdown = self.agent.render(
+                style=style,
+                response_placeholder=response_placeholder
+            )
+            return final_report_markdown
+            
+        except Exception as e:
+            # 错误兜底
+            error_msg = f"❌ 年度报告生成失败: {str(e)}"
+            st.error(error_msg)
+            return error_msg
