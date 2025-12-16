@@ -1,7 +1,7 @@
 
 <div align="center">
 
-<!-- <img src="assets/preview.png" width="200" height="auto" alt="Logo Placehoder - 请替换为你的Logo或保留此默认图"> -->
+<img src="asset/Icon.png" width="200" height="auto" alt="Logo Placehoder - 请替换为你的Logo或保留此默认图">
 
 # 🐱 OtakuNeko | 御宅猫
 
