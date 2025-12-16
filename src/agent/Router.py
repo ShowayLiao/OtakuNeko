@@ -1,0 +1,43 @@
+# src/agent/router.py
+import json
+from .base import BaseAgent
+from src.config.personas import TEMPLATES
+
+class IntentRouter(BaseAgent):
+    def classify(self, user_input):
+        print(f"🧠 [Router] 收到指令: {user_input[:20]}...")
+        
+        # 从配置加载 Prompt
+        system_prompt = TEMPLATES["router_system"]
+        
+        try:
+            # 使用基类的 run 方法 (也可以直接用 self.client)
+            # 这里用 non-stream 模式，因为我们需要完整的 JSON
+            response = self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_input}
+                ],
+                temperature=0.1, # 路由需要精确，温度设低
+                response_format={"type": "json_object"},
+                timeout=10.0
+            )
+            
+            content = response.choices[0].message.content
+            print(f"🧠 [Router] 判决: {content}")
+            
+            data = json.loads(content)
+            intent = data.get("intent", "CHAT").strip().upper()
+            tags = data.get("tags", [])
+            
+            # 安全检查：确保是合法意图
+            valid_intents = ['PROFILE', 'RECOMMEND', 'GENERATE', 'CHAT', 'AMBIGUOUS']
+            if intent not in valid_intents:
+                return 'CHAT', []
+                
+            return intent, tags
+            
+        except Exception as e:
+            print(f"❌ [Router] 路由失败 (已回退到 CHAT): {e}")
+            return 'CHAT', []

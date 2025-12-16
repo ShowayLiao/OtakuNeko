@@ -3,102 +3,154 @@ import os
 import json
 import time
 import datetime
+from typing import List, Dict, Any, Tuple
 from openai import OpenAI
-from src.bgm_sync import sync_bangumi_to_local
-from src.prompt_manager import get_system_prompt
 
-# 常量定义
-DATA_FILE = os.path.join("data", "bangumi_full_records.json")
-SYNC_INTERVAL = 43200  # 12小时
-
-
-
+# 🟢 引入统一的数据服务单例
+from src.BgmServe import bgm_service
+from src.config.personas import TEMPLATES
 
 class DataService:
+    """
+    数据协调服务：负责判断同步时机、调用底层同步、以及为 LLM 准备上下文数据
+    """
+    
+    SYNC_INTERVAL = 43200  # 12小时 (12 * 60 * 60)
+
     @staticmethod
-    def should_sync():
-        """判断是否需要同步"""
-        if not os.path.exists(DATA_FILE):
+    def should_sync() -> Tuple[bool, str]:
+        """判断是否需要自动同步"""
+        data_path = bgm_service.data_path
+        
+        # 1. 文件不存在，强制同步
+        if not os.path.exists(data_path):
             return True, "📂 初次初始化数据..."
         
-        mtime = os.path.getmtime(DATA_FILE)
-        if time.time() - mtime > SYNC_INTERVAL:
-            return True, "🔄 数据已过期，准备同步 Bangumi..."
+        # 2. 文件过期，需要同步
+        try:
+            mtime = os.path.getmtime(data_path)
+            if time.time() - mtime > DataService.SYNC_INTERVAL:
+                return True, "🔄 数据已过期，准备自动同步..."
+        except OSError:
+            return True, "⚠️ 读取文件状态失败，准备重试..."
             
         return False, ""
 
-        # return True,"测试..."
+    @staticmethod
+    def perform_sync(deep_sync=True):
+        """执行同步操作 (代理到 bgm_service)"""
+        return bgm_service.run_sync(deep_sync=deep_sync)
 
     @staticmethod
-    def perform_sync():
-        """执行同步操作"""
-        return sync_bangumi_to_local()
-
-    @staticmethod
-    def load_and_filter_memory():
+    def load_and_filter_memory() -> List[Dict[str, Any]]:
         """
         核心数据清洗逻辑：
-        读取文件 -> 剔除已看/抛弃/低分 -> 返回适合 LLM 的 List
+        为 LLM 的 [CHAT] 模式准备“待看/在看”清单。
+        逻辑：
+        1. 读取全量数据
+        2. 剔除已看(watched)/抛弃(dropped) -> 剩下的就是 Wish/Watching/OnHold
+        3. 剔除低分垃圾作
+        4. 字段瘦身，减少 Token 消耗
         """
-        if not os.path.exists(DATA_FILE):
-            return []
-
-        try:
-            with open(DATA_FILE, "r", encoding='utf-8') as f:
-                data = json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
+        # 直接利用 Service 读取，无需自己 open file
+        all_records = bgm_service.load_local_records()
+        if not all_records:
             return []
 
         valid_candidates = []
-        for item in data:
+        
+        for item in all_records:
             status = item.get('status')
             score = item.get('score', 0)
 
-            # 1. 剔除已看和抛弃
+            # 1. 过滤状态: 只保留 在看(3), 想看(1), 搁置(4)
+            #    原逻辑是剔除 watched/dropped，效果一样
             if status in ['watched', 'dropped']:
                 continue
             
-            # 2. 剔除低分 (除非是想看 wish 且还没分)
+            # 2. 剔除已评分且分低的 (可能是搁置的烂片)
+            #    注意：score 为 0 表示未评分 (通常是新番或想看)
             if score > 0 and score < 6.0:
                 continue
 
-            # 3. 字段瘦身
+            # 3. 字段瘦身 (只保留 LLM 需要的核心信息)
             valid_candidates.append({
                 "title": item['title'],
                 "score": item['score'],
-                "status": item['status'],
-                "tags": item.get('tags', [])[:3],
-                "summary": item.get('summary', '')[:80]
+                "status": item['status'], # watching / wish / on_hold
+                "tags": item.get('tags', [])[:3], # 只取前3个标签
+                "summary": (item.get('summary') or '')[:100] # 限制简介长度
             })
 
-        # 排序优化：优先展示 'watching' 和 'on_hold'
-        valid_candidates.sort(key=lambda x: 0 if x['status'] in ['watching', 'on_hold'] else 1)
+        # 4. 排序优化：优先展示 'watching'(在看) 和 'on_hold'(搁置)
+        #    让 LLM 优先聊这些，而不是沉在底下的几千个 'wish'
+        status_priority = {'watching': 0, 'on_hold': 1, 'wish': 2}
+        valid_candidates.sort(key=lambda x: status_priority.get(x['status'], 99))
         
-        # 限制数量防止 Token 爆炸
+        # 5. 截断：最多返回前 40 条，防止 System Prompt 过长
         return valid_candidates[:40]
 
+
 class LLMService:
-    def __init__(self, api_key, base_url="https://api.deepseek.com"):
+    """
+    LLM 交互服务：负责组装 Prompt 并调用 OpenAI 兼容接口
+    """
+    def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com"):
         self.client = OpenAI(api_key=api_key, base_url=base_url)
 
-    def get_streaming_response(self, user_query, history_messages, memory_data):
-        """
-        组装 Prompt 并发起流式请求
-        """
-        # 1. 准备 System Prompt
+    def _build_system_prompt(self, memory_data: List[Dict]) -> str:
+        """内部方法：构建动态 System Prompt"""
+        
+        # 1. 准备参数
         now_str = datetime.datetime.now().strftime("%Y年%m月%d日 %A")
         memory_str = json.dumps(memory_data, ensure_ascii=False)
-        sys_content = get_system_prompt(now_str, memory_str)
+        
+        # 2. 🟢 从配置模板加载并填充
+        try:
+            return TEMPLATES["chat_system"].format(
+                now_str=now_str, 
+                memory_str=memory_str
+            )
+        except KeyError:
+            # 兜底：万一配置文件里没写
+            return f"你是一个二次元助手。当前时间: {now_str}。请根据用户数据回答。"
 
-        # 2. 组装消息链
-        messages = [{"role": "system", "content": sys_content}] + \
-                   history_messages + \
-                   [{"role": "user", "content": user_query}]
+    def get_streaming_response(self, user_query: str, history_messages: List[Dict], memory_data: List[Dict]):
+        """
+        组装 Prompt 并发起流式请求
+        Args:
+            user_query: 用户最新输入
+            history_messages: 上下文历史 [{"role":..., "content":...}]
+            memory_data: 由 DataService 清洗过的上下文数据
+        """
+        # 1. 动态生成 System Prompt
+        sys_content = self._build_system_prompt(memory_data)
+
+        # 2. 组装消息链 (System -> History -> User)
+        # 注意：这里我们不仅包含历史，还把 System Prompt 放在最前面
+        messages = [{"role": "system", "content": sys_content}]
+        
+        # 过滤 history 中的非法字段 (Streamlit 的 session state 可能包含额外字段)
+        for msg in history_messages:
+            if msg.get("role") in ["user", "assistant"]:
+                messages.append({
+                    "role": msg["role"], 
+                    "content": str(msg["content"])
+                })
+        
+        messages.append({"role": "user", "content": user_query})
 
         # 3. 发起请求
-        return self.client.chat.completions.create(
-            model="deepseek-chat",
-            messages=messages,
-            temperature=1.3,
-            stream=True
-        )
+        try:
+            return self.client.chat.completions.create(
+                model="deepseek-chat",
+                messages=messages,
+                temperature=1.3, # 稍微高一点的温度，让闲聊更有趣
+                stream=True,
+                timeout=30
+            )
+        except Exception as e:
+            # 简单的错误处理生成器，防止前端崩溃
+            def error_gen():
+                yield type('obj', (object,), {'choices': [type('obj', (object,), {'delta': type('obj', (object,), {'content': f"❌ 连接 LLM 失败: {e}"})})]})
+            return error_gen()
