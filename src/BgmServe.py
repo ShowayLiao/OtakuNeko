@@ -41,19 +41,46 @@ class BangumiService:
 
         # 加载凭证
         self.access_token = os.getenv("BGM_ACCESS_TOKEN")
-        self.username = os.getenv("BGM_USERNAME")
+        # 1. 获取原始输入 (可能是中文昵称，也可能是 ID)
+        raw_username = os.getenv("BGM_USERNAME")
         
-        # Validate credentials
-        if not self.username or not self.username.strip():
-            logger.warning("Bangumi username is not configured")
-        
-        # 初始化网络会话 (带重试机制)
+        # 2. 初始化 Session
         self.session = self._init_session()
-        self._local_db_cache: Optional[Dict[str, Dict]] = None  # 本地数据缓存，用于搜索加速
+        self._local_db_cache: Optional[Dict[str, Dict]] = None
+
+        # 3. 🛡️ 严格校验用户名 (核心修改)
+        if self._validate_username(raw_username):
+            self.username = raw_username
+            print(f"✅ 用户 ID 格式正确: {self.username}")
+        else:
+            self.username = None
+            # 这里的提示要足够明显，告诉用户为什么错了
+            if raw_username:
+                print(f"❌ 错误: 用户名 '{raw_username}' 格式不正确！")
+                print("   请勿填入【中文昵称】。")
+                print("   请填入 Bangumi 个人主页 URL 末尾的【数字 ID】或【英文 ID】。")
+                print("   (例如: https://bgm.tv/user/123456 -> 填 123456)")
         
         # Circuit breaker state
         self.failure_count = 0
         self.last_failure_time = 0
+
+    def _validate_username(self, name: str) -> bool:
+        """
+        验证是否为合法的 User ID
+        合法标准: 仅包含 字母、数字、下划线(_)、短横线(-)
+        """
+        import re
+        if not name:
+            return False
+            
+        # 正则：匹配纯 ASCII 字符 (排除中文和特殊符号)
+        # ^[a-zA-Z0-9_-]+$ 表示从头到尾只能有这些字符
+        pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
+        
+        if pattern.match(name):
+            return True
+        return False
 
     def _init_session(self) -> requests.Session:
         """初始化带重试机制的 Session"""

@@ -179,10 +179,11 @@ class RecommendAgent(BaseAgent):
                 
                 # 辅助函数：统一处理 item 格式
                 def normalize_item(raw_item, default_type):
+                    # print(raw_item)
                     if isinstance(raw_item, dict):
                         return {
                             "title": raw_item.get("title", "Unknown"),
-                            "comment": raw_item.get("comment", ""), # ✅ 确保获取 comment
+                            "comment": raw_item.get("reason", ""), # ✅ 确保获取 comment
                             "type": default_type
                         }
                     else:

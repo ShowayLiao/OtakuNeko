@@ -142,7 +142,7 @@ TEMPLATES = {
         }},
         "Anime_tag": {{
                 "tag": ["核心成分1","核心成分2","核心成分3"],
-                "comment": "简短深刻的一句话原因"
+                "comment": "简短深刻的一句话原因，不要掺杂emoji"
         }},
         "comment_tags": ["称号"],
         "analysis": "你的深度分析文本..."
@@ -182,9 +182,9 @@ TEMPLATES = {
     # Output JSON Only 仅按照下面的json格式输出，写原始名字，不要带书名号！
     Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
-        "reason": "...",
-        "backlog": [...],
-        "new_rec": [...]
+        "reason": "深度分析的推荐理由",
+        "backlog": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }},
+        "new_rec": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }}
     }}
     """,
     "year_report_analysis": """

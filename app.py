@@ -117,7 +117,7 @@ def configure_api_key_dialog():
         new_user = st.text_input("Bangumi 用户名 (必填，如果是中文请填入id数字)", value=os.getenv("BGM_USERNAME", ""), placeholder="用于同步你的动画收藏")
         new_key_bgm = st.text_input("Bangumi Access Token (可选)", value=os.getenv("BGM_ACCESS_TOKEN", ""), type="password", help="如果你的收藏是私密的，则必须提供此项。")
     
-    if st.button("💾 保存并重启"):
+    if st.button("💾 保存(重启生效)"):
         # Validate required fields
         if not new_key_deepseek.strip() and not new_key_custom.strip():
             st.error("至少需要配置一个 AI 服务的 API Key")
