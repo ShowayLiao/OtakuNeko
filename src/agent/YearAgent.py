@@ -41,6 +41,7 @@ class YearAgent(ProfileAgent):
 
         # --- 2. 准备 Prompt & System Prompt (不变) ---
         persona = ROLES.get(style, ROLES["cat"])
+        print("Year Report Persona:", persona)
         try:
             user_prompt = TEMPLATES["year_report_analysis"].format(
                 role_desc=persona["description"],
@@ -49,6 +50,7 @@ class YearAgent(ProfileAgent):
                 tone_req=persona["tone_requirements"],
                 keywords_list=str(keywords_list)
             )
+
         except KeyError as e:
             st.error(f"配置错误: {e}")
             return "System Error"

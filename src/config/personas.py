@@ -193,6 +193,8 @@ TEMPLATES = {
     # Keywords Pool (Reference for tone/tags):
     {keywords_list}
 
+    # 
+
     # 🎯 Mission:
     你现在是【2025 年度动画赏】的首席大数据评审官。请基于观影数据，进行多维度的“成分审计”。
     你的任务是挖掘数据背后的“槽点”和“真爱”，并输出一份包含**结构化统计**和**深度文本分析**的 JSON。
@@ -211,6 +213,9 @@ TEMPLATES = {
 
     # Phase 3: 撰写分析报告 (Text Generation)
     请撰写一段风格独特的年度总结，必须包含对上述统计结果（CV、月份、公司）的犀利点评。
+
+    # 语言风格
+    - 请遵循以下风格要求：{tone_req}
 
     # Output Format (Modified JSON Structure):
     Strict output rules: The output MUST be valid standard JSON. Use ASCII quotes.

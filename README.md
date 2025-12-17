@@ -91,8 +91,8 @@ Run.bat
 ```
 > 🎉 **成功**：程序将在后台静默运行，并自动在浏览器打开 `http://localhost:8501`。
 ### 3. 配置 API Key
-在弹出的框里，填入你的 DeepSeek API Key（[点击获取](https://platform.deepseek.com/)）（目前仅支持OpenAI接口的模型），Bungumi token（[点击获取](https://next.bgm.tv/demo/access-token)），Bungumi的用户名。
-> ⚠️deepseek api需要付费，请自行斟酌，bungumi api是用于获取封面使用。
+在弹出的框里，填入你的 DeepSeek API Key（[点击获取](https://platform.deepseek.com/)）（目前仅支持OpenAI接口的模型），Bungumi token（非必要）（[点击获取](https://next.bgm.tv/demo/access-token)），Bungumi的用户名。
+> ⚠️deepseek api需要付费，请自行斟酌。
 
 <div align="center">
     <img src="asset/api.png" width="800" alt="Dashboard Preview">
