@@ -369,7 +369,7 @@ for msg in st.session_state.messages:
 
 # 4.2 处理底部输入框
 # ⚠️ 注意：这里只负责接收输入并追加到历史，不负责处理。处理逻辑在下面统一进行。
-if user_input := st.chat_input("输入'生成我的画像'，或'推荐几部番'..."):
+if user_input := st.chat_input("输入'鉴别成分'，或'推荐几部番'..."):
     st.session_state.messages.append({"role": "user", "content": user_input})
     st.rerun() # 强制刷新，交由下面的逻辑处理
 

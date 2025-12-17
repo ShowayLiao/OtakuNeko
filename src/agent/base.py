@@ -204,9 +204,15 @@ class BaseAgent:
     # 🎨 通用绘图组件 (Wrapper)
     # ==========================================================
 
-    def draw_grid_image(self, items_data, output_filename="grid_output.png", cols=5, title_text="OtakuNeko · 成分鉴定", subtitle_text=None):
+    def draw_grid_image(self, 
+                        items_data, 
+                        output_filename="grid_output.png", 
+                        cols=5, title_text="OtakuNeko · 成分鉴定", 
+                        subtitle_text=None,
+                        user_name = "None",
+                        **kwargs):
         """A wrapper around the draw_grid_image utility."""
-        return draw_grid_image(items_data, output_filename, cols, title_text, subtitle_text, self.font_path)
+        return draw_grid_image(items_data, output_filename, cols, title_text, subtitle_text, self.font_path,user_name, **kwargs)
     # ==========================================================
     def plot_radar_chart(self, data: dict, title: str = "Radar Chart", output_path: str = "radar_chart.png"):
         from src.agent.drawing import plot_radar_chart

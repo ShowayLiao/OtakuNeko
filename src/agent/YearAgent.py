@@ -201,7 +201,8 @@ class YearAgent(ProfileAgent):
                     output_filename="year_report_2025.png",
                     cols=4, 
                     title_text="OtakuNeko · 2025年度动画认证：",
-                    subtitle_text=f"{user_stats.get('comment_tags', ['2025年度成分鉴定'])[0]}：{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[0]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[1]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[2]}"
+                    subtitle_text=f"{user_stats.get('comment_tags', ['2025年度成分鉴定'])[0]}：{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[0]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[1]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[2]}",
+                    user_name=bgm_service.username
                 )
                 status.update(label="✅ 年度总结生成完毕", state="complete", expanded=False)
 

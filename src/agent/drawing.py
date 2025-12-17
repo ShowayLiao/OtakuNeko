@@ -1,168 +1,241 @@
-# src/utils/drawing.py
 import os
+import io
 import textwrap
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+import plotly.graph_objects as go
 from src.BgmServe import bgm_service
+import streamlit as st
 
-def draw_grid_image(items_data, output_filename="grid_output.png", cols=5, title_text="OtakuNeko · 成分鉴定", subtitle_text=None, font_path="./font/AlibabaPuHuiTi-3-65-Medium.ttf"):
-    """
-    🎨 Standalone utility to draw a grid image of anime cards.
-    """
-    print(f"🎨 [Drawing Util] 开始绘制图片: {title_text} | {subtitle_text}...")
+# ==========================================
+# 🔌 图表生成器 (Plotly -> PIL)
+# ==========================================
 
-    # --- 1. 基础配置 ---
+def _generate_radar_pil(radar_data, size=(400, 350)):
+    """生成静态雷达图"""
+    if not radar_data: return None
+    try:
+        categories = list(radar_data.keys()) + [list(radar_data.keys())[0]]
+        values = list(radar_data.values()) + [list(radar_data.values())[0]]
+
+        fig = go.Figure(go.Scatterpolar(
+            r=values, theta=categories, fill='toself',
+            line_color='#FF4B4B', fillcolor='rgba(255, 75, 75, 0.2)',
+            marker=dict(size=8, color='#FF4B4B')
+        ))
+        fig.update_layout(
+            polar=dict(
+                radialaxis=dict(visible=True, range=[0, 100], showticklabels=False, gridcolor="rgba(180,180,180,0.3)"),
+                angularaxis=dict(tickfont=dict(size=16, color="#333"), rotation=90, direction="clockwise")
+            ),
+            showlegend=False, 
+            # 🔧 调整边距防止文字切边
+            margin=dict(l=60, r=60, t=50, b=50),
+            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+            width=size[0], height=size[1]
+        )
+        
+        img_bytes = fig.to_image(format="png", engine="kaleido", scale=2)
+        img = Image.open(io.BytesIO(img_bytes))
+        img.thumbnail(size, Image.Resampling.LANCZOS)
+        return img
+    except Exception as e:
+        print(f"❌ 雷达图生成失败: {e}")
+        return None
+
+def _generate_pie_pil(comp_data, size=(400, 350)):
+    """
+    生成赛博风格甜甜圈饼图
+    """
+    if not comp_data: return None
+
+    labels = [item.get('label', '?') for item in comp_data]
+    values = [item.get('value', 0) for item in comp_data]
+    colors = [item.get('color', '#888888') for item in comp_data]
+
+    fig = go.Figure(data=[go.Pie(
+        labels=labels, values=values,
+        marker=dict(colors=colors, line=dict(color='#FFF', width=2)),
+        hole=0.5,
+        textinfo='label+percent',
+        textposition='outside',   
+        textfont=dict(size=14, color='#333'), # 字体稍微加大
+        showlegend=False
+    )])
+
+    fig.update_layout(
+        # 🔧 核心修复：大幅增加边距，给 outside 的文字留出空间
+        margin=dict(l=80, r=80, t=50, b=50),
+        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+        width=size[0], height=size[1]
+    )
+    
+    try:
+        img_bytes = fig.to_image(format="png", engine="kaleido", scale=2)
+        img = Image.open(io.BytesIO(img_bytes))
+        img.thumbnail(size, Image.Resampling.LANCZOS)
+        return img
+    except Exception as e:
+        print(f"❌ 饼图生成失败: {e}")
+        return None
+
+# ==========================================
+# 🎨 主绘图逻辑
+# ==========================================
+
+def draw_grid_image(items_data, output_filename="report.png", cols=4, 
+                   title_text="OtakuNeko · 年度报告", subtitle_text=None, 
+                   font_path="./font/AlibabaPuHuiTi-3-65-Medium.ttf",
+                   user_name="None",
+                   **kwargs):
+    """
+    主绘图函数
+    """
+    
+    # 1. 提取外挂数据
+    radar_data = kwargs.get('radar_data')
+    comp_data = kwargs.get('composition_data')
+    
+    has_dashboard = bool(radar_data or comp_data)
+    print(f"🎨 [Drawing] 绘制任务: {title_text} (含仪表盘: {has_dashboard})")
+
+    # --- 基础配置 ---
     cell_w, cell_h = 220, 380
-    margin, card_radius = 30, 12
+    margin = 40
     footer_h = 80
+    dashboard_h = 430 if has_dashboard else 0
 
-    # --- 颜色配置 ---
-    bg_color = (246, 247, 249)
-    card_bg_color = (255, 255, 255)
-    card_outline = (225, 225, 230)
-    title_color = (40, 40, 45)
-    subtitle_color = (100, 100, 110)
-    comment_color = (130, 130, 140)
-    sub_text_color = (160, 160, 170)
-    tag_bg_color = (235, 245, 255)
-    tag_text_color = (0, 100, 200)
-    accent_line_color = (50, 120, 255)
+    # 字体加载
+    def get_font(size):
+        try: return ImageFont.truetype(font_path, size)
+        except: return ImageFont.load_default()
 
-    # --- 字体加载 ---
-    def load_font(size):
-        try:
-            return ImageFont.truetype(font_path, size)
-        except IOError:
-            print(f"⚠️ Font not found at {font_path}, using default.")
-            return ImageFont.load_default()
+    font_h1 = get_font(56)
+    font_h2 = get_font(28)
+    font_card_t = get_font(20)
+    font_card_c = get_font(15) # 评论字体
+    font_tag = get_font(13)
 
-    font_title = load_font(46)
-    font_subtitle = load_font(26)
-    font_card_title = load_font(19)
-    font_comment = load_font(15)
-    font_tag = load_font(14)
-    font_footer = load_font(16)
-    font_placeholder = load_font(24)
-
-    # --- 布局计算 ---
-    total_w = cols * (cell_w + margin) + margin
-    header_top_padding = 50
-    title_line_h, subtitle_line_h = 60, 36
-
-    chars_per_line = int((total_w - margin * 2 - 20) / 48 * 1.8)
-    title_lines = textwrap.wrap(title_text, width=chars_per_line)
-
-    subtitle_lines = []
-    if subtitle_text:
-        sub_chars_per_line = int((total_w - margin * 2 - 20) / 26 * 1.9)
-        subtitle_lines = textwrap.wrap(subtitle_text, width=sub_chars_per_line)
-
-    header_content_h = len(title_lines) * title_line_h
-    if subtitle_lines:
-        header_content_h += 15 + (len(subtitle_lines) * subtitle_line_h)
-
-    header_h = header_top_padding + header_content_h + 30
-
-    # --- 准备画布 ---
+    # --- 计算总尺寸 ---
+    header_h = 160 + (40 if subtitle_text else 0)
+    
     count = len(items_data)
     rows = (count + cols - 1) // cols
-    total_h = header_h + rows * (cell_h + margin) + footer_h
+    grid_h = rows * (cell_h + margin)
 
-    canvas = Image.new('RGB', (total_w, total_h), bg_color)
+    total_w = max(1000, cols * (cell_w + margin) + margin)
+    total_h = header_h + dashboard_h + grid_h + footer_h + 30
+
+    canvas = Image.new('RGB', (total_w, total_h), (246, 247, 249))
     draw = ImageDraw.Draw(canvas)
 
-    # --- 绘制 Header ---
-    accent_h = header_content_h + 4
-    draw.rounded_rectangle([margin, header_top_padding + 8, margin + 6, header_top_padding + 8 + accent_h], radius=3, fill=accent_line_color)
+    # --- 1. 绘制 Header ---
+    curr_y = 60
+    draw.text((margin, curr_y), title_text, font=font_h1, fill=(40, 40, 45))
+    curr_y += 75
+    if subtitle_text:
+        draw.text((margin, curr_y), subtitle_text, font=font_h2, fill=(100, 100, 110))
+        curr_y += 50
+    
+    draw.line([(margin, curr_y), (total_w - margin, curr_y)], fill=(220, 220, 230), width=2)
+    curr_y += 30
 
-    curr_y = header_top_padding
-    for line in title_lines:
-        draw.text((margin + 25, curr_y), line, font=font_title, fill=title_color)
-        curr_y += title_line_h
+    # --- 2. 绘制 Dashboard ---
+    if has_dashboard:
+        dash_y = curr_y
+        half_w = (total_w - margin * 2) // 2
+        
+        # 左侧：雷达图
+        if radar_data:
+            draw.text((margin + 20, dash_y), "🧬 属性分析 / RADAR", font=font_h2, fill=(80, 80, 90))
+            radar_img = _generate_radar_pil(radar_data, size=(450, 380))
+            if radar_img:
+                offset_x = margin + (half_w - 450) // 2
+                canvas.paste(radar_img, (offset_x, dash_y + 40), mask=radar_img)
 
-    if subtitle_lines:
-        curr_y += 10
-        for line in subtitle_lines:
-            draw.text((margin + 25, curr_y), line, font=font_subtitle, fill=subtitle_color)
-            curr_y += subtitle_line_h
+        # 右侧：饼图
+        if comp_data:
+            right_start_x = margin + half_w 
+            draw.text((right_start_x + 20, dash_y), "🧪 核心成分 / COMPOSITION", font=font_h2, fill=(80, 80, 90))
+            
+            # 饼图尺寸稍作调整，配合 increased margin
+            pie_img = _generate_pie_pil(comp_data, size=(480, 380))
+            if pie_img:
+                offset_x = right_start_x + (half_w - 480) // 2
+                canvas.paste(pie_img, (offset_x, dash_y + 30), mask=pie_img)
 
-    # --- 循环绘制卡片 ---
+        curr_y += dashboard_h
+    
+    # --- 3. 绘制 Grid ---
     for i, item in enumerate(items_data):
-        cat = item.get('category') or item.get('type') or ""
-        title = str(item.get('title', 'Unknown'))
-        comment = str(item.get('comment') or "")
-        img_url = item.get('image')
-
         col, row = i % cols, i // cols
-        x, y = margin + col * (cell_w + margin), header_h + row * (cell_h + margin)
+        x = margin + col * (cell_w + margin)
+        y = curr_y + row * (cell_h + margin)
 
-        draw.rounded_rectangle([x, y, x + cell_w, y + cell_h], radius=card_radius, fill=card_bg_color, outline=card_outline, width=1)
-
-        img_area_h = 240
+        # 卡片背景
+        draw.rounded_rectangle([x, y, x + cell_w, y + cell_h], radius=12, fill=(255, 255, 255))
+        
+        # 图片
+        img_url = item.get('image')
         has_img = False
         if img_url:
-            dl_img = bgm_service.download_image(img_url)
-            if dl_img:
+            img = bgm_service.download_image(img_url)
+            if img:
                 try:
-                    dl_img = ImageOps.fit(dl_img, (cell_w, img_area_h), method=Image.LANCZOS)
-                    mask = Image.new("L", (cell_w, img_area_h), 0)
-                    m_draw = ImageDraw.Draw(mask)
-                    m_draw.rounded_rectangle([(0, 0), (cell_w, img_area_h + card_radius)], radius=card_radius, fill=255)
-                    canvas.paste(dl_img, (x, y), mask=mask)
+                    img = ImageOps.fit(img, (cell_w, 240), method=Image.LANCZOS)
+                    mask = Image.new("L", (cell_w, 240), 0)
+                    ImageDraw.Draw(mask).rounded_rectangle([(0,0), (cell_w, 240)], radius=12, fill=255)
+                    ImageDraw.Draw(mask).rectangle([(0, 230), (cell_w, 240)], fill=255) 
+                    canvas.paste(img, (x, y), mask=mask)
                     has_img = True
-                except Exception as e:
-                    print(f"Image processing error: {e}")
-
+                except: pass
+        
         if not has_img:
-            draw.rounded_rectangle([x, y, x + cell_w, y + img_area_h], radius=card_radius, fill=(235, 235, 240))
-            draw.rectangle([x, y + img_area_h - card_radius, x + cell_w, y + img_area_h], fill=(235, 235, 240))
-            draw.text((x + cell_w // 2 - 45, y + img_area_h // 2 - 12), "No Image", font=font_placeholder, fill=(180, 180, 190))
+            draw.rounded_rectangle([x, y, x + cell_w, y + 240], radius=12, fill=(240, 240, 245))
+            draw.text((x+60, y+110), "No Image", font=font_card_t, fill=(200, 200, 210))
 
+        # 标签
+        cat = item.get('category')
         if cat:
-            tag_txt = f"{cat}"
-            bbox = font_tag.getbbox(tag_txt)
-            tag_w, tag_h = bbox[2] - bbox[0] + 20, bbox[3] - bbox[1] + 10
-            draw.rounded_rectangle([x + 10, y + 10, x + 10 + tag_w, y + 10 + tag_h], radius=6, fill=tag_bg_color)
-            draw.text((x + 20, y + 15), tag_txt, font=font_tag, fill=tag_text_color)
+            cat_w = font_tag.getlength(cat) + 20
+            draw.rounded_rectangle([x+10, y+10, x+10+cat_w, y+34], radius=4, fill=(50, 50, 50))
+            draw.text((x+20, y+12), cat, font=font_tag, fill=(255, 255, 255))
 
-        text_start_x = x + 15
-        cursor_y = y + img_area_h + 12
-
-        title_wrapper = textwrap.wrap(title, width=11)
-        display_title = title_wrapper[:2]
-        if len(title_wrapper) > 2:
-            display_title[-1] += "..."
-
-        for line in display_title:
-            draw.text((text_start_x, cursor_y), line, font=font_card_title, fill=title_color)
-            cursor_y += 24
-
-        if comment and comment != "None":
-            cursor_y += 6
-            comment_wrapper = textwrap.wrap(comment, width=13)
-            display_comment = comment_wrapper[:2]
-            if len(comment_wrapper) > 2:
-                display_comment[-1] += "..."
-
-            for line in display_comment:
-                draw.text((text_start_x, cursor_y), line, font=font_comment, fill=comment_color)
-                cursor_y += 20
-
-    # --- Footer ---
-    footer_text = "OtakuNeko 基于AI以及动画记录生成，仅供娱乐"
-    f_bbox = font_footer.getbbox(footer_text)
-    f_x = (total_w - (f_bbox[2] - f_bbox[0])) // 2
+        # 标题 (限制长度)
+        text_y = y + 255
+        title = item.get('title', 'Unknown')
+        draw.text((x+15, text_y), title[:11] + ('...' if len(title)>11 else ''), font=font_card_t, fill=(40,40,40))
+        
+        # 评论/理由 (🔧 修复: 最多显示3行，超出省略)
+        comment = item.get('reason') or item.get('comment')
+        if comment:
+            # textwrap.wrap 自动按宽度换行
+            lines = textwrap.wrap(comment, width=13)
+            
+            # 截取前3行
+            if len(lines) > 3:
+                lines = lines[:3]
+                # 第三行末尾加省略号
+                if len(lines[-1]) > 0:
+                     lines[-1] = lines[-1][:-1] + "..."
+            
+            text_y += 30 # 标题下方的间距
+            for line in lines:
+                draw.text((x+15, text_y), line, font=font_card_c, fill=(120,120,130))
+                text_y += 20 # 行高
+    
+    # --- 4. Footer ---
+    f_text = f"Generated by OtakuNeko | User: {user_name} | 基于 Bangumi 数据驱动"
+    bbox = font_card_c.getbbox(f_text)
+    f_x = (total_w - (bbox[2] - bbox[0])) // 2
     f_y = total_h - footer_h + 30
+    draw.text((f_x, f_y), f_text, font=font_card_c, fill=(150, 150, 160))
 
-    draw.text((f_x, f_y), footer_text, font=font_footer, fill=sub_text_color)
-
+    # 保存
     save_path = os.path.join("data", output_filename)
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     canvas.save(save_path, quality=95)
     print(f"✅ 图片生成完毕: {save_path}")
     return save_path
-
-import streamlit as st
-import plotly.graph_objects as go
 
 def plot_radar_chart(radar_data):
     """
@@ -210,10 +283,10 @@ def plot_radar_chart(radar_data):
             )
         ),
         showlegend=False,
-        margin=dict(l=40, r=40, t=20, b=20), # 减少留白
+        margin=dict(l=40, r=40, t=40, b=40), # 减少留白
         paper_bgcolor="rgba(0,0,0,0)",       # 背景透明，适配深色/浅色模式
         plot_bgcolor="rgba(0,0,0,0)",
-        height=400  # 控制高度
+        height=500  # 控制高度
     )
 
     # 4. 在 Streamlit 中渲染

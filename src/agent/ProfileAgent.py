@@ -142,39 +142,7 @@ class ProfileAgent(BaseAgent):
 
                 # 假设 result_data 是 LLM 返回的完整 JSON
                 radar_data = result_data.get("radar", {})
-                
-                # # 显示分析文本
-                st.markdown(f"## 🐾 {persona['description']} 的二次元成分鉴定结果")
-
-                # 创建两列布局：左边放图表，右边放核心数据
-                col1, col2 = st.columns([1, 1])
-
-                title = tags[0] if tags else "无名路人"
-
-                with col1:
-                    st.markdown("### 🧬 属性雷达")
-                    # 调用上面的绘图函数
-                    self.plot_radar_chart(radar_data)
-
-                with col2:
-                    st.markdown(f"### 🏷️ **#{title}**")
-                    # 成分：用 caption 或普通文本，显得精致点
-                    # 核心指标：垂直居中展示
-                    st.write("") # 占个空行用来对齐
-                    st.metric(label="二次元浓度", value=f"{otaku_score}%")
-                    # 进度条紧跟在 metric 下面
-                    st.progress(otaku_score / 100)
-
-                    st.markdown(f"**🧪 精神成分**：")
-                    for item in comp_data:
-                        # 显示格式：纯爱战神 (40%)
-                        st.text(f"{item['label']} ({int(item['value']*100)}%)")
-                        st.progress(item['value'])
-
-                st.divider()
-
-                st.markdown("### **🔍 深度分析**")
-                st.write(analysis)  
+                  
 
                 # 1. 鲁棒性修正: 确保 raw_awards 是字典
                 llm_awards_source = {}
@@ -258,20 +226,57 @@ class ProfileAgent(BaseAgent):
                     })
 
             status.write("🖌️ 正在后台绘制高清长图...")
+
+
+            # 转换 mapping 为 list (格子数据
+
+            # 🔥 只要加两个参数，饼图和雷达图就有了！
             img_path = self.draw_grid_image(
-                items_data=card_items,
+                items_data=card_items, 
                 output_filename="profile_grid.png",
-                cols=5,
                 title_text="OtakuNeko · 二次元成分鉴定",
-                subtitle_text=f"{tags[0]}：{comp_str}" if tags else None
+                subtitle_text=f"{tags[0]}" if tags else "二次元爱好者",
+                user_name=bgm_service.username,
+                radar_data=result_data['radar'],          # 外挂雷达数据
+                composition_data=result_data['composition'], # 外挂饼图数据
             )
-            
             status.update(label="✅ 完成", state="complete", expanded=False)
 
         # 🟢 4. 关键点：直接调用基类的渲染方法
 
-        
-        
+        # # 显示分析文本
+        st.markdown(f"## 🐾 {persona['description']} 的二次元成分鉴定结果")
+
+        # 创建两列布局：左边放图表，右边放核心数据
+        col1, col2 = st.columns([1, 1])
+
+        title = tags[0] if tags else "无名路人"
+
+        with col1:
+            st.markdown("### 🧬 属性雷达")
+            # 调用上面的绘图函数
+            self.plot_radar_chart(radar_data)
+
+        with col2:
+            st.markdown(f"### 🏷️ **#{title}**")
+            # 成分：用 caption 或普通文本，显得精致点
+            # 核心指标：垂直居中展示
+            st.write("") # 占个空行用来对齐
+            st.metric(label="二次元浓度", value=f"{otaku_score}%")
+            # 进度条紧跟在 metric 下面
+            st.progress(otaku_score / 100)
+
+            st.markdown(f"**🧪 精神成分**：")
+            for item in comp_data:
+                # 显示格式：纯爱战神 (40%)
+                st.text(f"{item['label']} ({int(item['value']*100)}%)")
+                st.progress(item['value'])
+
+        st.divider()
+
+        st.markdown("### **🔍 深度分析**")
+        st.write(analysis)
+
         if card_items:
             # 显示 HTML 卡片网格 (交互式)
             st.divider()
@@ -290,4 +295,4 @@ class ProfileAgent(BaseAgent):
                         use_container_width=True
                     )
         
-        return final_text
+        return analysis

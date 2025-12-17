@@ -185,7 +185,7 @@ TEMPLATES = {
             {{ "label": "成分B (如: 胃药鉴赏家)", "value": 0.3, "color": "#4ECDC4" }},
             ... (总和为 1.0)
         ],
-        "tags": ["称号1 (如: 赛博案底)", "称号2","称号3"],
+        "tags": ["称号1 (如: 扭曲百合厨)", "称号2（如：异世界泥头车）","称号3（如：京阿尼狂热粉）"],
         "analysis": "你的深度分析文本..."
     }}
     """,
@@ -224,8 +224,8 @@ TEMPLATES = {
     Strict output rules: The output MUST be valid standard JSON. Do NOT use Chinese full-width quotes (like “ ”) for JSON keys or values. Use standard ASCII quotes (") only.
     {{
         "reason": "深度分析的推荐理由",
-        "backlog": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }},
-        "new_rec": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }}
+        "backlog": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词，30字内" }},
+        "new_rec": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词，30字内" }}
     }}
     """,
     "year_report_analysis": """
@@ -281,7 +281,7 @@ TEMPLATES = {
             "comment_tags": ["年度称号"] 
         }},
         "awards_mapping": {{ 
-            "奖项ID": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词" }},
+            "奖项ID": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词，30字内" }},
         }},
         "analysis_report": {{
             "title": "报告的大标题（如：2025年度·异世界失格者报告）",
