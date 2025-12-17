@@ -160,3 +160,62 @@ def draw_grid_image(items_data, output_filename="grid_output.png", cols=5, title
     canvas.save(save_path, quality=95)
     print(f"✅ 图片生成完毕: {save_path}")
     return save_path
+
+import streamlit as st
+import plotly.graph_objects as go
+
+def plot_radar_chart(radar_data):
+    """
+    绘制六维雷达图
+    :param radar_data: 字典格式，例如 {"Hardcore": 80, "Love": 90...}
+    """
+    if not radar_data:
+        st.warning("暂无雷达数据")
+        return
+
+    # 1. 数据预处理
+    categories = list(radar_data.keys())
+    values = list(radar_data.values())
+
+    # ⚠️ 关键步骤：为了让线条闭合，必须把第一个点重复拼接到最后
+    categories.append(categories[0])
+    values.append(values[0])
+
+    # 2. 创建 Plotly 图形
+    fig = go.Figure()
+
+    fig.add_trace(go.Scatterpolar(
+        r=values,
+        theta=categories,
+        fill='toself',          # 填充区域
+        name='Otaku Stats',
+        line_color='#FF4B4B',   # 线条颜色 (Streamlit 红，或者换成赛博紫 #9D00FF)
+        fillcolor='rgba(255, 75, 75, 0.2)', # 半透明填充
+        marker=dict(size=8)
+    ))
+
+    # 3. 样式美化 (去除去多余的网格线，使其更清爽)
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100], # 固定量程 0-100
+                tickfont=dict(size=10, color="gray"), # 刻度字体
+                gridcolor="rgba(128,128,128,0.2)",    # 网格颜色淡化
+            ),
+            angularaxis=dict(
+                tickfont=dict(size=14, color="white" if st.get_option("theme.base")=="dark" else "black"),
+                rotation=90, # 旋转一下，让第一个属性在正上方
+                direction="clockwise"
+            )
+        ),
+        showlegend=False,
+        margin=dict(l=40, r=40, t=20, b=20), # 减少留白
+        paper_bgcolor="rgba(0,0,0,0)",       # 背景透明，适配深色/浅色模式
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=400  # 控制高度
+    )
+
+    # 4. 在 Streamlit 中渲染
+    # use_container_width=True 让图表自适应列宽
+    st.plotly_chart(fig, use_container_width=True)

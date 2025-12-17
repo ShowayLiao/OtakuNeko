@@ -40,7 +40,7 @@ class YearAgent(ProfileAgent):
 
         # --- 2. 准备 Prompt & System Prompt (不变) ---
         persona = ROLES.get(style, ROLES["cat"])
-        print("Year Report Persona:", persona)
+        # print("Year Report Persona:", persona)
         try:
             user_prompt = TEMPLATES["year_report_analysis"].format(
                 role_desc=persona["description"],
