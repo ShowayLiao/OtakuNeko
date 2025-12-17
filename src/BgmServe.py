@@ -5,11 +5,16 @@ import requests
 import traceback
 import urllib.parse
 import io
+import logging
 from typing import Dict, List, Optional, Tuple, Any
 from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from PIL import Image
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # 加载环境变量
 load_dotenv()
@@ -25,6 +30,10 @@ class BangumiService:
     DATA_FILE = "bangumi_full_records.json"
     STATUS_MAP = {1: "wish", 2: "watched", 3: "watching", 4: "on_hold", 5: "dropped"}
     
+    # Circuit breaker constants
+    MAX_FAILURES = 5  # 最大连续失败次数
+    RESET_TIMEOUT = 300  # 断路器重置时间 (5分钟)
+    
     def __init__(self):
         # 初始化路径
         self.data_path = os.path.join(self.DATA_DIR, self.DATA_FILE)
@@ -34,39 +43,101 @@ class BangumiService:
         self.access_token = os.getenv("BGM_ACCESS_TOKEN")
         self.username = os.getenv("BGM_USERNAME")
         
+        # Validate credentials
+        if not self.username or not self.username.strip():
+            logger.warning("Bangumi username is not configured")
+        
         # 初始化网络会话 (带重试机制)
         self.session = self._init_session()
         self._local_db_cache: Optional[Dict[str, Dict]] = None  # 本地数据缓存，用于搜索加速
+        
+        # Circuit breaker state
+        self.failure_count = 0
+        self.last_failure_time = 0
 
     def _init_session(self) -> requests.Session:
         """初始化带重试机制的 Session"""
         session = requests.Session()
         retry_strategy = Retry(
-            total=3,  # 最大重试次数
-            backoff_factor=1,  # 重试间隔
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS"]
+            total=5,  # 增加重试次数
+            backoff_factor=2,  # 增加重试间隔 (指数退避)
+            status_forcelist=[429, 500, 502, 503, 504, 520, 521, 522, 523, 524],  # 增加更多错误码
+            allowed_methods=["HEAD", "GET", "POST", "PUT", "DELETE", "OPTIONS", "TRACE"],
+            raise_on_status=False  # 不立即抛出异常，允许重试
         )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
+        adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=20)
         session.mount("https://", adapter)
         session.mount("http://", adapter)
         
-        # --- 修改点开始 ---
-        # 1. 设置规范的 User-Agent (这是无 Token 访问的关键)
-        # 格式建议：项目名/版本 (联系方式或Github地址)
         base_headers = {
             "User-Agent": "OtakuNeko/1.0 (https://github.com/ShowayLiao/OtakuNeko)", 
-            "Accept": "application/json"
+            "Accept": "application/json",
+            "Connection": "keep-alive",
+            "Accept-Encoding": "gzip, deflate"
         }
         
         # 2. 只有当 Token 存在且不为空时，才添加 Authorization
         if self.access_token and self.access_token.strip():
-            base_headers["Authorization"] = f"Bearer {self.access_token}"
+            base_headers['Authorization'] = f'Bearer {self.access_token}'
         
         session.headers.update(base_headers)
-        # --- 修改点结束 ---
-        
         return session
+
+    def _check_circuit_breaker(self) -> bool:
+        """检查断路器状态"""
+        current_time = time.time()
+        # 如果断路器打开且未到重置时间，则拒绝请求
+        if self.failure_count >= self.MAX_FAILURES:
+            if current_time - self.last_failure_time < self.RESET_TIMEOUT:
+                return False  # 断路器打开，拒绝请求
+            else:
+                # 重置断路器
+                self.failure_count = 0
+                self.last_failure_time = 0
+                logger.info("Circuit breaker reset")
+                print("✅ 断路器已重置")
+        return True  # 允许请求
+
+    def _record_failure(self):
+        """记录失败"""
+        self.failure_count += 1
+        self.last_failure_time = time.time()
+        if self.failure_count >= self.MAX_FAILURES:
+            logger.error("Circuit breaker opened due to consecutive failures")
+            print("🚨 断路器已打开，暂停所有网络请求")
+
+    def _record_success(self):
+        """记录成功并重置失败计数"""
+        self.failure_count = 0
+        self.last_failure_time = 0
+
+    def _make_request(self, url: str, params: Optional[Dict] = None, timeout: int = 10) -> Optional[requests.Response]:
+        """通用请求方法"""
+        # 检查断路器
+        if not self._check_circuit_breaker():
+            logger.warning("Request rejected by circuit breaker")
+            print("⚠️ 请求被断路器拒绝，请稍后再试")
+            return None
+            
+        try:
+            resp = self.session.get(url, params=params, timeout=timeout)
+            self._record_success()
+            return resp
+        except requests.exceptions.Timeout:
+            logger.error(f"Network request timeout: {url}")
+            print(f"⏰ 网络请求超时: {url}")
+            self._record_failure()
+            return None
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Network connection error: {url}")
+            print(f"🔌 网络连接错误: {url}")
+            self._record_failure()
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Network request failed: {e}")
+            print(f"⚠️ 网络请求失败: {e}")
+            self._record_failure()
+            return None
 
     # ==========================
     # 💾 本地数据管理 (CRUD)
@@ -78,17 +149,35 @@ class BangumiService:
             return []
         try:
             with open(self.data_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
+                data = json.load(f)
+                # Validate that the data is a list
+                if not isinstance(data, list):
+                    logger.warning(f"⚠️ 本地数据格式异常，期望列表但得到 {type(data)}")
+                    print(f"⚠️ 本地数据格式异常，期望列表但得到 {type(data)}")
+                    return []
+                return data
+        except json.JSONDecodeError as e:
+            logger.error(f"⚠️ 本地数据JSON格式错误: {e}")
+            print(f"⚠️ 本地数据JSON格式错误: {e}")
+            return []
         except Exception as e:
+            logger.error(f"⚠️ 读取本地数据出错: {e}")
             print(f"⚠️ 读取本地数据出错: {e}")
             return []
 
     def save_records(self, records: List[Dict]):
         """保存到本地 JSON"""
+        # Validate input
+        if not isinstance(records, list):
+            logger.error(f"❌ 保存数据失败: 期望列表类型但得到 {type(records)}")
+            print(f"❌ 保存数据失败: 期望列表类型但得到 {type(records)}")
+            return
+            
         try:
             with open(self.data_path, 'w', encoding='utf-8') as f:
                 json.dump(records, f, ensure_ascii=False, indent=2)
         except Exception as e:
+            logger.error(f"❌ 保存数据失败: {e}")
             print(f"❌ 保存数据失败: {e}")
 
     # ==========================
@@ -101,14 +190,10 @@ class BangumiService:
             print("❌ 未配置 BGM_USERNAME，无法同步。")
             return []
 
-        # --- 新增提示逻辑 ---
         if not self.access_token:
             print(f"⚠️ 未检测到 Token，尝试以游客身份同步 {self.username} 的公开收藏...")
         else:
             print(f"📡 [Sync] 正在同步用户 {self.username} 的收藏...")
-        # ------------------
-
-        print(f"📡 [Sync] 正在同步用户 {self.username} 的收藏...")
         all_items = []
         limit = 50
         offset = 0
@@ -118,17 +203,36 @@ class BangumiService:
             params = {"subject_type": 2, "limit": limit, "offset": offset}
             
             try:
-                resp = self.session.get(url, params=params, timeout=15)
-                # --- 新增错误处理 ---
-                if resp.status_code == 401 or resp.status_code == 403:
-                    print(f"❌ 权限不足 (Code: {resp.status_code})。请检查：")
-                    print("   1. 用户名是否正确")
-                    print("   2. 该用户的收藏是否已设为'仅自己可见' (无Token无法读取私密收藏)")
+                resp = self._make_request(url, params=params, timeout=30)
+                if resp is None:
+                    # 请求被断路器拒绝或网络错误
                     break
-                # ------------------
+                    
+                if resp.status_code in [401, 403]:
+                    error_msg = f"❌ 权限不足 (Code: {resp.status_code})。请检查用户名是否正确，或该用户的收藏是否为私密（私密收藏需要提供 Access Token）。"
+                    logger.error(error_msg)
+                    print(error_msg)
+                    break
+                elif resp.status_code == 404:
+                    error_msg = f"❌ 用户 '{self.username}' 未找到 (Code: 404)。"
+                    logger.error(error_msg)
+                    print(error_msg)
+                    break
+                elif resp.status_code == 429:
+                    error_msg = f"⚠️ 请求频率过高 (Code: {resp.status_code})，稍后重试..."
+                    logger.warning(error_msg)
+                    print(error_msg)
+                    time.sleep(5)  # 等待更长时间
+                    continue
 
                 if resp.status_code != 200:
-                    print(f"⚠️ API 错误 Code: {resp.status_code}")
+                    error_msg = f"⚠️ API 错误 Code: {resp.status_code}"
+                    logger.warning(error_msg)
+                    print(error_msg)
+                    # 对于服务器错误，增加重试
+                    if resp.status_code >= 500:
+                        time.sleep(2 ** (offset // 50))  # 指数退避
+                        continue
                     break
                 
                 data = resp.json()
@@ -161,6 +265,7 @@ class BangumiService:
                 time.sleep(0.5)
 
             except Exception as e:
+                logger.error(f"Exception during fetch_user_collection: {e}")
                 traceback.print_exc()
                 break
         
@@ -173,15 +278,16 @@ class BangumiService:
         """
         result = {"director": "", "script": "", "studio": "", "cv": ""}
         
-        # 1. 获取 Infobox (制作信息)
+        # 1. 获取 Infobox (制作人员 + 声优)
         try:
             url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
-            resp = self.session.get(url, timeout=10)
-            if resp.status_code == 200:
+            resp = self._make_request(url, timeout=10)
+            if resp and resp.status_code == 200:
                 data = resp.json()
                 meta = self._parse_infobox(data.get('infobox', []))
                 result.update(meta)
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to fetch infobox for subject_id {subject_id}: {e}")
             pass
             
         time.sleep(0.5) # 稍微歇一下
@@ -189,8 +295,8 @@ class BangumiService:
         # 2. 获取 Character (声优)
         try:
             url_cv = f"https://api.bgm.tv/v0/subjects/{subject_id}/characters"
-            resp = self.session.get(url_cv, timeout=10)
-            if resp.status_code == 200:
+            resp = self._make_request(url_cv, timeout=10)
+            if resp and resp.status_code == 200:
                 cv_data = resp.json()
                 cv_list = []
                 for char in cv_data:
@@ -199,7 +305,8 @@ class BangumiService:
                         if actors:
                             cv_list.append(actors[0].get('name', ''))
                 result['cv'] = ", ".join(list(set(cv_list))[:5])
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to fetch character data for subject_id {subject_id}: {e}")
             pass
 
         return result
@@ -372,13 +479,14 @@ class BangumiService:
         """
         url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
         try:
-            resp = self.session.get(url, timeout=5)
-            if resp.status_code == 200:
+            resp = self._make_request(url, timeout=5)
+            if resp and resp.status_code == 200:
                 data = resp.json()
                 images = data.get('images') or {}
                 # 优先取 large，没有取 common
                 return images.get('large') or images.get('common') or ""
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to fetch image URL for subject_id {subject_id}: {e}")
             pass
         return ""
 
@@ -405,8 +513,8 @@ class BangumiService:
         url = f"https://api.bgm.tv/search/subject/{safe_kw}?type=2&responseGroup=small&max_results=1"
         
         try:
-            resp = self.session.get(url, timeout=8)
-            if resp.status_code == 200:
+            resp = self._make_request(url, timeout=8)
+            if resp and resp.status_code == 200:
                 data = resp.json()
                 if 'list' in data and data['list']:
                     first_result = data['list'][0]
@@ -416,7 +524,9 @@ class BangumiService:
                 else:
                     print(" ⚠️ 网络搜索未找到相关条目")
         except Exception as e:
-            print(f" ❌ 网络搜索 ID 失败: {e}")
+            error_msg = f" ❌ 网络搜索 ID 失败: {e}"
+            logger.error(error_msg)
+            print(error_msg)
             
         return None
 
@@ -440,13 +550,17 @@ class BangumiService:
         headers = {"User-Agent": "OtakuMate/1.0", "Accept": "application/json"}
         
         try:
-            resp = self.session.get(url, headers=headers, timeout=10)
-            if resp.status_code == 200:
+            resp = self._make_request(url, headers=headers, timeout=10)
+            if resp and resp.status_code == 200:
                 return resp.json()
             else:
-                print(f" ⚠️ 获取详情失败 Code: {resp.status_code}")
+                error_msg = f" ⚠️ 获取详情失败 Code: {resp.status_code if resp else 'N/A'}"
+                logger.warning(error_msg)
+                print(error_msg)
         except Exception as e:
-            print(f" ❌ 详情数据拉取异常: {e}")
+            error_msg = f" ❌ 详情数据拉取异常: {e}"
+            logger.error(error_msg)
+            print(error_msg)
             
         return None
 
@@ -500,10 +614,11 @@ class BangumiService:
         """
         if not url: return None
         try:
-            resp = self.session.get(url, timeout=15)
-            if resp.status_code == 200:
+            resp = self._make_request(url, timeout=15)
+            if resp and resp.status_code == 200:
                 return Image.open(io.BytesIO(resp.content))
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Failed to download image from {url}: {e}")
             pass
         return None
 
@@ -554,7 +669,9 @@ class BangumiService:
             return True, f"✅ 已补全: {title}"
             
         except Exception as e:
-            return False, f"❌ {title} 失败: {e}"
+            error_msg = f"❌ {title} 失败: {e}"
+            logger.error(error_msg)
+            return False, error_msg
         
     def extract_score(self, subject_data):
         if not subject_data: return 'N/A'

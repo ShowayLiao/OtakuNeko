@@ -4,24 +4,26 @@ from .base import BaseAgent
 from src.config.personas import TEMPLATES
 
 class IntentRouter(BaseAgent):
+    def __init__(self, llm_service):
+        super().__init__(llm_service)
+
     def classify(self, user_input):
         print(f"🧠 [Router] 收到指令: {user_input[:20]}...")
         
         # 从配置加载 Prompt
         system_prompt = TEMPLATES["router_system"]
         
+        # 🟢 使用基类的 run 方法，它会自动选择正确的模型
         try:
-            # 使用基类的 run 方法 (也可以直接用 self.client)
-            # 这里用 non-stream 模式，因为我们需要完整的 JSON
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
+            response = self.run(
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_input}
                 ],
                 temperature=0.1, # 路由需要精确，温度设低
                 response_format={"type": "json_object"},
-                timeout=10.0
+                stream=False,
+                timeout=10
             )
             
             content = response.choices[0].message.content

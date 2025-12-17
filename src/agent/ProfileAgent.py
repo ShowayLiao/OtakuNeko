@@ -10,8 +10,8 @@ from src.config.personas import ROLES, TEMPLATES
 import json_repair
 
 class ProfileAgent(BaseAgent):
-    def __init__(self, client):
-        super().__init__(client)
+    def __init__(self, llm_service):
+        super().__init__(llm_service)
         # 定义画像需要的20个维度
         self.categories = [
             "最治愈", "最搞笑", "最感动", "最热血", "最轻松",
@@ -107,7 +107,7 @@ class ProfileAgent(BaseAgent):
             # 调用基类 LLM
             raw_json_str = ""
             try:
-                stream = self.run(messages, temperature=1.2, stream=True,model="deepseek-reasoner")
+                stream = self.run(messages, temperature=1.2, stream=True, model=self.llm_service.reasoner_model)
                 status.write("🧠 正在深度思考...")
                 for chunk in stream:
                     if chunk.choices and chunk.choices[0].delta.content:
@@ -118,11 +118,14 @@ class ProfileAgent(BaseAgent):
 
             # (B) 解析 JSON
             try:
-                clean_json = raw_json_str.strip()
-                if clean_json.startswith("```json"): clean_json = clean_json[7:]
-                if clean_json.endswith("```"): clean_json = clean_json[:-3]
+                # Use robust JSON parsing
+                from src.data_processor import robust_json_parse
+                result_data = robust_json_parse(raw_json_str, {})
                 
-                result_data = json_repair.loads(raw_json_str)
+                if not result_data:
+                    st.error("AI 返回格式异常")
+                    return "生成失败"
+                    
                 mapping = result_data.get("mapping", {})
                 analysis = result_data.get("analysis", "")
                 comment = result_data.get("comment_tags", [""])[0]

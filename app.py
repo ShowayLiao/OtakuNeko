@@ -18,6 +18,10 @@ from src.BgmServe import bgm_service
 st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
 load_dotenv()
 
+# 确保核心数据目录存在
+if not os.path.exists("data"):
+    os.makedirs("data")
+
 # 🎨 注入全局 CSS (莫兰迪/不饱和风格)
 st.markdown("""
 <style>
@@ -58,102 +62,172 @@ if "messages" not in st.session_state:
 
 # --- 辅助函数：安全更新 .env 文件 ---
 
-def update_env_file(key, value):
-    """安全地更新 .env 文件中的变量"""
+def update_env_file(key: str, value: str):
+    """
+    更新 .env 文件中的键值对 (不存在则创建)
+    """
     env_path = ".env"
-    new_line = f'{key}="{value}"\n'
     
-    # 如果文件不存在，直接创建
-    if not os.path.exists(env_path):
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.write(new_line)
-        return
+    # 1. 读取现有内容
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
 
-    # 读取现有内容
-    with open(env_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    # 查找并替换
+    # 2. 查找并替换或追加
     found = False
-    with open(env_path, "w", encoding="utf-8") as f:
-        for line in lines:
-            if line.startswith(f"{key}="):
-                f.write(new_line)
-                found = True
-            else:
-                f.write(line)
-        # 如果没找到，追加到末尾
-        if not found:
-            f.write("\n" + new_line)
+    # Sanitize value for .env file (handle special characters)
+    sanitized_value = value.replace('"', '\\"') if '"' in value else value
+    new_line = f'{key}="{sanitized_value}"\n' if 'KEY' in key or 'TOKEN' in key else f'{key}={value}\n'
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = new_line
+            found = True
+            break
+    
+    if not found:
+        lines.append(new_line)
+
+    # 3. 写回文件
+    with open(env_path, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
 
 @st.dialog("🔑 配置 API Key")
 def configure_api_key_dialog():
     st.write("检测到本地缺少配置，或您请求修改 Key。")
     st.caption("Key 将被保存在本地 .env 文件中。")
     
-    # 预填当前已有的 Key (如果有)
-    current_key = os.getenv("DEEPSEEK_API_KEY", "")
-    new_key = st.text_input("DeepSeek API Key", value=current_key, type="password", help="输入 sk- 开头的密钥")
-    current_key_bgm = os.getenv("BGM_ACCESS_TOKEN", "")
-    new_key_bgm = st.text_input("（可选）Bangumi Access Token", value=current_key_bgm, type="password", help="（可选）输入你的 Bangumi Access Token")
-    user = os.getenv("BGM_USERNAME", "")
-    new_user = st.text_input("Bangumi 用户名", value=user, help="输入你的 Bangumi 用户名")
+    # 动态决定哪个展开
+    is_custom_default = st.session_state.get("provider", "DeepSeek") == "Custom"
+
+    with st.expander("DeepSeek (默认)", expanded=not is_custom_default):
+        new_key_deepseek = st.text_input("DeepSeek API Key", value=os.getenv("DEEPSEEK_API_KEY", ""), type="password")
+
+    with st.expander("自定义 OpenAI 兼容服务", expanded=is_custom_default):
+        new_base_url_custom = st.text_input("API Base URL", value=os.getenv("CUSTOM_API_BASE_URL", ""), placeholder="例如: https://api.moonshot.cn/v1")
+        new_key_custom = st.text_input("Custom API Key", value=os.getenv("CUSTOM_API_KEY", ""), type="password")
+        st.caption("请为自定义模型指定名称：")
+        col1, col2 = st.columns(2)
+        with col1:
+            new_model_chat = st.text_input("Chat Model Name", value=os.getenv("CUSTOM_MODEL_CHAT", ""), placeholder="e.g. moonshot-v1-8k")
+        with col2:
+            new_model_reasoner = st.text_input("Reasoner Model Name", value=os.getenv("CUSTOM_MODEL_REASONER", ""), placeholder="e.g. moonshot-v1-32k")
+
+    with st.expander("Bangumi 同步设置", expanded=False):
+        new_user = st.text_input("Bangumi 用户名 (必填)", value=os.getenv("BGM_USERNAME", ""), placeholder="用于同步你的动画收藏")
+        new_key_bgm = st.text_input("Bangumi Access Token (可选)", value=os.getenv("BGM_ACCESS_TOKEN", ""), type="password", help="如果你的收藏是私密的，则必须提供此项。")
     
     if st.button("💾 保存并重启"):
-        if new_key.strip():
-            # 1. 更新物理文件
-            update_env_file("DEEPSEEK_API_KEY", new_key.strip())
-            update_env_file("BGM_ACCESS_TOKEN", new_key_bgm.strip())
-            update_env_file("BGM_USERNAME", new_user.strip())
-            # 2. 更新当前环境变量 (无需重启即可生效，但为了刷新服务建议rerun)
-            os.environ["DEEPSEEK_API_KEY"] = new_key.strip()
-            os.environ["BGM_ACCESS_TOKEN"] = new_key_bgm.strip()
-            os.environ["BGM_USERNAME"] = new_user.strip()
-            st.success("配置已保存！")
-            time.sleep(1)
-            st.rerun()
-        else:
-            st.error("Key 不能为空")
+        # Validate required fields
+        if not new_key_deepseek.strip() and not new_key_custom.strip():
+            st.error("至少需要配置一个 AI 服务的 API Key")
+            return
+            
+        # Validate custom service fields if custom key is provided
+        if new_key_custom.strip():
+            if not new_base_url_custom.strip():
+                st.error("使用自定义服务时，API Base URL 不能为空")
+                return
+            if not new_model_chat.strip():
+                st.error("使用自定义服务时，Chat Model Name 不能为空")
+                return
+            if not new_model_reasoner.strip():
+                st.error("使用自定义服务时，Reasoner Model Name 不能为空")
+                return
+        
+        # Validate Bangumi username
+        if not new_user.strip():
+            st.error("Bangumi 用户名不能为空")
+            return
 
-# --- 2. 服务与 Agent 初始化 (修改版) ---
-load_dotenv(override=True) # 强制重载，确保读取最新修改
-api_key = os.getenv("DEEPSEEK_API_KEY")
-user = os.getenv("BGM_USERNAME")
+        # 1. 更新物理文件
+        update_env_file("DEEPSEEK_API_KEY", new_key_deepseek.strip())
+        update_env_file("CUSTOM_API_BASE_URL", new_base_url_custom.strip())
+        update_env_file("CUSTOM_API_KEY", new_key_custom.strip())
+        update_env_file("CUSTOM_MODEL_CHAT", new_model_chat.strip())
+        update_env_file("CUSTOM_MODEL_REASONER", new_model_reasoner.strip())
+        update_env_file("BGM_ACCESS_TOKEN", new_key_bgm.strip())
+        update_env_file("BGM_USERNAME", new_user.strip())
 
-# 逻辑：如果没有 Key，且并未在当前这轮交互中弹出过，则强制弹窗并停止后续运行
-if not api_key:
-    st.warning("⚠️ 未检测到 API Key，请在弹窗中配置...")
-    configure_api_key_dialog()
-    st.stop() # ⛔ 只有当没有 Key 时，才在这里停止代码继续向下执行
-
-# (原有的 init_services 保持不变，但去掉了之前的 st.error/st.stop)
-@st.cache_resource
-def init_services():
-    return LLMService(api_key=api_key)
-
-llm_service = init_services()
+        # 2. 更新当前环境变量 (无需重启即可生效，但为了刷新服务建议rerun)
+        os.environ["DEEPSEEK_API_KEY"] = new_key_deepseek.strip()
+        os.environ["CUSTOM_API_BASE_URL"] = new_base_url_custom.strip()
+        os.environ["CUSTOM_API_KEY"] = new_key_custom.strip()
+        os.environ["CUSTOM_MODEL_CHAT"] = new_model_chat.strip()
+        os.environ["CUSTOM_MODEL_REASONER"] = new_model_reasoner.strip()
+        os.environ["BGM_ACCESS_TOKEN"] = new_key_bgm.strip()
+        os.environ["BGM_USERNAME"] = new_user.strip()
+        st.success("配置已保存！")
+        time.sleep(1)
+        st.rerun()
 
 # --- 2. 服务与 Agent 初始化 ---
-api_key = os.getenv("DEEPSEEK_API_KEY")
-if not api_key:
-    st.error("❌ 缺少 API Key配置，请检查 .env 文件")
+load_dotenv(override=True) # 强制重载，确保读取最新修改
+
+# --- 智能 Provider 选择 ---
+
+# 1. 检测哪些 provider 有 key
+available_providers = []
+if os.getenv("DEEPSEEK_API_KEY"):
+    available_providers.append("DeepSeek")
+if os.getenv("CUSTOM_API_KEY"):
+    available_providers.append("Custom")
+
+# 2. 如果一个都没有，强制弹窗
+if not available_providers:
+    st.warning("⚠️ 未配置任何 AI 服务，请在弹窗中至少配置一个。")
+    configure_api_key_dialog()
     st.stop()
+
+# 3. 确定默认选择
+# 如果 session 里有，用 session 的；否则用列表里第一个
+default_provider_index = 0
+if "provider" in st.session_state and st.session_state.provider in available_providers:
+    default_provider_index = available_providers.index(st.session_state.provider)
+
+# 动态选择 Provider
+with st.sidebar:
+    st.header("🤖 AI 提供商")
+    selected_provider = st.selectbox(
+        "选择语言模型服务:",
+        options=available_providers,
+        index=default_provider_index,
+        label_visibility="collapsed"
+    )
+    st.session_state.provider = selected_provider # 将选择持久化到 session
+
+# 根据选择确定 API Key, Base URL 和模型名称
+if selected_provider == "Custom":
+    api_key = os.getenv("CUSTOM_API_KEY")
+    base_url = os.getenv("CUSTOM_API_BASE_URL", "https://api.openai.com/v1")
+    chat_model = os.getenv("CUSTOM_MODEL_CHAT", "gpt-3.5-turbo")
+    reasoner_model = os.getenv("CUSTOM_MODEL_REASONER", "gpt-4-turbo")
+else: # 默认为 DeepSeek
+    api_key = os.getenv("DEEPSEEK_API_KEY")
+    base_url = "https://api.deepseek.com"
+    chat_model = "deepseek-chat"
+    reasoner_model = "deepseek-reasoner"
 
 @st.cache_resource
 def init_services():
-    return LLMService(api_key=api_key)
+    return LLMService(
+        api_key=api_key, 
+        base_url=base_url, 
+        chat_model=chat_model, 
+        reasoner_model=reasoner_model
+    )
 
 llm_service = init_services()
 
 # 实例化 Agents
-router = IntentRouter(llm_service.client)
-profile_agent = ProfileAgent(llm_service.client)
-recommend_agent = RecommendAgent(llm_service.client)
-refiner_agent = RefinerAgent(llm_service.client)
+router = IntentRouter(llm_service)
+profile_agent = ProfileAgent(llm_service)
+recommend_agent = RecommendAgent(llm_service)
+refiner_agent = RefinerAgent(llm_service)
 
 # 注册插件
 active_plugins = [
-    YearReportPlugin(llm_service.client)
+    YearReportPlugin(llm_service)
 ]
 
 # 加载聊天所需的记忆数据 (缓存)
@@ -176,6 +250,9 @@ with st.sidebar:
             extract_recent_watched()
             status.update(label="✅ 全量更新完成", state="complete", expanded=False)
         get_cached_memory.clear()
+        DataService.invalidate_cache()  # Also invalidate the internal cache
+        from src.data_processor import clear_dataset_cache
+        clear_dataset_cache()  # Clear dataset cache
         st.success("所有数据已更新完毕！")
 
     with st.expander("🔧 高级维护", expanded=False):
@@ -208,10 +285,11 @@ with st.sidebar:
                 time.sleep(0.5) # 防频控
             
         get_cached_memory.clear()
+        DataService.invalidate_cache()  # Also invalidate the internal cache
         st.rerun()
     
     # === 向量库维护 ===
-
+    
     st.header("🧠 向量知识库", help="管理向量索引，用于提取推荐标签")
     if st.button("构建/更新索引"):
         with st.status("🚀 正在启动向量化引擎...", expanded=True) as status:
@@ -222,7 +300,7 @@ with st.sidebar:
             except Exception as e:
                 status.update(label="❌ 构建失败", state="error")
                 st.error(f"详情: {e}")
-
+    
     st.markdown("---")
 
     # === 助手设置 ===

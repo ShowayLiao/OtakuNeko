@@ -15,8 +15,8 @@ class RecommendAgent(BaseAgent):
     🕵️ 深度推荐 Agent (迁移融合版)
     集成特性：RAG检索 + 库存优先 + 评分过滤 + 状态变色龙(新推转重温) + 并发加速
     """
-    def __init__(self, client):
-        super().__init__(client)
+    def __init__(self, llm_service):
+        super().__init__(llm_service)
 
     def _get_exclusion_set(self):
         """
@@ -112,7 +112,7 @@ class RecommendAgent(BaseAgent):
         # 1. 准备数据
         exclude_ids, exclude_titles = self._get_exclusion_set()
         
-        # RAG
+        # RAG (Enabled)
         search_text = f"风格标签: {', '.join(tags)}。 用户描述: {user_query}"
         rag_history = vector_store.search(search_text, top_k=20)
         history_context_str = json.dumps(rag_history, ensure_ascii=False)
@@ -167,11 +167,14 @@ class RecommendAgent(BaseAgent):
             # (B) JSON 解析
             combined_items_request = []
             try:
-                clean_json = raw_json_str.strip()
-                if clean_json.startswith("```json"): clean_json = clean_json[7:]
-                if clean_json.endswith("```"): clean_json = clean_json[:-3]
+                # Use robust JSON parsing
+                from src.data_processor import robust_json_parse
+                result_data = robust_json_parse(raw_json_str, {})
                 
-                result_data = json_repair.loads(raw_json_str)
+                if not result_data:
+                    st.error("AI 返回格式异常")
+                    return raw_json_str
+                    
                 final_reason = result_data.get("reason", "推荐生成完毕。")
                 
                 # 辅助函数：统一处理 item 格式
@@ -198,8 +201,8 @@ class RecommendAgent(BaseAgent):
                 for item in result_data.get("new_rec", []):
                     combined_items_request.append(normalize_item(item, "新推"))
                     
-            except json.JSONDecodeError:
-                st.error("AI 返回格式异常")
+            except Exception as e:
+                st.error(f"JSON 解析失败: {e}")
                 return raw_json_str
 
             # (C) 抓取与过滤

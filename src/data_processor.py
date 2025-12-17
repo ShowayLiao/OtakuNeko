@@ -1,8 +1,54 @@
 # src/data_processor.py
 import json
 import os
+import time
+import json_repair
 from datetime import datetime, timedelta
 from src.BgmServe import bgm_service
+
+# Cache for categorized datasets
+_dataset_cache = {}
+_cache_ttl = 300  # 5 minutes cache TTL
+
+def robust_json_parse(json_str: str, default_value=None):
+    """
+    Robustly parse JSON string with multiple fallback strategies
+    
+    :param json_str: JSON string to parse
+    :param default_value: Default value to return if parsing fails
+    :return: Parsed JSON object or default_value
+    """
+    if not json_str or not isinstance(json_str, str):
+        return default_value
+    
+    try:
+        # Clean the JSON string
+        clean_json = json_str.strip()
+        
+        # Handle markdown code blocks
+        if "```json" in clean_json:
+            clean_json = clean_json.split("```json")[1].split("```")[0]
+        elif "```" in clean_json:
+            parts = clean_json.split("```")
+            if len(parts) >= 2:
+                clean_json = parts[1]
+        
+        # Remove leading/trailing markers
+        if clean_json.startswith("```json"):
+            clean_json = clean_json[7:]
+        if clean_json.endswith("```"):
+            clean_json = clean_json[:-3]
+        
+        # Try standard JSON parsing first
+        try:
+            return json.loads(clean_json)
+        except json.JSONDecodeError:
+            # Fallback to json_repair
+            return json_repair.loads(clean_json)
+            
+    except Exception as e:
+        print(f"Warning: Failed to parse JSON string: {e}")
+        return default_value
 
 # 定义路径
 BASE_DIR = "data"
@@ -11,10 +57,36 @@ EXPORT_DIR = os.path.join(BASE_DIR, "datasets")
 
 def load_json_file(filepath):
     """通用工具：读取 JSON"""
+    # Check cache first
+    current_time = time.time()
+    if filepath in _dataset_cache:
+        timestamp, cached_data = _dataset_cache[filepath]
+        if current_time - timestamp < _cache_ttl:
+            return cached_data
+    
     if os.path.exists(filepath):
-        with open(filepath, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                # Validate that the data is a list or dict
+                if not isinstance(data, (list, dict)):
+                    print(f"⚠️ 数据文件 {filepath} 格式异常，期望列表或字典但得到 {type(data)}")
+                    return []
+                # Cache the data
+                _dataset_cache[filepath] = (current_time, data)
+                return data
+        except json.JSONDecodeError as e:
+            print(f"⚠️ 数据文件 {filepath} JSON格式错误: {e}")
+            return []
+        except Exception as e:
+            print(f"⚠️ 读取数据文件 {filepath} 出错: {e}")
+            return []
     return []
+
+def clear_dataset_cache():
+    """Clear the dataset cache"""
+    global _dataset_cache
+    _dataset_cache.clear()
 
 def export_categorized_datasets():
     """
@@ -68,6 +140,9 @@ def export_categorized_datasets():
         count = len(data_list)
         count_map[key] = count
         results.append(f"{key}: {count}")
+
+    # Clear cache when datasets are regenerated
+    clear_dataset_cache()
 
     return f"✅ 导出完成! 路径: {EXPORT_DIR}\n📊 统计: " + " | ".join(results)
 

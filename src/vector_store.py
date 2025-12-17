@@ -1,8 +1,8 @@
 # src/vector_store.py
 import json
 import os
+import time
 import numpy as np
-import faiss
 import pickle
 from sentence_transformers import SentenceTransformer
 
@@ -15,9 +15,14 @@ MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2" # 支持多语言(中英日
 
 class LocalVectorStore:
     def __init__(self):
-        self.index = None
+        self.embeddings = None
         self.metadata = [] # 存储向量ID对应的动画详细信息
         self.model = None
+        
+        # Cache for search results
+        self._search_cache = {}
+        self._cache_ttl = 300  # 5 minutes cache TTL
+        self._last_cache_cleanup = time.time()
         
         # 确保目录存在
         if not os.path.exists(INDEX_DIR):
@@ -60,7 +65,6 @@ class LocalVectorStore:
         self._load_model(log_func)
         
         candidates = []
-        # ... (读取数据的逻辑不变) ...
         # 读取已看
         path_watched = os.path.join(DATA_DIR, "dataset_watched.json")
         if os.path.exists(path_watched):
@@ -89,39 +93,37 @@ class LocalVectorStore:
         
         log_func(f"🚀 开始向量化运算 (0/{len(texts)})...")
         
-        # 🟢 修改点：
-        # 1. 关掉 show_progress_bar (因为它只打印在黑窗口，网页看不见，还会造成卡顿假象)
-        # 2. 增加完成后的日志
+        # 关掉 show_progress_bar (因为它只打印在黑窗口，网页看不见，还会造成卡顿假象)
         embeddings = self.model.encode(texts, show_progress_bar=False) 
         
         log_func("✅ 向量化运算完成！正在转换数据格式...")
         embeddings = np.array(embeddings).astype('float32')
         
-        log_func("💾 正在构建 FAISS 索引并写入磁盘...")
+        log_func("💾 正在保存向量数据和元数据到磁盘...")
         
-        # 4. 初始化 FAISS 索引
-        dimension = embeddings.shape[1] 
-        # faiss.normalize_L2(embeddings) # 如果是用余弦相似度需要这行
-        self.index = faiss.IndexFlatIP(dimension) # Inner Product
-        self.index.add(embeddings)
-        
-        # 5. 保存
-        faiss.write_index(self.index, os.path.join(INDEX_DIR, "anime.index"))
+        # 保存向量和元数据
+        with open(os.path.join(INDEX_DIR, "anime_embeddings.pkl"), 'wb') as f:
+            pickle.dump(embeddings, f)
         with open(os.path.join(INDEX_DIR, "anime_meta.pkl"), 'wb') as f:
             pickle.dump(candidates, f)
             
         # 更新内存
+        self.embeddings = embeddings
         self.metadata = candidates
         
         success_msg = f"🎉 索引构建完成！共索引 {len(candidates)} 部动画。"
         log_func(success_msg)
+        
+        # Clear search cache when index is rebuilt
+        self._search_cache.clear()
         
         return success_msg
 
     def load_index(self):
         """从磁盘加载索引"""
         try:
-            self.index = faiss.read_index(os.path.join(INDEX_DIR, "anime.index"))
+            with open(os.path.join(INDEX_DIR, "anime_embeddings.pkl"), 'rb') as f:
+                self.embeddings = pickle.load(f)
             with open(os.path.join(INDEX_DIR, "anime_meta.pkl"), 'rb') as f:
                 self.metadata = pickle.load(f)
             return True
@@ -129,31 +131,67 @@ class LocalVectorStore:
             print(f"⚠️ 索引加载失败 (可能是首次运行): {e}")
             return False
         
+    def _cleanup_cache(self):
+        """清理过期的缓存"""
+        current_time = time.time()
+        if current_time - self._last_cache_cleanup < 60:  # Only cleanup every minute
+            return
+            
+        expired_keys = []
+        for key, (timestamp, _) in self._search_cache.items():
+            if current_time - timestamp > self._cache_ttl:
+                expired_keys.append(key)
+        
+        for key in expired_keys:
+            del self._search_cache[key]
+            
+        self._last_cache_cleanup = current_time
+
     def search(self, query_text, top_k=20):
         """
-        搜索方法保持不变，但传入的 query_text 需要讲究技巧
+        搜索方法使用numpy实现的余弦相似度计算
         """
-        if not self.index:
+        # Check cache first
+        cache_key = f"{query_text}_{top_k}"
+        current_time = time.time()
+        
+        # Cleanup expired cache entries periodically
+        self._cleanup_cache()
+        
+        if cache_key in self._search_cache:
+            timestamp, cached_results = self._search_cache[cache_key]
+            if current_time - timestamp < self._cache_ttl:
+                return cached_results
+        
+        if self.embeddings is None:
             if not self.load_index(): return []
         
         self._load_model()
         
         # 1. 向量化查询词
         query_vector = self.model.encode([query_text])
-        faiss.normalize_L2(query_vector) # 归一化以匹配余弦相似度
+        query_vector = np.array(query_vector).astype('float32')
         
-        # 2. 搜索 Top-K
-        distances, indices = self.index.search(query_vector, top_k)
+        # 2. 计算余弦相似度
+        # Normalize vectors for cosine similarity
+        query_norm = query_vector / np.linalg.norm(query_vector)
+        embeddings_norm = self.embeddings / np.linalg.norm(self.embeddings, axis=1, keepdims=True)
+        
+        # Calculate cosine similarities
+        similarities = np.dot(embeddings_norm, query_norm.T).flatten()
+        
+        # 3. 获取Top-K最相似的结果
+        top_indices = np.argsort(similarities)[::-1][:top_k]
         
         results = []
-        for i, idx in enumerate(indices[0]):
-            if idx == -1: continue # 无效结果
+        for idx in top_indices:
+            similarity = similarities[idx]
+            
+            # 过滤掉相似度过低的结果
+            if similarity < 0.3:
+                continue
             
             item = self.metadata[idx]
-            similarity = distances[0][i]
-
-            if similarity < 0.3:
-                continue # 过滤掉相似度过低的结果
             
             # 数据清洗：只保留 LLM 需要的字段
             results.append({
@@ -164,6 +202,9 @@ class LocalVectorStore:
                 "summary_snippet": (item.get('summary') or "")[:60] + "...",
                 "similarity": float(similarity) # 相似度分数
             })
+        
+        # Cache the results
+        self._search_cache[cache_key] = (current_time, results)
             
         return results
 

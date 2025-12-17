@@ -8,14 +8,13 @@ from src.config.personas import ROLES, TEMPLATES
 import json_repair
 
 class YearAgent(ProfileAgent):
-    def __init__(self, client):
-        super().__init__(client)
-        # 1. 覆写：年度总结专用的 12 个奖项
-        self.categories = [
-            "最佳动画", "最佳原创", "最佳改编", "最佳画面", 
-            "最佳音乐", "最想安利", "最意难平", "最被低估", 
-            "最被过誉", "最欢乐", "最抽象", "最炒作"
-        ]
+    # No custom __init__ needed, it will inherit from ProfileAgent.
+    # We will override the categories directly in the class body.
+    categories = [
+        "最佳动画", "最佳原创", "最佳改编", "最佳画面", 
+        "最佳音乐", "最想安利", "最意难平", "最被低估", 
+        "最被过誉", "最欢乐", "最抽象", "最炒作"
+    ]
 
     def render(self, style="cat", response_placeholder=None):
         """
@@ -65,7 +64,7 @@ class YearAgent(ProfileAgent):
             
             raw_json_str = ""
             try:
-                stream = self.run(messages, temperature=1.5, stream=True, model="deepseek-reasoner")
+                stream = self.run(messages, temperature=1.5, stream=True, model=self.llm_service.reasoner_model)
                 status.write("🧠 正在分析 CV 重复度与追番时间轴...")
                 for chunk in stream:
                     if chunk.choices and chunk.choices[0].delta.content:
@@ -76,13 +75,14 @@ class YearAgent(ProfileAgent):
 
             # (B) 解析 JSON & 构建中间数据结构 (✨ 重构核心)
             try:
-                clean_json = raw_json_str.strip()
-                if "```json" in clean_json:
-                    clean_json = clean_json.split("```json")[1].split("```")[0]
-                elif "```" in clean_json:
-                    clean_json = clean_json.split("```")[1].split("```")[0]
+                # Use robust JSON parsing
+                from src.data_processor import robust_json_parse
+                result_data = robust_json_parse(raw_json_str, {})
                 
-                result_data = json_repair.loads(clean_json)
+                if not result_data:
+                    st.error("AI 返回格式异常")
+                    return "生成失败"
+                
                 # print("Year Report LLM Raw Output:", result_data)
                 
                 # 提取基础信息

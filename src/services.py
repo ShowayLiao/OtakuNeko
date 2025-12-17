@@ -16,6 +16,11 @@ class DataService:
     """
     
     SYNC_INTERVAL = 43200  # 12小时 (12 * 60 * 60)
+    
+    # Cache for memory data
+    _memory_cache = None
+    _memory_cache_time = 0
+    _cache_ttl = 300  # 5 minutes cache TTL
 
     @staticmethod
     def should_sync() -> Tuple[bool, str]:
@@ -35,6 +40,12 @@ class DataService:
             return True, "⚠️ 读取文件状态失败，准备重试..."
             
         return False, ""
+    
+    @staticmethod
+    def invalidate_cache():
+        """Invalidate the memory cache"""
+        DataService._memory_cache = None
+        DataService._memory_cache_time = 0
 
     @staticmethod
     def perform_sync(deep_sync=True):
@@ -52,51 +63,90 @@ class DataService:
         3. 剔除低分垃圾作
         4. 字段瘦身，减少 Token 消耗
         """
-        # 直接利用 Service 读取，无需自己 open file
-        all_records = bgm_service.load_local_records()
-        if not all_records:
-            return []
-
-        valid_candidates = []
+        # Check cache first
+        current_time = time.time()
+        if (DataService._memory_cache is not None and 
+            current_time - DataService._memory_cache_time < DataService._cache_ttl):
+            return DataService._memory_cache
         
-        for item in all_records:
-            status = item.get('status')
-            score = item.get('score', 0)
+        try:
+            # 直接利用 Service 读取，无需自己 open file
+            all_records = bgm_service.load_local_records()
+            if not all_records:
+                return []
 
-            # 1. 过滤状态: 只保留 在看(3), 想看(1), 搁置(4)
-            #    原逻辑是剔除 watched/dropped，效果一样
-            if status in ['watched', 'dropped']:
-                continue
+            valid_candidates = []
             
-            # 2. 剔除已评分且分低的 (可能是搁置的烂片)
-            #    注意：score 为 0 表示未评分 (通常是新番或想看)
-            if score > 0 and score < 6.0:
-                continue
+            for item in all_records:
+                status = item.get('status')
+                score = item.get('score', 0)
 
-            # 3. 字段瘦身 (只保留 LLM 需要的核心信息)
-            valid_candidates.append({
-                "title": item['title'],
-                "score": item['score'],
-                "status": item['status'], # watching / wish / on_hold
-                "tags": item.get('tags', [])[:3], # 只取前3个标签
-                "summary": (item.get('summary') or '')[:100] # 限制简介长度
-            })
+                # 1. 过滤状态: 只保留 在看(3), 想看(1), 搁置(4)
+                #    原逻辑是剔除 watched/dropped，效果一样
+                if status in ['watched', 'dropped']:
+                    continue
+                
+                # 2. 剔除已评分且分低的 (可能是搁置的烂片)
+                #    注意：score 为 0 表示未评分 (通常是新番或想看)
+                if score > 0 and score < 6.0:
+                    continue
 
-        # 4. 排序优化：优先展示 'watching'(在看) 和 'on_hold'(搁置)
-        #    让 LLM 优先聊这些，而不是沉在底下的几千个 'wish'
-        status_priority = {'watching': 0, 'on_hold': 1, 'wish': 2}
-        valid_candidates.sort(key=lambda x: status_priority.get(x['status'], 99))
-        
-        # 5. 截断：最多返回前 40 条，防止 System Prompt 过长
-        return valid_candidates[:40]
+                # 3. 字段瘦身 (只保留 LLM 需要的核心信息)
+                valid_candidates.append({
+                    "title": item['title'],
+                    "score": item['score'],
+                    "status": item['status'], # watching / wish / on_hold
+                    "tags": item.get('tags', [])[:3], # 只取前3个标签
+                    "summary": (item.get('summary') or '')[:100] # 限制简介长度
+                })
+
+            # 4. 排序优化：优先展示 'watching'(在看) 和 'on_hold'(搁置)
+            #    让 LLM 优先聊这些，而不是沉在底下的几千个 'wish'
+            status_priority = {'watching': 0, 'on_hold': 1, 'wish': 2}
+            valid_candidates.sort(key=lambda x: status_priority.get(x['status'], 99))
+            
+            # 5. 截断：最多返回前 40 条，防止 System Prompt 过长
+            result = valid_candidates[:40]
+            
+            # Update cache
+            DataService._memory_cache = result
+            DataService._memory_cache_time = current_time
+            
+            return result
+        except Exception as e:
+            print(f"⚠️ 数据清洗过程中出现错误: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
 
 class LLMService:
     """
     LLM 交互服务：负责组装 Prompt 并调用 OpenAI 兼容接口
     """
-    def __init__(self, api_key: str, base_url: str = "https://api.deepseek.com"):
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+    def __init__(self, api_key: str, base_url: str, chat_model: str, reasoner_model: str):
+        # Validate API key
+        if not api_key or not api_key.strip():
+            raise ValueError("API key is required and cannot be empty")
+        
+        # Validate base URL
+        if not base_url or not base_url.strip():
+            raise ValueError("Base URL is required and cannot be empty")
+        
+        # Validate model names
+        if not chat_model or not chat_model.strip():
+            raise ValueError("Chat model name is required and cannot be empty")
+        if not reasoner_model or not reasoner_model.strip():
+            raise ValueError("Reasoner model name is required and cannot be empty")
+        
+        self.client = OpenAI(api_key=api_key.strip(), base_url=base_url.strip())
+        self.chat_model = chat_model.strip()
+        self.reasoner_model = reasoner_model.strip()
+
+        print("🤖 LLMService Initialized:")
+        print(f"   - Base URL: {base_url}")
+        print(f"   - Chat Model: {self.chat_model}")
+        print(f"   - Reasoner Model: {self.reasoner_model}")
 
     def _build_system_prompt(self, memory_data: List[Dict]) -> str:
         """内部方法：构建动态 System Prompt"""
@@ -143,14 +193,20 @@ class LLMService:
         # 3. 发起请求
         try:
             return self.client.chat.completions.create(
-                model="deepseek-chat",
+                model=self.chat_model,
                 messages=messages,
                 temperature=1.3, # 稍微高一点的温度，让闲聊更有趣
                 stream=True,
                 timeout=30
             )
         except Exception as e:
+            # Improved error handling with detailed logging
+            error_msg = f"❌ 连接 LLM 失败: {str(e)}"
+            print(f"[LLMService] Error in get_streaming_response: {error_msg}")
+            import traceback
+            traceback.print_exc()
+            
             # 简单的错误处理生成器，防止前端崩溃
             def error_gen():
-                yield type('obj', (object,), {'choices': [type('obj', (object,), {'delta': type('obj', (object,), {'content': f"❌ 连接 LLM 失败: {e}"})})]})
+                yield type('obj', (object,), {'choices': [type('obj', (object,), {'delta': type('obj', (object,), {'content': error_msg})})]})
             return error_gen()

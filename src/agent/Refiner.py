@@ -7,8 +7,8 @@ class RefinerAgent(BaseAgent):
     RefinerAgent: 专门处理模糊指令、情绪宣泄或无意义输入的 Agent。
     它的目标不是执行任务，而是通过对话明确用户的真实需求。
     """
-    def __init__(self, client):
-        super().__init__(client)
+    def __init__(self, llm_service):
+        super().__init__(llm_service)
 
     def clarify(self, user_input, style="cat"):
         """
@@ -38,13 +38,13 @@ class RefinerAgent(BaseAgent):
 
         # 3. 调用 LLM
         try:
-            response = self.client.chat.completions.create(
-                model="deepseek-chat",
+            response = self.run(
                 messages=[
                     # 注意：system prompt 已经在模板里包含了，这里可以直接用 user 发送全部
                     # 或者拆分也可以，这里为了简单直接发
                     {"role": "user", "content": prompt}
                 ],
+                stream=False,
                 temperature=1.1, # 稍微高一点，让回复更有灵性
                 timeout=15
             )
