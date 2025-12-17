@@ -4,15 +4,6 @@
 <img src="asset/Icon.png" width="200" height="auto" alt="Logo Placehoder - 请替换为你的Logo或保留此默认图">
 
 
-<div align="left">
-<ul>
-<li>此版本完全由AI优化，无法保证功能正常运行</li>
-<li>仅为满足本人个人使用，不负责任何错误情况</li>
-<li>由 Google Gemini 2.5 Pro | Qwen3-Coder-Plus | TRAE 提供代码支持</li>
-<li>我的 <a href="https://bangumi.tv/user/744160">Bangumi 主页</a>，欢迎交友</li>
-</ul>
-</div>
-
 
 # 🐱 OtakuNeko | 御宅猫
 
