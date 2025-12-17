@@ -36,7 +36,7 @@ class BaseAgent:
                 return f.read()[:2000]
         return "用户是一位普通的二次元爱好者。"
 
-    def run(self, messages, temperature=0.7, stream=True, model=None, response_format=None):
+    def run(self, messages, temperature=0.7, stream=True, model=None, response_format=None,timeout=60):
         """
         🧠 [Backend] 核心思考逻辑
         默认行为：调用 LLM 进行普通对话
@@ -48,7 +48,7 @@ class BaseAgent:
                 messages=messages,
                 temperature=temperature,
                 stream=stream,
-                timeout=60
+                timeout=timeout
             )
             return response
         except Exception as e:

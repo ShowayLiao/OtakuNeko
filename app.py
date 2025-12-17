@@ -103,8 +103,8 @@ def configure_api_key_dialog():
     with st.expander("DeepSeek (默认)", expanded=not is_custom_default):
         new_key_deepseek = st.text_input("DeepSeek API Key", value=os.getenv("DEEPSEEK_API_KEY", ""), type="password")
 
-    with st.expander("自定义 OpenAI 兼容服务", expanded=is_custom_default):
-        new_base_url_custom = st.text_input("API Base URL", value=os.getenv("CUSTOM_API_BASE_URL", ""), placeholder="例如: https://api.moonshot.cn/v1")
+    with st.expander("OpenAI API（可选）", expanded=is_custom_default):
+        new_base_url_custom = st.text_input("API Base URL", value=os.getenv("CUSTOM_API_BASE_URL", ""), placeholder="例如: https://api.deepseek.com")
         new_key_custom = st.text_input("Custom API Key", value=os.getenv("CUSTOM_API_KEY", ""), type="password")
         st.caption("请为自定义模型指定名称：")
         col1, col2 = st.columns(2)
@@ -114,7 +114,7 @@ def configure_api_key_dialog():
             new_model_reasoner = st.text_input("Reasoner Model Name", value=os.getenv("CUSTOM_MODEL_REASONER", ""), placeholder="e.g. moonshot-v1-32k")
 
     with st.expander("Bangumi 同步设置", expanded=False):
-        new_user = st.text_input("Bangumi 用户名 (必填)", value=os.getenv("BGM_USERNAME", ""), placeholder="用于同步你的动画收藏")
+        new_user = st.text_input("Bangumi 用户名 (必填，如果是中文请填入id数字)", value=os.getenv("BGM_USERNAME", ""), placeholder="用于同步你的动画收藏")
         new_key_bgm = st.text_input("Bangumi Access Token (可选)", value=os.getenv("BGM_ACCESS_TOKEN", ""), type="password", help="如果你的收藏是私密的，则必须提供此项。")
     
     if st.button("💾 保存并重启"):

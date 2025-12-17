@@ -550,7 +550,7 @@ class BangumiService:
         headers = {"User-Agent": "OtakuMate/1.0", "Accept": "application/json"}
         
         try:
-            resp = self._make_request(url, headers=headers, timeout=10)
+            resp = self._make_request(url, timeout=10)
             if resp and resp.status_code == 200:
                 return resp.json()
             else:
