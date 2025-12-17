@@ -29,20 +29,11 @@ if not exist "venv" (
 )
 
 echo [3/4] 正在安装依赖 (requirements.txt)...
-:: 使用刚创建的虚拟环境中的 pip
-echo 正在升级 pip...
-.\venv\Scripts\pip.exe install --upgrade pip
-if %errorlevel% neq 0 (
-    echo 错误: pip 升级失败。
-    pause
-    exit /b 1
-)
-
 echo 正在安装项目依赖...
-.\venv\Scripts\pip.exe install -r requirements.txt
+.\venv\Scripts\pip.exe install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
 if %errorlevel% neq 0 (
     echo 警告: 使用国内镜像重新尝试安装...
-    .\venv\Scripts\pip.exe install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+    .\venv\Scripts\pip.exe install -r requirements.txt 
     if %errorlevel% neq 0 (
         echo 错误: 依赖安装失败。请检查网络连接和 requirements.txt 文件。
         pause

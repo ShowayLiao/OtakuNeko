@@ -207,6 +207,10 @@ class BaseAgent:
     def draw_grid_image(self, items_data, output_filename="grid_output.png", cols=5, title_text="OtakuNeko · 成分鉴定", subtitle_text=None):
         """A wrapper around the draw_grid_image utility."""
         return draw_grid_image(items_data, output_filename, cols, title_text, subtitle_text, self.font_path)
+    # ==========================================================
+    def plot_radar_chart(self, data: dict, title: str = "Radar Chart", output_path: str = "radar_chart.png"):
+        from src.agent.drawing import plot_radar_chart
+        return plot_radar_chart(data)
     
     # 🟢 [新增] 健壮的分数提取函数
     def _extract_score(self, subject_data):

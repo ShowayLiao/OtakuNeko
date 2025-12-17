@@ -127,13 +127,54 @@ class ProfileAgent(BaseAgent):
                     return "生成失败"
                     
                 mapping = result_data.get("mapping", {})
-                analysis = result_data.get("analysis", "")
-                comment = result_data.get("comment_tags", [""])[0]
-                anime_tag = result_data.get("Anime_tag", {})
+                # 1. 提取数据 (适配新版 Prompt 结构)
+                analysis = result_data.get("analysis", "暂无深度分析")
+
+                # 提取称号 (取 tags 列表的第一个作为主称号)
+                tags = result_data.get("tags", [])
+
+                otaku_score = result_data.get("otaku_score", 0)
+
+                # 提取成分 (Composition) -> 格式化为 "赛博精神病 (30%), 纯爱 (20%)"
+                comp_data = result_data.get("composition", [])
+                comp_list = [f"{item.get('label', '未知')} ({int(item.get('value', 0)*100)}%)" for item in comp_data]
+                comp_str = "、".join(comp_list) if comp_list else "成分不明"
+
+                # 假设 result_data 是 LLM 返回的完整 JSON
+                radar_data = result_data.get("radar", {})
                 
-                # 显示分析文本
-                final_text = f"{persona.get('start_msg','')}{analysis}"
-                response_placeholder.markdown(final_text)
+                # # 显示分析文本
+                st.markdown(f"## 🐾 {persona['description']} 的二次元成分鉴定结果")
+
+                # 创建两列布局：左边放图表，右边放核心数据
+                col1, col2 = st.columns([1, 1])
+
+                title = tags[0] if tags else "无名路人"
+
+                with col1:
+                    st.markdown("### 🧬 属性雷达")
+                    # 调用上面的绘图函数
+                    self.plot_radar_chart(radar_data)
+
+                with col2:
+                    st.markdown(f"### 🏷️ **#{title}**")
+                    # 成分：用 caption 或普通文本，显得精致点
+                    # 核心指标：垂直居中展示
+                    st.write("") # 占个空行用来对齐
+                    st.metric(label="二次元浓度", value=f"{otaku_score}%")
+                    # 进度条紧跟在 metric 下面
+                    st.progress(otaku_score / 100)
+
+                    st.markdown(f"**🧪 精神成分**：")
+                    for item in comp_data:
+                        # 显示格式：纯爱战神 (40%)
+                        st.text(f"{item['label']} ({int(item['value']*100)}%)")
+                        st.progress(item['value'])
+
+                st.divider()
+
+                st.markdown("### **🔍 深度分析**")
+                st.write(analysis)  
 
                 # 1. 鲁棒性修正: 确保 raw_awards 是字典
                 llm_awards_source = {}
@@ -222,23 +263,15 @@ class ProfileAgent(BaseAgent):
                 output_filename="profile_grid.png",
                 cols=5,
                 title_text="OtakuNeko · 二次元成分鉴定",
-                subtitle_text=f"{comment}：{anime_tag.get('tag', ['N/A'])[0]}、{anime_tag.get('tag', ['N/A'])[1]}、{anime_tag.get('tag', ['N/A'])[2]}"
+                subtitle_text=f"{tags[0]}：{comp_str}" if tags else None
             )
             
             status.update(label="✅ 完成", state="complete", expanded=False)
 
         # 🟢 4. 关键点：直接调用基类的渲染方法
 
-
-        final_text = (
-            f"## 🐾 {persona['description']} 的二次元成分鉴定结果\n\n"
-            f"### **📝 荣誉称号**：{comment}  \n"
-            f"### **🎯 核心成分**：`{', '.join(anime_tag.get('tag', []))}`  \n"
-            f"### **🔍 深度分析**：  \n"
-            f"{analysis}"
-        )
-        response_placeholder.markdown(final_text)
-
+        
+        
         if card_items:
             # 显示 HTML 卡片网格 (交互式)
             st.divider()
