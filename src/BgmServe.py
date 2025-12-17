@@ -43,7 +43,7 @@ class BangumiService:
         session = requests.Session()
         retry_strategy = Retry(
             total=3,  # 最大重试次数
-            backoff_factor=1,  # 重试间隔 (1s, 2s, 4s)
+            backoff_factor=1,  # 重试间隔
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=["HEAD", "GET", "OPTIONS"]
         )
@@ -51,10 +51,21 @@ class BangumiService:
         session.mount("https://", adapter)
         session.mount("http://", adapter)
         
-        session.headers.update({
-            "User-Agent": "OtakuMate/2.0 (refactored_service)",
-            "Authorization": f"Bearer {self.access_token}" if self.access_token else ""
-        })
+        # --- 修改点开始 ---
+        # 1. 设置规范的 User-Agent (这是无 Token 访问的关键)
+        # 格式建议：项目名/版本 (联系方式或Github地址)
+        base_headers = {
+            "User-Agent": "OtakuNeko/1.0 (https://github.com/ShowayLiao/OtakuNeko)", 
+            "Accept": "application/json"
+        }
+        
+        # 2. 只有当 Token 存在且不为空时，才添加 Authorization
+        if self.access_token and self.access_token.strip():
+            base_headers["Authorization"] = f"Bearer {self.access_token}"
+        
+        session.headers.update(base_headers)
+        # --- 修改点结束 ---
+        
         return session
 
     # ==========================
@@ -90,6 +101,13 @@ class BangumiService:
             print("❌ 未配置 BGM_USERNAME，无法同步。")
             return []
 
+        # --- 新增提示逻辑 ---
+        if not self.access_token:
+            print(f"⚠️ 未检测到 Token，尝试以游客身份同步 {self.username} 的公开收藏...")
+        else:
+            print(f"📡 [Sync] 正在同步用户 {self.username} 的收藏...")
+        # ------------------
+
         print(f"📡 [Sync] 正在同步用户 {self.username} 的收藏...")
         all_items = []
         limit = 50
@@ -101,6 +119,14 @@ class BangumiService:
             
             try:
                 resp = self.session.get(url, params=params, timeout=15)
+                # --- 新增错误处理 ---
+                if resp.status_code == 401 or resp.status_code == 403:
+                    print(f"❌ 权限不足 (Code: {resp.status_code})。请检查：")
+                    print("   1. 用户名是否正确")
+                    print("   2. 该用户的收藏是否已设为'仅自己可见' (无Token无法读取私密收藏)")
+                    break
+                # ------------------
+
                 if resp.status_code != 200:
                     print(f"⚠️ API 错误 Code: {resp.status_code}")
                     break

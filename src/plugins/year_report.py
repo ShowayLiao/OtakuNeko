@@ -12,15 +12,13 @@ class YearReportPlugin:
         # 2. 初始化内部 Agent
         self.agent = YearAgent(client)
 
-    def execute(self, response_placeholder):
+    def execute(self, response_placeholder,style='cat'):
         """
         执行插件逻辑
         :param response_placeholder:用于流式输出或状态显示的 st.empty() 容器
         :return: Final Markdown string (用于存入历史记录)
         """
         # 1. 动态获取当前风格 (从 session_state)
-        # 默认为 'cat'，如果未设置
-        style = st.session_state.get('selected_style', 'cat')
         
         # 2. 调用 Agent 进行渲染
         # 注意：Agent 内部应该处理 heavy lifting (绘图、数据分析)

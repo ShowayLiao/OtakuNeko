@@ -95,7 +95,7 @@ def configure_api_key_dialog():
     current_key = os.getenv("DEEPSEEK_API_KEY", "")
     new_key = st.text_input("DeepSeek API Key", value=current_key, type="password", help="输入 sk- 开头的密钥")
     current_key_bgm = os.getenv("BGM_ACCESS_TOKEN", "")
-    new_key_bgm = st.text_input("Bangumi Access Token", value=current_key_bgm, type="password", help="输入你的 Bangumi Access Token")
+    new_key_bgm = st.text_input("（可选）Bangumi Access Token", value=current_key_bgm, type="password", help="（可选）输入你的 Bangumi Access Token")
     user = os.getenv("BGM_USERNAME", "")
     new_user = st.text_input("Bangumi 用户名", value=user, help="输入你的 Bangumi 用户名")
     
@@ -227,7 +227,7 @@ with st.sidebar:
 
     # === 助手设置 ===
     st.header("🎭 助手设置")
-    persona_options = {"cat": "🐱 毒舌猫娘", "normal": "🧐 专业评论家"}
+    persona_options = {"cat": "🐱 傲娇猫娘", "normal": "🧐 专业评论家", "tender_cat": "🐱 柔情猫娘","maodie": "😼 圆头耄耋"}
     selected_style = st.radio(
         "选择语调风格:",
         options=list(persona_options.keys()),
@@ -329,7 +329,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 with st.status(f"🧩 正在启动插件 [{plugin_name}]...", expanded=True) as status:
                     # 插件内部自行处理 UI 渲染，并返回最终 Markdown 结果
                     # 传入 status 容器，允许插件内部更新 "正在抓取..." 这种状态
-                    full_response = matched_plugin.execute(response_placeholder)
+                    full_response = matched_plugin.execute(response_placeholder,style = selected_style)
                     
                     status.update(label=f"✅ {plugin_name} 执行完成", state="complete", expanded=False)
 
