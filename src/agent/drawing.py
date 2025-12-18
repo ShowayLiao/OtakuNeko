@@ -5,6 +5,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 import plotly.graph_objects as go
 from src.BgmServe import BangumiService
 import streamlit as st
+import numpy as np
+import matplotlib.pyplot as plt
+from matplotlib.font_manager import FontProperties
 
 # ==========================================
 # 🔌 图表生成器 (Plotly -> PIL)
@@ -12,85 +15,89 @@ import streamlit as st
 
 PLOTLY_FONT_FAMILY = "Alibaba PuHuiTi 3.0, Alibaba PuHuiTi 3, SimHei, Arial, sans-serif"
 
-def _generate_radar_pil(radar_data, size=(400, 350)):
-    """生成静态雷达图"""
+def _generate_radar_pil(radar_data, size=(450, 380), font_path="./font/AlibabaPuHuiTi-3-65-Medium.ttf"):
     if not radar_data: return None
     try:
-        categories = list(radar_data.keys()) + [list(radar_data.keys())[0]]
-        values = list(radar_data.values()) + [list(radar_data.values())[0]]
+        categories = list(radar_data.keys())
+        values = list(radar_data.values())
+        N = len(categories)
 
-        fig = go.Figure(go.Scatterpolar(
-            r=values, theta=categories, fill='toself',
-            line_color='#FF4B4B', fillcolor='rgba(255, 75, 75, 0.2)',
-            marker=dict(size=8, color='#FF4B4B')
-        ))
-        fig.update_layout(
-            # 1. 🔥 全局字体设置
-            font=dict(family=PLOTLY_FONT_FAMILY, size=14),
-            
-            polar=dict(
-                radialaxis=dict(
-                    visible=True, range=[0, 100], showticklabels=False, 
-                    gridcolor="rgba(180,180,180,0.3)"
-                ),
-                angularaxis=dict(
-                    # 2. 🔥 确保轴标签也用这个字体
-                    tickfont=dict(family=PLOTLY_FONT_FAMILY, size=16, color="#333"), 
-                    rotation=90, 
-                    direction="clockwise"
-                )
-            ),
-            showlegend=False, 
-            margin=dict(l=60, r=60, t=50, b=50),
-            paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-            width=size[0], height=size[1]
-        )
-        
-        img_bytes = fig.to_image(format="png", engine="kaleido", scale=2)
-        img = Image.open(io.BytesIO(img_bytes))
-        img.thumbnail(size, Image.Resampling.LANCZOS)
-        return img
+        # 闭合数据环
+        angles = [n / float(N) * 2 * np.pi for n in range(N)]
+        angles += angles[:1]
+        values += values[:1]
+
+        # 创建画布，背景透明
+        fig = plt.figure(figsize=(size[0]/100, size[1]/100), dpi=100)
+        ax = fig.add_subplot(111, polar=True)
+        ax.set_facecolor('none')
+
+        # 绘图：线条色和填充色
+        ax.plot(angles, values, color='#FF4B4B', linewidth=2)
+        ax.fill(angles, values, color='#FF4B4B', alpha=0.2)
+
+        # 样式设置：起始点在正上方，顺时针方向
+        ax.set_theta_offset(np.pi / 2)
+        ax.set_theta_direction(-1)
+
+        # 坐标轴美化
+        ax.set_ylim(0, 100)
+        ax.set_yticklabels([]) # 隐藏圈圈上的数字
+        ax.grid(color='gray', alpha=0.2, linestyle='--')
+
+        # 字体加载
+        try: prop = FontProperties(fname=font_path)
+        except: prop = FontProperties(family='sans-serif')
+
+        # 设置轴标签
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(categories, fontproperties=prop, color='#333333', size=11)
+
+        # 导出为 PIL 对象
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', transparent=True, bbox_inches='tight', pad_inches=0.1)
+        plt.close(fig)
+        return Image.open(buf)
     except Exception as e:
-        print(f"❌ 雷达图生成失败: {e}")
+        print(f"❌ Matplotlib 雷达图生成失败: {e}")
         return None
 
-def _generate_pie_pil(comp_data, size=(400, 350)):
-    """
-    生成赛博风格甜甜圈饼图
-    """
+def _generate_pie_pil(comp_data, size=(480, 380), font_path="./font/AlibabaPuHuiTi-3-65-Medium.ttf"):
     if not comp_data: return None
-
-    labels = [item.get('label', '?') for item in comp_data]
-    values = [item.get('value', 0) for item in comp_data]
-    colors = [item.get('color', '#888888') for item in comp_data]
-
-    fig = go.Figure(data=[go.Pie(
-        labels=labels, values=values,
-        marker=dict(colors=colors, line=dict(color='#FFF', width=2)),
-        hole=0.5,
-        textinfo='label+percent',
-        textposition='outside',
-        # 3. 🔥 饼图文字字体设置
-        textfont=dict(family=PLOTLY_FONT_FAMILY, size=14, color='#333'), 
-        showlegend=False
-    )])
-
-    fig.update_layout(
-        # 4. 🔥 布局字体设置
-        font=dict(family=PLOTLY_FONT_FAMILY, size=14),
-        margin=dict(l=90, r=90, t=50, b=50),
-        paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
-        width=size[0], height=size[1]
-    )
-    
     try:
-        img_bytes = fig.to_image(format="png", engine="kaleido", scale=2)
-        img = Image.open(io.BytesIO(img_bytes))
-        img.thumbnail(size, Image.Resampling.LANCZOS)
-        return img
+        labels = [item.get('label', '?') for item in comp_data]
+        values = [item.get('value', 0) for item in comp_data]
+        colors = [item.get('color', '#888888') for item in comp_data]
+
+        # 创建画布
+        fig, ax = plt.subplots(figsize=(size[0]/100, size[1]/100), dpi=100)
+        fig.patch.set_alpha(0) # 背景透明
+
+        # 绘制甜甜圈 (wedgeprops 的 width 控制孔的大小)
+        wedges, texts, autotexts = ax.pie(
+            values, labels=labels, colors=colors,
+            autopct='%1.1f%%', pctdistance=0.75,
+            wedgeprops=dict(width=0.4, edgecolor='white', linewidth=2),
+            startangle=90
+        )
+
+        # 字体处理
+        try: prop = FontProperties(fname=font_path)
+        except: prop = FontProperties(family='sans-serif')
+
+        # 美化文字标签
+        plt.setp(texts, fontproperties=prop, size=10, color='#333333')
+        plt.setp(autotexts, fontproperties=prop, size=9, color='white', weight='bold')
+
+        # 导出为 PIL 对象
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', transparent=True, bbox_inches='tight')
+        plt.close(fig)
+        return Image.open(buf)
     except Exception as e:
-        print(f"❌ 饼图生成失败: {e}")
+        print(f"❌ Matplotlib 饼图生成失败: {e}")
         return None
+    
 
 # ==========================================
 # 🎨 主绘图逻辑

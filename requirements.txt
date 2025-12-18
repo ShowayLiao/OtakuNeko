@@ -9,4 +9,4 @@ json_repair
 pillow
 pandas
 plotly
-kaleido
+matplotlib
