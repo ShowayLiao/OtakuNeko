@@ -64,7 +64,7 @@ def _generate_pie_pil(comp_data, size=(400, 350)):
 
     fig.update_layout(
         # 🔧 核心修复：大幅增加边距，给 outside 的文字留出空间
-        margin=dict(l=80, r=80, t=50, b=50),
+        margin=dict(l=90, r=90, t=50, b=50),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         width=size[0], height=size[1]
     )
@@ -94,9 +94,10 @@ def draw_grid_image(bgm_service, items_data, output_filename="report.png", cols=
     # 1. 提取外挂数据
     radar_data = kwargs.get('radar_data')
     comp_data = kwargs.get('composition_data')
+    otaku_score = kwargs.get('otaku_score') # <--- 获取浓度分数
     
     has_dashboard = bool(radar_data or comp_data)
-    print(f"🎨 [Drawing] 绘制任务: {title_text} (含仪表盘: {has_dashboard})")
+    print(f"🎨 [Drawing] 绘制任务: {title_text} (含仪表盘: {has_dashboard}, 浓度: {otaku_score})")
 
     # --- 基础配置 ---
     cell_w, cell_h = 220, 380
@@ -111,12 +112,14 @@ def draw_grid_image(bgm_service, items_data, output_filename="report.png", cols=
 
     font_h1 = get_font(56)
     font_h2 = get_font(28)
+    font_bar_label = get_font(22) # 进度条专用字体
     font_card_t = get_font(20)
-    font_card_c = get_font(15) # 评论字体
+    font_card_c = get_font(15)
     font_tag = get_font(13)
 
     # --- 计算总尺寸 ---
-    header_h = 160 + (40 if subtitle_text else 0)
+    # 动态计算 Header 高度：如果有浓度条，增加 60px
+    header_h = 160 + (40 if subtitle_text else 0) + (60 if otaku_score is not None else 0)
     
     count = len(items_data)
     rows = (count + cols - 1) // cols
@@ -132,10 +135,61 @@ def draw_grid_image(bgm_service, items_data, output_filename="report.png", cols=
     curr_y = 60
     draw.text((margin, curr_y), title_text, font=font_h1, fill=(40, 40, 45))
     curr_y += 75
+    
     if subtitle_text:
         draw.text((margin, curr_y), subtitle_text, font=font_h2, fill=(100, 100, 110))
         curr_y += 50
     
+    # === 🔥 新增：二次元浓度进度条 ===
+    if otaku_score is not None:
+        # 布局参数
+        bar_height = 16
+        label_text = "二次元浓度"
+        score_val = float(otaku_score)
+        bar_color = "#FF4B4B" # 保持和雷达图一致的主题色
+        bg_color = "#E0E0E0"  # 浅灰底色
+
+        # 1. 绘制左侧标签 "二次元浓度"
+        draw.text((margin, curr_y), label_text, font=font_bar_label, fill=(80, 80, 90))
+        label_w = font_bar_label.getlength(label_text) + 20 # 文字宽度 + 间距
+
+        # 2. 绘制右侧百分比 "85%"
+        pct_text = f"{int(score_val)}%"
+        pct_w = font_bar_label.getlength(pct_text) + 10
+        draw.text((total_w - margin - pct_w + 10, curr_y), pct_text, font=font_bar_label, fill=bar_color)
+
+        # 3. 绘制中间进度条
+        # 计算进度条的起止 X 坐标
+        bar_start_x = margin + label_w
+        bar_end_x = total_w - margin - pct_w - 10
+        bar_max_w = bar_end_x - bar_start_x
+        
+        # 垂直居中微调
+        bar_y = curr_y + 8 
+
+        # 画底槽 (灰色)
+        draw.rounded_rectangle(
+            [bar_start_x, bar_y, bar_end_x, bar_y + bar_height], 
+            radius=bar_height//2, 
+            fill=bg_color
+        )
+        
+        # 画进度 (红色)
+        fill_w = int(bar_max_w * (score_val / 100))
+        if fill_w > 0:
+            # 确保最小宽度不小于圆角，否则很难看，或者直接限制 min
+            fill_w = max(fill_w, bar_height) 
+            draw.rounded_rectangle(
+                [bar_start_x, bar_y, bar_start_x + fill_w, bar_y + bar_height], 
+                radius=bar_height//2, 
+                fill=bar_color
+            )
+
+        curr_y += 60 # 增加垂直间距，为下面留空
+
+    # ================================
+
+    # 分割线
     draw.line([(margin, curr_y), (total_w - margin, curr_y)], fill=(220, 220, 230), width=2)
     curr_y += 30
 
@@ -157,7 +211,6 @@ def draw_grid_image(bgm_service, items_data, output_filename="report.png", cols=
             right_start_x = margin + half_w 
             draw.text((right_start_x + 20, dash_y), "🧪 核心成分 / COMPOSITION", font=font_h2, fill=(80, 80, 90))
             
-            # 饼图尺寸稍作调整，配合 increased margin
             pie_img = _generate_pie_pil(comp_data, size=(480, 380))
             if pie_img:
                 offset_x = right_start_x + (half_w - 480) // 2
@@ -205,23 +258,19 @@ def draw_grid_image(bgm_service, items_data, output_filename="report.png", cols=
         title = item.get('title', 'Unknown')
         draw.text((x+15, text_y), title[:11] + ('...' if len(title)>11 else ''), font=font_card_t, fill=(40,40,40))
         
-        # 评论/理由 (🔧 修复: 最多显示3行，超出省略)
+        # 评论/理由
         comment = item.get('reason') or item.get('comment')
         if comment:
-            # textwrap.wrap 自动按宽度换行
             lines = textwrap.wrap(comment, width=13)
-            
-            # 截取前3行
             if len(lines) > 3:
                 lines = lines[:3]
-                # 第三行末尾加省略号
                 if len(lines[-1]) > 0:
                      lines[-1] = lines[-1][:-1] + "..."
             
-            text_y += 30 # 标题下方的间距
+            text_y += 30
             for line in lines:
                 draw.text((x+15, text_y), line, font=font_card_c, fill=(120,120,130))
-                text_y += 20 # 行高
+                text_y += 20
     
     # --- 4. Footer ---
     f_text = f"Generated by OtakuNeko | User: {user_name} | 基于 Bangumi 数据驱动"

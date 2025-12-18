@@ -240,6 +240,7 @@ class ProfileAgent(BaseAgent):
                 user_name=self.bgm_service.username,
                 radar_data=result_data['radar'],          # 外挂雷达数据
                 composition_data=result_data['composition'], # 外挂饼图数据
+                otaku_score=otaku_score,
             )
             status.update(label="✅ 完成", state="complete", expanded=False)
 
