@@ -10,3 +10,4 @@ pillow
 pandas
 plotly
 kaleido
+plotly_get_chrome
