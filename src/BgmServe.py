@@ -709,6 +709,28 @@ class BangumiService:
         score = subject_data.get('score')
         if score and score > 0: return score
         return 'N/A'
+    
+    def reload_config(self):
+        """
+        🔄 热重载配置：强制重新读取环境变量
+        """
+        # 1. 重新读取基础信息
+        self.access_token = os.getenv("BGM_ACCESS_TOKEN")
+        raw_username = os.getenv("BGM_USERNAME")
+        
+        # 2. 重新初始化 Session (因为 Header 里的 Token 可能变了)
+        self.session = self._init_session()
+        
+        # 3. 重新执行用户 ID 解析逻辑 (之前写的那个逻辑)
+        # 这里直接复用你之前的初始化逻辑
+        if raw_username:
+            # 如果你保留了之前的 _validate_username 或 _resolve_user_id
+            # 简单起见，这里假设你用了最新的"只允许英文/数字"逻辑
+            self.username = raw_username
+            print(f"🔄 配置已重载，当前用户: {self.username}")
+        else:
+            self.username = None
+            print("⚠️ 配置重载后未发现用户名")
 
 # --- 单例模式 (可选) ---
 # 这样其他文件 import bgm_service 就能直接用

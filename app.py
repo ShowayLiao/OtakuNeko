@@ -157,7 +157,8 @@ def configure_api_key_dialog():
         os.environ["CUSTOM_MODEL_REASONER"] = new_model_reasoner.strip()
         os.environ["BGM_ACCESS_TOKEN"] = new_key_bgm.strip()
         os.environ["BGM_USERNAME"] = new_user.strip()
-        st.success("配置已保存！")
+        bgm_service.reload_config()
+        st.success("配置已保存并生效！")
         time.sleep(1)
         st.rerun()
 
