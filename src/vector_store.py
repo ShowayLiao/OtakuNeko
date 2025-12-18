@@ -120,17 +120,43 @@ class LocalVectorStore:
         return success_msg
 
     def load_index(self):
-        """从磁盘加载索引"""
+        """
+        从磁盘加载索引。
+        逻辑：优先读取本地文件 -> 如果读取失败（文件不存在或损坏） -> 自动触发构建流程。
+        """
+        embed_path = os.path.join(INDEX_DIR, "anime_embeddings.pkl")
+        meta_path = os.path.join(INDEX_DIR, "anime_meta.pkl")
+
         try:
-            with open(os.path.join(INDEX_DIR, "anime_embeddings.pkl"), 'rb') as f:
+            # --- 尝试加载阶段 ---
+            if not os.path.exists(embed_path) or not os.path.exists(meta_path):
+                raise FileNotFoundError("索引文件缺失")
+
+            with open(embed_path, 'rb') as f:
                 self.embeddings = pickle.load(f)
-            with open(os.path.join(INDEX_DIR, "anime_meta.pkl"), 'rb') as f:
+            with open(meta_path, 'rb') as f:
                 self.metadata = pickle.load(f)
+            
+            # print("✅ 本地索引加载成功") # 可选日志
             return True
+
         except Exception as e:
-            print(f"⚠️ 索引加载失败 (可能是首次运行): {e}")
-            return False
-        
+            # --- 自动构建阶段 ---
+            print(f"⚠️ 未检测到有效索引 ({e})，正在自动构建...")
+            
+            try:
+                # 调用 build_index
+                # 注意：这里 log_func 传入 print，将进度打印到控制台，避免 UI 报错
+                self.build_index(log_func=print)
+                print("✅ 自动索引构建完成")
+                return True
+            except Exception as build_e:
+                print(f"❌ 致命错误：索引自动构建失败: {build_e}")
+                import traceback
+                traceback.print_exc()
+                return False
+            
+            
     def _cleanup_cache(self):
         """清理过期的缓存"""
         current_time = time.time()
