@@ -4,8 +4,9 @@ from .base import BaseAgent
 from src.config.personas import TEMPLATES
 
 class IntentRouter(BaseAgent):
-    def __init__(self, llm_service):
-        super().__init__(llm_service)
+    def __init__(self, llm_service, bgm_service):
+        super().__init__(llm_service, bgm_service)
+        self.bgm_service = bgm_service
 
     def classify(self, user_input):
         print(f"🧠 [Router] 收到指令: {user_input[:20]}...")

@@ -7,7 +7,7 @@ from typing import List, Dict, Any, Tuple
 from openai import OpenAI
 
 # 🟢 引入统一的数据服务单例
-from src.BgmServe import bgm_service
+from src.BgmServe import BangumiService
 from src.config.personas import TEMPLATES
 
 class DataService:
@@ -23,7 +23,7 @@ class DataService:
     _cache_ttl = 300  # 5 minutes cache TTL
 
     @staticmethod
-    def should_sync() -> Tuple[bool, str]:
+    def should_sync(bgm_service: BangumiService) -> Tuple[bool, str]:
         """判断是否需要自动同步"""
         data_path = bgm_service.data_path
         
@@ -48,12 +48,12 @@ class DataService:
         DataService._memory_cache_time = 0
 
     @staticmethod
-    def perform_sync(deep_sync=True):
+    def perform_sync(bgm_service: BangumiService, deep_sync=True):
         """执行同步操作 (代理到 bgm_service)"""
         return bgm_service.run_sync(deep_sync=deep_sync)
 
     @staticmethod
-    def load_and_filter_memory() -> List[Dict[str, Any]]:
+    def load_and_filter_memory(bgm_service: BangumiService) -> List[Dict[str, Any]]:
         """
         核心数据清洗逻辑：
         为 LLM 的 [CHAT] 模式准备“待看/在看”清单。

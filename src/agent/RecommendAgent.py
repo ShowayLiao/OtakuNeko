@@ -5,7 +5,7 @@ import streamlit as st
 from concurrent.futures import ThreadPoolExecutor
 
 from .base import BaseAgent
-from src.BgmServe import bgm_service
+from src.BgmServe import BangumiService
 from src.vector_store import vector_store
 from src.config.personas import ROLES, TEMPLATES
 import json_repair
@@ -15,15 +15,18 @@ class RecommendAgent(BaseAgent):
     🕵️ 深度推荐 Agent (迁移融合版)
     集成特性：RAG检索 + 库存优先 + 评分过滤 + 状态变色龙(新推转重温) + 并发加速
     """
-    def __init__(self, llm_service):
-        super().__init__(llm_service)
+    def __init__(self, llm_service, bgm_service: BangumiService):
+        super().__init__(llm_service, bgm_service)
+        self.bgm_service = bgm_service
+
 
     def _get_exclusion_set(self):
         """
         [逻辑迁移] 获取排除列表 (看过 + 抛弃)
         用于防止推荐已看过的作品，或者将'新推'修正为'重温'
         """
-        full_records = bgm_service.load_local_records()
+        
+        full_records = self.bgm_service.load_local_records()
         # 筛选看过(watched)和抛弃(dropped)
         exclude_list = [x for x in full_records if x.get('status') in ['watched', 'dropped']]
         

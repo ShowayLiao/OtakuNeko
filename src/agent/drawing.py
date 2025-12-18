@@ -3,7 +3,7 @@ import io
 import textwrap
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import plotly.graph_objects as go
-from src.BgmServe import bgm_service
+from src.BgmServe import BangumiService
 import streamlit as st
 
 # ==========================================
@@ -82,7 +82,7 @@ def _generate_pie_pil(comp_data, size=(400, 350)):
 # 🎨 主绘图逻辑
 # ==========================================
 
-def draw_grid_image(items_data, output_filename="report.png", cols=4, 
+def draw_grid_image(bgm_service, items_data, output_filename="report.png", cols=4, 
                    title_text="OtakuNeko · 年度报告", subtitle_text=None, 
                    font_path="./font/AlibabaPuHuiTi-3-65-Medium.ttf",
                    user_name="None",

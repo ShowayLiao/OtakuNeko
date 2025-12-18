@@ -5,7 +5,7 @@ import streamlit as st
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
 
-from src.BgmServe import bgm_service
+from src.BgmServe import BangumiService
 from src.data_processor import extract_data, fetch_dataset,load_json_file
 from .drawing import draw_grid_image
 
@@ -17,9 +17,10 @@ class BaseAgent:
     2. 提供通用的 Streamlit 渲染接口 (render)
     3. 默认实现基础的“闲聊”功能
     """
-    def __init__(self, llm_service):
+    def __init__(self, llm_service, bgm_service):
         self.llm_service = llm_service
         self.client = llm_service.client
+        self.bgm_service = bgm_service
         # 定义配置文件路径，子类可以复用
         self.profile_path = "data/user_profile_summary.txt"
         self.dataset_path = "data/datasets"
@@ -212,7 +213,7 @@ class BaseAgent:
                         user_name = "None",
                         **kwargs):
         """A wrapper around the draw_grid_image utility."""
-        return draw_grid_image(items_data, output_filename, cols, title_text, subtitle_text, self.font_path,user_name, **kwargs)
+        return draw_grid_image(self.bgm_service,items_data, output_filename, cols, title_text, subtitle_text, self.font_path,user_name, **kwargs)
     # ==========================================================
     def plot_radar_chart(self, data: dict, title: str = "Radar Chart", output_path: str = "radar_chart.png"):
         from src.agent.drawing import plot_radar_chart
@@ -267,7 +268,7 @@ class BaseAgent:
         :param limit: 数量限制 (0为不限制)
         :param days: 时间范围限制，提取最近 X 天的记录 (0为不限制)
         """
-        return fetch_dataset(file_path, status_filter, limit, days)
+        return fetch_dataset(self.bgm_service,file_path, status_filter, limit, days)
     
     def _extract_data(self, items: list, *fields) -> str:
         """
@@ -295,7 +296,7 @@ class BaseAgent:
 
         def fetch_single(raw_title):
             # 1. 调用 Service 搜索
-            search_res = bgm_service.search_subject(raw_title,"id","name_cn","name","images","score")
+            search_res = self.bgm_service.search_subject(raw_title,"id","name_cn","name","images","score")
             
             if not search_res:
                 print(f"⚠️ [Fetch Fail] 搜不到: {raw_title}")

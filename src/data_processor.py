@@ -4,7 +4,7 @@ import os
 import time
 import json_repair
 from datetime import datetime, timedelta
-from src.BgmServe import bgm_service
+from src.BgmServe import BangumiService
 
 # Cache for categorized datasets
 _dataset_cache = {}
@@ -88,7 +88,7 @@ def clear_dataset_cache():
     global _dataset_cache
     _dataset_cache.clear()
 
-def export_categorized_datasets():
+def export_categorized_datasets(bgm_service: BangumiService):
     """
     📂 数据分包导出核心逻辑 (Refactored)
     利用 fetch_dataset 获取全量数据，然后进行内存分包
@@ -96,7 +96,7 @@ def export_categorized_datasets():
 
     # 1. 获取全量数据 (利用 fetch_dataset 的兜底逻辑：有文件读文件，没文件读库)
     # 这里不传 status_filter，意为获取所有数据
-    records = fetch_dataset(file_path=SOURCE_FILE)
+    records = fetch_dataset(bgm_service, file_path=SOURCE_FILE)
     
     if not records:
         return "⚠️ 主数据库为空或文件不存在，无法导出。"
@@ -146,7 +146,7 @@ def export_categorized_datasets():
 
     return f"✅ 导出完成! 路径: {EXPORT_DIR}\n📊 统计: " + " | ".join(results)
 
-def extract_recent_watched(days=730):
+def extract_recent_watched(bgm_service,days=730):
     """
     📅 提取最近 X 天的观看记录 (Refactored)
     利用 fetch_dataset 的时间过滤功能，大幅简化代码
@@ -159,6 +159,7 @@ def extract_recent_watched(days=730):
     # 注意：这里我们传入 days 参数，fetch_dataset 会自动处理日期计算和筛选
     try:
         filtered_data = fetch_dataset(
+            bgm_service=bgm_service,
             file_path=source_path, 
             status_filter='watched', 
             days=days
@@ -209,7 +210,7 @@ def extract_recent_watched(days=730):
         return f"❌ 写入失败: {e}"
     
 
-def fetch_dataset(file_path: str = None, status_filter: str = None, limit: int = 0, days: int = 0) -> list:
+def fetch_dataset(bgm_service: BangumiService, file_path: str = None, status_filter: str = None, limit: int = 0, days: int = 0) -> list:
     """
     📂 通用数据加载 (基类公共方法 - 增强版)
     """

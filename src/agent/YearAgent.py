@@ -3,7 +3,7 @@ import json
 import os
 import streamlit as st
 from .ProfileAgent import ProfileAgent
-from src.BgmServe import bgm_service
+from src.BgmServe import BangumiService
 from src.config.personas import ROLES, TEMPLATES
 import json_repair
 
@@ -202,7 +202,7 @@ class YearAgent(ProfileAgent):
                     cols=4, 
                     title_text="OtakuNeko · 2025年度动画认证：",
                     subtitle_text=f"{user_stats.get('comment_tags', ['2025年度成分鉴定'])[0]}：{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[0]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[1]}、{user_stats.get('Anime_tag', {}).get('tag', ['N/A'])[2]}",
-                    user_name=bgm_service.username
+                    user_name=self.bgm_service.username
                 )
                 status.update(label="✅ 年度总结生成完毕", state="complete", expanded=False)
 

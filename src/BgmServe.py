@@ -34,36 +34,44 @@ class BangumiService:
     MAX_FAILURES = 5  # 最大连续失败次数
     RESET_TIMEOUT = 300  # 断路器重置时间 (5分钟)
     
-    def __init__(self):
-        # 初始化路径
-        self.data_path = os.path.join(self.DATA_DIR, self.DATA_FILE)
-        os.makedirs(self.DATA_DIR, exist_ok=True)
-
-        # 加载凭证
-        self.access_token = os.getenv("BGM_ACCESS_TOKEN")
-        # 1. 获取原始输入 (可能是中文昵称，也可能是 ID)
-        raw_username = os.getenv("BGM_USERNAME")
+    # 修改 __init__，增加 username 和 token 参数
+    def __init__(self, username: str = None, token: str = None):
+        self.DATA_DIR = "data"
         
+        # 1. 优先使用传入参数，没有传则尝试读取环境变量 (兼容老逻辑)
+        raw_username = username if username else os.getenv("BGM_USERNAME")
+        self.access_token = token if token else os.getenv("BGM_ACCESS_TOKEN")
+
         # 2. 初始化 Session
         self.session = self._init_session()
         self._local_db_cache: Optional[Dict[str, Dict]] = None
-
-        # 3. 🛡️ 严格校验用户名 (核心修改)
-        if self._validate_username(raw_username):
-            self.username = raw_username
-            print(f"✅ 用户 ID 格式正确: {self.username}")
-        else:
-            self.username = None
-            # 这里的提示要足够明显，告诉用户为什么错了
-            if raw_username:
-                print(f"❌ 错误: 用户名 '{raw_username}' 格式不正确！")
-                print("   请勿填入【中文昵称】。")
-                print("   请填入 Bangumi 个人主页 URL 末尾的【数字 ID】或【英文 ID】。")
-                print("   (例如: https://bgm.tv/user/123456 -> 填 123456)")
         
         # Circuit breaker state
         self.failure_count = 0
         self.last_failure_time = 0
+
+        # 3. 🛡️ 严格校验用户名 & 数据隔离逻辑
+        # 先默认 None，校验通过后再赋值
+        self.username = None
+        self.DATA_FILE = "bangumi_unknown_records.json" # 默认文件名
+
+        if raw_username and self._validate_username(raw_username):
+            self.username = raw_username
+            print(f"✅ 用户 ID 格式正确: {self.username}")
+            
+            # 🔥 核心修改：文件名带上用户名，实现数据隔离！
+            # 例如: data/bangumi_123456_records.json
+            safe_name = urllib.parse.quote(self.username)
+            self.DATA_FILE = f"bangumi_{safe_name}_records.json"
+        else:
+            # 校验失败的逻辑
+            if raw_username:
+                print(f"❌ 错误: 用户名 '{raw_username}' 格式不正确！")
+                # ... (你的那些 print 提示保留) ...
+        
+        # 4. 初始化路径 (放在最后，因为 DATA_FILE 现在是动态的了)
+        self.data_path = os.path.join(self.DATA_DIR, self.DATA_FILE)
+        os.makedirs(self.DATA_DIR, exist_ok=True)
     
 
     def _validate_username(self, name: str) -> bool:
@@ -735,9 +743,9 @@ class BangumiService:
 
 # --- 单例模式 (可选) ---
 # 这样其他文件 import bgm_service 就能直接用
-bgm_service = BangumiService()
+# bgm_service = BangumiService()
 
 if __name__ == "__main__":
     # 测试入口
     print("🚀 开始同步...")
-    print(bgm_service.run_sync(deep_sync=True))
+    # print(bgm_service.run_sync(deep_sync=True))

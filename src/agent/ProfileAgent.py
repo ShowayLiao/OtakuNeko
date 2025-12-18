@@ -5,13 +5,14 @@ import streamlit as st
 from concurrent.futures import ThreadPoolExecutor
 
 from .base import BaseAgent
-from src.BgmServe import bgm_service 
+from src.BgmServe import BangumiService
 from src.config.personas import ROLES, TEMPLATES 
 import json_repair
 
 class ProfileAgent(BaseAgent):
-    def __init__(self, llm_service):
-        super().__init__(llm_service)
+    def __init__(self, llm_service, bgm_service: BangumiService):
+        super().__init__(llm_service, bgm_service)
+        self.bgm_service = bgm_service
         # 定义画像需要的20个维度
         self.categories = [
             "最治愈", "最搞笑", "最感动", "最热血", "最轻松",
@@ -25,7 +26,7 @@ class ProfileAgent(BaseAgent):
         path = os.path.join(self.dataset_path, "dataset_watched.json")
         data = self._load_json_file(path)
         if not data:
-            full_data = bgm_service.load_local_records()
+            full_data = self.bgm_service.load_local_records()
             data = [x for x in full_data if x.get('status') == 'watched']
         return data
 
@@ -236,7 +237,7 @@ class ProfileAgent(BaseAgent):
                 output_filename="profile_grid.png",
                 title_text="OtakuNeko · 二次元成分鉴定",
                 subtitle_text=f"{tags[0]}" if tags else "二次元爱好者",
-                user_name=bgm_service.username,
+                user_name=self.bgm_service.username,
                 radar_data=result_data['radar'],          # 外挂雷达数据
                 composition_data=result_data['composition'], # 外挂饼图数据
             )

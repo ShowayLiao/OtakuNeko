@@ -7,8 +7,8 @@ class RefinerAgent(BaseAgent):
     RefinerAgent: 专门处理模糊指令、情绪宣泄或无意义输入的 Agent。
     它的目标不是执行任务，而是通过对话明确用户的真实需求。
     """
-    def __init__(self, llm_service):
-        super().__init__(llm_service)
+    def __init__(self, llm_service, bgm_service):
+        super().__init__(llm_service, bgm_service)
 
     def clarify(self, user_input, style="cat"):
         """
