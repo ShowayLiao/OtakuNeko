@@ -108,7 +108,7 @@ class ProfileAgent(BaseAgent):
             # 调用基类 LLM
             raw_json_str = ""
             try:
-                stream = self.run(messages, temperature=1.2, stream=True, model=self.llm_service.reasoner_model)
+                stream = self.run(messages, temperature=0.2, stream=True, model=self.llm_service.reasoner_model)
                 status.write("🧠 正在深度思考...")
                 for chunk in stream:
                     if chunk.choices and chunk.choices[0].delta.content:
