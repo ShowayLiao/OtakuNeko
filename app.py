@@ -15,43 +15,33 @@ from src.BgmServe import BangumiService
 import shutil
 
 
-def install_custom_font():
-    """
-    将项目内的字体文件安装到 Linux 系统的用户字体目录
-    """
-    # 1. 配置路径
-    # 你的字体文件在项目里的路径 (请确保文件名完全一致)
-    font_source = "./font/AlibabaPuHuiTi-3-65-Medium.ttf" 
+def install_font_for_plotly():
+    # ... (路径定义不变) ...
     
-    # Linux 用户级字体目录 (Streamlit Cloud 允许写这里)
-    font_dir = os.path.expanduser("~/.fonts")
-    
-    # 目标路径
-    font_dest = os.path.join(font_dir, "AlibabaPuHuiTi-3-65-Medium.ttf")
-
-    # 2. 如果已经安装过，就跳过 (避免每次运行都复制)
-    if os.path.exists(font_dest):
-        return
-
-    print(f"🔧 [Font] 正在安装字体: {font_source} ...")
-    
+    # 🔥 加一个“全能”的 Try-Except，防止字体问题搞崩整个 App
     try:
-        # 创建目录
+        # 检查源文件是否存在
+        if not os.path.exists(font_src):
+            print(f"⚠️ [Font] 警告：找不到字体文件 {font_src}，跳过安装。")
+            return
+
         os.makedirs(font_dir, exist_ok=True)
         
-        # 复制文件
-        shutil.copy(font_source, font_dest)
-        
-        # 3. 核心步骤：刷新 Linux 字体缓存
-        # 这一步非常关键，不执行的话系统不知道有新字体
-        os.system("fc-cache -fv")
-        
-        print("✅ [Font] 字体安装成功，缓存已刷新！")
-        
+        # 只有当目标不存在时才复制
+        if not os.path.exists(font_dest):
+            shutil.copy(font_src, font_dest)
+            # 只有复制了才刷新缓存，避免每次启动都运行耗时命令
+            try:
+                os.system("fc-cache -fv")
+            except Exception as e:
+                print(f"⚠️ [Font] fc-cache 执行失败 (可能缺少 fontconfig): {e}")
+            print("✅ [Font] 字体安装/检查完毕。")
+            
     except Exception as e:
-        print(f"❌ [Font] 字体安装失败: {e}")
+        # 重点：捕获所有错误，只打印日志，不让程序崩溃！
+        print(f"❌ [Font] 字体安装流程出错 (但不影响主程序运行): {e}")
 
-install_custom_font()
+install_font_for_plotly()
 
 # --- 1. 基础配置 & 全局 CSS ---
 st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
