@@ -12,7 +12,46 @@ from src.agent import IntentRouter, ProfileAgent, RecommendAgent, RefinerAgent
 from src.vector_store import vector_store
 from src.plugins.year_report import YearReportPlugin
 from src.BgmServe import BangumiService
+import shutil
 
+
+def install_custom_font():
+    """
+    将项目内的字体文件安装到 Linux 系统的用户字体目录
+    """
+    # 1. 配置路径
+    # 你的字体文件在项目里的路径 (请确保文件名完全一致)
+    font_source = "./font/AlibabaPuHuiTi-3-65-Medium.ttf" 
+    
+    # Linux 用户级字体目录 (Streamlit Cloud 允许写这里)
+    font_dir = os.path.expanduser("~/.fonts")
+    
+    # 目标路径
+    font_dest = os.path.join(font_dir, "AlibabaPuHuiTi-3-65-Medium.ttf")
+
+    # 2. 如果已经安装过，就跳过 (避免每次运行都复制)
+    if os.path.exists(font_dest):
+        return
+
+    print(f"🔧 [Font] 正在安装字体: {font_source} ...")
+    
+    try:
+        # 创建目录
+        os.makedirs(font_dir, exist_ok=True)
+        
+        # 复制文件
+        shutil.copy(font_source, font_dest)
+        
+        # 3. 核心步骤：刷新 Linux 字体缓存
+        # 这一步非常关键，不执行的话系统不知道有新字体
+        os.system("fc-cache -fv")
+        
+        print("✅ [Font] 字体安装成功，缓存已刷新！")
+        
+    except Exception as e:
+        print(f"❌ [Font] 字体安装失败: {e}")
+
+install_custom_font()
 
 # --- 1. 基础配置 & 全局 CSS ---
 st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
@@ -98,60 +137,56 @@ def update_env_file(key, value):
 @st.dialog("👋 欢迎来到 OtakuNeko", width="large")
 def initial_setup_dialog():
     st.markdown("请配置您的身份信息与 AI 服务以初始化系统。")
+    st.warning("⚠️ 注意：Web 模式下，刷新页面会导致配置丢失，请妥善保存您的 Key。", icon="🔒")
     
-    # 使用标签页分离关注点，界面更清爽
-    tab_account, tab_ai = st.tabs(["👤 账号绑定 (必填)", "🧠 AI 模型配置(必填)"])
+    # 使用标签页
+    tab_account, tab_ai = st.tabs(["👤 账号绑定 (必填)", "🧠 AI 模型配置"])
 
     # === Tab 1: Bangumi 账号 ===
     with tab_account:
         st.info("我们需要您的 Bangumi ID 来同步收藏数据。", icon="ℹ️")
-        
-        col_u1, col_u2 = st.columns([1, 2])
+        col_u1, col_u2 = st.columns([2, 1])
         with col_u1:
-            # 默认读取环境变量，方便老用户
-            default_user = os.getenv("BGM_USERNAME", "")
-            input_user = st.text_input("Bangumi ID (中文请填写数字id)", value=default_user, placeholder="例如: 123456 或 sai", help="请填写个人主页 URL 末尾的 ID")
+            # ❌ 绝对不要读环境变量来预填！让用户每次都自己填
+            input_user = st.text_input("Bangumi ID", value="", placeholder="例如: 123456", help="请填写个人主页 URL 末尾的 ID")
         with col_u2:
-            default_token = os.getenv("BGM_ACCESS_TOKEN", "")
-            input_token = st.text_input("Access Token (可选)", value=default_token, type="password", help="仅当您的收藏设为私密时需要")
+            input_token = st.text_input("Access Token (可选)", value="", type="password")
 
     # === Tab 2: AI 模型 ===
     with tab_ai:
-        # 选择 Provider
-        provider_mode = st.radio("选择 AI 服务商", ["DeepSeek (推荐)", "自定义 (OpenAI 兼容)"], horizontal=True)
+        provider_mode = st.radio("选择 AI 服务商", ["DeepSeek", "自定义"], horizontal=True)
         
-        input_ds_key = os.getenv("DEEPSEEK_API_KEY", "")
-        input_custom_url = os.getenv("CUSTOM_API_BASE_URL", "")
-        input_custom_key = os.getenv("CUSTOM_API_KEY", "")
-        input_model_chat = os.getenv("CUSTOM_MODEL_CHAT", "")
-        input_model_reasoner = os.getenv("CUSTOM_MODEL_REASONER", "")
+        # 初始化变量
+        input_ds_key = ""
+        input_custom_url = ""
+        input_custom_key = ""
+        input_model_chat = ""
+        input_model_reasoner = ""
 
-        if provider_mode == "DeepSeek (推荐)":
-            st.caption(" DeepSeek 模型性价比极高，适合大多数场景。")
-            input_ds_key = st.text_input("DeepSeek API Key", value=input_ds_key, type="password")
+        if provider_mode == "DeepSeek":
+            # ❌ 绝对不要 value=os.getenv(...)，必须留空！
+            input_ds_key = st.text_input("DeepSeek API Key", value="", type="password", placeholder="sk-...")
+            st.caption("您的 Key 仅存储在当前浏览器的临时内存中，不会保存到服务器。")
         else:
-            st.caption("连接 Moonshot, SiliconCloud, 或本地 Ollama 等服务。")
-            input_custom_url = st.text_input("API Base URL", value=input_custom_url, placeholder="https://api.example.com/v1")
-            input_custom_key = st.text_input("API Key", value=input_custom_key, type="password")
-            
+            input_custom_url = st.text_input("API Base URL", value="", placeholder="https://api.example.com/v1")
+            input_custom_key = st.text_input("API Key", value="", type="password")
             c1, c2 = st.columns(2)
             with c1:
-                input_model_chat = st.text_input("对话模型名", value=input_model_chat, placeholder="gpt-4o-mini")
+                input_model_chat = st.text_input("对话模型名", value="", placeholder="gpt-4o-mini")
             with c2:
-                input_model_reasoner = st.text_input("推理模型名", value=input_model_reasoner, placeholder="gpt-4o")
+                input_model_reasoner = st.text_input("推理模型名", value="", placeholder="gpt-4o")
 
     st.markdown("---")
     
     # === 提交按钮 ===
-    if st.button("🚀 保存并进入系统", type="primary", use_container_width=True):
-        # 1. 基础校验
+    if st.button("🚀 进入系统", type="primary", use_container_width=True):
+        # 1. 基础校验 (逻辑不变)
         errors = []
-        if not input_user.strip():
-            errors.append("❌ Bangumi ID 不能为空")
+        if not input_user.strip(): errors.append("❌ Bangumi ID 不能为空")
         
-        if provider_mode == "DeepSeek (推荐)" and not input_ds_key.strip():
+        if provider_mode == "DeepSeek" and not input_ds_key.strip():
             errors.append("❌ 请输入 DeepSeek API Key")
-        elif provider_mode != "DeepSeek (推荐)":
+        elif provider_mode != "DeepSeek":
             if not input_custom_url.strip() or not input_custom_key.strip():
                 errors.append("❌ 自定义服务的 URL 和 Key 不能为空")
         
@@ -159,36 +194,32 @@ def initial_setup_dialog():
             for e in errors: st.error(e)
             return
 
-        # 2. 尝试实例化 BangumiService (验证 ID 格式)
-        with st.spinner("正在验证账户与连接..."):
+        # 2. 验证并实例化 Service
+        with st.spinner("正在验证账户..."):
             temp_service = BangumiService(username=input_user.strip(), token=input_token.strip())
             
             if not temp_service.username:
-                st.error("❌ ID 格式错误！请填入数字 ID 或英文 ID，不要填中文昵称。")
+                st.error("❌ ID 格式错误！请填入数字 ID 或英文 ID。")
                 return
             
-            # 3. 验证通过：保存配置到 .env (持久化)
-            update_env_file("BGM_USERNAME", input_user.strip())
-            update_env_file("BGM_ACCESS_TOKEN", input_token.strip())
-            
-            if provider_mode == "DeepSeek (推荐)":
-                update_env_file("DEEPSEEK_API_KEY", input_ds_key.strip())
-                # 清空 Custom 的防止干扰（可选）
-            else:
-                update_env_file("CUSTOM_API_BASE_URL", input_custom_url.strip())
-                update_env_file("CUSTOM_API_KEY", input_custom_key.strip())
-                update_env_file("CUSTOM_MODEL_CHAT", input_model_chat.strip())
-                update_env_file("CUSTOM_MODEL_REASONER", input_model_reasoner.strip())
-
-            # 4. 更新 Session State (立即生效)
+            # 3. 🔥 关键修改：只更新 Session，不写文件！
             st.session_state.bgm_service = temp_service
             st.session_state.user_name = temp_service.username
             st.session_state.is_logged_in = True
             
-            # 设置 Provider 标记
-            st.session_state.provider = "Custom" if "自定义" in provider_mode else "DeepSeek"
+            # 4. 把 Key 存入环境变量（仅限当前进程内存，不写文件）
+            # 这样你的 LLMService 读 os.getenv 依然能读到，但只对当前用户有效
+            if provider_mode == "DeepSeek":
+                os.environ["DEEPSEEK_API_KEY"] = input_ds_key.strip()
+                st.session_state.provider = "DeepSeek"
+            else:
+                os.environ["CUSTOM_API_BASE_URL"] = input_custom_url.strip()
+                os.environ["CUSTOM_API_KEY"] = input_custom_key.strip()
+                os.environ["CUSTOM_MODEL_CHAT"] = input_model_chat.strip()
+                os.environ["CUSTOM_MODEL_REASONER"] = input_model_reasoner.strip()
+                st.session_state.provider = "Custom"
 
-            st.success("配置已保存，欢迎回来！")
+            st.success("配置已就绪！")
             time.sleep(0.5)
             st.rerun()
 

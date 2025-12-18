@@ -10,6 +10,8 @@ import streamlit as st
 # 🔌 图表生成器 (Plotly -> PIL)
 # ==========================================
 
+PLOTLY_FONT_FAMILY = "Alibaba PuHuiTi 3.0, Alibaba PuHuiTi 3, SimHei, Arial, sans-serif"
+
 def _generate_radar_pil(radar_data, size=(400, 350)):
     """生成静态雷达图"""
     if not radar_data: return None
@@ -23,12 +25,22 @@ def _generate_radar_pil(radar_data, size=(400, 350)):
             marker=dict(size=8, color='#FF4B4B')
         ))
         fig.update_layout(
+            # 1. 🔥 全局字体设置
+            font=dict(family=PLOTLY_FONT_FAMILY, size=14),
+            
             polar=dict(
-                radialaxis=dict(visible=True, range=[0, 100], showticklabels=False, gridcolor="rgba(180,180,180,0.3)"),
-                angularaxis=dict(tickfont=dict(size=16, color="#333"), rotation=90, direction="clockwise")
+                radialaxis=dict(
+                    visible=True, range=[0, 100], showticklabels=False, 
+                    gridcolor="rgba(180,180,180,0.3)"
+                ),
+                angularaxis=dict(
+                    # 2. 🔥 确保轴标签也用这个字体
+                    tickfont=dict(family=PLOTLY_FONT_FAMILY, size=16, color="#333"), 
+                    rotation=90, 
+                    direction="clockwise"
+                )
             ),
             showlegend=False, 
-            # 🔧 调整边距防止文字切边
             margin=dict(l=60, r=60, t=50, b=50),
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
             width=size[0], height=size[1]
@@ -57,13 +69,15 @@ def _generate_pie_pil(comp_data, size=(400, 350)):
         marker=dict(colors=colors, line=dict(color='#FFF', width=2)),
         hole=0.5,
         textinfo='label+percent',
-        textposition='outside',   
-        textfont=dict(size=14, color='#333'), # 字体稍微加大
+        textposition='outside',
+        # 3. 🔥 饼图文字字体设置
+        textfont=dict(family=PLOTLY_FONT_FAMILY, size=14, color='#333'), 
         showlegend=False
     )])
 
     fig.update_layout(
-        # 🔧 核心修复：大幅增加边距，给 outside 的文字留出空间
+        # 4. 🔥 布局字体设置
+        font=dict(family=PLOTLY_FONT_FAMILY, size=14),
         margin=dict(l=90, r=90, t=50, b=50),
         paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
         width=size[0], height=size[1]
