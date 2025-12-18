@@ -11,6 +11,8 @@ from dotenv import load_dotenv
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from PIL import Image
+from src.database import DatabaseManager
+import streamlit as st
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -72,6 +74,9 @@ class BangumiService:
         # 4. 初始化路径 (放在最后，因为 DATA_FILE 现在是动态的了)
         self.data_path = os.path.join(self.DATA_DIR, self.DATA_FILE)
         os.makedirs(self.DATA_DIR, exist_ok=True)
+        
+        # 5. 初始化数据库管理器
+        self.db_manager = DatabaseManager()
     
 
     def _validate_username(self, name: str) -> bool:
@@ -180,21 +185,26 @@ class BangumiService:
     # ==========================
 
     def load_local_records(self) -> List[Dict]:
-        """读取本地 JSON"""
-        if not os.path.exists(self.data_path):
-            return []
+        """读取本地数据（优先从数据库读取，自动迁移JSON数据）"""
         try:
-            with open(self.data_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                # Validate that the data is a list
-                if not isinstance(data, list):
-                    logger.warning(f"⚠️ 本地数据格式异常，期望列表但得到 {type(data)}")
-                    print(f"⚠️ 本地数据格式异常，期望列表但得到 {type(data)}")
-                    return []
-                return data
-        except json.JSONDecodeError as e:
-            logger.error(f"⚠️ 本地数据JSON格式错误: {e}")
-            print(f"⚠️ 本地数据JSON格式错误: {e}")
+            # 从数据库读取数据
+            records = self.db_manager.load_records(self.username or "unknown")
+            
+            # 如果数据库中有数据，直接返回
+            if records:
+                return records
+            
+            # 数据库中没有数据，尝试从JSON文件迁移
+            if os.path.exists(self.data_path):
+                print(f"🔄 [迁移] 检测到JSON数据文件，正在迁移到数据库...")
+                success = self.db_manager.migrate_from_json(self.username or "unknown", self.data_path)
+                if success:
+                    print(f"✅ [迁移] JSON数据迁移完成！")
+                    # 迁移成功后从数据库读取
+                    return self.db_manager.load_records(self.username or "unknown")
+                else:
+                    print(f"❌ [迁移] JSON数据迁移失败！")
+            
             return []
         except Exception as e:
             logger.error(f"⚠️ 读取本地数据出错: {e}")
@@ -202,7 +212,7 @@ class BangumiService:
             return []
 
     def save_records(self, records: List[Dict]):
-        """保存到本地 JSON"""
+        """保存到数据库"""
         # Validate input
         if not isinstance(records, list):
             logger.error(f"❌ 保存数据失败: 期望列表类型但得到 {type(records)}")
@@ -210,8 +220,7 @@ class BangumiService:
             return
             
         try:
-            with open(self.data_path, 'w', encoding='utf-8') as f:
-                json.dump(records, f, ensure_ascii=False, indent=2)
+            self.db_manager.save_records(self.username or "unknown", records)
         except Exception as e:
             logger.error(f"❌ 保存数据失败: {e}")
             print(f"❌ 保存数据失败: {e}")
@@ -220,26 +229,24 @@ class BangumiService:
     # 📡 核心同步逻辑 (Sync)
     # ==========================
 
-    def fetch_user_collection(self) -> List[Dict]:
-        """[阶段一] 快速获取用户收藏列表 (分页)"""
-        if not self.username:
-            print("❌ 未配置 BGM_USERNAME，无法同步。")
+    @st.cache_data(ttl=3600)  # 缓存1小时
+    def _fetch_user_collection_from_api(_self, username: str, access_token: str, _session: requests.Session, status_map: Dict[int, str]) -> List[Dict]:
+        """
+        [阶段一] 快速获取用户收藏列表 (分页) - 缓存版本
+        """
+        if not username:
             return []
 
-        if not self.access_token:
-            print(f"⚠️ 未检测到 Token，尝试以游客身份同步 {self.username} 的公开收藏...")
-        else:
-            print(f"📡 [Sync] 正在同步用户 {self.username} 的收藏...")
         all_items = []
         limit = 50
         offset = 0
 
         while True:
-            url = f"https://api.bgm.tv/v0/users/{self.username}/collections"
+            url = f"https://api.bgm.tv/v0/users/{username}/collections"
             params = {"subject_type": 2, "limit": limit, "offset": offset}
             
             try:
-                resp = self._make_request(url, params=params, timeout=30)
+                resp = _self._make_request(url, params=params, timeout=30)
                 if resp is None:
                     # 请求被断路器拒绝或网络错误
                     break
@@ -247,24 +254,20 @@ class BangumiService:
                 if resp.status_code in [401, 403]:
                     error_msg = f"❌ 权限不足 (Code: {resp.status_code})。请检查用户名是否正确，或该用户的收藏是否为私密（私密收藏需要提供 Access Token）。"
                     logger.error(error_msg)
-                    print(error_msg)
                     break
                 elif resp.status_code == 404:
-                    error_msg = f"❌ 用户 '{self.username}' 未找到 (Code: 404)。"
+                    error_msg = f"❌ 用户 '{username}' 未找到 (Code: 404)。"
                     logger.error(error_msg)
-                    print(error_msg)
                     break
                 elif resp.status_code == 429:
                     error_msg = f"⚠️ 请求频率过高 (Code: {resp.status_code})，稍后重试..."
                     logger.warning(error_msg)
-                    print(error_msg)
                     time.sleep(5)  # 等待更长时间
                     continue
 
                 if resp.status_code != 200:
                     error_msg = f"⚠️ API 错误 Code: {resp.status_code}"
                     logger.warning(error_msg)
-                    print(error_msg)
                     # 对于服务器错误，增加重试
                     if resp.status_code >= 500:
                         time.sleep(2 ** (offset // 50))  # 指数退避
@@ -285,7 +288,7 @@ class BangumiService:
                         "id": subject.get('id'),
                         "title": subject.get('name_cn') or subject.get('name'),
                         "type": "anime",
-                        "status": self.STATUS_MAP.get(item['type'], "watched"),
+                        "status": status_map.get(item['type'], "watched"),
                         "score": item.get('rate', 0),
                         "tags": [t['name'] if isinstance(t, dict) else t for t in item.get('tags', []) if isinstance(t, (dict, str))],
                         "summary": subject.get('short_summary', '') or "暂无简介",
@@ -296,7 +299,6 @@ class BangumiService:
                     }
                     all_items.append(record)
                 
-                print(f"   ⬇️ 已获取 {len(all_items)} 条...")
                 offset += limit
                 time.sleep(0.5)
 
@@ -307,7 +309,34 @@ class BangumiService:
         
         return all_items
 
-    def _fetch_extra_metadata(self, subject_id: int) -> Dict[str, str]:
+    def fetch_user_collection(self) -> List[Dict]:
+        """
+        [阶段一] 快速获取用户收藏列表 (分页)
+        """
+        if not self.username:
+            print("❌ 未配置 BGM_USERNAME，无法同步。")
+            return []
+
+        if not self.access_token:
+            print(f"⚠️ 未检测到 Token，尝试以游客身份同步 {self.username} 的公开收藏...")
+        else:
+            print(f"📡 [Sync] 正在同步用户 {self.username} 的收藏...")
+        
+        # 调用缓存的API请求函数
+        items = self._fetch_user_collection_from_api(
+            username=self.username, 
+            access_token=self.access_token, 
+            session=self.session, 
+            status_map=self.STATUS_MAP
+        )
+        
+        if items:
+            print(f"✅ 已获取 {len(items)} 条收藏记录")
+        
+        return items
+
+    @st.cache_data(ttl=86400)  # 缓存24小时
+    def _fetch_extra_metadata(_self, subject_id: int) -> Dict[str, str]:
         """
         [内部工具] 获取单个条目的深度信息 (制作人员 + 声优)
         返回: {"director":..., "cv":...}

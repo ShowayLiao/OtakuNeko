@@ -1,6 +1,12 @@
 import os
+import psutil
+import platform
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import streamlit as st
+
+# --- 页面配置：必须是第一个Streamlit命令 ---
+st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
+
 import time
 import signal
 from dotenv import load_dotenv
@@ -13,6 +19,15 @@ from src.vector_store import vector_store
 from src.plugins.year_report import YearReportPlugin
 from src.BgmServe import BangumiService
 import shutil
+
+# --- 缓存 BangumiService 实例 ---
+@st.cache_resource
+def get_bgm_service(username: str, token: str) -> BangumiService:
+    """
+    使用 @st.cache_resource 缓存 BangumiService 实例
+    避免每次请求都重新创建服务实例
+    """
+    return BangumiService(username=username.strip(), token=token.strip())
 
 
 def install_custom_font():
@@ -61,7 +76,6 @@ def install_custom_font():
 install_custom_font()
 
 # --- 1. 基础配置 & 全局 CSS ---
-st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
 load_dotenv()
 
 # 确保核心数据目录存在
@@ -203,7 +217,7 @@ def initial_setup_dialog():
 
         # 2. 验证并实例化 Service
         with st.spinner("正在验证账户..."):
-            temp_service = BangumiService(username=input_user.strip(), token=input_token.strip())
+            temp_service = get_bgm_service(username=input_user.strip(), token=input_token.strip())
             
             if not temp_service.username:
                 st.error("❌ ID 格式错误！请填入数字 ID 或英文 ID。")
@@ -309,8 +323,39 @@ def get_cached_memory():
 
 memory_data = get_cached_memory()
 
+# --- 内存监控组件 ---
+def monitor_memory_usage():
+    """
+    监控当前Python进程的内存占用并在侧边栏显示警告
+    """
+    try:
+        # 获取当前进程的内存占用（MB）
+        process = psutil.Process(os.getpid())
+        mem_mb = process.memory_info().rss / (1024 * 1024)  # Convert to MB
+        
+        # 显示内存使用情况
+        st.metric("💾 内存使用", f"{mem_mb:.1f} MB")
+        
+        # 根据内存使用情况显示警告
+        if mem_mb > 900:
+            st.error("⚠️ 内存占用过高 (> 900MB)！建议清理缓存。")
+            if st.button("🗑️ 清理缓存", type="primary"):
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.success("✅ 缓存已清理！")
+                st.rerun()
+        elif mem_mb > 700:
+            st.warning("⚠️ 内存占用较高 (> 700MB)，建议关注。")
+    except Exception as e:
+        st.error(f"内存监控失败: {e}")
+
 # --- 3. 侧边栏 (控制台) ---
 with st.sidebar:
+    # 内存监控组件
+    st.header("🔍 系统监控")
+    monitor_memory_usage()
+    st.divider()
+    
     st.header("📡 数据同步", help="这里是拉取 Bungumi 你的所有动画收藏")
     if st.button("🔄 一键全量更新"):
         with st.status("🚀 正在执行全量更新流程...", expanded=True) as status:

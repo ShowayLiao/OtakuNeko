@@ -10,3 +10,4 @@ pillow
 pandas
 plotly
 matplotlib
+psutil

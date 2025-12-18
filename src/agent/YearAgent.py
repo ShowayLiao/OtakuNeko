@@ -10,11 +10,17 @@ import json_repair
 class YearAgent(ProfileAgent):
     # No custom __init__ needed, it will inherit from ProfileAgent.
     # We will override the categories directly in the class body.
-    categories = [
+    def __init__(self, llm_service, bgm_service: BangumiService):
+        super().__init__(llm_service, bgm_service)
+        self.bgm_service = bgm_service
+        # 定义画像需要的12个维度
+        self.categories = [
         "最佳动画", "最佳原创", "最佳改编", "最佳画面", 
         "最佳音乐", "最想安利", "最意难平", "最被低估", 
         "最被过誉", "最欢乐", "最抽象", "最炒作"
     ]
+
+    
 
     def render(self, style="cat", response_placeholder=None):
         """

@@ -5,6 +5,7 @@ import time
 import numpy as np
 import pickle
 from sentence_transformers import SentenceTransformer
+import streamlit as st
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
@@ -234,5 +235,14 @@ class LocalVectorStore:
             
         return results
 
-# 全局单例
-vector_store = LocalVectorStore()
+# 使用 @st.cache_resource 缓存 LocalVectorStore 实例
+@st.cache_resource
+def get_vector_store() -> LocalVectorStore:
+    """
+    使用 @st.cache_resource 缓存 LocalVectorStore 实例
+    避免每次请求都重新创建向量存储实例
+    """
+    return LocalVectorStore()
+
+# 获取全局单例
+vector_store = get_vector_store()
