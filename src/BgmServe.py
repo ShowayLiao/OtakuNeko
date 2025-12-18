@@ -64,6 +64,7 @@ class BangumiService:
         # Circuit breaker state
         self.failure_count = 0
         self.last_failure_time = 0
+    
 
     def _validate_username(self, name: str) -> bool:
         """
