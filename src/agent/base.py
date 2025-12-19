@@ -53,6 +53,23 @@ class BaseAgent:
             )
             return response
         except Exception as e:
+            # 如果是温度参数错误，降级到 1.0 重试
+            if temperature > 1.0 and "temperature" in str(e).lower() and ("400" in str(e) or "invalid" in str(e).lower()):
+                print(f"[BaseAgent] Temperature 降级重试 ({temperature} -> 1.0)")
+                try:
+                    response = self.client.chat.completions.create(
+                        model=model or self.llm_service.chat_model,
+                        response_format=response_format,
+                        messages=messages,
+                        temperature=1.0,
+                        stream=stream,
+                        timeout=timeout
+                    )
+                    return response
+                except Exception as retry_error:
+                    st.error(f"LLM API Error (重试后): {retry_error}")
+                    return None
+            
             st.error(f"LLM API Error: {e}")
             # To prevent app crash, we can return a mock stream or None
             # For non-stream, returning None is fine. For stream, it might need a generator.

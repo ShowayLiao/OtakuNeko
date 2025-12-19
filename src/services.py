@@ -200,6 +200,20 @@ class LLMService:
                 timeout=30
             )
         except Exception as e:
+            # 如果是温度参数错误，降级到 1.0 重试
+            if "temperature" in str(e).lower() and ("400" in str(e) or "invalid" in str(e).lower()):
+                print(f"[LLMService] Temperature 降级重试 (1.3 -> 1.0)")
+                try:
+                    return self.client.chat.completions.create(
+                        model=self.chat_model,
+                        messages=messages,
+                        temperature=1.0,
+                        stream=True,
+                        timeout=30
+                    )
+                except Exception as retry_error:
+                    e = retry_error  # 使用重试后的错误继续处理
+            
             # Improved error handling with detailed logging
             error_msg = f"❌ 连接 LLM 失败: {str(e)}"
             print(f"[LLMService] Error in get_streaming_response: {error_msg}")
