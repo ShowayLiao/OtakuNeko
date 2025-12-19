@@ -21,6 +21,188 @@ logger = logging.getLogger(__name__)
 # 加载环境变量
 load_dotenv()
 
+# 独立的缓存API函数，避免类依赖
+@st.cache_data(ttl=3600)  # 缓存1小时
+def _fetch_user_collection_from_api_cached(username: str, access_token: str, status_map: Dict[int, str]) -> List[Dict]:
+    """
+    [阶段一] 快速获取用户收藏列表 (分页) - 缓存版本
+    """
+    if not username:
+        return []
+
+    all_items = []
+    limit = 50
+    offset = 0
+    
+    # 创建临时Session
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=3,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
+        backoff_factor=1
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    headers = {}
+    if access_token:
+        headers["Authorization"] = f"Bearer {access_token}"
+
+    while True:
+        # 手动能访问但脚本报 401/403 时，大概率是 User-Agent 被识别为爬虫
+        # 把 UA 换成浏览器里的真实值即可解决
+        url = f"https://api.bgm.tv/v0/users/{username}/collections"
+        headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        })
+        params = {"subject_type": 2, "limit": limit, "offset": offset}
+        
+        try:
+            resp = session.get(url, params=params, headers=headers, timeout=30)
+            
+            if resp.status_code in [401, 403]:
+                error_msg = f"❌ 权限不足 (Code: {resp.status_code})。请检查用户名是否正确，或该用户的收藏是否为私密（私密收藏需要提供 Access Token）。"
+                logger.error(error_msg)
+                break
+            elif resp.status_code == 404:
+                error_msg = f"❌ 用户 '{username}' 未找到 (Code: 404)。"
+                logger.error(error_msg)
+                break
+            elif resp.status_code == 429:
+                error_msg = f"⚠️ 请求频率过高 (Code: {resp.status_code})，稍后重试..."
+                logger.warning(error_msg)
+                time.sleep(5)  # 等待更长时间
+                continue
+
+            if resp.status_code != 200:
+                error_msg = f"⚠️ API 错误 Code: {resp.status_code}"
+                logger.warning(error_msg)
+                # 对于服务器错误，增加重试
+                if resp.status_code >= 500:
+                    time.sleep(2 ** (offset // 50))  # 指数退避
+                    continue
+                break
+            
+            data = resp.json()
+            items = data.get('data', [])
+            if not items:
+                break
+
+            for item in items:
+                subject = item.get('subject', {})
+                if not subject: continue
+                
+                # 基础字段解析
+                record = {
+                    "id": subject.get('id'),
+                    "title": subject.get('name_cn') or subject.get('name'),
+                    "type": "anime",
+                    "status": status_map.get(item['type'], "watched"),
+                    "score": item.get('rate', 0),
+                    "tags": [t['name'] if isinstance(t, dict) else t for t in item.get('tags', []) if isinstance(t, (dict, str))],
+                    "summary": subject.get('short_summary', '') or "暂无简介",
+                    "image": subject.get('images', {}).get('large', ''), # 顺便存个图
+                    "updated_at": item.get('updated_at', ''),
+                    # 占位符，等待 Deep Sync
+                    "director": "", "script": "", "studio": "", "cv": ""
+                }
+                all_items.append(record)
+            
+            offset += limit
+            time.sleep(0.5)
+
+        except Exception as e:
+            logger.error(f"Exception during fetch_user_collection: {e}")
+            traceback.print_exc()
+            break
+        finally:
+            # 确保session被关闭
+            session.close()
+    
+    return all_items
+
+# 独立的解析函数
+def _parse_infobox(infobox: List) -> Dict[str, str]:
+    """解析 API 返回的 infobox 列表"""
+    if not infobox: return {}
+    meta = {"director": [], "script": [], "studio": []}
+    key_map = {
+        "导演": "director", "监督": "director", 
+        "脚本": "script", "系列构成": "script",
+        "动画制作": "studio", "制作公司": "studio"
+    }
+    for item in infobox:
+        key = item.get('key')
+        if key in key_map:
+            val = item.get('value')
+            target = key_map[key]
+            if isinstance(val, str): meta[target].append(val)
+            elif isinstance(val, list):
+                for v in val:
+                    if isinstance(v, dict) and 'v' in v: meta[target].append(v['v'])
+    
+    return {k: ", ".join(v) for k, v in meta.items()}
+
+# 独立的缓存元数据函数
+@st.cache_data(ttl=86400)  # 缓存24小时
+def _fetch_extra_metadata_cached(subject_id: int) -> Dict[str, str]:
+    """
+    [内部工具] 获取单个条目的深度信息 (制作人员 + 声优)
+    返回: {"director":..., "cv":...}
+    """
+    result = {"director": "", "script": "", "studio": "", "cv": ""}
+    
+    # 创建临时Session
+    session = requests.Session()
+    retry_strategy = Retry(
+        total=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["HEAD", "GET", "OPTIONS"],
+        backoff_factor=1
+    )
+    adapter = HTTPAdapter(max_retries=retry_strategy)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+
+    try:
+        # 1. 获取 Infobox (制作人员 + 声优)
+        try:
+            url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
+            resp = session.get(url, timeout=10)
+            if resp and resp.status_code == 200:
+                data = resp.json()
+                meta = _parse_infobox(data.get('infobox', []))
+                result.update(meta)
+        except Exception as e:
+            logger.warning(f"Failed to fetch infobox for subject_id {subject_id}: {e}")
+            pass
+            
+        time.sleep(0.5) # 稍微歇一下
+
+        # 2. 获取 Character (声优)
+        try:
+            url_cv = f"https://api.bgm.tv/v0/subjects/{subject_id}/characters"
+            resp = session.get(url_cv, timeout=10)
+            if resp and resp.status_code == 200:
+                cv_data = resp.json()
+                cv_list = []
+                for char in cv_data:
+                    if char.get('relation') in ['主角', '配角']:
+                        actors = char.get('actors', [])
+                        if actors:
+                            cv_list.append(actors[0].get('name', ''))
+                result['cv'] = ", ".join(list(set(cv_list))[:5])
+        except Exception as e:
+            logger.warning(f"Failed to fetch character data for subject_id {subject_id}: {e}")
+            pass
+    finally:
+        # 确保session被关闭
+        session.close()
+
+    return result
+
 class BangumiService:
     """
     Bangumi API 服务层
@@ -229,85 +411,12 @@ class BangumiService:
     # 📡 核心同步逻辑 (Sync)
     # ==========================
 
-    @st.cache_data(ttl=3600)  # 缓存1小时
-    def _fetch_user_collection_from_api(_self, username: str, access_token: str, _session: requests.Session, status_map: Dict[int, str]) -> List[Dict]:
+    def _fetch_user_collection_from_api(self, username: str, access_token: str, status_map: Dict[int, str]) -> List[Dict]:
         """
-        [阶段一] 快速获取用户收藏列表 (分页) - 缓存版本
+        [阶段一] 快速获取用户收藏列表 (分页)
         """
-        if not username:
-            return []
-
-        all_items = []
-        limit = 50
-        offset = 0
-
-        while True:
-            url = f"https://api.bgm.tv/v0/users/{username}/collections"
-            params = {"subject_type": 2, "limit": limit, "offset": offset}
-            
-            try:
-                resp = _self._make_request(url, params=params, timeout=30)
-                if resp is None:
-                    # 请求被断路器拒绝或网络错误
-                    break
-                    
-                if resp.status_code in [401, 403]:
-                    error_msg = f"❌ 权限不足 (Code: {resp.status_code})。请检查用户名是否正确，或该用户的收藏是否为私密（私密收藏需要提供 Access Token）。"
-                    logger.error(error_msg)
-                    break
-                elif resp.status_code == 404:
-                    error_msg = f"❌ 用户 '{username}' 未找到 (Code: 404)。"
-                    logger.error(error_msg)
-                    break
-                elif resp.status_code == 429:
-                    error_msg = f"⚠️ 请求频率过高 (Code: {resp.status_code})，稍后重试..."
-                    logger.warning(error_msg)
-                    time.sleep(5)  # 等待更长时间
-                    continue
-
-                if resp.status_code != 200:
-                    error_msg = f"⚠️ API 错误 Code: {resp.status_code}"
-                    logger.warning(error_msg)
-                    # 对于服务器错误，增加重试
-                    if resp.status_code >= 500:
-                        time.sleep(2 ** (offset // 50))  # 指数退避
-                        continue
-                    break
-                
-                data = resp.json()
-                items = data.get('data', [])
-                if not items:
-                    break
-
-                for item in items:
-                    subject = item.get('subject', {})
-                    if not subject: continue
-                    
-                    # 基础字段解析
-                    record = {
-                        "id": subject.get('id'),
-                        "title": subject.get('name_cn') or subject.get('name'),
-                        "type": "anime",
-                        "status": status_map.get(item['type'], "watched"),
-                        "score": item.get('rate', 0),
-                        "tags": [t['name'] if isinstance(t, dict) else t for t in item.get('tags', []) if isinstance(t, (dict, str))],
-                        "summary": subject.get('short_summary', '') or "暂无简介",
-                        "image": subject.get('images', {}).get('large', ''), # 顺便存个图
-                        "updated_at": item.get('updated_at', ''),
-                        # 占位符，等待 Deep Sync
-                        "director": "", "script": "", "studio": "", "cv": ""
-                    }
-                    all_items.append(record)
-                
-                offset += limit
-                time.sleep(0.5)
-
-            except Exception as e:
-                logger.error(f"Exception during fetch_user_collection: {e}")
-                traceback.print_exc()
-                break
-        
-        return all_items
+        # 直接调用独立的缓存函数
+        return _fetch_user_collection_from_api_cached(username, access_token, status_map)
 
     def fetch_user_collection(self) -> List[Dict]:
         """
@@ -326,7 +435,6 @@ class BangumiService:
         items = self._fetch_user_collection_from_api(
             username=self.username, 
             access_token=self.access_token, 
-            session=self.session, 
             status_map=self.STATUS_MAP
         )
         
@@ -335,46 +443,13 @@ class BangumiService:
         
         return items
 
-    @st.cache_data(ttl=86400)  # 缓存24小时
-    def _fetch_extra_metadata(_self, subject_id: int) -> Dict[str, str]:
+    def _fetch_extra_metadata(self, subject_id: int) -> Dict[str, str]:
         """
         [内部工具] 获取单个条目的深度信息 (制作人员 + 声优)
         返回: {"director":..., "cv":...}
         """
-        result = {"director": "", "script": "", "studio": "", "cv": ""}
-        
-        # 1. 获取 Infobox (制作人员 + 声优)
-        try:
-            url = f"https://api.bgm.tv/v0/subjects/{subject_id}"
-            resp = self._make_request(url, timeout=10)
-            if resp and resp.status_code == 200:
-                data = resp.json()
-                meta = self._parse_infobox(data.get('infobox', []))
-                result.update(meta)
-        except Exception as e:
-            logger.warning(f"Failed to fetch infobox for subject_id {subject_id}: {e}")
-            pass
-            
-        time.sleep(0.5) # 稍微歇一下
-
-        # 2. 获取 Character (声优)
-        try:
-            url_cv = f"https://api.bgm.tv/v0/subjects/{subject_id}/characters"
-            resp = self._make_request(url_cv, timeout=10)
-            if resp and resp.status_code == 200:
-                cv_data = resp.json()
-                cv_list = []
-                for char in cv_data:
-                    if char.get('relation') in ['主角', '配角']:
-                        actors = char.get('actors', [])
-                        if actors:
-                            cv_list.append(actors[0].get('name', ''))
-                result['cv'] = ", ".join(list(set(cv_list))[:5])
-        except Exception as e:
-            logger.warning(f"Failed to fetch character data for subject_id {subject_id}: {e}")
-            pass
-
-        return result
+        # 直接调用独立的缓存函数
+        return _fetch_extra_metadata_cached(subject_id)
 
     def _parse_infobox(self, infobox: List) -> Dict[str, str]:
         """解析 API 返回的 infobox 列表"""

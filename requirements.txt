@@ -2,8 +2,6 @@ streamlit
 openai
 python-dotenv
 requests
-sentence-transformers
-faiss-cpu
 numpy
 json_repair
 pillow
@@ -11,3 +9,4 @@ pandas
 plotly
 matplotlib
 psutil
+dashscope

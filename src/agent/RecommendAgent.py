@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from .base import BaseAgent
 from src.BgmServe import BangumiService
-from src.vector_store import vector_store
+from src.vector_store import get_vector_store, VectorStoreError
 from src.config.personas import ROLES, TEMPLATES
 import json_repair
 
@@ -117,7 +117,19 @@ class RecommendAgent(BaseAgent):
         
         # RAG (Enabled)
         search_text = f"风格标签: {', '.join(tags)}。 用户描述: {user_query}"
-        rag_history = vector_store.search(search_text, top_k=20)
+        rag_history = []
+        # 创建一个status容器用于显示向量同步进度
+        with st.status("🔄 正在检查向量索引...", expanded=True) as vector_status:
+            try:
+                # 使用当前用户的用户名获取LocalVectorStore实例
+                username = st.session_state.user_name if hasattr(st.session_state, 'user_name') else "default_user"
+                vector_store = get_vector_store(username)
+                rag_history = vector_store.search(search_text, top_k=20, log_func=lambda m: vector_status.write(m))
+                vector_status.update(label="✅ 向量索引准备完成", state="complete", expanded=False)
+            except VectorStoreError as e:
+                vector_status.update(label="❌ 向量索引处理失败", state="error")
+                st.error(str(e))
+                return f"推荐生成失败: {str(e)}"
         history_context_str = json.dumps(rag_history, ensure_ascii=False)
         
         # Context

@@ -1,24 +1,33 @@
 # src/vector_store.py
-import json
 import os
 import time
 import numpy as np
 import pickle
-from sentence_transformers import SentenceTransformer
+import dashscope
 import streamlit as st
-
-os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+from src.database import DatabaseManager
 
 # 路径定义
-DATA_DIR = "data/datasets"
 INDEX_DIR = "data/vector_index"
-MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2" # 支持多语言(中英日)的轻量模型
+
+# Custom exception for vector store issues
+class VectorStoreError(Exception):
+    """
+    Exception raised when vector store operations fail.
+    """
+    pass
+
+# 从环境变量或streamlit secrets中获取API Key
+dashscope.api_key = st.secrets.get("DASHSCOPE_API_KEY") or os.getenv("DASHSCOPE_API_KEY")
+
+if not dashscope.api_key:
+    raise VectorStoreError("未配置DASHSCOPE_API_KEY环境变量")
 
 class LocalVectorStore:
-    def __init__(self):
+    def __init__(self, username="default_user"):
         self.embeddings = None
         self.metadata = [] # 存储向量ID对应的动画详细信息
-        self.model = None
+        self.username = username
         
         # Cache for search results
         self._search_cache = {}
@@ -28,12 +37,6 @@ class LocalVectorStore:
         # 确保目录存在
         if not os.path.exists(INDEX_DIR):
             os.makedirs(INDEX_DIR)
-            
-    def _load_model(self, log_func=print):
-        """懒加载模型 (第一次用到时才加载，节省内存)"""
-        if self.model is None:
-            log_func("📥 正在加载 Embedding 模型 (首次运行可能需要下载)...")
-            self.model = SentenceTransformer(MODEL_NAME)
 
     def _prepare_text(self, item):
         """
@@ -58,34 +61,66 @@ class LocalVectorStore:
         text = f"风格标签: {tags}。 动画标题: {title}。 内容简介: {summary}。 配音演员: {cv}。 导演: {director}。 脚本: {script}。"
         
         return text
+        
+    def get_embeddings_api(self, texts):
+        """
+        调用dashscope API获取文本向量
+        参数:
+            texts: 文本列表
+        返回:
+            向量列表
+        """
+        try:
+            response = dashscope.TextEmbedding.call(
+                model='text-embedding-v2',
+                input=texts
+            )
+            if response.status_code == 200:
+                return [embedding['embedding'] for embedding in response.output['embeddings']]
+            else:
+                raise VectorStoreError(f"调用DashScope API失败: {response.message}")
+        except Exception as e:
+            raise VectorStoreError(f"获取向量失败: {str(e)}")
+
+    def _fetch_data_from_db(self):
+        """
+        从数据库获取所有已同步的番剧数据
+        """
+        db_manager = DatabaseManager()  # 使用DatabaseManager单例
+        records = db_manager.load_records(self.username)
+        
+        candidates = []
+        for record in records:
+            # 转换数据库记录为vector_store所需的格式
+            item = {
+                    'bangumi_id': record['id'],
+                    'title': record['title'],
+                    'type': record['type'],
+                    'status': record['status'],
+                    'score': record['score'],
+                    'tags': record['tags'],
+                    'summary': record['summary'],
+                    'image': record['image'],
+                    'updated_at': record['updated_at'],
+                    'director': record['director'],
+                    'script': record['script'],
+                    'studio': record['studio'],
+                    'cv': record['cv'],
+                    '_source': record['status']  # 使用数据库中的status作为_source
+                }
+            candidates.append(item)
+        
+        return candidates
 
     def build_index(self, log_func=print):
         """
         log_func: 前端传进来的更新函数
         """
-        self._load_model(log_func)
-        
-        candidates = []
-        # 读取已看
-        path_watched = os.path.join(DATA_DIR, "dataset_watched.json")
-        if os.path.exists(path_watched):
-            with open(path_watched, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                for item in data:
-                    item['_source'] = 'Watched'
-                    candidates.append(item)
-                    
-        # 读取抛弃
-        path_dropped = os.path.join(DATA_DIR, "dataset_dropped.json")
-        if os.path.exists(path_dropped):
-            with open(path_dropped, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                for item in data:
-                    item['_source'] = 'Dropped'
-                    candidates.append(item)
+        # 从数据库获取数据
+        candidates = self._fetch_data_from_db()
         
         if not candidates:
-            return "⚠️ 没有找到 dataset 数据。"
+            return "⚠️ 数据库中没有找到番剧数据，请先进行Bangumi同步。"
 
         log_func(f"🔄 检测到 {len(candidates)} 条数据，正在进行文本预处理...")
 
@@ -94,17 +129,31 @@ class LocalVectorStore:
         
         log_func(f"🚀 开始向量化运算 (0/{len(texts)})...")
         
-        # 关掉 show_progress_bar (因为它只打印在黑窗口，网页看不见，还会造成卡顿假象)
-        embeddings = self.model.encode(texts, show_progress_bar=False) 
+        # 分批次处理，每批25条
+        batch_size = 25
+        all_embeddings = []
+        total_batches = (len(texts) + batch_size - 1) // batch_size
+        
+        for i in range(total_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, len(texts))
+            batch_texts = texts[start_idx:end_idx]
+            
+            log_func(f"🔄 正在处理批次 {i+1}/{total_batches} ({start_idx+1}-{end_idx}/{len(texts)})")
+            
+            # 调用API获取向量
+            batch_embeddings = self.get_embeddings_api(batch_texts)
+            all_embeddings.extend(batch_embeddings)
         
         log_func("✅ 向量化运算完成！正在转换数据格式...")
-        embeddings = np.array(embeddings).astype('float32')
+        embeddings = np.array(all_embeddings).astype('float16')  # 使用float16节省存储空间
         
         log_func("💾 正在保存向量数据和元数据到磁盘...")
         
         # 保存向量和元数据
-        with open(os.path.join(INDEX_DIR, "anime_embeddings.pkl"), 'wb') as f:
-            pickle.dump(embeddings, f)
+        # 使用.npy格式保存向量，更高效
+        np.save(os.path.join(INDEX_DIR, "anime_embeddings.npy"), embeddings)
+        # 元数据仍然使用pickle格式保存
         with open(os.path.join(INDEX_DIR, "anime_meta.pkl"), 'wb') as f:
             pickle.dump(candidates, f)
             
@@ -120,12 +169,16 @@ class LocalVectorStore:
         
         return success_msg
 
-    def load_index(self):
+    def load_index(self, log_func=print):
         """
         从磁盘加载索引。
         逻辑：优先读取本地文件 -> 如果读取失败（文件不存在或损坏） -> 自动触发构建流程。
+        
+        参数:
+            log_func: 日志输出函数，默认为print
         """
-        embed_path = os.path.join(INDEX_DIR, "anime_embeddings.pkl")
+        # 使用.npy格式读取向量
+        embed_path = os.path.join(INDEX_DIR, "anime_embeddings.npy")
         meta_path = os.path.join(INDEX_DIR, "anime_meta.pkl")
 
         try:
@@ -133,26 +186,26 @@ class LocalVectorStore:
             if not os.path.exists(embed_path) or not os.path.exists(meta_path):
                 raise FileNotFoundError("索引文件缺失")
 
-            with open(embed_path, 'rb') as f:
-                self.embeddings = pickle.load(f)
+            # 使用numpy加载.npy格式向量
+            self.embeddings = np.load(embed_path)
+            # 元数据仍然使用pickle格式读取
             with open(meta_path, 'rb') as f:
                 self.metadata = pickle.load(f)
             
-            # print("✅ 本地索引加载成功") # 可选日志
+            # log_func("✅ 本地索引加载成功") # 可选日志
             return True
 
         except Exception as e:
             # --- 自动构建阶段 ---
-            print(f"⚠️ 未检测到有效索引 ({e})，正在自动构建...")
+            log_func(f"⚠️ 未检测到有效索引 ({e})，正在自动构建...")
             
             try:
-                # 调用 build_index
-                # 注意：这里 log_func 传入 print，将进度打印到控制台，避免 UI 报错
-                self.build_index(log_func=print)
-                print("✅ 自动索引构建完成")
+                # 调用 build_index，传递日志函数
+                self.build_index(log_func=log_func)
+                log_func("✅ 自动索引构建完成")
                 return True
             except Exception as build_e:
-                print(f"❌ 致命错误：索引自动构建失败: {build_e}")
+                log_func(f"❌ 致命错误：索引自动构建失败: {build_e}")
                 import traceback
                 traceback.print_exc()
                 return False
@@ -174,9 +227,14 @@ class LocalVectorStore:
             
         self._last_cache_cleanup = current_time
 
-    def search(self, query_text, top_k=20):
+    def search(self, query_text, top_k=20, log_func=print):
         """
         搜索方法使用numpy实现的余弦相似度计算
+        
+        参数:
+            query_text: 查询文本
+            top_k: 返回结果数量
+            log_func: 日志输出函数，默认为print
         """
         # Check cache first
         cache_key = f"{query_text}_{top_k}"
@@ -190,14 +248,44 @@ class LocalVectorStore:
             if current_time - timestamp < self._cache_ttl:
                 return cached_results
         
-        if self.embeddings is None:
-            if not self.load_index(): return []
-        
-        self._load_model()
+        # 1. 检查向量库是否初始化
+        if self.embeddings is None or len(self.metadata) == 0:
+            # 2. 尝试从磁盘加载索引
+            if not self.load_index(log_func=log_func):
+                # 3. 如果加载失败，尝试构建新索引
+                try:
+                    build_result = self.build_index(log_func=log_func)
+                    # 检查构建结果是否成功
+                    if isinstance(build_result, str) and "没有找到" in build_result:
+                        # 确认数据库是否真的为空
+                        db_manager = DatabaseManager()
+                        records = db_manager.load_records(self.username)
+                        if not records:
+                            raise VectorStoreError("由于本地暂无番剧数据，无法生成推荐。请先进行 Bangumi 数据同步。")
+                        else:
+                            raise VectorStoreError("构建索引失败，请重试。")
+                except Exception as e:
+                    # 检查数据库是否真的为空
+                    db_manager = DatabaseManager()
+                    records = db_manager.load_records(self.username)
+                    if not records:
+                        raise VectorStoreError("由于本地暂无番剧数据，无法生成推荐。请先进行 Bangumi 数据同步。")
+                    else:
+                        raise VectorStoreError(f"构建索引失败: {str(e)}")
+            
+            # 4. 检查构建/加载后是否有有效向量
+            if self.embeddings is None or len(self.metadata) == 0:
+                # 确认数据库是否真的为空
+                db_manager = DatabaseManager()
+                records = db_manager.load_records(self.username)
+                if not records:
+                    raise VectorStoreError("由于本地暂无番剧数据，无法生成推荐。请先进行 Bangumi 数据同步。")
+                else:
+                    raise VectorStoreError("构建索引失败，请重试。")
         
         # 1. 向量化查询词
-        query_vector = self.model.encode([query_text])
-        query_vector = np.array(query_vector).astype('float32')
+        query_vector = self.get_embeddings_api([query_text])
+        query_vector = np.array(query_vector).astype('float16')
         
         # 2. 计算余弦相似度
         # Normalize vectors for cosine similarity
@@ -237,12 +325,15 @@ class LocalVectorStore:
 
 # 使用 @st.cache_resource 缓存 LocalVectorStore 实例
 @st.cache_resource
-def get_vector_store() -> LocalVectorStore:
+def get_vector_store(username="default_user") -> LocalVectorStore:
     """
     使用 @st.cache_resource 缓存 LocalVectorStore 实例
     避免每次请求都重新创建向量存储实例
+    
+    参数:
+    username: 用户名，用于从数据库获取对应用户的番剧数据
     """
-    return LocalVectorStore()
+    return LocalVectorStore(username)
 
-# 获取全局单例
+# 获取全局单例（默认用户）
 vector_store = get_vector_store()
