@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from .base import BaseAgent
 from src.BgmServe import BangumiService
 from src.config.personas import ROLES, TEMPLATES 
-from src.utils import get_session_manager, get_session_id
+from src.utils import get_session_manager, get_session_id, optimize_anime_data
 import json_repair
 
 class ProfileAgent(BaseAgent):
@@ -98,9 +98,24 @@ class ProfileAgent(BaseAgent):
             if not watched_list:
                 st.error("❌ 无数据，请先同步。")
                 return "无数据"
-
-            # 2. 准备 Prompt (从配置加载)
-            mini_data = json.dumps(watched_list, ensure_ascii=False)
+            
+            # 提取需要的字段
+            processed_data = []
+            for item in watched_list:
+                processed_data.append({
+                    "id": item.get('id'),
+                    "title": item.get('title'),
+                    "score": item.get('score', 'N/A'),
+                    "tags": item.get('tags', []),
+                    "cv": item.get('cv', []),
+                    "summary": item.get('summary', '')[:100],
+                    "year": item.get('year'),
+                    "month": item.get('month')
+                })
+            
+            # 应用Token优化
+            optimized_data = optimize_anime_data(processed_data, st.session_state.get('token_optimization_enabled', True))
+            mini_data = json.dumps(optimized_data, ensure_ascii=False)
             persona = ROLES.get(style, ROLES["cat"])
             
             system_prompt = f"你现在的身份是：{persona['description']}\n{persona['system_prompt']}"

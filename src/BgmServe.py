@@ -367,9 +367,9 @@ class BangumiService:
     # ==========================
 
     def load_local_records(self) -> List[Dict]:
-        """读取本地数据（优先从数据库读取，自动迁移JSON数据）"""
+        """读取本地数据（带限制，用于分析类任务）"""
         try:
-            # 从数据库读取数据
+            # 从数据库读取数据（带限制）
             records = self.db_manager.load_records(self.username or "unknown")
             
             # 如果数据库中有数据，直接返回
@@ -391,6 +391,33 @@ class BangumiService:
         except Exception as e:
             logger.error(f"⚠️ 读取本地数据出错: {e}")
             print(f"⚠️ 读取本地数据出错: {e}")
+            return []
+    
+    def load_all_local_records(self) -> List[Dict]:
+        """读取所有本地数据（无限制，用于数据维护类任务）"""
+        try:
+            # 从数据库读取所有数据（无限制）
+            records = self.db_manager.load_all_records(self.username or "unknown")
+            
+            # 如果数据库中有数据，直接返回
+            if records:
+                return records
+            
+            # 数据库中没有数据，尝试从JSON文件迁移
+            if os.path.exists(self.data_path):
+                print(f"🔄 [迁移] 检测到JSON数据文件，正在迁移到数据库...")
+                success = self.db_manager.migrate_from_json(self.username or "unknown", self.data_path)
+                if success:
+                    print(f"✅ [迁移] JSON数据迁移完成！")
+                    # 迁移成功后从数据库读取所有数据
+                    return self.db_manager.load_all_records(self.username or "unknown")
+                else:
+                    print(f"❌ [迁移] JSON数据迁移失败！")
+            
+            return []
+        except Exception as e:
+            logger.error(f"⚠️ 读取所有本地数据出错: {e}")
+            print(f"⚠️ 读取所有本地数据出错: {e}")
             return []
 
     def save_records(self, records: List[Dict]):
@@ -767,7 +794,7 @@ class BangumiService:
         📊 获取补全进度
         Returns: (总记录数, 待补全数, 下一个待处理ID)
         """
-        records = self.load_local_records()
+        records = self.load_all_local_records()  # 使用全量数据
         if not records:
             return 0, 0, None
         
@@ -785,7 +812,7 @@ class BangumiService:
         🐛 修复单条数据的元数据
         Returns: (是否成功, 日志消息)
         """
-        records = self.load_local_records()
+        records = self.load_all_local_records()  # 使用全量数据
         # 找到对应的记录引用
         target = next((r for r in records if r['id'] == subject_id), None)
         

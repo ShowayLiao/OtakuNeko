@@ -7,7 +7,7 @@ from .ProfileAgent import ProfileAgent
 from src.BgmServe import BangumiService
 from src.config.personas import ROLES, TEMPLATES
 from src.data_processor import robust_json_parse
-from src.utils import get_session_manager, get_session_id
+from src.utils import get_session_manager, get_session_id, optimize_anime_data
 
 class YearAgent(ProfileAgent):
     def __init__(self, llm_service, bgm_service: BangumiService):
@@ -113,7 +113,9 @@ class YearAgent(ProfileAgent):
                     "month": item.get('month')
                 })
             
-            data_str = json.dumps(recent_data, ensure_ascii=False)
+            # 应用Token优化
+            optimized_data = optimize_anime_data(recent_data, st.session_state.get('token_optimization_enabled', True))
+            data_str = json.dumps(optimized_data, ensure_ascii=False)
 
             # --- 2. 准备 Prompt & System Prompt ---
             persona = ROLES.get(style, ROLES["cat"])

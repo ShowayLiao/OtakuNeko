@@ -522,6 +522,7 @@ with st.sidebar:
             msg = export_categorized_datasets(bgm_service=st.session_state.bgm_service)
             st.caption(f"✅ {msg}")
 
+
     # === 元数据补全 ===
     st.header("🖼️ 元数据补全", help="补充更新动画的 Staff 和声优信息，影响推荐准确度")
     total_count, pending_count, _ = st.session_state.bgm_service.get_missing_stats()
@@ -600,12 +601,18 @@ with st.sidebar:
     with st.sidebar:
         col1, col2 = st.columns([3, 1])
         with col1:
-            if st.button("❌ 关闭程序"):
-                st.toast("正在关闭 OtakuNeko，请关闭浏览器标签页...", icon="👋")
-                # 稍微延迟一下，让用户能看到上面的提示
-                time.sleep(1)
-                # 获取当前程序的进程ID (PID)，然后杀掉自己
-                os.kill(os.getpid(), signal.SIGTERM)
+                # Token优化模式
+            st.session_state.token_optimization_enabled = st.checkbox(
+                " Token 优化", 
+                value=True, 
+                help="仅选取最具代表性的动画记录，防止数据过长导致生成失败"
+            )
+            # if st.button("❌ 关闭程序"):
+            #     st.toast("正在关闭 OtakuNeko，请关闭浏览器标签页...", icon="👋")
+            #     # 稍微延迟一下，让用户能看到上面的提示
+            #     time.sleep(1)
+            #     # 获取当前程序的进程ID (PID)，然后杀掉自己
+            #     os.kill(os.getpid(), signal.SIGTERM)
         with col2:
             if st.button("✏️", help="修改 API Key"):
                 initial_setup_dialog()

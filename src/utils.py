@@ -445,3 +445,58 @@ def get_session_id():
     if ctx is None:
         return None
     return ctx.session_id
+
+def optimize_anime_data(all_data, is_enabled):
+    """
+    优化动画数据，防止Token爆炸和请求超时
+    
+    参数:
+        all_data: 原始动画数据列表
+        is_enabled: 是否启用优化模式
+        
+    返回:
+        优化后的数据列表
+    """
+    if not is_enabled or not all_data:
+        return all_data
+    
+    original_count = len(all_data)
+    
+    # 1. 高分筛选：按score从高到低排序，取前100部
+    # 过滤掉未评分项，将score转换为数字
+    scored_data = [item for item in all_data if item.get('score') and item.get('score') != 'N/A']
+    for item in scored_data:
+        try:
+            item['score'] = float(item['score'])
+        except (ValueError, TypeError):
+            item['score'] = 0.0
+    
+    # 高分排序并取前100部
+    high_score_data = sorted(scored_data, key=lambda x: x['score'], reverse=True)[:100]
+    
+    # 2. 低分筛选：按score从低到高排序，取前50部（排除未评分项）
+    low_score_data = sorted(scored_data, key=lambda x: x['score'])[:50]
+    
+    # 3. 去重合并：将两部分数据合并并去重
+    # 使用集合来去重，基于title字段
+    seen_titles = set()
+    optimized_data = []
+    
+    # 先添加高分数据
+    for item in high_score_data:
+        title = item.get('title')
+        if title and title not in seen_titles:
+            seen_titles.add(title)
+            optimized_data.append(item)
+    
+    # 再添加低分数据（避免重复）
+    for item in low_score_data:
+        title = item.get('title')
+        if title and title not in seen_titles:
+            seen_titles.add(title)
+            optimized_data.append(item)
+    
+    # 4. 日志记录
+    print(f"[Token优化] 原始数据 {original_count} 条 -> 采样后 {len(optimized_data)} 条")
+    
+    return optimized_data

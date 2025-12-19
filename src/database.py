@@ -240,14 +240,55 @@ class DatabaseManager:
     
     def load_records(self, username: str) -> List[Dict]:
         """
-        从数据库加载用户的动漫记录
+        从数据库加载用户的动漫记录（带限制，用于分析类任务）
         """
         conn = self._get_connection()
         cursor = conn.cursor()
         
         user_id = self.get_user_id(username)
         
-        # 查询所有记录
+        # 查询所有记录，添加LIMIT 500作为硬上限（仅用于分析类任务）
+        cursor.execute(
+            "SELECT bangumi_id, title, type, status, score, tags, summary, image, updated_at, director, script, studio, cv "
+            "FROM bangumi_records WHERE user_id = ? ORDER BY updated_at DESC LIMIT 500",
+            (user_id,)
+        )
+        
+        records = []
+        for row in cursor.fetchall():
+            # 将 JSON 字符串转换为标签列表
+            tags = json.loads(row[5]) if row[5] else []
+            
+            record = {
+                'id': row[0],
+                'title': row[1],
+                'type': row[2],
+                'status': row[3],
+                'score': row[4],
+                'tags': tags,
+                'summary': row[6],
+                'image': row[7],
+                'updated_at': row[8],
+                'director': row[9],
+                'script': row[10],
+                'studio': row[11],
+                'cv': row[12]
+            }
+            records.append(record)
+        
+        cursor.close()
+        return records
+    
+    def load_all_records(self, username: str) -> List[Dict]:
+        """
+        从数据库加载用户的所有动漫记录（无限制，用于元数据补全等数据维护任务）
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        user_id = self.get_user_id(username)
+        
+        # 查询所有记录，无LIMIT限制（用于元数据补全等需要全量数据的任务）
         cursor.execute(
             "SELECT bangumi_id, title, type, status, score, tags, summary, image, updated_at, director, script, studio, cv "
             "FROM bangumi_records WHERE user_id = ? ORDER BY updated_at DESC",
