@@ -11,7 +11,7 @@ from src.utils import get_session_manager
 from src.database import DatabaseManager
 
 # --- 页面配置：必须是第一个Streamlit命令 ---
-st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
+st.set_page_config(page_title="OtakuNeko", page_icon="asset/icon.png", layout="wide")
 
 # --- 入口拦截器：全站排队系统 ---
 # 1. 创建全局会话管理器实例
