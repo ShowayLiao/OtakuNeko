@@ -8,6 +8,7 @@ from .base import BaseAgent
 from src.BgmServe import BangumiService
 from src.vector_store import get_vector_store, VectorStoreError
 from src.config.personas import ROLES, TEMPLATES
+from src.utils import get_session_manager, get_session_id
 import json_repair
 
 class RecommendAgent(BaseAgent):
@@ -106,146 +107,170 @@ class RecommendAgent(BaseAgent):
             
         return final_results
 
-    def render(self, user_query, tags=None, style="cat"):
+    def render(self, user_query, tags=None, style="cat", session_id=None):
         """
         🎨 [Frontend] 推荐功能主入口
         """
         if not tags: tags = []
         
-        # 1. 准备数据
-        exclude_ids, exclude_titles = self._get_exclusion_set()
+        # 动作锁：防止重复推荐请求
+        if st.session_state.get('is_processing_recommendation'):
+            print(f"[动作锁] Session {session_id} 拦截了重复请求")
+            return "推荐生成中，请稍候..."
         
-        # RAG (Enabled)
-        search_text = f"风格标签: {', '.join(tags)}。 用户描述: {user_query}"
-        rag_history = []
-        # 创建一个status容器用于显示向量同步进度
-        with st.status("🔄 正在检查向量索引...", expanded=True) as vector_status:
-            try:
-                # 使用当前用户的用户名获取LocalVectorStore实例
-                username = st.session_state.user_name if hasattr(st.session_state, 'user_name') else "default_user"
-                vector_store = get_vector_store(username)
-                rag_history = vector_store.search(search_text, top_k=20, log_func=lambda m: vector_status.write(m))
-                vector_status.update(label="✅ 向量索引准备完成", state="complete", expanded=False)
-            except VectorStoreError as e:
-                vector_status.update(label="❌ 向量索引处理失败", state="error")
-                st.error(str(e))
-                return f"推荐生成失败: {str(e)}"
-        history_context_str = json.dumps(rag_history, ensure_ascii=False)
+        st.session_state.is_processing_recommendation = True
         
-        # Context
-        user_profile = self._load_user_profile()
-        inventory_str = self._load_inventory_strs()
-        recent_watched_str = self._load_recent_watched_strs(730,"title","id")
+        # 获取会话管理器实例
+        manager = get_session_manager()
+        session_id = session_id or get_session_id()
         
-        # 2. Prompt
-        persona = ROLES.get(style, ROLES["cat"])
+        # 在进入忙碌状态前手动刷新心跳
+        manager.update_ping(session_id)
         
-        system_prompt = f"你现在的身份是：{persona['description']}\n{persona['system_prompt']}"
-
-        final_prompt = TEMPLATES["recommend_logic"].format(
-            role_def=system_prompt,
-            user_profile=user_profile,
-            user_query=user_query,
-            tags=tags,
-            history_context_str=history_context_str,
-            recent_watched_titles=recent_watched_str,
-            inventory_str=inventory_str,
-            tone_req=persona["tone_requirements"]
-        )
-
-        # 3. UI 流程
-        final_reason = ""
-        final_display_list = []
-
-        with st.status(f"🕵️ {persona['description']} 正在制定补番计划...", expanded=True) as status:
+        try:
+            # 设置忙碌状态
+            manager.set_busy_status(session_id, True)
             
-            status.write(f"🔍 已检索到 {len(rag_history)} 部相关历史记录...")
+            # 1. 准备数据
+            exclude_ids, exclude_titles = self._get_exclusion_set()
+            print(f"[动作锁] Session {session_id} 开始推荐请求")
+        
+            # RAG (Enabled)
+            search_text = f"风格标签: {', '.join(tags)}。 用户描述: {user_query}"
+            rag_history = []
+            # 创建一个status容器用于显示向量同步进度
+            with st.status("🔄 正在检查向量索引...", expanded=True) as vector_status:
+                try:
+                    # 使用当前用户的用户名获取LocalVectorStore实例
+                    username = st.session_state.user_name if hasattr(st.session_state, 'user_name') else "default_user"
+                    vector_store = get_vector_store(username)
+                    rag_history = vector_store.search(search_text, top_k=20, log_func=lambda m: vector_status.write(m))
+                    vector_status.update(label="✅ 向量索引准备完成", state="complete", expanded=False)
+                except VectorStoreError as e:
+                    vector_status.update(label="❌ 向量索引处理失败", state="error")
+                    st.error(str(e))
+                    return f"推荐生成失败: {str(e)}"
+            history_context_str = json.dumps(rag_history, ensure_ascii=False)
             
-            # (A) LLM
-            messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": final_prompt}
-            ]
-            raw_json_str = ""
+            # Context
+            user_profile = self._load_user_profile()
+            inventory_str = self._load_inventory_strs()
+            recent_watched_str = self._load_recent_watched_strs(730,"title","id")
             
-            try:
-                stream = self.run(messages, temperature=1.1, stream=True)
-                status.write("🧠 正在筛选最佳匹配...")
-                for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        raw_json_str += chunk.choices[0].delta.content
-            except Exception as e:
-                status.update(label="❌ API 调用失败", state="error")
-                st.error(f"LLM Error: {e}")
-                return "推荐生成失败"
-
-            # (B) JSON 解析
-            combined_items_request = []
-            try:
-                # Use robust JSON parsing
-                from src.data_processor import robust_json_parse
-                result_data = robust_json_parse(raw_json_str, {})
-                
-                if not result_data:
-                    st.error("AI 返回格式异常")
-                    return raw_json_str
-                    
-                final_reason = result_data.get("reason", "推荐生成完毕。")
-                
-                # 辅助函数：统一处理 item 格式
-                def normalize_item(raw_item, default_type):
-                    # print(raw_item)
-                    if isinstance(raw_item, dict):
-                        return {
-                            "title": raw_item.get("title", "Unknown"),
-                            "comment": raw_item.get("reason", ""), # ✅ 确保获取 comment
-                            "type": default_type
-                        }
-                    else:
-                        # 如果 AI 只返回了字符串标题
-                        return {
-                            "title": str(raw_item),
-                            "comment": "", # 默认空
-                            "type": default_type
-                        }
-
-                # 处理 backlog
-                for item in result_data.get("backlog", []):
-                    combined_items_request.append(normalize_item(item, "填坑"))
-                
-                # 处理 new_rec
-                for item in result_data.get("new_rec", []):
-                    combined_items_request.append(normalize_item(item, "新推"))
-                    
-            except Exception as e:
-                st.error(f"JSON 解析失败: {e}")
-                return raw_json_str
-
-            # (C) 抓取与过滤
-            status.write("📡 正在并发获取评分与海报...")
+            # 2. Prompt
+            persona = ROLES.get(style, ROLES["cat"])
             
-            fetched_data = self._fetch_recommend_metadata(
-                combined_items_request, 
-                exclude_ids, 
-                exclude_titles
+            system_prompt = f"你现在的身份是：{persona['description']}\n{persona['system_prompt']}"
+
+            final_prompt = TEMPLATES["recommend_logic"].format(
+                role_def=system_prompt,
+                user_profile=user_profile,
+                user_query=user_query,
+                tags=tags,
+                history_context_str=history_context_str,
+                recent_watched_titles=recent_watched_str,
+                inventory_str=inventory_str,
+                tone_req=persona["tone_requirements"]
             )
-            
-            # (D) 组装 (3 填坑 + 5 其他)
-            backlog_items = [x for x in fetched_data if x['type'] == "填坑"]
-            other_items = [x for x in fetched_data if x['type'] in ["新推", "重温"]]
-            
-            final_display_list = backlog_items[:3]
-            final_display_list.extend(other_items[:5])
-            
-            status.update(label=f"✅ 成功生成 {len(final_display_list)} 部推荐", state="complete", expanded=False)
 
-        # 4. 渲染
-        st.success(f"🎯 **推荐理由**\n\n{final_reason}")
-        
-        if final_display_list:
-            # 
-            self.render_cards(final_display_list, cols=4)
-        else:
-            st.warning("⚠️ 未能生成有效推荐，请检查网络或放宽搜索条件。")
-        
-        return final_reason
+            # 3. UI 流程
+            final_reason = ""
+            final_display_list = []
+
+            with st.status(f"🕵️ {persona['description']} 正在制定补番计划...", expanded=True) as status:
+                
+                status.write(f"🔍 已检索到 {len(rag_history)} 部相关历史记录...")
+                
+                # (A) LLM
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": final_prompt}
+                ]
+                raw_json_str = ""
+                
+                try:
+                    stream = self.run(messages, temperature=1.1, stream=True, session_id=session_id)
+                    status.write("🧠 正在筛选最佳匹配...")
+                    for chunk in stream:
+                        if chunk.choices and chunk.choices[0].delta.content:
+                            raw_json_str += chunk.choices[0].delta.content
+                except Exception as e:
+                    status.update(label="❌ API 调用失败", state="error")
+                    st.error(f"LLM Error: {e}")
+                    return "推荐生成失败"
+
+                # (B) JSON 解析
+                combined_items_request = []
+                try:
+                    # Use robust JSON parsing
+                    from src.data_processor import robust_json_parse
+                    result_data = robust_json_parse(raw_json_str, {})
+                    
+                    if not result_data:
+                        st.error("AI 返回格式异常")
+                        return raw_json_str
+                        
+                    final_reason = result_data.get("reason", "推荐生成完毕。")
+                    
+                    # 辅助函数：统一处理 item 格式
+                    def normalize_item(raw_item, default_type):
+                        # print(raw_item)
+                        if isinstance(raw_item, dict):
+                            return {
+                                "title": raw_item.get("title", "Unknown"),
+                                "comment": raw_item.get("reason", ""), # ✅ 确保获取 comment
+                                "type": default_type
+                            }
+                        else:
+                            # 如果 AI 只返回了字符串标题
+                            return {
+                                "title": str(raw_item),
+                                "comment": "", # 默认空
+                                "type": default_type
+                            }
+
+                    # 处理 backlog
+                    for item in result_data.get("backlog", []):
+                        combined_items_request.append(normalize_item(item, "填坑"))
+                    
+                    # 处理 new_rec
+                    for item in result_data.get("new_rec", []):
+                        combined_items_request.append(normalize_item(item, "新推"))
+                        
+                except Exception as e:
+                    st.error(f"JSON 解析失败: {e}")
+                    return raw_json_str
+
+                # (C) 抓取与过滤
+                status.write("📡 正在并发获取评分与海报...")
+                
+                fetched_data = self._fetch_recommend_metadata(
+                    combined_items_request, 
+                    exclude_ids, 
+                    exclude_titles
+                )
+                
+                # (D) 组装 (3 填坑 + 5 其他)
+                backlog_items = [x for x in fetched_data if x['type'] == "填坑"]
+                other_items = [x for x in fetched_data if x['type'] in ["新推", "重温"]]
+                
+                final_display_list = backlog_items[:3]
+                final_display_list.extend(other_items[:5])
+                
+                status.update(label=f"✅ 成功生成 {len(final_display_list)} 部推荐", state="complete", expanded=False)
+
+            # 4. 渲染
+            st.success(f"🎯 **推荐理由**\n\n{final_reason}")
+            
+            if final_display_list:
+                # 
+                self.render_cards(final_display_list, cols=4)
+            else:
+                st.warning("⚠️ 未能生成有效推荐，请检查网络或放宽搜索条件。")
+            
+            return final_reason
+        finally:
+            # 释放忙碌状态和动作锁
+            manager.set_busy_status(session_id, False)
+            manager.update_ping(session_id)
+            st.session_state.is_processing_recommendation = False

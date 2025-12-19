@@ -1,17 +1,144 @@
 import os
 import psutil
 import platform
+import time
+import uuid
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import streamlit as st
+
+# 导入会话管理器和数据库管理器
+from src.utils import get_session_manager
+from src.database import DatabaseManager
 
 # --- 页面配置：必须是第一个Streamlit命令 ---
 st.set_page_config(page_title="OtakuNeko", page_icon="🐱", layout="wide")
 
-import time
+# --- 入口拦截器：全站排队系统 ---
+# 1. 创建全局会话管理器实例
+session_manager = get_session_manager()
+
+# 2. 先清理过期用户数据，释放名额
+db_manager = DatabaseManager()
+db_manager.cleanup_inactive_users(expiry_hours=2)
+session_manager.MAX_TOTAL_SESSIONS = 2
+
+# 3. 初始化会话状态 - 使用Streamlit原生session_id确保线程一致
+from streamlit.runtime.scriptrunner import get_script_run_ctx
+
+if 'session_id' not in st.session_state:
+    ctx = get_script_run_ctx()
+    st.session_state.session_id = ctx.session_id if ctx else str(uuid.uuid4())
+    print(f"[会话管理] 生成新会话ID: {st.session_state.session_id}")
+
+# 4. 检查用户是否已在白名单中
+if 'is_in_queue_whitelist' not in st.session_state:
+    st.session_state.is_in_queue_whitelist = False
+
+# --- 持续身份校验机制 ---#
+# 每次Rerun都要检查会话状态
+def render_queue_ui(queue_position):
+    """
+    渲染排队界面 - 带强心跳机制
+    """
+    # 强心跳：立即更新会话心跳
+    session_manager.update_ping(st.session_state.session_id)
+    
+    current_sessions = session_manager.get_current_sessions()
+    max_sessions = session_manager.get_max_allowed_sessions()
+    
+    # 使用st.empty创建一个容器，用于动态更新排队信息
+    status_container = st.empty()
+    status_container.warning(
+        f"服务器容量已满（当前 {current_sessions}/{max_sessions} 人在线），正在排队中...\n" +
+        f"您当前的位次是：第 {queue_position} 位\n" +
+        "系统将自动刷新检测名额，请勿关闭页面...", 
+        icon="⚠️"
+    )
+    
+    # 每5秒自动刷新检查是否有位置
+    time.sleep(5)
+    st.rerun()
+
+# 1. 初始化标记防止无限重跑
+if 'initialized' not in st.session_state:
+    st.session_state.initialized = False
+
+# 2. 获取当前状态
+status = session_manager.check_current_status(st.session_state.session_id)
+print(f"[会话管理] 当前会话ID: {st.session_state.session_id}, 状态: {status}")
+
+# 3. 新用户处理：自动登记并重跑
+if status == "New" and not st.session_state.initialized:
+    print(f"[会话管理] 新用户自动登记: {st.session_state.session_id}")
+    session_manager.request_entry(st.session_state.session_id)
+    st.session_state.initialized = True  # 标记已初始化，防止无限重跑
+    st.rerun()
+
+# 4. 已过期用户处理
+elif status == "Expired":
+    # 如果被清理了，立即显示下线提示并停止执行
+    st.error("⌛ 您的会话已因长时间未操作而过期，名额已释放给其他排队用户。")
+    
+    # 心跳自杀逻辑：清理登录信息
+    if 'is_logged_in' in st.session_state:
+        del st.session_state.is_logged_in
+    if 'bgm_service' in st.session_state:
+        del st.session_state.bgm_service
+    if 'user_name' in st.session_state:
+        del st.session_state.user_name
+    if 'is_in_queue_whitelist' in st.session_state:
+        st.session_state.is_in_queue_whitelist = False
+    
+    if st.button("重新排队"):
+        # 彻底重置：清空expired记录
+        with session_manager._expired_ids_lock:
+            if st.session_state.session_id in session_manager._expired_ids:
+                session_manager._expired_ids.remove(st.session_state.session_id)
+                print(f"[会话管理] 会话 {st.session_state.session_id} 已从过期记录中清除")
+        
+        # UI反馈：显示排队申请已提交
+        st.info("已提交排队申请，正在为您分配位置...")
+        
+        # 调用request_entry重新排队
+        session_manager.request_entry(st.session_state.session_id)
+        
+        # 延迟1秒，确保UI反馈可见
+        time.sleep(1)
+        
+        # 重新运行应用
+        st.rerun()
+    else:
+        st.stop()  # 强制切断后续所有组件的渲染
+
+# 5. 排队用户处理
+elif status == "Waiting":
+    # 正在排队的用户逻辑（显示位次 + 自动刷新）
+    render_queue_ui(session_manager.get_queue_position(st.session_state.session_id))
+    st.stop()
+
+# 6. Active用户进入业务逻辑
+elif status == "Active":
+    # 更新心跳
+    session_manager.update_ping(st.session_state.session_id)
+    
+    # 只有active用户才能继续执行下面的业务代码
+    # 检查是否需要更新白名单状态
+    if not st.session_state.is_in_queue_whitelist:
+        st.session_state.is_in_queue_whitelist = True
+        print(f"[会话管理] 用户 {st.session_state.session_id} 加入白名单")
+
+else:
+    # 未知状态处理
+    print(f"[会话管理] 未知状态: {status}，会话ID: {st.session_state.session_id}")
+    st.error("系统出现未知错误，请刷新页面重试。")
+    st.stop()
+
+# --- 正常导入和应用逻辑 ---
 import signal
 from dotenv import load_dotenv
 
 # --- 引入自定义模块 ---
+import atexit
 from src.services import DataService, LLMService
 from src.data_processor import export_categorized_datasets, extract_recent_watched
 from src.agent import IntentRouter, ProfileAgent, RecommendAgent, RefinerAgent
@@ -19,6 +146,16 @@ from src.vector_store import vector_store
 from src.plugins.year_report import YearReportPlugin
 from src.BgmServe import BangumiService
 import shutil
+
+# --- 注册会话释放钩子 ---
+def release_session():
+    """
+    当应用进程结束时释放会话资源
+    """
+    if 'session_id' in st.session_state:
+        session_manager.release_session(st.session_state.session_id)
+
+atexit.register(release_session)
 
 # --- 缓存 BangumiService 实例 ---
 @st.cache_resource
@@ -295,15 +432,16 @@ else: # 默认为 DeepSeek
     reasoner_model = "deepseek-reasoner"
 
 @st.cache_resource
-def init_services():
+def init_services(_db_manager):
     return LLMService(
         api_key=api_key, 
         base_url=base_url, 
         chat_model=chat_model, 
-        reasoner_model=reasoner_model
+        reasoner_model=reasoner_model,
+        db_manager=_db_manager
     )
 
-llm_service = init_services()
+llm_service = init_services(db_manager)
 
 # 实例化 Agents
 router = IntentRouter(llm_service,st.session_state.bgm_service)
@@ -479,6 +617,17 @@ with st.sidebar:
 st.title("🐱 OtakuNeko")
 st.caption(f"🚀 Agent Mode Active | 📚 记忆库: {len(memory_data)} 部待看")
 
+# --- 心跳上报功能 ---
+# 使用Streamlit的定期回调机制替代频繁st.rerun
+if 'heartbeat_last_update' not in st.session_state:
+    st.session_state.heartbeat_last_update = time.time()
+
+# 每10秒更新一次心跳
+current_time = time.time()
+if current_time - st.session_state.heartbeat_last_update > 10:
+    session_manager.update_ping(st.session_state.session_id)
+    st.session_state.heartbeat_last_update = current_time
+
 # 4.1 渲染历史消息
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
@@ -532,7 +681,7 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
             else:
                 # 1. 意图识别
                 with st.status("🧠 正在分析意图...", expanded=False) as status:
-                    intent, extracted_tags = router.classify(last_user_prompt)
+                    intent, extracted_tags = router.classify(last_user_prompt, session_id=st.session_state.session_id)
                     status.update(label=f"识别模式: {intent}", state="complete")
                     if intent == "RECOMMEND" and extracted_tags:
                         st.toast(f"已提取特征: {', '.join(extracted_tags[:3])}...")
@@ -540,33 +689,54 @@ if st.session_state.messages and st.session_state.messages[-1]["role"] == "user"
                 # 2. 任务分发
                 if intent == "PROFILE":
                     # 🔥 ProfileAgent
-                    full_response = profile_agent.render(last_user_prompt, style=selected_style)
+                    session_manager.update_ping(st.session_state.session_id) # 运行前最后一次手动续命
+                    session_manager.set_busy_status(st.session_state.session_id, True)
+                    try:
+                        full_response = profile_agent.render(last_user_prompt, style=selected_style, session_id=st.session_state.session_id)
+                    finally:
+                        session_manager.set_busy_status(st.session_state.session_id, False)
 
                 elif intent == "RECOMMEND":
                     # 🔥 RecommendAgent
-                    full_response = recommend_agent.render(last_user_prompt, tags=extracted_tags, style=selected_style)
+                    session_manager.update_ping(st.session_state.session_id) # 运行前最后一次手动续命
+                    session_manager.set_busy_status(st.session_state.session_id, True)
+                    try:
+                        full_response = recommend_agent.render(last_user_prompt, tags=extracted_tags, style=selected_style, session_id=st.session_state.session_id)
+                    finally:
+                        session_manager.set_busy_status(st.session_state.session_id, False)
                 
                 elif intent == "AMBIGUOUS":
                     # 🔥 RefinerAgent (不需要流式)
-                    full_response = refiner_agent.clarify(last_user_prompt, style=selected_style)
-                    response_placeholder.markdown(full_response)
+                    session_manager.update_ping(st.session_state.session_id) # 运行前最后一次手动续命
+                    session_manager.set_busy_status(st.session_state.session_id, True)
+                    try:
+                        full_response = refiner_agent.clarify(last_user_prompt, style=selected_style, session_id=st.session_state.session_id)
+                        response_placeholder.markdown(full_response)
+                    finally:
+                        session_manager.set_busy_status(st.session_state.session_id, False)
 
                 else: # CHAT 模式
                     # 🔥 LLMService (流式聊天)
-                    # 取最近 8 条对话作为上下文 (排除当前正在处理的这条 User 消息以免重复)
-                    context_msgs = st.session_state.messages[-9:-1] 
-                    stream = llm_service.get_streaming_response(
-                        last_user_prompt, 
-                        context_msgs, 
-                        memory_data
-                    )
-                    
-                    for chunk in stream:
-                        if chunk.choices[0].delta.content:
-                            content = chunk.choices[0].delta.content
-                            full_response += content
-                            response_placeholder.markdown(full_response + "▌")
-                    response_placeholder.markdown(full_response)
+                    session_manager.update_ping(st.session_state.session_id) # 运行前最后一次手动续命
+                    session_manager.set_busy_status(st.session_state.session_id, True)
+                    try:
+                        # 取最近 8 条对话作为上下文 (排除当前正在处理的这条 User 消息以免重复)
+                        context_msgs = st.session_state.messages[-9:-1] 
+                        stream = llm_service.get_streaming_response(
+                            last_user_prompt, 
+                            context_msgs, 
+                            memory_data,
+                            session_id=st.session_state.session_id
+                        )
+                        
+                        for chunk in stream:
+                            if chunk.choices[0].delta.content:
+                                content = chunk.choices[0].delta.content
+                                full_response += content
+                                response_placeholder.markdown(full_response + "▌")
+                        response_placeholder.markdown(full_response)
+                    finally:
+                        session_manager.set_busy_status(st.session_state.session_id, False)
 
             # --- Phase C: 存入历史 ---
             # 只有当产生了有效回复时，才追加到 session_state

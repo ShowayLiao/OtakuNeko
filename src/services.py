@@ -124,7 +124,7 @@ class LLMService:
     """
     LLM 交互服务：负责组装 Prompt 并调用 OpenAI 兼容接口
     """
-    def __init__(self, api_key: str, base_url: str, chat_model: str, reasoner_model: str):
+    def __init__(self, api_key: str, base_url: str, chat_model: str, reasoner_model: str, db_manager=None):
         # Validate API key
         if not api_key or not api_key.strip():
             raise ValueError("API key is required and cannot be empty")
@@ -142,6 +142,7 @@ class LLMService:
         self.client = OpenAI(api_key=api_key.strip(), base_url=base_url.strip())
         self.chat_model = chat_model.strip()
         self.reasoner_model = reasoner_model.strip()
+        self.db_manager = db_manager
 
         print("🤖 LLMService Initialized:")
         print(f"   - Base URL: {base_url}")
@@ -165,13 +166,14 @@ class LLMService:
             # 兜底：万一配置文件里没写
             return f"你是一个二次元助手。当前时间: {now_str}。请根据用户数据回答。"
 
-    def get_streaming_response(self, user_query: str, history_messages: List[Dict], memory_data: List[Dict]):
+    def get_streaming_response(self, user_query: str, history_messages: List[Dict], memory_data: List[Dict], session_id=None):
         """
         组装 Prompt 并发起流式请求
         Args:
             user_query: 用户最新输入
             history_messages: 上下文历史 [{"role":..., "content":...}]
             memory_data: 由 DataService 清洗过的上下文数据
+            session_id: 会话ID，用于标记会话为忙碌状态
         """
         # 1. 动态生成 System Prompt
         sys_content = self._build_system_prompt(memory_data)
@@ -190,15 +192,26 @@ class LLMService:
         
         messages.append({"role": "user", "content": user_query})
 
-        # 3. 发起请求
+        # 3. 发起请求，使用session_busy上下文管理器标记会话为忙碌状态
         try:
-            return self.client.chat.completions.create(
-                model=self.chat_model,
-                messages=messages,
-                temperature=1.3, # 稍微高一点的温度，让闲聊更有趣
-                stream=True,
-                timeout=30
-            )
+            if session_id and self.db_manager:
+                with self.db_manager.session_busy(session_id):
+                    return self.client.chat.completions.create(
+                        model=self.chat_model,
+                        messages=messages,
+                        temperature=1.3, # 稍微高一点的温度，让闲聊更有趣
+                        stream=True,
+                        timeout=30
+                    )
+            else:
+                # 没有session_id或db_manager时的回退逻辑
+                return self.client.chat.completions.create(
+                    model=self.chat_model,
+                    messages=messages,
+                    temperature=1.3,
+                    stream=True,
+                    timeout=30
+                )
         except Exception as e:
             # Improved error handling with detailed logging
             error_msg = f"❌ 连接 LLM 失败: {str(e)}"

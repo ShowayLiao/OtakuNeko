@@ -25,7 +25,7 @@ class DatabaseManager:
                     cls._instance._initialized = False
         return cls._instance
     
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, session_manager: Optional[Any] = None):
         if self._initialized:
             return
             
@@ -40,6 +40,7 @@ class DatabaseManager:
             self.db_path = db_path
             self._connection_cache = threading.local()
             self._initialized = True
+            self.session_manager = session_manager
             
             # 确保数据库目录存在
             db_dir = os.path.dirname(db_path)
@@ -75,9 +76,28 @@ class DatabaseManager:
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_active_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        
+        # 检查并添加last_active_time字段（如果不存在）
+        try:
+            # 尝试获取last_active_time字段信息
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [col[1] for col in cursor.fetchall()]
+            
+            if 'last_active_time' not in columns:
+                # SQLite不允许ALTER TABLE添加带CURRENT_TIMESTAMP默认值的列
+                # 我们使用分步方式：先添加列，再更新默认值
+                cursor.execute("ALTER TABLE users ADD COLUMN last_active_time TIMESTAMP")
+                # 更新所有现有记录的默认值
+                cursor.execute("UPDATE users SET last_active_time = CURRENT_TIMESTAMP")
+                conn.commit()
+        except sqlite3.OperationalError as e:
+            # 处理可能的错误
+            logger.warning(f"检查或添加last_active_time字段时出错: {e}")
+            pass
         
         # 创建动漫记录表
         cursor.execute('''
@@ -105,9 +125,44 @@ class DatabaseManager:
         conn.commit()
         cursor.close()
     
+    def session_busy(self, session_id: str):
+        """
+        上下文管理器，用于标记会话为忙碌状态
+        
+        参数:
+            session_id: 会话ID
+            
+        使用示例:
+            with db_manager.session_busy(session_id):
+                # 执行耗时操作
+        """
+        class SessionBusyContext:
+            def __init__(self, db_manager, session_id):
+                self.db_manager = db_manager
+                self.session_id = session_id
+                
+            def __enter__(self):
+                if self.db_manager.session_manager and self.session_id:
+                    with self.db_manager.session_manager._session_lock:
+                        if self.session_id in self.db_manager.session_manager._sessions:
+                            self.db_manager.session_manager._sessions[self.session_id]["is_busy"] = True
+                            logger.info(f"会话 {self.session_id} 标记为忙碌")
+                return self
+                
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                if self.db_manager.session_manager and self.session_id:
+                    with self.db_manager.session_manager._session_lock:
+                        if self.session_id in self.db_manager.session_manager._sessions:
+                            self.db_manager.session_manager._sessions[self.session_id]["is_busy"] = False
+                            logger.info(f"会话 {self.session_id} 标记为不忙碌")
+                return False  # 不抑制异常
+                
+        return SessionBusyContext(self, session_id)
+    
     def get_user_id(self, username: str) -> Optional[int]:
         """
         获取用户 ID，如果不存在则创建
+        同时更新用户的最后活跃时间
         """
         conn = self._get_connection()
         cursor = conn.cursor()
@@ -118,6 +173,12 @@ class DatabaseManager:
         
         if user:
             user_id = user[0]
+            # 更新最后活跃时间
+            cursor.execute(
+                "UPDATE users SET last_active_time = CURRENT_TIMESTAMP WHERE id = ?",
+                (user_id,)
+            )
+            conn.commit()
         else:
             # 创建新用户
             cursor.execute("INSERT INTO users (username) VALUES (?)", (username,))
@@ -218,27 +279,33 @@ class DatabaseManager:
         cursor.close()
         return records
     
-    def migrate_from_json(self, username: str, json_file_path: str) -> bool:
+    def migrate_from_json(self, username: str, json_file_path: str, session_id: Optional[str] = None) -> bool:
         """
         从 JSON 文件迁移数据到数据库
+        
+        参数:
+            username: 用户名
+            json_file_path: JSON文件路径
+            session_id: 会话ID（用于标记忙碌状态）
         """
         if not os.path.exists(json_file_path):
             logger.warning(f"JSON 文件不存在: {json_file_path}")
             return False
             
         try:
-            # 读取 JSON 数据
-            with open(json_file_path, 'r', encoding='utf-8') as f:
-                records = json.load(f)
-            
-            if not isinstance(records, list):
-                logger.error(f"JSON 数据格式错误，期望列表类型: {json_file_path}")
-                return False
-            
-            # 保存到数据库
-            self.save_records(username, records)
-            logger.info(f"成功从 {json_file_path} 迁移 {len(records)} 条记录到数据库")
-            return True
+            with self.session_busy(session_id):
+                # 读取 JSON 数据
+                with open(json_file_path, 'r', encoding='utf-8') as f:
+                    records = json.load(f)
+                
+                if not isinstance(records, list):
+                    logger.error(f"JSON 数据格式错误，期望列表类型: {json_file_path}")
+                    return False
+                
+                # 保存到数据库
+                self.save_records(username, records)
+                logger.info(f"成功从 {json_file_path} 迁移 {len(records)} 条记录到数据库")
+                return True
             
         except json.JSONDecodeError as e:
             logger.error(f"JSON 解析错误: {e}")
@@ -255,6 +322,53 @@ class DatabaseManager:
             self._connection_cache.conn.close()
             delattr(self._connection_cache, 'conn')
     
+    def cleanup_inactive_users(self, expiry_hours: int = 2) -> int:
+        """
+        清理不活跃的用户数据
+        
+        参数:
+            expiry_hours: 用户超过多少小时不活跃就会被清理，默认为2小时
+            
+        返回:
+            被清理的用户数量
+        """
+        conn = self._get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # 查找所有过期的用户ID
+            cursor.execute('''
+                SELECT id FROM users 
+                WHERE last_active_time < datetime('now', '-' || ? || ' hours')
+            ''', (expiry_hours,))
+            expired_user_ids = [row[0] for row in cursor.fetchall()]
+            
+            if not expired_user_ids:
+                return 0
+            
+            # 先删除这些用户的动漫记录（外键约束要求先删除子表数据）
+            cursor.executemany(
+                "DELETE FROM bangumi_records WHERE user_id = ?",
+                [(user_id,) for user_id in expired_user_ids]
+            )
+            
+            # 再删除用户记录
+            cursor.executemany(
+                "DELETE FROM users WHERE id = ?",
+                [(user_id,) for user_id in expired_user_ids]
+            )
+            
+            conn.commit()
+            
+            logger.info(f"已清理 {len(expired_user_ids)} 个不活跃用户的数据")
+            return len(expired_user_ids)
+            
+        except Exception as e:
+            logger.error(f"清理不活跃用户失败: {e}")
+            return 0
+        finally:
+            cursor.close()
+
     def __del__(self):
         """
         析构函数，确保连接关闭

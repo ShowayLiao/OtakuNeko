@@ -175,3 +175,13 @@ Pipfile.lock
 *.tmp
 *.temp
 *~
+
+# Ignore test files
+test_*.py
+test_output.txt
+
+# Ignore src directory config files
+src/.gitignore
+src/README.md
+src/.envexample
+src/.env.example

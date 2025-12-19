@@ -37,29 +37,50 @@ class BaseAgent:
                 return f.read()[:2000]
         return "用户是一位普通的二次元爱好者。"
 
-    def run(self, messages, temperature=0.7, stream=True, model=None, response_format=None,timeout=60):
+    def run(self, messages, temperature=0.7, stream=True, model=None, response_format=None, timeout=60, session_id=None):
         """
         🧠 [Backend] 核心思考逻辑
         默认行为：调用 LLM 进行普通对话
         """
-        try:
-            response = self.client.chat.completions.create(
-                model=model or self.llm_service.chat_model, # Use specified model or default chat model
-                response_format=response_format,
-                messages=messages,
-                temperature=temperature,
-                stream=stream,
-                timeout=timeout
-            )
-            return response
-        except Exception as e:
-            st.error(f"LLM API Error: {e}")
-            # To prevent app crash, we can return a mock stream or None
-            # For non-stream, returning None is fine. For stream, it might need a generator.
-            # Here we assume callers will check for None.
-            return None
+        # 如果提供了session_id，使用上下文管理器标记会话为忙碌
+        if session_id:
+            with self.bgm_service.db_manager.session_busy(session_id):
+                try:
+                    response = self.client.chat.completions.create(
+                        model=model or self.llm_service.chat_model, # Use specified model or default chat model
+                        response_format=response_format,
+                        messages=messages,
+                        temperature=temperature,
+                        stream=stream,
+                        timeout=timeout
+                    )
+                    return response
+                except Exception as e:
+                    st.error(f"LLM API Error: {e}")
+                    # To prevent app crash, we can return a mock stream or None
+                    # For non-stream, returning None is fine. For stream, it might need a generator.
+                    # Here we assume callers will check for None.
+                    return None
+        # 没有提供session_id，直接调用
+        else:
+            try:
+                response = self.client.chat.completions.create(
+                    model=model or self.llm_service.chat_model, # Use specified model or default chat model
+                    response_format=response_format,
+                    messages=messages,
+                    temperature=temperature,
+                    stream=stream,
+                    timeout=timeout
+                )
+                return response
+            except Exception as e:
+                st.error(f"LLM API Error: {e}")
+                # To prevent app crash, we can return a mock stream or None
+                # For non-stream, returning None is fine. For stream, it might need a generator.
+                # Here we assume callers will check for None.
+                return None
 
-    def render(self, prompt: str, history: list, context_data=None):
+    def render(self, prompt: str, history: list, context_data=None, session_id=None):
         """
         🎨 [Frontend] UI 渲染逻辑
         
@@ -67,6 +88,7 @@ class BaseAgent:
             prompt: 用户的当前输入
             history: 历史对话记录 (st.session_state.messages)
             context_data: 可选的上下文数据 (如 RAG 检索结果)
+            session_id: 当前会话的ID，用于标记会话状态
         
         Returns:
             str: 最终生成的完整回复文本 (用于存入 session_state)
@@ -91,7 +113,7 @@ class BaseAgent:
         api_messages.append({"role": "user", "content": prompt})
 
         # 4. 调用后端逻辑 (流式)
-        stream = self.run(api_messages, stream=True)
+        stream = self.run(api_messages, stream=True, session_id=session_id)
 
         # 5. 执行渲染循环
         if stream:
