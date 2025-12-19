@@ -20,7 +20,7 @@ session_manager = get_session_manager()
 # 2. 先清理过期用户数据，释放名额
 db_manager = DatabaseManager()
 db_manager.cleanup_inactive_users(expiry_hours=2)
-session_manager.MAX_TOTAL_SESSIONS = 2
+session_manager.MAX_TOTAL_SESSIONS = 10
 
 # 3. 初始化会话状态 - 使用Streamlit原生session_id确保线程一致
 from streamlit.runtime.scriptrunner import get_script_run_ctx
