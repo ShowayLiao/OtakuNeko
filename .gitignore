@@ -107,6 +107,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.local_env.example
 
 # Spyder project settings
 .spyderproject
@@ -146,6 +147,7 @@ Thumbs.db
 data/
 *.log
 .env
+.local_env
 config.js
 secrets.yml
 
