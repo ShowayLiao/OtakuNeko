@@ -239,57 +239,58 @@ TEMPLATES = {
     # Keywords Pool (Reference for tone/tags):
     {keywords_list}
 
-    # 
-
     # 🎯 Mission:
-    你现在是【2025 年度动画赏】的首席大数据评审官。请基于观影数据，进行多维度的“成分审计”。
-    你的任务是挖掘数据背后的“槽点”和“真爱”，并输出一份包含**结构化统计**和**深度文本分析**的 JSON。
+    你现在是【2025 年度动画赏】的首席大数据评审官。请基于过去一年的观影数据，进行多维度的“成分审计”。
+    你的任务是挖掘数据背后的“槽点”和“真爱”，并输出一份包含结构化统计、二次元浓度评分、可视化雷达、成分占比及深度文本分析的 JSON。
 
-    # Phase 1: 多维数据计算 (Statistical Thinking)
-    在生成前，请遍历数据并找出趋势（注意：LLM 不擅长精确计算，请尽力提取最明显的趋势）：
-    1.  **CV 统计**：扫描 `cv` 字段，找出出现频率最高的 1-2 位声优。
-    2.  **时间分布**：查看 `month` 字段，找出用户看番最密集的月份。
-    3.  **核心成分**：分析`tag`字段，找到用户今年看的动画的标签趋势，最喜欢看什么标签的动画。
+    # Phase 1: 数据趋势提取 (Statistical Thinking)
+    1. **时间分布**：查看 `month` 字段，找出用户看番最密集的月份（1、4、7、10月航标）。
+    2. **审美定型**：分析全年的 `score` 分布与 `tag` 倾向，评估用户的审美阈值和核心偏好。
 
-    # Phase 2: 奖项与标签生成 (Mapping & Tagging)
-    1.  **年度称号**：从 `{keywords_list}` 或你总结的题材中，组合出 1 个属于该用户的年度点评。
-    2.  **奖项匹配**：从{data_str}中找到对应 `{categories_json}` 奖项的作品。
-        - 每个奖项只能颁给一部作品，且不得重复。
-        - 每一个奖项都必须匹配上，不能少。
+    # Phase 2: 维度量化与奖项 (Structured Metrics)
+    1. **二次元浓度 (Otaku Score)**：基于全年的观影数量、硬核程度和打分倾向，给出一个 0-100 的浓度评分。
+    2. **年度奖项 (Awards)**：从 {data_str} 中匹配 `{categories_json}`。
+    - **规则**：严禁捏造，必须使用原名。一部作品限一个奖项，不可留空。
+    3. **六维雷达 (Annual Radar)**：对用户本年度表现进行量化 (0-100)：
+    - 硬核(Hardcore)、萌系(Otaku)、猎奇(Dark)、怀旧(Retro)、恋爱(Love)、胃疼(Art)、热血(Power)、耽美(Sub).
+    4. **成分拆解 (Composition)**：将用户今年的灵魂拆解为 4-6 个抽象标签（如：40% 纯爱战神，20% 异世界原住民），总和为 1.0。
 
-    # Phase 3: 撰写分析报告 (Text Generation)
-    请撰写一段风格独特的年度总结，必须包含对上述统计结果（CV、月份、公司）的犀利点评。
+    # Phase 3: 撰写审计报告 (Deep Analysis)
+    请遵循风格要求 `{tone_req}` 撰写报告。
+    - **Intro**：结合 Otaku Score，对用户今年的二次元活跃度进行开篇定性。
+    - **Body**：深度剖析。结合最密集的看番月份和高分奖项，拆解其这一年的精神状态（如：是在寻求治愈，还是在追逐胃疼的快感）。
+    - **Conclusion**：一句话犀利结语。
 
-    # 语言风格
-    - 请遵循以下风格要求：{tone_req}
-
-    # Output Format (Modified JSON Structure):
-    Strict output rules: The output MUST be valid standard JSON. Use ASCII quotes.
+    # Output Format (JSON Only):
+    严格输出标准 JSON，不要包含 Markdown 代码块，不要使用全角引号。
 
     {{
         "user_stats": {{
-            "top_cv": {{ 
-                "name": "声优名字", 
-                "comment": "一句关于该声优的吐槽，如：'无处不在的劳模'" 
-            }},
+            "otaku_score": 88,
             "busiest_month": {{
-                "month": "数字(从1、4、7、10中选)", 
-                "comment": "关于该月份看番状态的描述，如：'在空调房里腐烂的夏天'"
+                "month": "月份数字", 
+                "comment": "关于该时段状态的描述（如：在空调房腐烂的夏天）"
             }},
-            "Anime_tag": {{
-                "tag": ["核心成分1","核心成分2","核心成分3"],
-                "comment": "简短深刻的一句话原因"
-            }},
-            "comment_tags": ["年度称号"] 
+            "comment_tags": ["年度称号 (由 keywords_list 组合而成)"] 
         }},
+        "radar": {{
+            "硬核": 85, "萌系": 60, "猎奇": 40, "怀旧": 20,
+            "恋爱": 90, "胃疼": 70, "热血": 50, "耽美": 30
+        }},
+        "composition": [
+            {{ "label": "抽象标签A", "value": 0.4, "color": "#FF6B6B" }},
+            {{ "label": "抽象标签B", "value": 0.3, "color": "#4ECDC4" }},
+            ...
+        ],
         "awards_mapping": {{ 
-            "奖项ID": {{ "title": "作品名"（该名字要便于检索）, "reason": "简短深刻的一句话颁奖词，30字内" }},
+            "奖项ID": {{ "title": "列表中的原名", "reason": "30字内犀利颁奖词" }},
+            ...
         }},
         "analysis_report": {{
-            "title": "报告的大标题（如：2025年度·异世界失格者报告）",
-            "intro": "开篇总结，通过 tags 和 CV 分析用户的二次元成分。",
-            "body": "主体内容，详细分析重点奖项，结合 month 和 score 数据进行点评。",
-            "conclusion": "结语，一句话总结或对明年的诅咒/祝福。"
+            "title": "2025年度·XXX审计报告",
+            "intro": "开篇简述...",
+            "body": "深度分析内容...",
+            "conclusion": "结语。"
         }}
     }}
     """,

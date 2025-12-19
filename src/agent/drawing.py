@@ -401,3 +401,44 @@ def plot_radar_chart(radar_data):
     # 4. 在 Streamlit 中渲染
     # use_container_width=True 让图表自适应列宽
     st.plotly_chart(fig, use_container_width=True)
+
+def plot_pie_chart(composition_data):
+    """
+    绘制精神成分饼图
+    :param composition_data: 列表格式，例如 [{"label": "纯爱战神", "value": 0.4}, ...]
+    """
+    if not composition_data:
+        st.warning("暂无成分数据")
+        return
+
+    # 1. 数据预处理
+    labels = [item.get('label', '未知') for item in composition_data]
+    values = [item.get('value', 0) for item in composition_data]
+    colors = [item.get('color', '#888888') for item in composition_data]
+
+    # 2. 创建 Plotly 图形
+    fig = go.Figure()
+
+    fig.add_trace(go.Pie(
+        labels=labels,
+        values=values,
+        hole=0.4,  # 甜甜圈形状
+        textinfo='percent+label',  # 显示百分比和标签
+        textfont=dict(size=12, color="white"),
+        marker=dict(
+            colors=colors,
+            line=dict(color='white', width=2)
+        )
+    ))
+
+    # 3. 样式美化
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=40, r=40, t=40, b=40), # 减少留白
+        paper_bgcolor="rgba(0,0,0,0)",       # 背景透明，适配深色/浅色模式
+        plot_bgcolor="rgba(0,0,0,0)",
+        height=500  # 控制高度
+    )
+
+    # 4. 在 Streamlit 中渲染
+    st.plotly_chart(fig, use_container_width=True)

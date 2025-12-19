@@ -241,6 +241,10 @@ class BaseAgent:
         from src.agent.drawing import plot_radar_chart
         return plot_radar_chart(data)
     
+    def plot_pie_chart(self, data: list, title: str = "Pie Chart", output_path: str = "pie_chart.png"):
+        from src.agent.drawing import plot_pie_chart
+        return plot_pie_chart(data)
+    
     # 🟢 [新增] 健壮的分数提取函数
     def _extract_score(self, subject_data):
         """

@@ -89,24 +89,27 @@ elif status == "Expired":
     if 'is_in_queue_whitelist' in st.session_state:
         st.session_state.is_in_queue_whitelist = False
     
-    if st.button("重新排队"):
-        # 彻底重置：清空expired记录
-        with session_manager._expired_ids_lock:
-            if st.session_state.session_id in session_manager._expired_ids:
-                session_manager._expired_ids.remove(st.session_state.session_id)
-                print(f"[会话管理] 会话 {st.session_state.session_id} 已从过期记录中清除")
-        
-        # UI反馈：显示排队申请已提交
-        st.info("已提交排队申请，正在为您分配位置...")
-        
-        # 调用request_entry重新排队
-        session_manager.request_entry(st.session_state.session_id)
-        
-        # 延迟1秒，确保UI反馈可见
-        time.sleep(1)
-        
-        # 重新运行应用
-        st.rerun()
+    if st.button("🔄 重新进入排队"):
+        try:
+            # 第一步：物理清除Manager中的所有旧记录
+            session_manager.force_reset_session(st.session_state.session_id)
+            
+            # 第二步：清空本地session_state（如login_user, token等）
+            # 确保用户像新访客一样重新开始
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            
+            # 第三步：重新发起登记申请
+            session_manager.request_entry(st.session_state.session_id)
+            
+            # 后台日志
+            print(f"[会话管理] 用户 {st.session_state.session_id} 申请重新排队，已执行清理并重新登记")
+            
+            # 第四步：强制刷新
+            st.rerun()
+        except Exception as e:
+            # 捕获并记录具体错误，不再显示"未知错误"
+            st.error(f"排队重置失败，请尝试刷新页面。详情: {e}")
     else:
         st.stop()  # 强制切断后续所有组件的渲染
 

@@ -249,6 +249,25 @@ class GlobalSessionManager:
                 return True
             return False
     
+    def force_reset_session(self, session_id: str):
+        """
+        强制重置会话：从所有列表中移除会话ID
+        核心逻辑：无论该ID在active、waiting还是expired列表中，全部强制移除
+        """
+        # 从活跃/等待会话中移除
+        with self._session_lock:
+            if session_id in self._sessions:
+                del self._sessions[session_id]
+                print(f"[会话管理] 已从会话列表中移除会话: {session_id}")
+        
+        # 从过期ID列表中移除
+        with self._expired_ids_lock:
+            if session_id in self._expired_ids:
+                self._expired_ids.remove(session_id)
+                print(f"[会话管理] 已从过期记录中移除会话: {session_id}")
+        
+        print(f"[会话管理] 会话 {session_id} 已完成强力重置")
+    
     def get_current_sessions(self) -> int:
         """
         获取当前活跃会话数

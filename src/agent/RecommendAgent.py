@@ -189,7 +189,7 @@ class RecommendAgent(BaseAgent):
                 raw_json_str = ""
                 
                 try:
-                    stream = self.run(messages, temperature=1.1, stream=True, session_id=session_id)
+                    stream = self.run(messages, temperature=0.8, stream=True, session_id=session_id)
                     status.write("🧠 正在筛选最佳匹配...")
                     for chunk in stream:
                         if chunk.choices and chunk.choices[0].delta.content:
