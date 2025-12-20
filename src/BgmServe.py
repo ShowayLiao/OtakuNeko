@@ -273,16 +273,19 @@ class BangumiService:
                 
                 data = resp.json()
                 items = data.get('data', [])
+                total = data.get("total")
                 if not items:
                     break
 
                 for item in items:
-                    subject = item.get('subject', {})
+                    subject = item.get("subject") or {}
+                    sid = subject.get("id")
+                    if not sid: continue
                     if not subject: continue
                     
                     # 基础字段解析
                     record = {
-                        "id": subject.get('id'),
+                        "id": sid,
                         "title": subject.get('name_cn') or subject.get('name'),
                         "type": "anime",
                         "status": self.STATUS_MAP.get(item['type'], "watched"),
@@ -295,9 +298,13 @@ class BangumiService:
                         "director": "", "script": "", "studio": "", "cv": ""
                     }
                     all_items.append(record)
-                
+
                 print(f"   ⬇️ 已获取 {len(all_items)} 条...")
-                offset += limit
+                offset += len(items)
+                if total is not None and offset >= total:
+                    break
+                if total is None and len(items) < limit:
+                    break
                 time.sleep(0.5)
 
             except Exception as e:
@@ -386,6 +393,7 @@ class BangumiService:
         # --- 合并逻辑 ---
         for item in cloud_data:
             sid = item['id']
+            if not sid: continue
             if sid in local_map:
                 # 保留本地已经辛苦抓取的 deep info
                 old = local_map[sid]

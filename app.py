@@ -192,6 +192,49 @@ def initial_setup_dialog():
             time.sleep(0.5)
             st.rerun()
 
+@st.dialog("✏️ 修改 AI 配置", width="large")
+def configure_api_key_dialog():
+    provider_mode = st.radio("选择 AI 服务商", ["DeepSeek (推荐)", "自定义 (OpenAI 兼容)"], horizontal=True)
+
+    input_ds_key = os.getenv("DEEPSEEK_API_KEY", "")
+    input_custom_url = os.getenv("CUSTOM_API_BASE_URL", "")
+    input_custom_key = os.getenv("CUSTOM_API_KEY", "")
+    input_model_chat = os.getenv("CUSTOM_MODEL_CHAT", "")
+    input_model_reasoner = os.getenv("CUSTOM_MODEL_REASONER", "")
+
+    if provider_mode == "DeepSeek (推荐)":
+        input_ds_key = st.text_input("DeepSeek API Key", value=input_ds_key, type="password")
+    else:
+        input_custom_url = st.text_input("API Base URL", value=input_custom_url, placeholder="https://api.example.com/v1")
+        input_custom_key = st.text_input("API Key", value=input_custom_key, type="password")
+        c1, c2 = st.columns(2)
+        with c1:
+            input_model_chat = st.text_input("对话模型名", value=input_model_chat, placeholder="gpt-4o-mini")
+        with c2:
+            input_model_reasoner = st.text_input("推理模型名", value=input_model_reasoner, placeholder="gpt-4o")
+
+    if st.button("保存", type="primary", use_container_width=True):
+        errors = []
+        if provider_mode == "DeepSeek (推荐)" and not input_ds_key.strip():
+            errors.append("❌ 请输入 DeepSeek API Key")
+        if provider_mode != "DeepSeek (推荐)" and (not input_custom_url.strip() or not input_custom_key.strip()):
+            errors.append("❌ 自定义服务的 URL 和 Key 不能为空")
+        if errors:
+            for e in errors:
+                st.error(e)
+            return
+
+        if provider_mode == "DeepSeek (推荐)":
+            update_env_file("DEEPSEEK_API_KEY", input_ds_key.strip())
+        else:
+            update_env_file("CUSTOM_API_BASE_URL", input_custom_url.strip())
+            update_env_file("CUSTOM_API_KEY", input_custom_key.strip())
+            update_env_file("CUSTOM_MODEL_CHAT", input_model_chat.strip())
+            update_env_file("CUSTOM_MODEL_REASONER", input_model_reasoner.strip())
+
+        st.success("已保存")
+        st.rerun()
+
 # --- 2. 服务与 Agent 初始化 ---
 load_dotenv(override=True) # 强制重载，确保读取最新修改
 
@@ -243,7 +286,7 @@ else: # 默认为 DeepSeek
     reasoner_model = "deepseek-reasoner"
 
 @st.cache_resource
-def init_services():
+def init_services(api_key, base_url, chat_model, reasoner_model):
     return LLMService(
         api_key=api_key, 
         base_url=base_url, 
@@ -251,7 +294,7 @@ def init_services():
         reasoner_model=reasoner_model
     )
 
-llm_service = init_services()
+llm_service = init_services(api_key, base_url, chat_model, reasoner_model)
 
 # 实例化 Agents
 router = IntentRouter(llm_service,st.session_state.bgm_service)
@@ -385,6 +428,7 @@ with st.sidebar:
         with col2:
             if st.button("✏️", help="修改 API Key"):
                 configure_api_key_dialog()
+                # initial_setup_dialog();
 
     with st.sidebar:
         st.markdown("---") # 分割线
