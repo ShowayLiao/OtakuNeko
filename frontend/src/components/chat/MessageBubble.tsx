@@ -2,11 +2,15 @@
 
 import React from 'react';
 import { MessageAttachment } from './MessageAttachment';
+import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant';
   content: string;
+  currentContent?: string;
+  status?: 'sending' | 'sent' | 'error';
   timestamp?: string;
+  onRetry?: () => void;
 }
 
 interface ContextData {
@@ -14,7 +18,7 @@ interface ContextData {
   [key: string]: unknown;
 }
 
-export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, timestamp }) => {
+export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, currentContent, status = 'sent', timestamp, onRetry }) => {
   const isUser = role === 'user';
 
   // 解析上下文数据
@@ -40,13 +44,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, tim
     return { context: null, cleanedContent: text };
   };
 
-  const { context, cleanedContent } = parseContext(content);
+  // 对于助手消息，使用 currentContent 进行打字机效果，否则使用 content
+  const displayContent = isUser ? content : (currentContent ?? content);
+  const { context, cleanedContent } = parseContext(displayContent);
 
   return (
     <div className={`flex items-end gap-4 mb-4 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
       {/* Avatar */}
       {!isUser && (
-        <div className="w-25 h-25 rounded-2xl overflow-hidden flex items-center justify-center bg-gray-100">
+        <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center bg-gray-100">
           <img src="/Icon.png" alt="AI" width={40} height={40} className="w-full h-full object-cover" />
         </div>
       )}
@@ -61,15 +67,36 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, tim
         {/* Bubble */}
         <div
           className={`p-4 rounded-2xl shadow-sm ${isUser
-            ? 'bg-[#FF8E72] text-white rounded-br-none'
-            : 'bg-gray-100 text-gray-900 rounded-bl-none'}
+            ? 'bg-bg-bubble-user text-text-primary rounded-br-none'
+            : status === 'error'
+            ? 'bg-red-100 text-red-800 rounded-bl-none border border-red-200'
+            : 'bg-bg-bubble-assistant text-text-secondary rounded-bl-none'}
           `}
         >
           {/* Render attachment if context exists */}
           {context && <MessageAttachment name={context.name} />}
           
-          {/* Render cleaned message content */}
-          <div className="whitespace-pre-wrap">{cleanedContent}</div>
+          {/* Render message content based on status */}
+          {status === 'error' ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 text-red-600" />
+                <span className="font-medium">发送失败</span>
+              </div>
+              <div className="text-sm opacity-80 whitespace-pre-wrap">{cleanedContent}</div>
+              {onRetry && (
+                <button
+                  onClick={onRetry}
+                  className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-md transition-colors bg-red-600 text-white hover:bg-red-700"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  重试
+                </button>
+              )}
+            </div>
+          ) : (
+            <div className="whitespace-pre-wrap">{cleanedContent}</div>
+          )}
         </div>
 
         {/* Timestamp */}

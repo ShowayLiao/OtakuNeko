@@ -216,7 +216,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
               type="submit"
               disabled={!message.trim()}
               className={`w-12 h-12 rounded-full flex items-center justify-center transition-all duration-200 ${message.trim()
-                ? 'bg-gradient-to-r from-orange-500 to-orange-600 text-white shadow-md hover:shadow-lg hover:scale-105'
+                ? 'bg-primary text-white shadow-md hover:shadow-lg hover:scale-105 hover:bg-primary/90'
                 : 'bg-gray-200 text-gray-400 cursor-not-allowed'}
               `}
             >

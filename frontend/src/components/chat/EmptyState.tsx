@@ -18,7 +18,7 @@ export const EmptyState: React.FC = () => {
       <p className="text-lg text-gray-600 mb-8 text-center max-w-md">同步你的收藏数据，让 AI 更懂你的口味。</p>
 
       <button
-        className={`py-4 px-8 bg-[#FFB347] text-[#8B4513] font-bold rounded-lg shadow-lg text-xl hover:bg-[#FF8C00] hover:text-white transition-colors transform hover:scale-105 ${isSyncing ? 'opacity-70 cursor-not-allowed' : ''}`}
+        className={`py-4 px-8 bg-primary text-white font-bold rounded-lg shadow-lg text-xl hover:bg-primary/90 transition-colors transform hover:scale-105 ${isSyncing ? 'opacity-70 cursor-not-allowed' : ''}`}
         onClick={handleSync}
         disabled={isSyncing}
       >

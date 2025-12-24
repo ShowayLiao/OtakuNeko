@@ -11,7 +11,9 @@ import { ChatProvider } from '@/contexts/ChatContext';
 interface Message {
   id: string;
   role: 'user' | 'assistant';
-  content: string;
+  content: string; // Full content for assistant messages
+  currentContent: string; // Currently displayed content for typing effect
+  status: 'sending' | 'sent' | 'error';
   timestamp: string;
 }
 
@@ -32,38 +34,89 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  // Helper function to generate assistant response with typing effect
+  const generateAssistantResponse = (messageId: string, isRetry: boolean = false) => {
+    const assistantResponses = [
+      '好的，我来帮你找一下相关的动画资源。',
+      '这个作品我很熟悉呢，让我为你详细介绍一下。',
+      '根据你的喜好，我推荐你看这部动画。',
+      '需要我帮你查询这部作品的评分和评价吗？',
+      '我可以帮你安排观看计划，需要吗？',
+    ];
+    
+    const randomResponse = assistantResponses[Math.floor(Math.random() * assistantResponses.length)];
+    
+    // Typing effect - reveal one character at a time
+    let index = 0;
+    const typingInterval = setInterval(() => {
+      if (index <= randomResponse.length) {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === messageId 
+              ? { ...msg, currentContent: randomResponse.substring(0, index) } 
+              : msg
+          )
+        );
+        index++;
+      } else {
+        // Typing complete, update status to sent
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === messageId ? { ...msg, content: randomResponse, status: 'sent' } : msg
+          )
+        );
+        clearInterval(typingInterval);
+      }
+    }, 30); // Adjust typing speed here (ms per character)
+  };
+
   const handleSendMessage = (content: string) => {
     // Add user message
     const userMessage: Message = {
       id: `user-${Date.now()}`,
       role: 'user',
       content,
+      currentContent: content,
+      status: 'sent',
       timestamp: new Date().toLocaleTimeString(),
     };
 
     setMessages(prev => [...prev, userMessage]);
 
-    // Simulate assistant response after 1 second
+    // Simulate assistant response with typing effect
     setTimeout(() => {
-      const assistantResponses = [
-        '好的，我来帮你找一下相关的动画资源。',
-        '这个作品我很熟悉呢，让我为你详细介绍一下。',
-        '根据你的喜好，我推荐你看这部动画。',
-        '需要我帮你查询这部作品的评分和评价吗？',
-        '我可以帮你安排观看计划，需要吗？',
-      ];
-      
-      const randomResponse = assistantResponses[Math.floor(Math.random() * assistantResponses.length)];
-      
+      // Create initial message with empty content (typing effect)
       const assistantMessage: Message = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content: randomResponse,
+        content: '',
+        currentContent: '',
+        status: 'sending',
         timestamp: new Date().toLocaleTimeString(),
       };
 
+      // Add the message with empty content first
       setMessages(prev => [...prev, assistantMessage]);
+
+      // Generate response with typing effect
+      generateAssistantResponse(assistantMessage.id);
+
     }, 1000);
+  };
+
+  // Handle message retry
+  const handleRetryMessage = (messageId: string) => {
+    // Update message status to sending
+    setMessages(prev => 
+      prev.map(msg => 
+        msg.id === messageId 
+          ? { ...msg, status: 'sending', currentContent: '' } 
+          : msg
+      )
+    );
+
+    // Regenerate assistant response with typing effect
+    generateAssistantResponse(messageId, true);
   };
 
   return (
@@ -97,7 +150,14 @@ export default function Home() {
                         key={message.id}
                         role={message.role}
                         content={message.content}
+                        currentContent={message.currentContent}
+                        status={message.status}
                         timestamp={message.timestamp}
+                        onRetry={() => {
+                          if (message.role === 'assistant') {
+                            handleRetryMessage(message.id);
+                          }
+                        }}
                       />
                     ))}
                     <div ref={messagesEndRef} />
