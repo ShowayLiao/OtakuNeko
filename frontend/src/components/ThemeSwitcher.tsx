@@ -101,7 +101,7 @@ const ThemeSwitcher: React.FC = () => {
 
       {/* Dropdown Menu */}
       {isOpen && (
-        <div className="absolute top-full right-0 mt-2 w-48 bg-white/90 backdrop-blur-sm rounded-lg border border-gray-200 shadow-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute top-full right-0 mt-2 w-48 bg-white/90 backdrop-blur-sm rounded-lg border border-gray-200 shadow-lg overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 z-50">
           {Object.entries(themes).map(([key, { name, color }]) => (
             <button
               key={key}

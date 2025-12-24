@@ -96,7 +96,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
   }, []);
 
   return (
-    <header className={`bg-white border-b border-gray-100 flex items-center justify-between p-4 ${className}`}>
+    <header className={`sticky top-0 z-40 bg-white border-b border-gray-100 flex items-center justify-between p-4 ${className}`}>
       <div className="flex items-center gap-3">
         {/* Search Box */}
         <div className="relative search-container">
