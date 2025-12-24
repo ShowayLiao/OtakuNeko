@@ -1,0 +1,24 @@
+# Web 框架
+fastapi
+uvicorn[standard]
+
+# 数据库/ORM
+sqlmodel
+asyncpg
+aioqlite
+alembic
+
+# 配置管理
+pydantic-settings
+python-dotenv
+
+# AI/Agent
+langgraph
+langchain
+langchain-openai
+
+# 工具
+httpx
+
+# 缓存
+fastapi-cache2[redis]

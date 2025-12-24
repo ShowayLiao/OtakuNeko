@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: otakuneko-db
+    environment:
+      POSTGRES_USER: otaku
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: otakuneko
+    volumes:
+      - ./data/postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: otakuneko-redis
+    volumes:
+      - ./data/redis_data:/data
+    ports:
+      - "6379:6379"
+    restart: always
