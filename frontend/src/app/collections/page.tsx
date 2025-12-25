@@ -1,110 +1,253 @@
 "use client";
 
-import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, Loader } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
+import { useInView } from 'react-intersection-observer';
+import { PosterCard } from '@/components/PosterCard';
+import { SortDropdown } from '@/components/SortDropdown';
 
-// 定义收藏项类型
-interface CollectionItem {
+// 定义后端返回的Subject类型
+interface BackendSubject {
   id: number;
-  title: string;
-  posterUrl: string;
-  rating: number;
+  name: string;
+  name_cn: string;
+  cover_url: string;
+  type: number;
+  eps: number;
+  score: number;
+  tags: string[];
+}
+
+// 定义后端返回的收藏项类型
+interface BackendCollectionItem {
+  id: number;
+  updated_at: string;
   status: string;
+  subject: BackendSubject;
+}
+
+// 定义前端使用的收藏项类型
+interface CollectionItem {
+  // --- 原始 Bangumi 数据 ---
+  id: number;
+  name_cn: string;
+  name: string;
+  cover_url: string;
+  score: number;
+  type: number; // 1=书籍, 2=动画, 3=音乐, 4=游戏, 6=剧集
+  tags: string[];
+  eps: number;
+  // --- 本地数据库附加字段 ---
+  status: 'watching' | 'completed' | 'plan' | 'on_hold' | 'dropped' | 'unknown';
+  updated_at: string; // ISO 时间字符串
+}
+
+// 定义API响应类型
+interface CollectionApiResponse {
+  total: number;
+  items: BackendCollectionItem[];
 }
 
 export default function CollectionsPage() {
-  // 模拟数据
-  const [collectionItems, setCollectionItems] = useState<CollectionItem[]>([
-    {
-      id: 1,
-      title: '进击的巨人',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Attack+on+Titan',
-      rating: 9.2,
-      status: '已追完'
-    },
-    {
-      id: 2,
-      title: '鬼灭之刃',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Demon+Slayer',
-      rating: 9.1,
-      status: '在看'
-    },
-    {
-      id: 3,
-      title: '海贼王',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=One+Piece',
-      rating: 9.5,
-      status: '在看'
-    },
-    {
-      id: 4,
-      title: '火影忍者',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Naruto',
-      rating: 9.0,
-      status: '已追完'
-    },
-    {
-      id: 5,
-      title: '东京食尸鬼',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Tokyo+Ghoul',
-      rating: 8.5,
-      status: '已追完'
-    },
-    {
-      id: 6,
-      title: '我的英雄学院',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=My+Hero+Academia',
-      rating: 8.8,
-      status: '在看'
-    },
-    {
-      id: 7,
-      title: '一拳超人',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=One-Punch+Man',
-      rating: 9.3,
-      status: '已追完'
-    },
-    {
-      id: 8,
-      title: '灵笼',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Ling+Long',
-      rating: 8.7,
-      status: '已追完'
-    },
-    {
-      id: 9,
-      title: '原神',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Genshin+Impact',
-      rating: 9.4,
-      status: '在玩'
-    },
-    {
-      id: 10,
-      title: '塞尔达传说',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Zelda',
-      rating: 9.6,
-      status: '已通关'
-    },
-    {
-      id: 11,
-      title: '最终幻想VII',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=FFVII',
-      rating: 9.2,
-      status: '已通关'
-    },
-    {
-      id: 12,
-      title: '王国之心',
-      posterUrl: 'https://placehold.co/400x600/FF6600/FFFFFF?text=Kingdom+Hearts',
-      rating: 8.9,
-      status: '在玩'
-    }
-  ]);
+  // 状态管理
+  const [items, setItems] = useState<CollectionItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [filterType, setFilterType] = useState<number | 'all'>('all'); // 1=书籍, 2=动画, 3=音乐, 4=游戏
+  const [filterStatus, setFilterStatus] = useState<'all' | 'watching' | 'completed' | 'plan' | 'on_hold' | 'dropped'>('all');
+  const [sortBy, setSortBy] = useState<'updated_at' | 'rate' | 'rank' | 'date'>('updated_at'); // 排序方式
+  
+  // Intersection Observer for infinite scroll
+  const { ref, inView } = useInView({
+    threshold: 0.5,
+    triggerOnce: false,
+    rootMargin: '200px',
+  });
 
-  // 筛选状态
-  const [activeFilter, setActiveFilter] = useState('全部');
-  const filters = ['全部', '动画', '游戏', '书籍', '已追完', '在看', '在玩'];
+  // 获取数据的函数
+  const fetchData = async (isLoadMore = false) => {
+    const currentOffset = isLoadMore ? offset : 0;
+    const limit = 20;
+    
+    try {
+      // 构建请求URL，包含筛选条件、排序和分页参数
+      const url = new URL('/api/collections', window.location.origin);
+      if (filterType !== 'all') url.searchParams.append('subject_type', filterType.toString());
+      if (filterStatus !== 'all') url.searchParams.append('status', filterStatus);
+      url.searchParams.append('sort_by', sortBy);
+      url.searchParams.append('offset', currentOffset.toString());
+      url.searchParams.append('limit', limit.toString());
+      
+      const res = await fetch(url.toString());
+      const data: CollectionApiResponse = await res.json();
+      
+      // 转换后端返回的数据结构
+      if (data && Array.isArray(data.items)) {
+        const transformedItems = data.items.map(item => ({
+          id: item.id,
+          name_cn: item.subject?.name_cn || '',
+          name: item.subject?.name || '',
+          cover_url: item.subject?.cover_url || '',
+          score: item.subject?.score || 0,
+          type: item.subject?.type || 0,
+          tags: item.subject?.tags || [],
+          eps: item.subject?.eps || 0,
+          status: item.status as 'watching' | 'completed' | 'plan' | 'dropped' | 'unknown',
+          updated_at: item.updated_at
+        }));
+        
+        if (isLoadMore) {
+          // 加载更多：追加新数据，并进行去重保护
+          setItems(prev => {
+            const newItems = transformedItems.filter(item => !prev.some(p => p.id === item.id));
+            return [...prev, ...newItems];
+          });
+          setOffset(prev => prev + limit);
+        } else {
+          // 初始加载或筛选切换：替换数据
+          setItems(transformedItems);
+          setOffset(limit);
+        }
+        
+        // 判断是否还有更多数据
+        setHasMore(data.items.length >= limit);
+      } else {
+        if (!isLoadMore) {
+          setItems([]);
+        }
+        setHasMore(false);
+      }
+    } catch (err) {
+      console.error('Fetch failed:', err);
+      
+      // 出错时使用模拟数据作为 fallback
+      if (!isLoadMore) {
+        setItems([
+          {
+            id: 1,
+            name_cn: '进击的巨人',
+            name: 'Shingeki no Kyojin',
+            cover_url: `https://picsum.photos/seed/${1}/300/450`,
+            score: 9.2,
+            type: 2, // 动画
+            tags: ['科幻', '战斗', '热血', '机甲'],
+            eps: 75,
+            status: 'completed',
+            updated_at: '2024-01-15T10:30:00Z'
+          },
+          {
+            id: 2,
+            name_cn: '鬼灭之刃',
+            name: 'Kimetsu no Yaiba',
+            cover_url: `https://picsum.photos/seed/${2}/300/450`,
+            score: 9.1,
+            type: 2, // 动画
+            tags: ['奇幻', '战斗', '冒险'],
+            eps: 54,
+            status: 'completed',
+            updated_at: '2024-01-16T14:20:00Z'
+          },
+          {
+            id: 5,
+            name_cn: '原神',
+            name: 'Genshin Impact',
+            cover_url: `https://picsum.photos/seed/${5}/300/450`,
+            score: 9.4,
+            type: 4, // 游戏
+            tags: ['冒险', '开放世界', '奇幻', '角色扮演'],
+            eps: 0,
+            status: 'watching',
+            updated_at: '2024-01-19T11:20:00Z'
+          },
+          {
+            id: 7,
+            name_cn: '哈利·波特与魔法石',
+            name: 'Harry Potter and the Philosopher\'s Stone',
+            cover_url: `https://picsum.photos/seed/${7}/300/450`,
+            score: 9.2,
+            type: 1, // 书籍
+            tags: ['奇幻', '冒险', '魔法'],
+            eps: 0,
+            status: 'completed',
+            updated_at: '2024-01-21T08:30:00Z'
+          }
+        ]);
+        setHasMore(false);
+      }
+    } finally {
+      if (isLoadMore) {
+        setIsLoadingMore(false);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  };
+
+  // 初始加载和筛选切换时的效果
+  useEffect(() => {
+    // 重置状态
+    setIsLoading(true);
+    setItems([]);
+    setOffset(0);
+    setHasMore(true);
+    
+    // 发起请求
+    fetchData(false);
+  }, [filterType, filterStatus, sortBy]);
+
+  // 无限滚动的效果
+  useEffect(() => {
+    if (inView && hasMore && !isLoading && !isLoadingMore) {
+      setIsLoadingMore(true);
+      fetchData(true);
+    }
+  }, [inView, hasMore, isLoading, isLoadingMore]);
+
+  // 筛选逻辑
+  const displayItems = useMemo(() => {
+    let filteredItems = [...items];
+
+    // 按类型筛选
+    if (filterType !== 'all') {
+      filteredItems = filteredItems.filter(item => item.type === filterType);
+    }
+
+    // 按状态筛选
+    if (filterStatus !== 'all') {
+      filteredItems = filteredItems.filter(item => item.status === filterStatus);
+    }
+
+    // 不再进行本地排序，完全信任后端返回的顺序
+    return filteredItems;
+  }, [items, filterType, filterStatus]);
+
+  // 筛选按钮配置
+  const typeFilters = [
+    { label: '全部', value: 'all' },
+    { label: '动画', value: 2 },
+    { label: '游戏', value: 4 },
+    { label: '书籍', value: 1 },
+    { label: '剧集', value: 6 }
+  ];
+
+  const statusFilters = [
+    { label: '全部状态', value: 'all' },
+    { label: '在看', value: 'watching' },
+    { label: '已追完', value: 'completed' },
+    { label: '想看', value: 'plan' },
+    { label: '搁置', value: 'on_hold' }
+  ];
+
+  // 排序选项配置
+  const sortOptions = [
+    { label: '🕒 最近加入 (默认)', value: 'updated_at' },
+    { label: '⭐ 我的评分 (高到低)', value: 'rate' },
+    { label: '🏆 全站排名 (高到低)', value: 'rank' },
+    { label: '📅 首播日期 (新到旧)', value: 'date' },
+  ];
 
   return (
     <div className="flex flex-col h-screen bg-gray-50">
@@ -115,57 +258,113 @@ export default function CollectionsPage() {
       <main className="flex-1 p-4 lg:p-6 overflow-y-auto">
         {/* 筛选栏 */}
         <div className="flex flex-wrap gap-3 mb-10">
-          {filters.map((filter) => (
+          {/* 类型筛选 */}
+          {typeFilters.map((filter) => (
             <button
-              key={filter}
-              className={`px-4 py-2 rounded-full font-medium transition-all duration-200 ${activeFilter === filter ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
-              onClick={() => setActiveFilter(filter)}
+              key={filter.value}
+              className={`px-4 py-2 rounded-full font-medium transition-all duration-200 ${filterType === filter.value ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+              onClick={() => setFilterType(filter.value as number | 'all')}
             >
-              {filter}
+              {filter.label}
             </button>
           ))}
+          
+          {/* 状态筛选 */}
+          <div className="ml-4 hidden md:block">
+            <span className="mr-2 text-gray-700 font-medium">状态：</span>
+            {statusFilters.map((filter) => (
+              <button
+                key={filter.value}
+                className={`px-4 py-2 rounded-full font-medium transition-all duration-200 ${filterStatus === filter.value ? 'bg-primary text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                onClick={() => setFilterStatus(filter.value as 'watching' | 'completed' | 'plan' | 'on_hold' | 'dropped' | 'all')}
+              >
+                {filter.label}
+              </button>
+            ))}
+          </div>
+          
+          {/* 排序下拉菜单 */}
+          <div className="ml-auto">
+            <SortDropdown
+              value={sortBy}
+              onChange={(value) => setSortBy(value as 'updated_at' | 'rate' | 'rank' | 'date')}
+              options={sortOptions}
+            />
+          </div>
         </div>
 
-        {/* 响应式网格布局 */}
-        <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-8">
-          {collectionItems.map((item) => (
-            <div
-              key={item.id}
-              className="group relative aspect-[2/3] rounded-lg overflow-hidden cursor-pointer"
-            >
-              {/* 海报图片 */}
-              <div className="absolute inset-0 overflow-hidden">
-                <img
-                  src={item.posterUrl}
-                  alt={item.title}
-                  className="w-full h-full object-cover transition-all duration-500 group-hover:scale-110 group-hover:brightness-75"
-                />
-              </div>
-
-              {/* 底部信息层 */}
-              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-                <h3 className="text-white font-semibold mb-1">{item.title}</h3>
-                <div className="flex items-center justify-between">
-                  <span className="text-yellow-300 flex items-center">
-                    ⭐ {item.rating}
-                  </span>
-                  <span className="text-white bg-primary/80 px-2 py-0.5 rounded text-xs">
-                    {item.status}
-                  </span>
-                </div>
-              </div>
-
-              {/* 中心播放/详情按钮 */}
-              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                <button className="w-16 h-16 rounded-full bg-primary/90 flex items-center justify-center text-white hover:bg-primary transition-all duration-200 scale-100 group-hover:scale-110">
-                  <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
-                  </svg>
+        {/* 加载状态 */}
+        {isLoading ? (
+          <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-8">
+            {[...Array(12)].map((_, index) => (
+              <div key={index} className="aspect-[2/3] rounded-lg bg-gray-200 animate-pulse"></div>
+            ))}
+          </div>
+        ) : (
+          <>
+            {/* 空状态处理 */}
+            {items.length === 0 ? (
+              /* 全局空状态 - 数据库完全没数据 */
+              <div className="flex flex-col items-center justify-center h-96 text-center">
+                <div className="text-6xl mb-4 text-gray-400">📚</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">主人，你还没有同步数据喔</h3>
+                <p className="text-gray-600 mb-6">同步后可以在这里查看你的收藏内容</p>
+                <button className="px-6 py-3 bg-primary text-white rounded-full font-medium hover:bg-primary/90 transition-colors">
+                  去同步
                 </button>
               </div>
-            </div>
-          ))}
-        </div>
+            ) : displayItems.length === 0 ? (
+              /* 筛选后空状态 - 有数据但没有匹配项 */
+              <div className="flex flex-col items-center justify-center h-96 text-center">
+                <div className="text-6xl mb-4 text-gray-400">🔍</div>
+                <h3 className="text-2xl font-bold text-gray-800 mb-2">此分类下暂无内容</h3>
+                <p className="text-gray-600">请尝试其他筛选条件</p>
+              </div>
+            ) : (
+              /* 正常显示数据 */
+              <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-8">
+                {displayItems.map((item, index) => (
+                  <PosterCard
+                    key={item.id}
+                    id={item.id}
+                    name_cn={item.name_cn}
+                    cover_url={item.cover_url}
+                    score={item.score}
+                    tags={item.tags}
+                    href={`https://bgm.tv/subject/${item.id}`}
+                    priority={index < 4}
+                  />
+                ))}
+              </div>
+            )}
+            
+            {/* 加载更多状态和哨兵元素 */}
+            {hasMore && (
+              <div>
+                {/* 加载更多骨架屏 */}
+                {isLoadingMore && (
+                  <div className="grid grid-cols-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-8">
+                    {[...Array(4)].map((_, index) => (
+                      <div key={`loading-more-${index}`} className="aspect-[2/3] rounded-lg bg-gray-200 animate-pulse"></div>
+                    ))}
+                  </div>
+                )}
+                
+                {/* 哨兵元素 - 用于触发无限滚动 */}
+                <div className="flex flex-col items-center justify-center py-10">
+                  <div ref={ref} className="h-10 w-10"></div>
+                </div>
+              </div>
+            )}
+            
+            {/* 到底啦提示 */}
+            {!hasMore && items.length > 0 && (
+              <div className="flex justify-center py-10 text-gray-500 text-sm">
+                ——— 到底啦 ———
+              </div>
+            )}
+          </>
+        )}
       </main>
 
       {/* 右下角悬浮按钮 */}

@@ -7,6 +7,7 @@ from app.core.config import settings
 
 # 缓存相关导入
 from fastapi_cache import FastAPICache
+from fastapi_cache.coder import PickleCoder
 from fastapi_cache.backends.redis import RedisBackend
 from redis.asyncio import Redis
 import logging
@@ -21,15 +22,17 @@ async def lifespan(app: FastAPI):
     # 初始化Redis缓存
     redis = None
     try:
-        redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        # Pickle需要二进制数据，所以decode_responses设置为False
+        redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
         # 测试连接
         await redis.ping()
         
-        # 初始化FastAPICache
+        # 初始化FastAPICache，使用新的前缀避免旧缓存影响
         FastAPICache.init(
             RedisBackend(redis),
             expire=60,  # 全局默认过期时间为60秒
-            prefix="fastapi-cache"
+            prefix="fastapi-cache-v2",  # 使用新前缀，完全隔离旧缓存
+            coder=PickleCoder  # 使用PickleCoder避免类型转换错误
         )
         logging.info("Redis cache initialized successfully")
     except Exception as e:
@@ -39,7 +42,8 @@ async def lifespan(app: FastAPI):
         FastAPICache.init(
             InMemoryBackend(),
             expire=60,
-            prefix="fastapi-cache"
+            prefix="fastapi-cache",
+            coder=PickleCoder  # 使用PickleCoder避免类型转换错误
         )
         logging.info("Fallback to InMemoryBackend for caching")
     

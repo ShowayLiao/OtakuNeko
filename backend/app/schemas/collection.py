@@ -1,6 +1,55 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+from datetime import datetime
 from app.models.enums import CollectionStatus
+
+
+class SubjectSchema(BaseModel):
+    """
+    条目信息Schema
+    """
+    id: int
+    name: str
+    name_cn: Optional[str] = None
+    cover_url: str
+    type: int
+    eps: Optional[int] = None
+    volumes: Optional[int] = None
+    platform: Optional[str] = None
+    score: Optional[float] = None
+    rank: Optional[int] = None
+    tags: List[str] = Field(default_factory=list)
+    summary: Optional[str] = None
+    date: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CollectionItemSchema(BaseModel):
+    """
+    收藏条目Schema
+    """
+    id: int                # Collection ID
+    updated_at: datetime
+    status: str            # 转换回 'watching' 等字符串
+    rate: Optional[int] = None   # 用户评分
+    comment: Optional[str] = None
+    private: bool = False
+    tags: List[str] = Field(default_factory=list)
+    # 嵌套的条目信息
+    subject: SubjectSchema # 包含 name_cn, cover_url, tags, eps 等
+
+    class Config:
+        from_attributes = True
+
+
+class CollectionListResponse(BaseModel):
+    """
+    收藏列表分页响应Schema
+    """
+    total: int
+    items: List[CollectionItemSchema]
 
 
 class CollectionUpdate(BaseModel):

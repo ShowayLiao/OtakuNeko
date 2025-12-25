@@ -10,6 +10,7 @@ interface CollectionCounts {
 
 export const useSync = () => {
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [collectionCounts, setCollectionCounts] = useState<CollectionCounts>({
     anime: 0,
     books: 0,
@@ -19,6 +20,7 @@ export const useSync = () => {
 
   // 获取各类别的收藏数量
   const fetchCollectionCounts = async () => {
+    setIsLoading(true);
     try {
       const [animeCount, booksCount, gamesCount, filmsCount] = await Promise.all([
         getUserCollectionCount('hacci', 2), // 动画
@@ -35,6 +37,8 @@ export const useSync = () => {
       });
     } catch (error) {
       console.error('Error fetching collection counts:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -70,6 +74,7 @@ export const useSync = () => {
 
   return {
     isSyncing,
+    isLoading,
     collectionCounts,
     totalItems,
     fetchCollectionCounts,

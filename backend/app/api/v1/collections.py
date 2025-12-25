@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
 from app.services.collection_service import get_my_collections, update_collection
 from app.services.bangumi_service import sync_user_collections
-from app.schemas.collection import CollectionUpdate, CollectionOut
+from app.schemas.collection import CollectionUpdate, CollectionOut, CollectionListResponse, CollectionItemSchema, SubjectSchema
 from app.models.user import User
 from app.models.subject import Subject
 from app.models.collection import Collection
@@ -18,35 +18,81 @@ from fastapi_cache import FastAPICache
 router = APIRouter(prefix="/collections", tags=["Collections"])
 
 
-@router.get("/", response_model=List[Dict[str, Any]])
+@router.get("/", response_model=CollectionListResponse)
 @cache(expire=60)  # 添加缓存装饰器，过期时间为60秒
 async def get_my_collections_endpoint(
-    status: Optional[int] = Query(None, description="收藏状态 (1=想看/2=看过/3=在看/4=搁置/5=抛弃)"),
-    type: Optional[int] = Query(None, description="条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)"),
-    keyword: Optional[str] = Query(None, description="搜索关键词"),
-    sort_by: str = Query("updated_at", description="排序字段 (updated_at 或 rate)"),
+    username: str = Query(..., description="Bangumi用户名"),
+    subject_type: Optional[int] = Query(None, description="条目类型 (1=书籍/2=动画/4=游戏)"),
+    status: Optional[str] = Query(None, description="收藏状态 ('watching'/'completed'/'plan'/'on_hold'/'dropped')"),
+    limit: int = Query(20, description="分页大小，默认 20"),
+    offset: int = Query(0, description="分页偏移，默认 0"),
+    sort_by: str = Query("updated_at", description="排序字段 (updated_at, rate, rank, date)"),
     db: AsyncSession = Depends(get_session)
 ):
     """
     获取用户的收藏列表，支持多种筛选和排序
     
     Args:
+        username: Bangumi用户名
+        subject_type: 条目类型 (可选)
         status: 收藏状态 (可选)
-        type: 条目类型 (可选)
-        keyword: 搜索关键词 (可选)
-        sort_by: 排序字段 ("updated_at" 或 "rate")
+        limit: 分页大小
+        offset: 分页偏移
+        sort_by: 排序字段
     
     Returns:
         包含 Subject 信息的聚合对象列表
     """
-    # 这里应该从认证中间件获取用户ID
-    # 暂时硬编码为 1，实际项目中应该替换为真实的用户ID获取逻辑
-    user_id = 1
+    # 根据username查询用户ID
+    from app.models.user import User
+    from sqlmodel import select
     
-    collections = await get_my_collections(
-        db, user_id, status, type, keyword, sort_by
+    user_res = await db.execute(select(User).where(User.username == username))
+    user = user_res.scalars().first()
+    
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User '{username}' not found")
+    
+    # 获取原始数据
+    collections_data = await get_my_collections(
+        db, user.id, status, subject_type, None, sort_by, limit, offset
     )
-    return collections
+    
+    # 状态映射：int -> str
+    status_mapping_reverse = {
+        3: 'watching',    # 在看
+        2: 'completed',   # 看过
+        1: 'plan',        # 想看
+        4: 'on_hold',     # 搁置
+        5: 'dropped'      # 抛弃
+    }
+    
+    # 转换为符合响应模型的格式
+    items = []
+    for item in collections_data["items"]:
+        collection = item["collection"]
+        subject = item["subject"]
+        
+        # 转换状态为字符串
+        status_str = status_mapping_reverse.get(collection.type.value, "unknown")
+        
+        # 创建CollectionItemSchema对象
+        collection_item = {
+            "id": collection.subject_id,
+            "updated_at": collection.updated_at,
+            "status": status_str,
+            "rate": collection.rate,
+            "comment": collection.comment,
+            "private": collection.private,
+            "tags": collection.tags,
+            "subject": subject
+        }
+        items.append(collection_item)
+    
+    return {
+        "total": collections_data["total"],
+        "items": items
+    }
 
 
 @router.patch("/{subject_id}", response_model=CollectionOut)

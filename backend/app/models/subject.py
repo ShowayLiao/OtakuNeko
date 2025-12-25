@@ -14,7 +14,7 @@ class Subject(SQLModel, table=True):  # type: ignore[call-arg]
     """
     # 基础信息
     id: int = Field(primary_key=True, description="Bangumi的条目ID")
-    type: SubjectType = Field(description="条目类型：1=书籍/2=动画/3=音乐/4=游戏/6=三次元")
+    type: SubjectType = Field(index=True, description="条目类型：1=书籍/2=动画/3=音乐/4=游戏/6=三次元")
     name: str = Field(description="条目原名")
     name_cn: Optional[str] = Field(default="", description="条目中文名")
     summary: Optional[str] = Field(sa_column=Column(Text), description="条目简介（兼容summary和short_summary）")

@@ -19,6 +19,7 @@ interface Message {
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Use the sync hook for stats and sync functionality
@@ -26,7 +27,12 @@ export default function Home() {
 
   // Initialize data on mount
   useEffect(() => {
-    fetchCollectionCounts();
+    const initializeData = async () => {
+      setIsLoading(true);
+      await fetchCollectionCounts();
+      setIsLoading(false);
+    };
+    initializeData();
   }, []);
 
   // Scroll to bottom when messages change
@@ -126,8 +132,13 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="flex-1 p-4 lg:p-6">
-        {totalItems === 0 ? (
-          // Empty State - Show when no subjects are synced
+        {isLoading ? (
+          // Loading State - Show while checking for synced subjects
+          <div className="flex items-center justify-center h-full">
+            <div className="w-12 h-12 border-4 border-gray-200 border-t-primary rounded-full animate-spin"></div>
+          </div>
+        ) : totalItems === 0 ? (
+          // Empty State - Show only when loading is complete and no subjects are synced
           <EmptyState />
         ) : (
           // Chat Area - Show when subjects are synced

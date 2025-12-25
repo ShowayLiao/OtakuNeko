@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { ChevronDown } from 'lucide-react';
+import NavPillSkeleton from './NavPillSkeleton';
 
 // 主题类型定义
 type Theme = 'default' | 'ocean' | 'sakura';
@@ -10,6 +11,7 @@ const ThemeSwitcher: React.FC = () => {
   // 初始值固定为'default'，避免服务端渲染时访问localStorage
   const [theme, setTheme] = useState<Theme>('default');
   const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // 主题配置
@@ -36,6 +38,9 @@ const ThemeSwitcher: React.FC = () => {
       localStorage.setItem('theme', newTheme);
     }
   };
+
+  // 客户端挂载检查
+  useEffect(() => setMounted(true), []);
 
   // 在客户端挂载后读取localStorage并初始化主题
   useEffect(() => {
@@ -80,11 +85,14 @@ const ThemeSwitcher: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // 在组件真正挂载前，显示骨架屏，防止图标跳变
+  if (!mounted) return <NavPillSkeleton width="w-32" />;
+
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Trigger Button */}
       <button
-        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/50 border border-gray-200 shadow-sm hover:bg-white/80 transition-all duration-200"
+        className="flex items-center gap-2 px-4 py-2 rounded-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 shadow-sm hover:shadow hover:bg-gray-50 dark:hover:bg-gray-750 transition-all duration-200"
         onClick={() => setIsOpen(!isOpen)}
         aria-label="Change theme"
       >
@@ -96,7 +104,7 @@ const ThemeSwitcher: React.FC = () => {
         {/* Theme Name */}
         <span className="text-sm font-medium text-gray-700">{themes[theme].name}</span>
         {/* Down Arrow */}
-        <ChevronDown className="w-4 h-4 text-gray-500" />
+        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
       </button>
 
       {/* Dropdown Menu */}

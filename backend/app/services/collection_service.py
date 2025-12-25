@@ -11,11 +11,13 @@ from app.schemas.collection import CollectionUpdate
 async def get_my_collections(
     db: AsyncSession,
     user_id: int,
-    status: Optional[int] = None,
+    status: Optional[str] = None,
     subject_type: Optional[int] = None,
     keyword: Optional[str] = None,
-    sort_by: str = "updated_at"
-) -> List[Dict[str, Any]]:
+    sort_by: str = "updated_at",
+    limit: int = 20,
+    offset: int = 0
+) -> Dict[str, Any]:
     """
     获取用户的收藏列表，支持多种筛选和排序
     
@@ -26,12 +28,24 @@ async def get_my_collections(
         subject_type: 条目类型 (可选)
         keyword: 搜索关键词 (可选)
         sort_by: 排序字段 ("updated_at" 或 "rate")
+        limit: 分页大小
+        offset: 分页偏移
     
     Returns:
-        包含 Subject 信息的聚合对象列表
+        包含总数和分页后结果的字典
     """
+    # 状态映射: str -> CollectionStatus
+    status_mapping = {
+        'watching': 3,    # 在看
+        'completed': 2,   # 看过
+        'plan': 1,        # 想看
+        'on_hold': 4,     # 搁置
+        'dropped': 5      # 抛弃
+    }
+    
     # 构建查询
-    # 直接选择 Collection 和 Subject 两个实体
+    # 使用联合查询(select(Collection, Subject))一次性获取所有数据，避免N+1查询问题
+    # 注意：由于Collection和Subject模型之间没有定义SQLAlchemy关系，所以不能使用joinedload
     query = select(Collection, Subject).where(
         Collection.user_id == user_id,
         Collection.subject_id == Subject.id
@@ -40,9 +54,10 @@ async def get_my_collections(
     # 添加过滤条件
     if status:
         try:
-            status_enum = CollectionStatus(status)
-            query = query.where(Collection.status == status_enum)
-        except ValueError:
+            status_code = status_mapping[status]
+            status_enum = CollectionStatus(status_code)
+            query = query.where(Collection.type == status_enum)
+        except (KeyError, ValueError):
             pass  # 无效状态，忽略过滤
     
     if subject_type:
@@ -58,21 +73,40 @@ async def get_my_collections(
             Subject.name.contains(keyword) | Subject.name_cn.contains(keyword)
         )
     
-    # 添加排序
+    # 添加排序，使用subject_id作为唯一的二级排序键确保稳定性
+    tie_breaker = Collection.subject_id.desc()
+    
     if sort_by == "rate":
-        query = query.order_by(desc(Collection.rate), desc(Collection.updated_at))
+        # 按用户打分倒序，没打分的排后面
+        query = query.order_by(desc(Collection.rate).nullslast(), tie_breaker)
+    elif sort_by == "rank":
+        # 按 Bangumi 排名升序，Rank 0 转换为 NULL 放到最后
+        query = query.order_by(func.nullif(Subject.rank, 0).asc().nullslast(), tie_breaker)
+    elif sort_by == "date":
+        # 按条目发行日期倒序，没日期的排后面
+        query = query.order_by(desc(Subject.date).nullslast(), tie_breaker)
     else:  # 默认按 updated_at 排序
-        query = query.order_by(desc(Collection.updated_at))
+        query = query.order_by(desc(Collection.updated_at), tie_breaker)
+    
+    # 计算总数
+    total = await db.execute(select(func.count()).select_from(query.subquery()))
+    total_count = total.scalar_one()
+    
+    # 分页
+    query = query.offset(offset).limit(limit)
     
     # 执行查询
     result = await db.execute(query)
     collections_with_subjects = result.all()
     
     # 构建返回结果
-    return [{
-        "collection": collection,
-        "subject": subject
-    } for collection, subject in collections_with_subjects]
+    return {
+        "total": total_count,
+        "items": [{
+            "collection": collection,
+            "subject": subject
+        } for collection, subject in collections_with_subjects]
+    }
 
 
 async def update_collection(
@@ -94,6 +128,7 @@ async def update_collection(
         更新后的 Collection 对象，如果不存在则返回 None
     """
     # 查询收藏记录
+    # 注意：更新操作只需要Collection数据，不需要Subject数据
     query = select(Collection).where(
         Collection.user_id == user_id,
         Collection.subject_id == subject_id
