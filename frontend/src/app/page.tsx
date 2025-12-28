@@ -6,7 +6,9 @@ import { ChatInput } from '@/components/chat/ChatInput';
 import { EmptyState } from '@/components/chat/EmptyState';
 import { Header } from '@/components/layout/Header';
 import { useSync } from '@/hooks/useSync';
+import { useSyncStore } from '@/lib/syncStore';
 import { ChatProvider } from '@/contexts/ChatContext';
+import { useSettings } from '@/contexts/SettingsContext';
 
 interface Message {
   id: string;
@@ -23,17 +25,21 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   
   // Use the sync hook for stats and sync functionality
-  const { totalItems, fetchCollectionCounts } = useSync();
+  const { totalItems } = useSync();
+  const { fetchCollectionCounts } = useSyncStore();
+  const { settings, userInfo } = useSettings();
 
   // Initialize data on mount
   useEffect(() => {
     const initializeData = async () => {
       setIsLoading(true);
-      await fetchCollectionCounts();
+      if (userInfo?.bangumi_id && settings.username) {
+        await fetchCollectionCounts(settings.username);
+      }
       setIsLoading(false);
     };
     initializeData();
-  }, []);
+  }, [userInfo?.bangumi_id, settings.username, fetchCollectionCounts]);
 
   // Scroll to bottom when messages change
   useEffect(() => {

@@ -89,7 +89,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({ onSendMessage }) => {
       
       // 如果有引用上下文，将其信息拼接到消息中
       if (referenceItem) {
-        const contextText = `[Context: {"name": "${referenceItem.name_cn || referenceItem.name}", "score": ${(referenceItem.score ?? referenceItem.rating_details?.score ?? referenceItem.rating?.score ?? 0).toFixed(1)}}]\n\n`;
+        const contextText = `[Context: {"name": "${referenceItem.name_cn || referenceItem.name}", "score": ${(referenceItem.score ?? referenceItem.rating_details?.score ?? 0).toFixed(1)}}]\n\n`;
         finalMessage = contextText + finalMessage;
         
         // 发送后清空引用上下文

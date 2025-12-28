@@ -1,15 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Loader } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { Plus, X, UploadCloud, PenLine, Loader2 } from 'lucide-react';
 import { Header } from '@/components/layout/Header';
 import { useInView } from 'react-intersection-observer';
 import { PosterCard } from '@/components/PosterCard';
 import { SortDropdown } from '@/components/SortDropdown';
+import { DoubanImportDialog } from '@/components/DoubanImportDialog';
+import { GridImportModal } from '@/components/settings/GridImportModal';
+import { useManualAddDialogStore } from '@/lib/manualAddDialogStore';
+import { useSync } from '@/hooks/useSync';
 
 // 定义后端返回的Subject类型
 interface BackendSubject {
   id: number;
+  source_id: string;
   name: string;
   name_cn: string;
   cover_url: string;
@@ -17,6 +22,13 @@ interface BackendSubject {
   eps: number;
   score: number;
   tags: string[];
+  images?: {
+    large: string;
+    common: string;
+    medium: string;
+    small: string;
+    grid: string;
+  };
 }
 
 // 定义后端返回的收藏项类型
@@ -31,6 +43,7 @@ interface BackendCollectionItem {
 interface CollectionItem {
   // --- 原始 Bangumi 数据 ---
   id: number;
+  source_id: string;
   name_cn: string;
   name: string;
   cover_url: string;
@@ -38,6 +51,13 @@ interface CollectionItem {
   type: number; // 1=书籍, 2=动画, 3=音乐, 4=游戏, 6=剧集
   tags: string[];
   eps: number;
+  images?: {
+    large: string;
+    common: string;
+    medium: string;
+    small: string;
+    grid: string;
+  };
   // --- 本地数据库附加字段 ---
   status: 'watching' | 'completed' | 'plan' | 'on_hold' | 'dropped' | 'unknown';
   updated_at: string; // ISO 时间字符串
@@ -50,7 +70,10 @@ interface CollectionApiResponse {
 }
 
 export default function CollectionsPage() {
-  // 状态管理
+  const { openDialog: openManualAddDialog } = useManualAddDialogStore();
+  
+  const [showGridModal, setShowGridModal] = useState(false);
+  
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -58,7 +81,13 @@ export default function CollectionsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [filterType, setFilterType] = useState<number | 'all'>('all'); // 1=书籍, 2=动画, 3=音乐, 4=游戏
   const [filterStatus, setFilterStatus] = useState<'all' | 'watching' | 'completed' | 'plan' | 'on_hold' | 'dropped'>('all');
-  const [sortBy, setSortBy] = useState<'updated_at' | 'rate' | 'rank' | 'date'>('updated_at'); // 排序方式
+  const [sortBy, setSortBy] = useState<'updated_at' | 'rate' | 'score' | 'date'>('updated_at'); // 排序方式
+  const [isImportDialogOpen, setIsImportDialogOpen] = useState(false); // 豆瓣导入对话框状态
+  const [isSpeedDialOpen, setIsSpeedDialOpen] = useState(false); // Speed Dial菜单状态
+  const fabRef = useRef<HTMLDivElement>(null); // FAB容器引用
+  
+  // 使用全局同步状态
+  const { isSyncing, handleSync } = useSync();
   
   // Intersection Observer for infinite scroll
   const { ref, inView } = useInView({
@@ -66,6 +95,28 @@ export default function CollectionsPage() {
     triggerOnce: false,
     rootMargin: '200px',
   });
+
+  // 刷新数据的函数
+  const refreshData = () => {
+    setIsLoading(true);
+    setItems([]);
+    setOffset(0);
+    setHasMore(true);
+    fetchData(false);
+  };
+
+  // 监听来自 Header 的刷新事件
+  useEffect(() => {
+    const handleRefresh = () => {
+      refreshData();
+    };
+
+    window.addEventListener('refreshCollections', handleRefresh);
+
+    return () => {
+      window.removeEventListener('refreshCollections', handleRefresh);
+    };
+  }, [refreshData]);
 
   // 获取数据的函数
   const fetchData = async (isLoadMore = false) => {
@@ -85,19 +136,21 @@ export default function CollectionsPage() {
       const data: CollectionApiResponse = await res.json();
       
       // 转换后端返回的数据结构
-      if (data && Array.isArray(data.items)) {
-        const transformedItems = data.items.map(item => ({
-          id: item.id,
-          name_cn: item.subject?.name_cn || '',
-          name: item.subject?.name || '',
-          cover_url: item.subject?.cover_url || '',
-          score: item.subject?.score || 0,
-          type: item.subject?.type || 0,
-          tags: item.subject?.tags || [],
-          eps: item.subject?.eps || 0,
-          status: item.status as 'watching' | 'completed' | 'plan' | 'dropped' | 'unknown',
-          updated_at: item.updated_at
-        }));
+        if (data && Array.isArray(data.items)) {
+          const transformedItems = data.items.map(item => ({
+            id: item.id,
+            source_id: item.subject?.source_id || item.id.toString(),
+            name_cn: item.subject?.name_cn || '',
+            name: item.subject?.name || '',
+            cover_url: item.subject?.cover_url || '',
+            score: item.subject?.score || 0,
+            type: item.subject?.type || 0,
+            tags: item.subject?.tags || [],
+            eps: item.subject?.eps || 0,
+            images: item.subject?.images,
+            status: item.status as 'watching' | 'completed' | 'plan' | 'dropped' | 'unknown',
+            updated_at: item.updated_at
+          }));
         
         if (isLoadMore) {
           // 加载更多：追加新数据，并进行去重保护
@@ -128,11 +181,12 @@ export default function CollectionsPage() {
         setItems([
           {
             id: 1,
+            source_id: '5684',
             name_cn: '进击的巨人',
             name: 'Shingeki no Kyojin',
             cover_url: `https://picsum.photos/seed/${1}/300/450`,
             score: 9.2,
-            type: 2, // 动画
+            type: 2,
             tags: ['科幻', '战斗', '热血', '机甲'],
             eps: 75,
             status: 'completed',
@@ -140,11 +194,12 @@ export default function CollectionsPage() {
           },
           {
             id: 2,
+            source_id: '269087',
             name_cn: '鬼灭之刃',
             name: 'Kimetsu no Yaiba',
             cover_url: `https://picsum.photos/seed/${2}/300/450`,
             score: 9.1,
-            type: 2, // 动画
+            type: 2,
             tags: ['奇幻', '战斗', '冒险'],
             eps: 54,
             status: 'completed',
@@ -152,11 +207,12 @@ export default function CollectionsPage() {
           },
           {
             id: 5,
+            source_id: '269087',
             name_cn: '原神',
             name: 'Genshin Impact',
             cover_url: `https://picsum.photos/seed/${5}/300/450`,
             score: 9.4,
-            type: 4, // 游戏
+            type: 4,
             tags: ['冒险', '开放世界', '奇幻', '角色扮演'],
             eps: 0,
             status: 'watching',
@@ -164,11 +220,12 @@ export default function CollectionsPage() {
           },
           {
             id: 7,
+            source_id: '3130',
             name_cn: '哈利·波特与魔法石',
             name: 'Harry Potter and the Philosopher\'s Stone',
             cover_url: `https://picsum.photos/seed/${7}/300/450`,
             score: 9.2,
-            type: 1, // 书籍
+            type: 1,
             tags: ['奇幻', '冒险', '魔法'],
             eps: 0,
             status: 'completed',
@@ -205,6 +262,23 @@ export default function CollectionsPage() {
       fetchData(true);
     }
   }, [inView, hasMore, isLoading, isLoadingMore]);
+
+  // 点击菜单外部关闭菜单
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (fabRef.current && !fabRef.current.contains(event.target as Node)) {
+        setIsSpeedDialOpen(false);
+      }
+    };
+
+    if (isSpeedDialOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isSpeedDialOpen]);
 
   // 筛选逻辑
   const displayItems = useMemo(() => {
@@ -245,7 +319,7 @@ export default function CollectionsPage() {
   const sortOptions = [
     { label: '🕒 最近加入 (默认)', value: 'updated_at' },
     { label: '⭐ 我的评分 (高到低)', value: 'rate' },
-    { label: '🏆 全站排名 (高到低)', value: 'rank' },
+    { label: '🌟 大众评分 (高到低)', value: 'score' },
     { label: '📅 首播日期 (新到旧)', value: 'date' },
   ];
 
@@ -287,7 +361,7 @@ export default function CollectionsPage() {
           <div className="ml-auto">
             <SortDropdown
               value={sortBy}
-              onChange={(value) => setSortBy(value as 'updated_at' | 'rate' | 'rank' | 'date')}
+              onChange={(value) => setSortBy(value as 'updated_at' | 'rate' | 'score' | 'date')}
               options={sortOptions}
             />
           </div>
@@ -309,8 +383,22 @@ export default function CollectionsPage() {
                 <div className="text-6xl mb-4 text-gray-400">📚</div>
                 <h3 className="text-2xl font-bold text-gray-800 mb-2">主人，你还没有同步数据喔</h3>
                 <p className="text-gray-600 mb-6">同步后可以在这里查看你的收藏内容</p>
-                <button className="px-6 py-3 bg-primary text-white rounded-full font-medium hover:bg-primary/90 transition-colors">
-                  去同步
+                <button 
+                  className={`px-6 py-3 bg-primary text-white rounded-full font-medium hover:bg-primary/90 transition-colors ${isSyncing ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  onClick={async () => {
+                    await handleSync();
+                    refreshData();
+                  }}
+                  disabled={isSyncing}
+                >
+                  {isSyncing ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                      正在同步...
+                    </>
+                  ) : (
+                    '去同步'
+                  )}
                 </button>
               </div>
             ) : displayItems.length === 0 ? (
@@ -331,8 +419,9 @@ export default function CollectionsPage() {
                     cover_url={item.cover_url}
                     score={item.score}
                     tags={item.tags}
-                    href={`https://bgm.tv/subject/${item.id}`}
+                    href={`https://bgm.tv/subject/${item.source_id}`}
                     priority={index < 4}
+                    images={item.images}
                   />
                 ))}
               </div>
@@ -367,10 +456,77 @@ export default function CollectionsPage() {
         )}
       </main>
 
-      {/* 右下角悬浮按钮 */}
-      <button className="fixed bottom-8 right-8 w-14 h-14 rounded-full bg-primary text-white shadow-lg hover:-translate-y-1 transition-all duration-200 flex items-center justify-center">
-        <Plus className="w-6 h-6" />
-      </button>
+      {/* 右下角悬浮按钮容器 */}
+      <div ref={fabRef} className="fixed bottom-8 right-8 flex flex-col items-end gap-3">
+        {/* Speed Dial 菜单 */}
+        <div className={`flex flex-col items-end gap-3 transition-all duration-300 ${isSpeedDialOpen ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4 pointer-events-none'}`}>
+          {/* 菜单项：九宫格导入 */}
+          <button
+            onClick={() => {
+              setIsSpeedDialOpen(false);
+              setShowGridModal(true);
+            }}
+            className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200"
+          >
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">九宫格导入</span>
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <UploadCloud className="w-5 h-5 text-primary" />
+            </div>
+          </button>
+
+          {/* 菜单项：手动添加 */}
+          <button
+            onClick={() => {
+              setIsSpeedDialOpen(false);
+              openManualAddDialog();
+            }}
+            className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200"
+          >
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">手动添加</span>
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <PenLine className="w-5 h-5 text-primary" />
+            </div>
+          </button>
+
+          {/* 菜单项：导入豆瓣数据 */}
+          <button
+            onClick={() => {
+              setIsSpeedDialOpen(false);
+              setIsImportDialogOpen(true);
+            }}
+            className="flex items-center gap-3 px-4 py-3 bg-white dark:bg-gray-800 rounded-lg shadow-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-all duration-200"
+          >
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">导入豆瓣数据</span>
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <UploadCloud className="w-5 h-5 text-primary" />
+            </div>
+          </button>
+        </div>
+
+        {/* FAB 主按钮 */}
+        <button
+          onClick={() => setIsSpeedDialOpen(!isSpeedDialOpen)}
+          className="w-14 h-14 rounded-full bg-primary text-white shadow-lg hover:-translate-y-1 hover:shadow-xl transition-all duration-300 flex items-center justify-center"
+        >
+          <div className={`transition-transform duration-300 ${isSpeedDialOpen ? 'rotate-45' : 'rotate-0'}`}>
+            {isSpeedDialOpen ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
+          </div>
+        </button>
+      </div>
+
+      {/* 豆瓣导入对话框 */}
+      <DoubanImportDialog
+        isOpen={isImportDialogOpen}
+        onClose={() => setIsImportDialogOpen(false)}
+        onSuccess={refreshData}
+      />
+      
+      {/* 九宫格导入模态框 */}
+      <GridImportModal
+        isOpen={showGridModal}
+        onClose={() => setShowGridModal(false)}
+        onSuccess={refreshData}
+      />
     </div>
   );
 }

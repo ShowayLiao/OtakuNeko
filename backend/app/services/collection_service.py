@@ -4,8 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from sqlalchemy import desc, asc
 from datetime import datetime
+import logging
 from app.models import Subject, Collection, CollectionStatus, SubjectType
 from app.schemas.collection import CollectionUpdate
+
+logger = logging.getLogger(__name__)
 
 
 async def get_my_collections(
@@ -79,6 +82,9 @@ async def get_my_collections(
     if sort_by == "rate":
         # 按用户打分倒序，没打分的排后面
         query = query.order_by(desc(Collection.rate).nullslast(), tie_breaker)
+    elif sort_by == "score":
+        # 按大众评分倒序，没评分的排后面
+        query = query.order_by(desc(Subject.score).nullslast(), tie_breaker)
     elif sort_by == "rank":
         # 按 Bangumi 排名升序，Rank 0 转换为 NULL 放到最后
         query = query.order_by(func.nullif(Subject.rank, 0).asc().nullslast(), tie_breaker)
@@ -139,10 +145,24 @@ async def update_collection(
     if not collection:
         return None
     
+    # 排除未设置的字段
+    obj_data = update_data.model_dump(exclude_unset=True)
+    
+    # 字段映射：API Schema 中的 'status' 对应数据库模型中的 'type'
+    field_mapping = {
+        'status': 'type'
+    }
+    
     # 更新字段
-    update_dict = update_data.dict(exclude_unset=True)
-    for field, value in update_dict.items():
-        setattr(collection, field, value)
+    for field, value in obj_data.items():
+        # 应用字段映射
+        mapped_field = field_mapping.get(field, field)
+        
+        # 检查模型是否有该字段
+        if hasattr(collection, mapped_field):
+            setattr(collection, mapped_field, value)
+        else:
+            logger.warning(f"Field {mapped_field} not found in Collection model")
     
     # 更新时间戳
     collection.updated_at = datetime.now()

@@ -13,6 +13,10 @@ const nextConfig: NextConfig = {
         protocol: 'https',
         hostname: 'lain.bgm.tv',
       },
+      {
+        protocol: 'https',
+        hostname: '**.doubanio.com',
+      },
     ],
   },
 };

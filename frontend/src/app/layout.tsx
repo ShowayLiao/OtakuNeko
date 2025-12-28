@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "../components/layout/Sidebar";
 import "./globals.css";
 import { ChatProvider } from "@/contexts/ChatContext";
+import { SettingsProvider } from "@/contexts/SettingsContext";
+import { ToastProvider } from "@/components/ui/Toast";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -32,7 +34,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {/* 防闪烁脚本：在React加载前执行，立即应用保存的主题 */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -50,9 +51,13 @@ export default function RootLayout({
         <div className="flex h-screen bg-gray-50">
           <Sidebar />
           <main className="flex-1 overflow-y-auto">
-            <ChatProvider>
-              {children}
-            </ChatProvider>
+            <ToastProvider>
+              <SettingsProvider>
+                <ChatProvider>
+                  {children}
+                </ChatProvider>
+              </SettingsProvider>
+            </ToastProvider>
           </main>
         </div>
       </body>

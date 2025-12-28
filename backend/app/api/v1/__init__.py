@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from . import subjects, collections, dashboard
+from . import subjects, collections, dashboard, users
 
 # 创建 v1 版本的路由包含器
 api_router = APIRouter(prefix="/v1")
@@ -8,3 +8,4 @@ api_router = APIRouter(prefix="/v1")
 api_router.include_router(subjects.router, tags=["Subjects"])
 api_router.include_router(collections.router, tags=["Collections"])
 api_router.include_router(dashboard.router, tags=["Dashboard"])
+api_router.include_router(users.router, tags=["Users"])

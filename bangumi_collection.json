@@ -1,0 +1,88 @@
+{
+  "data": [
+    {
+      "updated_at": "2025-12-27T02:01:26+08:00",
+      "comment": null,
+      "tags": [],
+      "subject": {
+        "date": "2025-10-04",
+        "images": {
+          "small": "https://lain.bgm.tv/r/200/pic/cover/l/3d/79/498378_3ycrL.jpg",
+          "grid": "https://lain.bgm.tv/r/100/pic/cover/l/3d/79/498378_3ycrL.jpg",
+          "large": "https://lain.bgm.tv/pic/cover/l/3d/79/498378_3ycrL.jpg",
+          "medium": "https://lain.bgm.tv/r/800/pic/cover/l/3d/79/498378_3ycrL.jpg",
+          "common": "https://lain.bgm.tv/r/400/pic/cover/l/3d/79/498378_3ycrL.jpg"
+        },
+        "name": "SPY×FAMILY Season 3",
+        "name_cn": "间谍过家家 第三季",
+        "short_summary": "人はみな　誰にも見せぬ自分を　持っている――\r\n\r\n世界各国が水面下で熾烈な情報戦を繰り広げていた時代。\r\n東国オスタニアと西国ウェスタリスは、十数年間にわたる冷戦状態にあった。\r\n\r\n西国の情報局対東課〈WISEワイズ〉所属である凄腕スパ",
+        "tags": [
+          {
+            "name": "2025年10月",
+            "count": 833,
+            "total_cont": 0
+          },
+          {
+            "name": "CloverWorks",
+            "count": 635,
+            "total_cont": 0
+          },
+          {
+            "name": "漫画改",
+            "count": 635,
+            "total_cont": 0
+          },
+          {
+            "name": "日常",
+            "count": 622,
+            "total_cont": 0
+          },
+          {
+            "name": "搞笑",
+            "count": 605,
+            "total_cont": 0
+          },
+          {
+            "name": "WITSTUDIO",
+            "count": 513,
+            "total_cont": 0
+          },
+          {
+            "name": "TV",
+            "count": 471,
+            "total_cont": 0
+          },
+          {
+            "name": "喜剧",
+            "count": 461,
+            "total_cont": 0
+          },
+          {
+            "name": "2025",
+            "count": 339,
+            "total_cont": 0
+          },
+          {
+            "name": "间谍过家家",
+            "count": 259,
+            "total_cont": 0
+          }
+        ],
+        "score": 7.4,
+        "type": 2,
+        "id": 498378,
+        "eps": 13,
+        "volumes": 0,
+        "collection_total": 12828,
+        "rank": 1242
+      },
+      "subject_id": 498378,
+      "vol_status": 0,
+      "ep_status": 12,
+      "subject_type": 2,
+      "type": 3,
+      "rate": 0,
+      "private": false
+    }
+]
+}

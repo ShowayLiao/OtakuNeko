@@ -1,0 +1,1597 @@
+<!DOCTYPE html><html><head>
+      <title>architecture_report</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:///c:\Users\HACCI\.trae-cn\extensions\shd101wyy.markdown-preview-enhanced-0.8.20-universal\crossnote\dependencies\katex\katex.min.css">
+      
+      
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <!-- The content below will be included at the end of the <head> element. --><script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script></head><body for="html-export">
+    
+    
+      <div class="crossnote markdown-preview  ">
+      
+<h1 id="otakuneko-项目说明">OtakuNeko 项目说明 </h1>
+<h2 id="项目概述">项目概述 </h2>
+<p>OtakuNeko 是一个基于 AI 的动漫收藏管理平台，支持从 Bangumi 和豆瓣等多个数据源同步用户的收藏数据，并提供智能化的数据管理和分析功能。</p>
+<h3 id="技术栈">技术栈 </h3>
+<table>
+<thead>
+<tr>
+<th>层级</th>
+<th>技术选型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>前端</strong></td>
+<td>Next.js 16 + React 19</td>
+<td>现代化的 React 框架，支持服务端渲染和静态生成</td>
+</tr>
+<tr>
+<td><strong>前端</strong></td>
+<td>TypeScript</td>
+<td>类型安全的 JavaScript 超集</td>
+</tr>
+<tr>
+<td><strong>前端</strong></td>
+<td>Tailwind CSS 4</td>
+<td>原子化 CSS 框架，快速构建响应式界面</td>
+</tr>
+<tr>
+<td><strong>前端</strong></td>
+<td>Axios</td>
+<td>HTTP 客户端，用于与后端 API 通信</td>
+</tr>
+<tr>
+<td><strong>前端</strong></td>
+<td>Lucide React</td>
+<td>图标库</td>
+</tr>
+<tr>
+<td><strong>前端</strong></td>
+<td>Recharts</td>
+<td>数据可视化图表库</td>
+</tr>
+<tr>
+<td><strong>后端</strong></td>
+<td>FastAPI</td>
+<td>高性能异步 Web 框架</td>
+</tr>
+<tr>
+<td><strong>后端</strong></td>
+<td>SQLModel</td>
+<td>基于 Pydantic 和 SQLAlchemy 的 ORM</td>
+</tr>
+<tr>
+<td><strong>后端</strong></td>
+<td>PostgreSQL</td>
+<td>关系型数据库</td>
+</tr>
+<tr>
+<td><strong>后端</strong></td>
+<td>Python 3.11+</td>
+<td>后端开发语言</td>
+</tr>
+<tr>
+<td><strong>部署</strong></td>
+<td>Docker + Docker Compose</td>
+<td>容器化部署方案</td>
+</tr>
+</tbody>
+</table>
+<h3 id="项目结构">项目结构 </h3>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>OtakuNeko/
+├── backend/                 # 后端项目
+│   ├── app/
+│   │   ├── api/            # API 路由层
+│   │   ├── models/         # 数据模型
+│   │   ├── services/       # 业务逻辑层
+│   │   ├── core/           # 核心配置
+│   │   └── agents/         # AI 智能代理（预留）
+│   ├── tests/              # 测试代码
+│   └── requirements.txt    # Python 依赖
+├── frontend/               # 前端项目
+│   ├── src/
+│   │   ├── app/           # Next.js App Router 页面
+│   │   ├── components/    # React 组件
+│   │   ├── contexts/      # React Context 状态管理
+│   │   ├── hooks/         # 自定义 Hooks
+│   │   └── lib/           # 工具函数和 API 客户端
+│   ├── public/            # 静态资源
+│   └── package.json       # Node.js 依赖
+├── docker-compose.yml     # Docker 编排配置
+└── .env                  # 环境变量配置
+</code></pre><h2 id="1-后端架构">1. 后端架构 </h2>
+<h3 id="11-模块功能索引">1.1 模块功能索引 </h3>
+<table>
+<thead>
+<tr>
+<th>文件夹</th>
+<th>主要角色与职责</th>
+<th>核心文件示例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>core/</strong></td>
+<td>项目核心配置与基础组件，提供全局共享的配置和工具函数</td>
+<td><code>config.py</code> (环境变量配置)</td>
+</tr>
+<tr>
+<td><strong>api/</strong></td>
+<td>API接口层，负责处理HTTP请求和响应，采用版本化路由管理</td>
+<td><code>v1/collections.py</code> (收藏数据同步接口)</td>
+</tr>
+<tr>
+<td><strong>models/</strong></td>
+<td>数据模型层，定义数据库表结构和实体关系，支持多数据源</td>
+<td><code>subject.py</code> (通用条目模型), <code>collection.py</code> (收藏模型)</td>
+</tr>
+<tr>
+<td><strong>services/</strong></td>
+<td>业务逻辑层，封装核心业务流程和数据处理逻辑</td>
+<td><code>bangumi_service.py</code> (Bangumi数据处理), <code>db_service.py</code> (豆瓣数据处理)</td>
+</tr>
+<tr>
+<td><strong>agents/</strong></td>
+<td>AI智能代理层，用于实现基于数据的AI应用功能</td>
+<td><code>graph.py</code> (AI工作流定义，待实现)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="详细说明">详细说明 </h3>
+<ul>
+<li><strong>core/</strong>：存放项目的核心配置信息，如数据库连接字符串、API密钥等环境变量配置，是整个项目的基础支撑。</li>
+<li><strong>api/</strong>：采用RESTful API设计，通过版本化路由（如v1）组织接口，将HTTP请求路由到相应的业务逻辑处理函数。</li>
+<li><strong>models/</strong>：使用SQLModel定义数据库表结构，同时提供数据验证功能，支持多数据源（Bangumi、豆瓣等）的数据存储。</li>
+<li><strong>services/</strong>：实现核心业务逻辑，如数据的CRUD操作、数据转换、业务规则验证等，是API层和数据层之间的桥梁。包含Bangumi和豆瓣的数据处理服务。</li>
+<li><strong>agents/</strong>：为AI功能预留的模块，用于实现基于已有数据的智能应用，如推荐系统、数据分析等。</li>
+</ul>
+<h3 id="12-数据流向分析">1.2 数据流向分析 </h3>
+<p>当数据从外部进入系统时，数据流向如下：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>外部数据源 (Bangumi/豆瓣) → API路由层 → 服务层 → 数据模型层 → 数据库
+</code></pre><h4 id="详细流程">详细流程 </h4>
+<ol>
+<li><strong>API入口</strong>：数据通过RESTful API接口进入系统</li>
+<li><strong>数据验证</strong>：API层验证请求参数和数据格式</li>
+<li><strong>服务层处理</strong>：调用相应的服务函数进行业务逻辑处理</li>
+<li><strong>数据转换</strong>：对于多数据源，进行ETL数据转换</li>
+<li><strong>数据库操作</strong>：将处理后的数据持久化到数据库</li>
+<li><strong>响应返回</strong>：将处理结果转换为JSON格式返回给客户端</li>
+</ol>
+<h2 id="2-前端架构">2. 前端架构 </h2>
+<h3 id="21-技术选型">2.1 技术选型 </h3>
+<table>
+<thead>
+<tr>
+<th>技术</th>
+<th>版本</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Next.js</td>
+<td>16.1.0</td>
+<td>React 框架，提供 App Router、SSR、SSG 等功能</td>
+</tr>
+<tr>
+<td>React</td>
+<td>19.2.3</td>
+<td>UI 库，提供组件化开发能力</td>
+</tr>
+<tr>
+<td>TypeScript</td>
+<td>5.x</td>
+<td>类型系统，提供类型安全</td>
+</tr>
+<tr>
+<td>Tailwind CSS</td>
+<td>4.x</td>
+<td>原子化 CSS 框架，快速构建样式</td>
+</tr>
+<tr>
+<td>Axios</td>
+<td>1.13.2</td>
+<td>HTTP 客户端，用于 API 调用</td>
+</tr>
+<tr>
+<td>Lucide React</td>
+<td>0.562.0</td>
+<td>图标库</td>
+</tr>
+<tr>
+<td>Recharts</td>
+<td>3.6.0</td>
+<td>数据可视化图表库</td>
+</tr>
+<tr>
+<td>React Compiler</td>
+<td>1.0.0</td>
+<td>React 编译器优化</td>
+</tr>
+</tbody>
+</table>
+<h3 id="22-目录结构">2.2 目录结构 </h3>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>frontend/
+├── public/                 # 静态资源
+│   ├── Icon.png           # 应用图标
+│   └── *.svg              # SVG 图标文件
+├── src/
+│   ├── app/               # Next.js App Router 页面
+│   │   ├── api/          # API 路由（Next.js API Routes）
+│   │   │   └── collections/
+│   │   │       └── route.ts
+│   │   ├── collection/    # 单个收藏详情页
+│   │   │   └── page.tsx
+│   │   ├── collections/   # 收藏列表页
+│   │   │   └── page.tsx
+│   │   ├── layout.tsx     # 根布局
+│   │   ├── page.tsx       # 首页
+│   │   └── globals.css    # 全局样式
+│   ├── components/        # React 组件
+│   │   ├── chat/         # 聊天相关组件
+│   │   │   ├── ChatInput.tsx
+│   │   │   ├── EmptyState.tsx
+│   │   │   ├── MessageAttachment.tsx
+│   │   │   ├── MessageBubble.tsx
+│   │   │   ├── MessageSkeleton.tsx
+│   │   │   └── ToolsPanel.tsx
+│   │   ├── dashboard/    # 仪表盘组件
+│   │   │   ├── AICoreStatus.tsx
+│   │   │   ├── AnalysisInsights.tsx
+│   │   │   ├── AnimationManager.tsx
+│   │   │   ├── PluginManager.tsx
+│   │   │   └── SyncCard.tsx
+│   │   ├── layout/       # 布局组件
+│   │   │   ├── Header.tsx
+│   │   │   └── Sidebar.tsx
+│   │   ├── ui/           # UI 基础组件
+│   │   │   ├── Badge.tsx
+│   │   │   ├── Button.tsx
+│   │   │   ├── Card.tsx
+│   │   │   ├── Switch.tsx
+│   │   │   └── ThemeSwitcher.tsx
+│   │   ├── CollectionGridPage.tsx
+│   │   ├── NavPillSkeleton.tsx
+│   │   ├── PosterCard.tsx
+│   │   ├── SortDropdown.tsx
+│   │   └── ThemeSwitcher.tsx
+│   ├── contexts/         # React Context 状态管理
+│   │   └── ChatContext.tsx
+│   ├── hooks/            # 自定义 Hooks
+│   │   └── useSync.ts
+│   └── lib/              # 工具函数和 API 客户端
+│       └── api.ts
+├── .gitignore
+├── package.json
+├── tsconfig.json
+├── tailwind.config.js
+├── postcss.config.mjs
+└── next.config.ts
+</code></pre><h3 id="23-核心组件说明">2.3 核心组件说明 </h3>
+<h4 id="231-布局组件">2.3.1 布局组件 </h4>
+<p><strong>Sidebar (侧边栏)</strong> - <code>src/components/layout/Sidebar.tsx</code></p>
+<ul>
+<li>提供应用主导航菜单</li>
+<li>包含 Chat、Collections、Tools、Role、Settings 等导航项</li>
+<li>使用 Lucide React 图标库</li>
+<li>支持路由高亮显示</li>
+</ul>
+<p><strong>Header (顶部栏)</strong> - <code>src/components/layout/Header.tsx</code></p>
+<ul>
+<li>显示当前页面标题</li>
+<li>提供用户操作入口</li>
+<li>可能包含搜索框、通知等功能</li>
+</ul>
+<h4 id="232-页面组件">2.3.2 页面组件 </h4>
+<p><strong>Collections Page (收藏列表页)</strong> - <code>src/app/collections/page.tsx</code></p>
+<ul>
+<li>显示用户的收藏列表</li>
+<li>支持按类型筛选（书籍、动画、音乐、游戏、三次元）</li>
+<li>支持按状态筛选（在看、已看完、想看、搁置、抛弃）</li>
+<li>支持排序（更新时间、评分、排名、日期）</li>
+<li>实现无限滚动加载</li>
+<li>使用 <code>react-intersection-observer</code> 实现滚动检测</li>
+</ul>
+<p><strong>Collection Page (收藏详情页)</strong> - <code>src/app/collection/page.tsx</code></p>
+<ul>
+<li>显示单个收藏的详细信息</li>
+<li>可能包含编辑功能</li>
+</ul>
+<p><strong>Home Page (首页)</strong> - <code>src/app/page.tsx</code></p>
+<ul>
+<li>应用首页，可能包含仪表盘概览</li>
+</ul>
+<h4 id="233-ui-组件">2.3.3 UI 组件 </h4>
+<p><strong>PosterCard (海报卡片)</strong> - <code>src/components/PosterCard.tsx</code></p>
+<ul>
+<li>显示单个条目的海报和信息</li>
+<li>包含封面、标题、评分、状态等信息</li>
+<li>支持点击跳转到详情页</li>
+</ul>
+<p><strong>SortDropdown (排序下拉菜单)</strong> - <code>src/components/SortDropdown.tsx</code></p>
+<ul>
+<li>提供排序选项</li>
+<li>支持多种排序方式</li>
+</ul>
+<p><strong>ThemeSwitcher (主题切换器)</strong> - <code>src/components/ThemeSwitcher.tsx</code></p>
+<ul>
+<li>支持亮色/暗色主题切换</li>
+<li>使用 localStorage 保存主题偏好</li>
+</ul>
+<h4 id="234-聊天组件">2.3.4 聊天组件 </h4>
+<p><strong>ChatInput (聊天输入框)</strong> - <code>src/components/chat/ChatInput.tsx</code></p>
+<ul>
+<li>用户输入聊天消息</li>
+<li>支持发送消息</li>
+</ul>
+<p><strong>MessageBubble (消息气泡)</strong> - <code>src/components/chat/MessageBubble.tsx</code></p>
+<ul>
+<li>显示聊天消息</li>
+<li>区分用户消息和 AI 消息</li>
+</ul>
+<p><strong>ToolsPanel (工具面板)</strong> - <code>src/components/chat/ToolsPanel.tsx</code></p>
+<ul>
+<li>提供聊天相关的工具选项</li>
+</ul>
+<h3 id="24-状态管理">2.4 状态管理 </h3>
+<h4 id="241-react-context">2.4.1 React Context </h4>
+<p><strong>ChatContext</strong> - <code>src/contexts/ChatContext.tsx</code></p>
+<ul>
+<li>管理聊天相关的全局状态</li>
+<li>提供聊天消息、发送状态等数据</li>
+<li>使用 React Context API 实现</li>
+</ul>
+<h4 id="242-自定义-hooks">2.4.2 自定义 Hooks </h4>
+<p><strong>useSync</strong> - <code>src/hooks/useSync.ts</code></p>
+<ul>
+<li>封装数据同步逻辑</li>
+<li>可能用于同步 Bangumi 或豆瓣数据</li>
+</ul>
+<h3 id="25-api-客户端">2.5 API 客户端 </h3>
+<p><strong>api.ts</strong> - <code>src/lib/api.ts</code></p>
+<p>使用 Axios 创建的 HTTP 客户端，封装了所有后端 API 调用：</p>
+<pre data-role="codeBlock" data-info="typescript" class="language-typescript typescript"><code><span class="token keyword keyword-const">const</span> api <span class="token operator">=</span> axios<span class="token punctuation">.</span><span class="token function">create</span><span class="token punctuation">(</span><span class="token punctuation">{</span>
+  baseURL<span class="token operator">:</span> <span class="token string">'http://localhost:8000/api/v1'</span><span class="token punctuation">,</span>
+  timeout<span class="token operator">:</span> <span class="token number">10000</span><span class="token punctuation">,</span>
+  headers<span class="token operator">:</span> <span class="token punctuation">{</span>
+    <span class="token string-property property">'Content-Type'</span><span class="token operator">:</span> <span class="token string">'application/json'</span><span class="token punctuation">,</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">;</span>
+</code></pre><p><strong>主要 API 函数</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>函数名</th>
+<th>功能</th>
+<th>端点</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fetchDashboardStats()</code></td>
+<td>获取仪表盘统计数据</td>
+<td><code>GET /dashboard/stats</code></td>
+</tr>
+<tr>
+<td><code>syncUser()</code></td>
+<td>同步用户数据</td>
+<td><code>POST /collections/sync</code></td>
+</tr>
+<tr>
+<td><code>getUserCollectionCount()</code></td>
+<td>获取用户收藏数量</td>
+<td><code>GET /collections/count</code></td>
+</tr>
+<tr>
+<td><code>searchSubjects()</code></td>
+<td>搜索条目</td>
+<td><code>GET /subjects</code></td>
+</tr>
+<tr>
+<td><code>getUserCollections()</code></td>
+<td>获取用户收藏列表</td>
+<td><code>GET /collections</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>类型定义</strong>：</p>
+<pre data-role="codeBlock" data-info="typescript" class="language-typescript typescript"><code><span class="token comment">// Dashboard 统计数据</span>
+<span class="token keyword keyword-interface">interface</span> <span class="token class-name">DashboardStats</span> <span class="token punctuation">{</span>
+  total_subjects<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  total_collections<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  system_status<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  recent_activity<span class="token operator">:</span> RecentActivityItem<span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// 条目数据</span>
+<span class="token keyword keyword-interface">interface</span> <span class="token class-name">Subject</span> <span class="token punctuation">{</span>
+  id<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  name<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  name_cn<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  type<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  cover_url<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  summary<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  date<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  platform<span class="token operator">?</span><span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  eps<span class="token operator">?</span><span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  volumes<span class="token operator">?</span><span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  score<span class="token operator">?</span><span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  rank<span class="token operator">?</span><span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  collection_total<span class="token operator">?</span><span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  tags<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+  meta_tags<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+  infobox<span class="token operator">:</span> Record<span class="token operator">&lt;</span><span class="token builtin">string</span><span class="token punctuation">,</span> <span class="token builtin">string</span><span class="token operator">&gt;</span><span class="token punctuation">;</span>
+  rating_details<span class="token operator">:</span> Record<span class="token operator">&lt;</span><span class="token builtin">string</span><span class="token punctuation">,</span> <span class="token builtin">any</span><span class="token operator">&gt;</span><span class="token punctuation">;</span>
+  images<span class="token operator">:</span> Record<span class="token operator">&lt;</span><span class="token builtin">string</span><span class="token punctuation">,</span> <span class="token builtin">any</span><span class="token operator">&gt;</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// 收藏数据</span>
+<span class="token keyword keyword-interface">interface</span> <span class="token class-name">Collection</span> <span class="token punctuation">{</span>
+  id<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  user_id<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  subject_id<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  status<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  rate<span class="token operator">:</span> <span class="token builtin">number</span><span class="token punctuation">;</span>
+  comment<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  tags<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">;</span>
+  updated_at<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+  created_at<span class="token operator">:</span> <span class="token builtin">string</span><span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+
+<span class="token comment">// 收藏+条目数据</span>
+<span class="token keyword keyword-interface">interface</span> <span class="token class-name">CollectionWithSubject</span> <span class="token punctuation">{</span>
+  collection<span class="token operator">:</span> Collection<span class="token punctuation">;</span>
+  subject<span class="token operator">:</span> Subject<span class="token punctuation">;</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="26-nextjs-配置">2.6 Next.js 配置 </h3>
+<p><strong>next.config.ts</strong> - <code>next.config.ts</code></p>
+<pre data-role="codeBlock" data-info="typescript" class="language-typescript typescript"><code><span class="token keyword keyword-const">const</span> nextConfig<span class="token operator">:</span> NextConfig <span class="token operator">=</span> <span class="token punctuation">{</span>
+  reactCompiler<span class="token operator">:</span> <span class="token boolean">true</span><span class="token punctuation">,</span>  <span class="token comment">// 启用 React 编译器优化</span>
+  images<span class="token operator">:</span> <span class="token punctuation">{</span>
+    remotePatterns<span class="token operator">:</span> <span class="token punctuation">[</span>
+      <span class="token punctuation">{</span>
+        protocol<span class="token operator">:</span> <span class="token string">'https'</span><span class="token punctuation">,</span>
+        hostname<span class="token operator">:</span> <span class="token string">'picsum.photos'</span><span class="token punctuation">,</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token punctuation">{</span>
+        protocol<span class="token operator">:</span> <span class="token string">'https'</span><span class="token punctuation">,</span>
+        hostname<span class="token operator">:</span> <span class="token string">'lain.bgm.tv'</span><span class="token punctuation">,</span>  <span class="token comment">// Bangumi 图片域名</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token punctuation">{</span>
+        protocol<span class="token operator">:</span> <span class="token string">'https'</span><span class="token punctuation">,</span>
+        hostname<span class="token operator">:</span> <span class="token string">'**.doubanio.com'</span><span class="token punctuation">,</span>  <span class="token comment">// 豆瓣图片域名（支持所有子域名）</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token punctuation">]</span><span class="token punctuation">,</span>
+  <span class="token punctuation">}</span><span class="token punctuation">,</span>
+<span class="token punctuation">}</span><span class="token punctuation">;</span>
+</code></pre><p><strong>关键配置说明</strong>：</p>
+<ul>
+<li><code>reactCompiler: true</code>：启用 React 编译器，自动优化组件性能</li>
+<li><code>images.remotePatterns</code>：配置允许加载的外部图片域名
+<ul>
+<li>支持 Bangumi 的图片域名 <code>lain.bgm.tv</code></li>
+<li>支持豆瓣的所有子域名 <code>**.doubanio.com</code>（如 <code>img3.doubanio.com</code>）</li>
+</ul>
+</li>
+</ul>
+<h3 id="27-样式系统">2.7 样式系统 </h3>
+<p><strong>Tailwind CSS 4</strong> - 原子化 CSS 框架</p>
+<ul>
+<li>使用 Tailwind CSS 4 的最新特性</li>
+<li>支持深色模式（通过 <code>data-theme</code> 属性）</li>
+<li>使用 <code>clsx</code> 和 <code>tailwind-merge</code> 进行样式合并</li>
+</ul>
+<p><strong>全局样式</strong> - <code>src/app/globals.css</code></p>
+<ul>
+<li>定义全局 CSS 变量</li>
+<li>设置基础样式</li>
+<li>支持主题切换</li>
+</ul>
+<h3 id="28-主题系统">2.8 主题系统 </h3>
+<p>实现亮色/暗色主题切换：</p>
+<ol>
+<li>
+<p><strong>防闪烁脚本</strong>（在 <code>layout.tsx</code> 中）：</p>
+<ul>
+<li>在 React 加载前执行</li>
+<li>立即应用保存的主题</li>
+<li>避免页面闪烁</li>
+</ul>
+</li>
+<li>
+<p><strong>主题切换组件</strong>（<code>ThemeSwitcher.tsx</code>）：</p>
+<ul>
+<li>提供主题切换按钮</li>
+<li>使用 <code>localStorage</code> 保存主题偏好</li>
+<li>切换 <code>data-theme</code> 属性</li>
+</ul>
+</li>
+</ol>
+<h3 id="29-性能优化">2.9 性能优化 </h3>
+<ol>
+<li><strong>React Compiler</strong>：自动优化组件渲染</li>
+<li><strong>无限滚动</strong>：使用 <code>react-intersection-observer</code> 实现懒加载</li>
+<li><strong>图片优化</strong>：使用 Next.js Image 组件优化图片加载</li>
+<li><strong>代码分割</strong>：使用 Next.js 的动态导入功能</li>
+</ol>
+<h3 id="210-开发命令">2.10 开发命令 </h3>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token comment"># 开发模式</span>
+<span class="token function">npm</span> run dev
+
+<span class="token comment"># 构建生产版本</span>
+<span class="token function">npm</span> run build
+
+<span class="token comment"># 启动生产服务器</span>
+<span class="token function">npm</span> run start
+
+<span class="token comment"># 代码检查</span>
+<span class="token function">npm</span> run lint
+
+<span class="token comment"># 类型检查</span>
+<span class="token function">npm</span> run typecheck
+</code></pre><h2 id="3-数据流向分析">3. 数据流向分析 </h2>
+<h3 id="21-bangumi-数据同步流程">2.1 Bangumi 数据同步流程 </h3>
+<p>当Bangumi的JSON数据发送到后端时，数据流向如下：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>客户端 → API路由 (api/v1/collections.py) → 服务层 (services/bangumi_service.py) → 数据模型 (models/subject.py) → 数据库
+</code></pre><h4 id="详细流程-1">详细流程 </h4>
+<ol>
+<li>
+<p><strong>API入口</strong>：数据通过<code>GET /api/v1/collections/sync/{username}</code>接口进入系统，由<code>backend/app/api/v1/collections.py</code>中的<code>sync_collections_endpoint</code>函数接收。</p>
+</li>
+<li>
+<p><strong>数据获取</strong>：API层调用<code>bangumi_client.py</code>中的<code>fetch_user_collections</code>函数从Bangumi API获取用户收藏数据。</p>
+</li>
+<li>
+<p><strong>数据验证</strong>：API层首先验证必要字段（id和name）是否存在，如果缺失则返回400错误。</p>
+</li>
+<li>
+<p><strong>服务层处理</strong>：验证通过后，调用<code>services/bangumi_service.py</code>中的<code>upsert_subject</code>函数处理数据。</p>
+</li>
+<li>
+<p><strong>数据解析与转换</strong>：服务层对原始Bangumi数据进行解析，提取并转换为适合数据库存储的格式：</p>
+<ul>
+<li>从<code>images</code>字段中提取封面图片URL</li>
+<li>将<code>tags</code>数组转换为仅包含name的列表</li>
+<li>从<code>rating</code>字段中提取评分信息</li>
+</ul>
+</li>
+<li>
+<p><strong>数据库操作</strong>：根据Bangumi ID查询数据库，决定执行插入或更新操作，最终将数据持久化到数据库。</p>
+</li>
+<li>
+<p><strong>响应返回</strong>：操作完成后，将处理结果转换为JSON格式返回给客户端。</p>
+</li>
+</ol>
+<h3 id="22-豆瓣数据导入流程">2.2 豆瓣数据导入流程 </h3>
+<p>当用户上传豆瓣JSON文件时，数据流向如下：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>客户端上传文件 → API路由 (api/v1/collections.py) → 数据解析 → ETL转换 (services/db_service.py) → 数据模型 (models/subject.py) → 数据库
+</code></pre><h4 id="详细流程-2">详细流程 </h4>
+<ol>
+<li>
+<p><strong>文件上传入口</strong>：用户通过<code>POST /api/v1/collections/sync/douban</code>接口上传豆瓣JSON文件，由<code>backend/app/api/v1/collections.py</code>中的<code>sync_douban_collections_endpoint</code>函数接收。</p>
+</li>
+<li>
+<p><strong>文件读取与解析</strong>：</p>
+<ul>
+<li>API层读取上传的文件内容</li>
+<li>解析JSON数据，支持两种结构：包含<code>interest</code>字段的字典或直接的数据列表</li>
+<li>验证JSON格式有效性</li>
+</ul>
+</li>
+<li>
+<p><strong>ETL数据转换</strong>：</p>
+<ul>
+<li>调用<code>services/db_service.py</code>中的<code>convert_douban_to_bangumi</code>函数进行数据转换</li>
+<li>将豆瓣数据结构映射到Bangumi标准格式</li>
+<li>状态映射：<code>wish</code>→1, <code>collect</code>→2, <code>do</code>→3, <code>on_hold</code>→4, <code>dropped</code>→5</li>
+<li>类型映射：<code>book</code>→1, <code>movie</code>→6, <code>tv</code>→6, <code>music</code>→3, <code>game</code>→4</li>
+</ul>
+</li>
+<li>
+<p><strong>统一数据入库</strong>：</p>
+<ul>
+<li>调用<code>services/bangumi_service.py</code>中的<code>upsert_subject</code>函数处理Subject数据</li>
+<li>调用<code>_upsert_collection</code>函数处理Collection数据</li>
+<li>使用统一的数据库操作逻辑，确保与Bangumi数据完全兼容</li>
+</ul>
+</li>
+<li>
+<p><strong>响应返回</strong>：操作完成后，返回导入结果，包含成功导入的条目数量。</p>
+</li>
+</ol>
+<h2 id="3-技术栈联动">3. 技术栈联动 </h2>
+<p>SQLModel在本项目中同时充当了"数据库表定义"和"数据验证"的双重角色，其工作原理如下：</p>
+<h3 id="sqlmodel的双重角色">SQLModel的双重角色 </h3>
+<table>
+<thead>
+<tr>
+<th>角色</th>
+<th>实现方式</th>
+<th>示例代码片段</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>数据库表定义</td>
+<td>通过继承SQLModel并设置<code>table=True</code></td>
+<td><code>class Anime(SQLModel, table=True):</code></td>
+</tr>
+<tr>
+<td>字段类型映射</td>
+<td>使用Field定义字段，指定数据库列类型</td>
+<td><code>summary: Optional[str] = Field(sa_column=Column(Text))</code></td>
+</tr>
+<tr>
+<td>数据验证</td>
+<td>利用Pydantic的类型注解进行数据验证</td>
+<td><code>name: str = Field(...)</code>  # 必填字符串字段</td>
+</tr>
+<tr>
+<td>默认值设置</td>
+<td>通过Field的default参数设置默认值</td>
+<td><code>name_cn: Optional[str] = Field(default="")</code></td>
+</tr>
+<tr>
+<td>约束条件</td>
+<td>使用Field的constraints参数设置约束</td>
+<td><code>id: int = Field(primary_key=True)</code></td>
+</tr>
+</tbody>
+</table>
+<h3 id="工作机制">工作机制 </h3>
+<ol>
+<li>
+<p><strong>数据库表定义</strong>：</p>
+<ul>
+<li>SQLModel继承了SQLAlchemy的功能，可以通过<code>SQLModel.metadata.create_all()</code>创建数据库表</li>
+<li>支持复杂的关系定义（如外键、一对一、一对多关系）</li>
+<li>可以使用SQLAlchemy的高级特性（如索引、视图等）</li>
+</ul>
+</li>
+<li>
+<p><strong>数据验证</strong>：</p>
+<ul>
+<li>继承了Pydantic的数据验证功能，自动验证输入数据的类型和约束</li>
+<li>支持自定义验证逻辑</li>
+<li>在API层面和数据库层面都能提供数据验证</li>
+</ul>
+</li>
+<li>
+<p><strong>自动API文档</strong>：</p>
+<ul>
+<li>FastAPI可以自动生成API文档，包括请求参数和响应模型</li>
+<li>支持Swagger UI和ReDoc接口文档</li>
+</ul>
+</li>
+</ol>
+<h2 id="4-api-职责分离与更新策略">4. API 职责分离与更新策略 </h2>
+<h3 id="41-api-职责分离">4.1 API 职责分离 </h3>
+<p>为了提高系统的可维护性和安全性，项目采用了 API 职责分离的设计：</p>
+<table>
+<thead>
+<tr>
+<th>API 路径</th>
+<th>职责</th>
+<th>数据类型</th>
+<th>认证要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/api/v1/subjects/</code></td>
+<td>条目库查询</td>
+<td>公有数据</td>
+<td>可选</td>
+</tr>
+<tr>
+<td><code>/api/v1/collections/</code></td>
+<td>我的收藏查询与更新</td>
+<td>私有数据</td>
+<td>必须</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong><code>/subjects/</code></strong>：负责处理公有条目数据的查询，任何人都可以访问，无需认证。</li>
+<li><strong><code>/collections/</code></strong>：负责处理用户私有收藏数据的查询和更新，必须进行用户认证。</li>
+</ul>
+<p>这种设计使得 API 接口更加清晰，便于维护和扩展，同时也提高了系统的安全性，保护了用户的私有数据。</p>
+<h3 id="42-api-接口列表">4.2 API 接口列表 </h3>
+<p>项目提供了完整的RESTful API接口，支持Bangumi和豆瓣多数据源的数据同步和查询：</p>
+<h4 id="421-bangumi-数据同步接口">4.2.1 Bangumi 数据同步接口 </h4>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>路径</th>
+<th>功能</th>
+<th>认证要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/sync/{username}</code></td>
+<td>同步指定用户的Bangumi收藏数据到本地数据库</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/sync/{username}?subject_type=1</code></td>
+<td>仅同步用户的书籍收藏</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/sync/{username}?subject_type=2</code></td>
+<td>仅同步用户的动画收藏</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/sync/{username}?subject_type=3</code></td>
+<td>仅同步用户的音乐收藏</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/sync/{username}?subject_type=4</code></td>
+<td>仅同步用户的游戏收藏</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/sync/{username}?subject_type=6</code></td>
+<td>仅同步用户的三次元收藏</td>
+<td>必须</td>
+</tr>
+</tbody>
+</table>
+<p><strong>请求示例</strong>：</p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token comment"># 同步用户所有收藏</span>
+GET /api/v1/collections/sync/myusername
+
+<span class="token comment"># 仅同步用户的书籍收藏</span>
+GET /api/v1/collections/sync/myusername?subject_type<span class="token operator">=</span><span class="token number">1</span>
+</code></pre><p><strong>响应示例</strong>：</p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Successfully synced 42 collections for user myusername"</span><span class="token punctuation">,</span>
+  <span class="token property">"username"</span><span class="token operator">:</span> <span class="token string">"myusername"</span><span class="token punctuation">,</span>
+  <span class="token property">"sync_count"</span><span class="token operator">:</span> <span class="token number">42</span><span class="token punctuation">,</span>
+  <span class="token property">"subject_type"</span><span class="token operator">:</span> <span class="token number">1</span>
+<span class="token punctuation">}</span>
+</code></pre><h4 id="422-豆瓣数据导入接口">4.2.2 豆瓣数据导入接口 </h4>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>路径</th>
+<th>功能</th>
+<th>认证要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/collections/sync/douban</code></td>
+<td>从上传的JSON文件导入豆瓣收藏数据到本地数据库</td>
+<td>必须</td>
+</tr>
+</tbody>
+</table>
+<p><strong>请求参数</strong>：</p>
+<ul>
+<li><code>username</code> (Query, 必填): 用户名</li>
+<li><code>file</code> (FormData, 必填): 豆瓣JSON文件</li>
+<li><code>subject_type</code> (Query, 可选): 条目类型筛选 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)</li>
+</ul>
+<p><strong>请求示例</strong>：</p>
+<pre data-role="codeBlock" data-info="bash" class="language-bash bash"><code><span class="token comment"># 使用curl上传文件</span>
+<span class="token function">curl</span> <span class="token parameter variable">-X</span> POST <span class="token string">"http://localhost:8000/api/v1/collections/sync/douban?username=myusername"</span> <span class="token punctuation">\</span>
+  <span class="token parameter variable">-F</span> <span class="token string">"file=@douban_export.json"</span>
+
+<span class="token comment"># 仅导入书籍数据</span>
+<span class="token function">curl</span> <span class="token parameter variable">-X</span> POST <span class="token string">"http://localhost:8000/api/v1/collections/sync/douban?username=myusername&amp;subject_type=1"</span> <span class="token punctuation">\</span>
+  <span class="token parameter variable">-F</span> <span class="token string">"file=@douban_books.json"</span>
+</code></pre><p><strong>支持的JSON格式</strong>：</p>
+<ol>
+<li>包含<code>interest</code>字段的字典格式：</li>
+</ol>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"interest"</span><span class="token operator">:</span> <span class="token punctuation">[</span>
+    <span class="token punctuation">{</span>
+      <span class="token property">"subject"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+        <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"35514153"</span><span class="token punctuation">,</span>
+        <span class="token property">"title"</span><span class="token operator">:</span> <span class="token string">"进击的巨人"</span><span class="token punctuation">,</span>
+        <span class="token property">"type"</span><span class="token operator">:</span> <span class="token string">"tv"</span><span class="token punctuation">,</span>
+        <span class="token property">"pic"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+          <span class="token property">"large"</span><span class="token operator">:</span> <span class="token string">"https://img3.doubanio.com/..."</span><span class="token punctuation">,</span>
+          <span class="token property">"normal"</span><span class="token operator">:</span> <span class="token string">"https://img3.doubanio.com/..."</span>
+        <span class="token punctuation">}</span><span class="token punctuation">,</span>
+        <span class="token property">"rating"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+          <span class="token property">"value"</span><span class="token operator">:</span> <span class="token number">9.0</span>
+        <span class="token punctuation">}</span><span class="token punctuation">,</span>
+        <span class="token property">"intro"</span><span class="token operator">:</span> <span class="token string">"故事讲述..."</span>
+      <span class="token punctuation">}</span><span class="token punctuation">,</span>
+      <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"collect"</span><span class="token punctuation">,</span>
+      <span class="token property">"rating"</span><span class="token operator">:</span> <span class="token number">9</span><span class="token punctuation">,</span>
+      <span class="token property">"comment"</span><span class="token operator">:</span> <span class="token string">"非常好看"</span><span class="token punctuation">,</span>
+      <span class="token property">"private"</span><span class="token operator">:</span> <span class="token boolean">false</span><span class="token punctuation">,</span>
+      <span class="token property">"update_time"</span><span class="token operator">:</span> <span class="token string">"2024-01-01T00:00:00"</span>
+    <span class="token punctuation">}</span>
+  <span class="token punctuation">]</span>
+<span class="token punctuation">}</span>
+</code></pre><ol start="2">
+<li>直接的数据列表格式：</li>
+</ol>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">[</span>
+  <span class="token punctuation">{</span>
+    <span class="token property">"subject"</span><span class="token operator">:</span> <span class="token punctuation">{</span>
+      <span class="token property">"id"</span><span class="token operator">:</span> <span class="token string">"35514153"</span><span class="token punctuation">,</span>
+      <span class="token property">"title"</span><span class="token operator">:</span> <span class="token string">"进击的巨人"</span><span class="token punctuation">,</span>
+      <span class="token property">"type"</span><span class="token operator">:</span> <span class="token string">"tv"</span>
+    <span class="token punctuation">}</span><span class="token punctuation">,</span>
+    <span class="token property">"status"</span><span class="token operator">:</span> <span class="token string">"collect"</span>
+  <span class="token punctuation">}</span>
+<span class="token punctuation">]</span>
+</code></pre><p><strong>响应示例</strong>：</p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Successfully imported 25 Douban items for user myusername"</span><span class="token punctuation">,</span>
+  <span class="token property">"username"</span><span class="token operator">:</span> <span class="token string">"myusername"</span><span class="token punctuation">,</span>
+  <span class="token property">"import_count"</span><span class="token operator">:</span> <span class="token number">25</span>
+<span class="token punctuation">}</span>
+</code></pre><p><strong>错误响应</strong>：</p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"detail"</span><span class="token operator">:</span> <span class="token string">"Invalid JSON format: Expecting value: line 1 column 1 (char 0)"</span>
+<span class="token punctuation">}</span>
+</code></pre><h4 id="423-收藏查询与更新接口">4.2.3 收藏查询与更新接口 </h4>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>路径</th>
+<th>功能</th>
+<th>认证要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/</code></td>
+<td>查询用户的收藏列表</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/collections/{subject_id}</code></td>
+<td>查询特定条目的收藏信息</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>PATCH</td>
+<td><code>/api/v1/collections/{subject_id}</code></td>
+<td>更新特定条目的收藏信息</td>
+<td>必须</td>
+</tr>
+<tr>
+<td>DELETE</td>
+<td><code>/api/v1/collections/{subject_id}</code></td>
+<td>删除特定条目的收藏记录</td>
+<td>必须</td>
+</tr>
+</tbody>
+</table>
+<p><strong>PATCH 请求示例</strong>：</p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"rate"</span><span class="token operator">:</span> <span class="token number">9</span><span class="token punctuation">,</span>
+  <span class="token property">"comment"</span><span class="token operator">:</span> <span class="token string">"非常推荐"</span><span class="token punctuation">,</span>
+  <span class="token property">"type"</span><span class="token operator">:</span> <span class="token number">2</span>
+<span class="token punctuation">}</span>
+</code></pre><h4 id="424-条目查询接口">4.2.4 条目查询接口 </h4>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>路径</th>
+<th>功能</th>
+<th>认证要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/subjects/</code></td>
+<td>查询条目库</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/subjects/{subject_id}</code></td>
+<td>查询特定条目详情</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/subjects/?source=bangumi</code></td>
+<td>查询所有Bangumi条目</td>
+<td>可选</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/subjects/?source=douban</code></td>
+<td>查询所有豆瓣条目</td>
+<td>可选</td>
+</tr>
+</tbody>
+</table>
+<h3 id="43-patch-更新策略">4.3 PATCH 更新策略 </h3>
+<p>对于收藏信息的更新，项目采用了 HTTP PATCH 方法，支持局部更新：</p>
+<ul>
+<li><strong>请求方法</strong>：PATCH <code>/api/v1/collections/{subject_id}</code></li>
+<li><strong>请求体</strong>：仅包含需要更新的字段</li>
+<li><strong>响应</strong>：返回更新后的完整收藏信息</li>
+</ul>
+<h4 id="实现机制">实现机制 </h4>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/services/collection_service.py</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">update_collection</span><span class="token punctuation">(</span>
+    db<span class="token punctuation">:</span> AsyncSession<span class="token punctuation">,</span> user_id<span class="token punctuation">:</span> <span class="token builtin">int</span><span class="token punctuation">,</span> subject_id<span class="token punctuation">:</span> <span class="token builtin">int</span><span class="token punctuation">,</span> update_data<span class="token punctuation">:</span> CollectionUpdate
+<span class="token punctuation">)</span> <span class="token operator">-</span><span class="token operator">&gt;</span> Optional<span class="token punctuation">[</span>Collection<span class="token punctuation">]</span><span class="token punctuation">:</span>
+    <span class="token comment"># 查询收藏记录</span>
+    query <span class="token operator">=</span> select<span class="token punctuation">(</span>Collection<span class="token punctuation">)</span><span class="token punctuation">.</span>where<span class="token punctuation">(</span>
+        Collection<span class="token punctuation">.</span>user_id <span class="token operator">==</span> user_id<span class="token punctuation">,</span>
+        Collection<span class="token punctuation">.</span>subject_id <span class="token operator">==</span> subject_id
+    <span class="token punctuation">)</span>
+    collection <span class="token operator">=</span> <span class="token punctuation">(</span><span class="token keyword keyword-await">await</span> db<span class="token punctuation">.</span>execute<span class="token punctuation">(</span>query<span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">.</span>scalar_one_or_none<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    
+    <span class="token keyword keyword-if">if</span> <span class="token keyword keyword-not">not</span> collection<span class="token punctuation">:</span>
+        <span class="token keyword keyword-return">return</span> <span class="token boolean">None</span>
+    
+    <span class="token comment"># 仅更新非空字段</span>
+    update_dict <span class="token operator">=</span> update_data<span class="token punctuation">.</span><span class="token builtin">dict</span><span class="token punctuation">(</span>exclude_unset<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">)</span>
+    <span class="token keyword keyword-for">for</span> field<span class="token punctuation">,</span> value <span class="token keyword keyword-in">in</span> update_dict<span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+        <span class="token builtin">setattr</span><span class="token punctuation">(</span>collection<span class="token punctuation">,</span> field<span class="token punctuation">,</span> value<span class="token punctuation">)</span>
+    
+    <span class="token comment"># 更新时间戳</span>
+    collection<span class="token punctuation">.</span>updated_at <span class="token operator">=</span> datetime<span class="token punctuation">.</span>now<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 保存更新</span>
+    db<span class="token punctuation">.</span>add<span class="token punctuation">(</span>collection<span class="token punctuation">)</span>
+    <span class="token keyword keyword-await">await</span> db<span class="token punctuation">.</span>commit<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token keyword keyword-await">await</span> db<span class="token punctuation">.</span>refresh<span class="token punctuation">(</span>collection<span class="token punctuation">)</span>
+    
+    <span class="token keyword keyword-return">return</span> collection
+</code></pre><p>这种策略的优势：</p>
+<ol>
+<li><strong>减少网络传输</strong>：只需要发送需要更新的字段，减少了数据传输量</li>
+<li><strong>提高性能</strong>：减少了数据库操作的复杂度</li>
+<li><strong>灵活性</strong>：允许客户端只更新感兴趣的字段</li>
+<li><strong>清晰的语义</strong>：使用 PATCH 方法明确表示是局部更新操作</li>
+</ol>
+<h2 id="5-关键配置说明">5. 关键配置说明 </h2>
+<p><code>.env</code>、<code>docker-compose.yml</code> 和 <code>backend/app/core/db.py</code> 之间通过环境变量实现了无缝配合，确保后端能够成功连接到数据库。</p>
+<h3 id="配置文件协同工作流程">配置文件协同工作流程 </h3>
+<ol>
+<li>
+<p><strong>docker-compose.yml</strong>：</p>
+<ul>
+<li>定义了PostgreSQL和Redis服务的容器配置</li>
+<li>设置了数据库的用户名、密码、端口等基础配置</li>
+<li>通过卷挂载实现数据持久化</li>
+</ul>
+</li>
+<li>
+<p><strong>.env</strong>：</p>
+<ul>
+<li>定义了数据库连接字符串（<code>DATABASE_URL</code>）</li>
+<li>配置了数据库的主机、端口、用户名、密码等信息</li>
+<li>与docker-compose.yml中的数据库配置保持一致</li>
+</ul>
+</li>
+<li>
+<p><strong>backend/app/core/db.py</strong>：</p>
+<ul>
+<li>从配置文件中加载数据库连接字符串</li>
+<li>创建异步数据库引擎和会话工厂</li>
+<li>提供数据库初始化和会话获取功能</li>
+</ul>
+</li>
+</ol>
+<h3 id="配置流程示意图">配置流程示意图 </h3>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ docker-compose.yml │→→→│       .env      │→→→│ backend/app/core/db.py │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+        │                         │                        │
+        ▼                         ▼                        ▼
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│ PostgreSQL 容器 │     │ 环境变量配置    │     │ 数据库连接引擎   │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+</code></pre><h2 id="5-ai-准备就绪度">5. AI 准备就绪度 </h2>
+<p>基于当前的项目结构，<code>agents/</code> 文件夹可以通过以下方式调用 <code>models/</code> 里的数据：</p>
+<h3 id="数据访问方式">数据访问方式 </h3>
+<ol>
+<li>
+<p><strong>直接数据库访问</strong>：</p>
+<ul>
+<li>使用 <code>db.py</code> 中提供的 <code>get_session()</code> 函数获取数据库会话</li>
+<li>通过 SQLModel 的查询接口访问 <code>models/</code> 中的数据</li>
+<li>示例代码：<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token keyword keyword-from">from</span> sqlmodel <span class="token keyword keyword-import">import</span> select
+<span class="token keyword keyword-from">from</span> sqlalchemy<span class="token punctuation">.</span>ext<span class="token punctuation">.</span>asyncio <span class="token keyword keyword-import">import</span> AsyncSession
+<span class="token keyword keyword-from">from</span> app<span class="token punctuation">.</span>models<span class="token punctuation">.</span>subject <span class="token keyword keyword-import">import</span> Subject
+<span class="token keyword keyword-from">from</span> app<span class="token punctuation">.</span>db<span class="token punctuation">.</span>database <span class="token keyword keyword-import">import</span> get_session
+
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">get_subject_recommendations</span><span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span> 
+    <span class="token keyword keyword-async">async</span> <span class="token keyword keyword-for">for</span> session <span class="token keyword keyword-in">in</span> get_session<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># 获取数据库会话</span>
+        result <span class="token operator">=</span> <span class="token keyword keyword-await">await</span> session<span class="token punctuation">.</span>execute<span class="token punctuation">(</span>select<span class="token punctuation">(</span>Subject<span class="token punctuation">)</span><span class="token punctuation">.</span>order_by<span class="token punctuation">(</span>Subject<span class="token punctuation">.</span>score<span class="token punctuation">.</span>desc<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        top_subjects <span class="token operator">=</span> result<span class="token punctuation">.</span>scalars<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">.</span><span class="token builtin">all</span><span class="token punctuation">(</span><span class="token punctuation">)</span>
+        <span class="token keyword keyword-return">return</span> <span class="token punctuation">[</span>subject<span class="token punctuation">.</span>name <span class="token keyword keyword-for">for</span> subject <span class="token keyword keyword-in">in</span> top_subjects<span class="token punctuation">[</span><span class="token punctuation">:</span><span class="token number">10</span><span class="token punctuation">]</span><span class="token punctuation">]</span>
+</code></pre></li>
+</ul>
+</li>
+<li>
+<p><strong>服务层调用</strong>：</p>
+<ul>
+<li>调用 <code>services/</code> 中已实现的业务逻辑函数</li>
+<li>避免直接操作数据库，提高代码复用性</li>
+</ul>
+</li>
+</ol>
+<h3 id="ai-功能实现建议">AI 功能实现建议 </h3>
+<ol>
+<li><strong>推荐系统</strong>：基于用户历史数据和动画标签，实现个性化推荐</li>
+<li><strong>数据分析</strong>：对动画数据进行统计分析，生成趋势报告</li>
+<li><strong>内容生成</strong>：利用AI生成动画简介、标签等内容</li>
+<li><strong>问答系统</strong>：基于动画数据实现智能问答功能</li>
+</ol>
+<h3 id="工作流设计">工作流设计 </h3>
+<p><code>agents/graph.py</code> 可以使用LangGraph等工具构建AI工作流，实现复杂的AI功能：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>数据输入 → 数据处理 → AI模型调用 → 结果生成 → 数据输出
+</code></pre><h2 id="6-数据同步模块">6. 数据同步模块 </h2>
+<h3 id="概述">概述 </h3>
+<p>数据同步模块实现了从Bangumi API获取用户收藏数据并同步到本地数据库的功能，支持完整的异步数据处理流程。该模块经过重构，现已支持Bangumi的<strong>全品类</strong>（书籍/动画/音乐/游戏/三次元）收藏同步。</p>
+<h3 id="全品类支持实现">全品类支持实现 </h3>
+<p>为了支持Bangumi的全品类收藏，系统进行了以下核心设计：</p>
+<h4 id="61-枚举类型定义">6.1 枚举类型定义 </h4>
+<p>创建了两个关键枚举类型用于规范数据格式：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/models/enums.py</span>
+<span class="token keyword keyword-from">from</span> enum <span class="token keyword keyword-import">import</span> IntEnum
+
+<span class="token keyword keyword-class">class</span> <span class="token class-name">SubjectType</span><span class="token punctuation">(</span>IntEnum<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Bangumi条目类型枚举"""</span>
+    BOOK <span class="token operator">=</span> <span class="token number">1</span>  <span class="token comment"># 书籍/小说</span>
+    ANIME <span class="token operator">=</span> <span class="token number">2</span>  <span class="token comment"># 动画</span>
+    MUSIC <span class="token operator">=</span> <span class="token number">3</span>  <span class="token comment"># 音乐</span>
+    GAME <span class="token operator">=</span> <span class="token number">4</span>  <span class="token comment"># 游戏</span>
+    REAL <span class="token operator">=</span> <span class="token number">6</span>  <span class="token comment"># 三次元</span>
+
+<span class="token keyword keyword-class">class</span> <span class="token class-name">CollectionStatus</span><span class="token punctuation">(</span>IntEnum<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""Bangumi收藏状态枚举"""</span>
+    WISH <span class="token operator">=</span> <span class="token number">1</span>  <span class="token comment"># 想看</span>
+    COLLECT <span class="token operator">=</span> <span class="token number">2</span>  <span class="token comment"># 看过</span>
+    DO <span class="token operator">=</span> <span class="token number">3</span>  <span class="token comment"># 在看</span>
+    ON_HOLD <span class="token operator">=</span> <span class="token number">4</span>  <span class="token comment"># 搁置</span>
+    DROPPED <span class="token operator">=</span> <span class="token number">5</span>  <span class="token comment"># 抛弃</span>
+</code></pre><h4 id="62-subject模型设计">6.2 Subject模型设计 </h4>
+<p>使用通用的<code>Subject</code>模型替代了原有的<code>Anime</code>模型，支持存储全品类数据：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/models/subject.py</span>
+<span class="token keyword keyword-class">class</span> <span class="token class-name">Subject</span><span class="token punctuation">(</span>SQLModel<span class="token punctuation">,</span> table<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># type: ignore[call-arg]</span>
+    <span class="token triple-quoted-string string">"""通用条目模型，支持全品类数据存储"""</span>
+    <span class="token comment"># 基础信息</span>
+    <span class="token builtin">id</span><span class="token punctuation">:</span> <span class="token builtin">int</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>primary_key<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"Bangumi条目ID"</span><span class="token punctuation">)</span>
+    <span class="token builtin">type</span><span class="token punctuation">:</span> SubjectType <span class="token operator">=</span> Field<span class="token punctuation">(</span>description<span class="token operator">=</span><span class="token string">"条目类型：1=书籍, 2=动画, 3=音乐, 4=游戏, 6=三次元"</span><span class="token punctuation">)</span>
+    name<span class="token punctuation">:</span> <span class="token builtin">str</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>description<span class="token operator">=</span><span class="token string">"条目原名"</span><span class="token punctuation">)</span>
+    name_cn<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"条目中文名"</span><span class="token punctuation">)</span>
+    summary<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>sa_column<span class="token operator">=</span>Column<span class="token punctuation">(</span>Text<span class="token punctuation">)</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"条目简介"</span><span class="token punctuation">)</span>
+    cover_url<span class="token punctuation">:</span> <span class="token builtin">str</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"封面URL"</span><span class="token punctuation">)</span>
+    date<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"发售/放送日期"</span><span class="token punctuation">)</span>
+    platform<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"平台"</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 数值/统计信息</span>
+    score<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">float</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"评分"</span><span class="token punctuation">)</span>
+    rank<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"排名"</span><span class="token punctuation">)</span>
+    eps<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"集数"</span><span class="token punctuation">)</span>
+    volumes<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"卷数"</span><span class="token punctuation">)</span>
+    collection_total<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"总收藏人数"</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 复杂结构（JSON存储）</span>
+    tags<span class="token punctuation">:</span> List<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default_factory<span class="token operator">=</span><span class="token builtin">list</span><span class="token punctuation">,</span> sa_column<span class="token operator">=</span>Column<span class="token punctuation">(</span>JSON<span class="token punctuation">)</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"标签列表"</span><span class="token punctuation">)</span>
+    meta_tags<span class="token punctuation">:</span> List<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default_factory<span class="token operator">=</span><span class="token builtin">list</span><span class="token punctuation">,</span> sa_column<span class="token operator">=</span>Column<span class="token punctuation">(</span>JSON<span class="token punctuation">)</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"官方元标签"</span><span class="token punctuation">)</span>
+    infobox<span class="token punctuation">:</span> List<span class="token punctuation">[</span>Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> <span class="token builtin">str</span><span class="token punctuation">]</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default_factory<span class="token operator">=</span><span class="token builtin">list</span><span class="token punctuation">,</span> sa_column<span class="token operator">=</span>Column<span class="token punctuation">(</span>JSON<span class="token punctuation">)</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"元数据"</span><span class="token punctuation">)</span>
+    rating_details<span class="token punctuation">:</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default_factory<span class="token operator">=</span><span class="token builtin">dict</span><span class="token punctuation">,</span> sa_column<span class="token operator">=</span>Column<span class="token punctuation">(</span>JSON<span class="token punctuation">)</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"评分分布详情"</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 与Collection模型关系</span>
+    collections<span class="token punctuation">:</span> List<span class="token punctuation">[</span>Collection<span class="token punctuation">]</span> <span class="token operator">=</span> Relationship<span class="token punctuation">(</span>back_populates<span class="token operator">=</span><span class="token string">"subject"</span><span class="token punctuation">)</span>
+</code></pre><h4 id="63-collection模型更新">6.3 Collection模型更新 </h4>
+<p>Collection模型已更新为与Subject模型关联，并使用枚举类型规范收藏状态：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/models/collection.py</span>
+<span class="token keyword keyword-class">class</span> <span class="token class-name">Collection</span><span class="token punctuation">(</span>SQLModel<span class="token punctuation">,</span> table<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">)</span><span class="token punctuation">:</span>  <span class="token comment"># type: ignore[call-arg]</span>
+    <span class="token triple-quoted-string string">"""用户收藏模型，支持全品类条目收藏"""</span>
+    subject_id<span class="token punctuation">:</span> <span class="token builtin">int</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>primary_key<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> foreign_key<span class="token operator">=</span><span class="token string">"subject.id"</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"关联的条目ID"</span><span class="token punctuation">)</span>
+    <span class="token builtin">type</span><span class="token punctuation">:</span> CollectionStatus <span class="token operator">=</span> Field<span class="token punctuation">(</span>description<span class="token operator">=</span><span class="token string">"收藏状态：1想看/2看过/3在看/4搁置/5抛弃"</span><span class="token punctuation">)</span>
+    rate<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"用户评分"</span><span class="token punctuation">)</span>
+    updated_at<span class="token punctuation">:</span> datetime <span class="token operator">=</span> Field<span class="token punctuation">(</span>description<span class="token operator">=</span><span class="token string">"最后更新时间"</span><span class="token punctuation">)</span>
+    private<span class="token punctuation">:</span> <span class="token builtin">bool</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">False</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"是否私密收藏"</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 与Subject模型建立关系</span>
+    subject<span class="token punctuation">:</span> <span class="token string">"Subject"</span> <span class="token operator">=</span> Relationship<span class="token punctuation">(</span>back_populates<span class="token operator">=</span><span class="token string">"collections"</span><span class="token punctuation">)</span>
+</code></pre><h3 id="64-智能数据清洗逻辑">6.4 智能数据清洗逻辑 </h3>
+<p>为了处理Bangumi API两种不同的数据格式（Type A: 嵌套Subject对象和Type B: 完整详情），实现了智能的数据清洗函数<code>upsert_subject</code>：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/services/bangumi_service.py</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">upsert_subject</span><span class="token punctuation">(</span>db<span class="token punctuation">:</span> AsyncSession<span class="token punctuation">,</span> subject_data<span class="token punctuation">:</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">-</span><span class="token operator">&gt;</span> Subject<span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""智能映射并清洗Subject数据，支持Type A (Nested) 和 Type B (Full) 两种格式"""</span>
+    <span class="token comment"># 处理Type A (嵌套在收藏数据中的Subject)</span>
+    <span class="token keyword keyword-if">if</span> <span class="token string">"subject"</span> <span class="token keyword keyword-in">in</span> subject_data<span class="token punctuation">:</span>
+        subject_data <span class="token operator">=</span> subject_data<span class="token punctuation">[</span><span class="token string">"subject"</span><span class="token punctuation">]</span>
+    
+    <span class="token comment"># 处理summary和short_summary：优先使用summary，如果没有且数据库中也没有，则使用short_summary</span>
+    summary <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"summary"</span><span class="token punctuation">)</span>
+    short_summary <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"short_summary"</span><span class="token punctuation">)</span>
+    <span class="token comment"># ... 智能处理逻辑</span>
+    
+    <span class="token comment"># 处理封面图片</span>
+    cover_url <span class="token operator">=</span> <span class="token string">""</span>
+    images <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"images"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span>
+    <span class="token keyword keyword-if">if</span> images<span class="token punctuation">:</span>
+        cover_url <span class="token operator">=</span> images<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"large"</span><span class="token punctuation">,</span> images<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"common"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 处理评分信息 (Type A扁平格式 vs Type B嵌套格式)</span>
+    score <span class="token operator">=</span> <span class="token boolean">None</span>
+    rank <span class="token operator">=</span> <span class="token boolean">None</span>
+    rating_details <span class="token operator">=</span> <span class="token punctuation">{</span><span class="token punctuation">}</span>
+    
+    <span class="token keyword keyword-if">if</span> <span class="token string">"rating"</span> <span class="token keyword keyword-in">in</span> subject_data<span class="token punctuation">:</span>
+        <span class="token comment"># Type B格式</span>
+        rating <span class="token operator">=</span> subject_data<span class="token punctuation">[</span><span class="token string">"rating"</span><span class="token punctuation">]</span>
+        score <span class="token operator">=</span> rating<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"score"</span><span class="token punctuation">)</span>
+        rank <span class="token operator">=</span> rating<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"rank"</span><span class="token punctuation">)</span>
+        rating_details <span class="token operator">=</span> rating<span class="token punctuation">.</span>copy<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token keyword keyword-else">else</span><span class="token punctuation">:</span>
+        <span class="token comment"># Type A格式</span>
+        score <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"score"</span><span class="token punctuation">)</span>
+        rank <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"rank"</span><span class="token punctuation">)</span>
+        <span class="token comment"># ... 其他处理逻辑</span>
+    
+    <span class="token comment"># 处理集数/卷数</span>
+    eps <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"eps"</span><span class="token punctuation">)</span>
+    total_episodes <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"total_episodes"</span><span class="token punctuation">)</span>
+    <span class="token comment"># 如果有total_episodes则优先使用，否则使用eps</span>
+    final_eps <span class="token operator">=</span> total_episodes <span class="token keyword keyword-if">if</span> total_episodes <span class="token keyword keyword-is">is</span> <span class="token keyword keyword-not">not</span> <span class="token boolean">None</span> <span class="token keyword keyword-else">else</span> eps
+    
+    <span class="token comment"># ... 创建或更新Subject对象</span>
+</code></pre><h4 id="关键数据处理策略">关键数据处理策略 </h4>
+<table>
+<thead>
+<tr>
+<th>字段冲突</th>
+<th>处理策略</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>summary</code> vs <code>short_summary</code></td>
+<td>优先使用完整的<code>summary</code>，如果没有且数据库中也没有，则使用<code>short_summary</code></td>
+</tr>
+<tr>
+<td><code>rating.score</code> vs <code>score</code></td>
+<td>支持Type A扁平格式和Type B嵌套格式的评分数据</td>
+</tr>
+<tr>
+<td><code>eps</code> vs <code>total_episodes</code></td>
+<td>优先使用<code>total_episodes</code>，如果没有则使用<code>eps</code></td>
+</tr>
+<tr>
+<td><code>images.large</code> vs <code>images.common</code></td>
+<td>优先使用高质量的<code>large</code>尺寸图片，否则使用<code>common</code>尺寸</td>
+</tr>
+</tbody>
+</table>
+<h3 id="同步流程">同步流程 </h3>
+<p>完整的数据同步流程如下：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code>外部Bangumi API → 数据清洗与转换 → Subject表入库 → Collection表入库
+</code></pre><p><strong>详细步骤</strong>：</p>
+<ol>
+<li>
+<p><strong>外部API调用</strong>：通过<code>bangumi_client.py</code>中的<code>fetch_user_collections</code>函数，支持按类型获取不同品类的收藏数据</p>
+<ul>
+<li>API地址：<code>https://api.bgm.tv/v0/users/{username}/collections</code></li>
+<li>支持参数：<code>subject_type</code> (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)</li>
+<li>设置合规的User-Agent头信息</li>
+</ul>
+</li>
+<li>
+<p><strong>数据清洗与转换</strong>：</p>
+<ul>
+<li>使用<code>upsert_subject</code>函数智能处理Type A和Type B两种数据格式</li>
+<li>确保数据的一致性和完整性</li>
+</ul>
+</li>
+<li>
+<p><strong>Subject表入库</strong>：将清洗后的数据保存到Subject表，支持批量操作</p>
+</li>
+<li>
+<p><strong>Collection表入库</strong>：将收藏元数据保存到Collection表，建立与Subject表的关联</p>
+</li>
+</ol>
+<h3 id="api接口更新">API接口更新 </h3>
+<p>更新后的API接口支持全品类收藏同步：</p>
+<table>
+<thead>
+<tr>
+<th>方法</th>
+<th>路径</th>
+<th>功能</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>POST</td>
+<td><code>/api/v1/anime/ingest</code></td>
+<td>接收Bangumi的原始JSON数据并保存到数据库，支持全品类条目</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/anime/sync/{username}</code></td>
+<td>同步指定用户的收藏数据到本地数据库，支持按类型筛选</td>
+</tr>
+<tr>
+<td>GET</td>
+<td><code>/api/v1/anime/subject/{subject_id}/sync</code></td>
+<td>同步单个条目的详细信息</td>
+</tr>
+</tbody>
+</table>
+<p><strong>请求示例</strong>：</p>
+<pre data-role="codeBlock" data-info="" class="language-text"><code># 同步用户所有收藏
+GET /api/v1/anime/sync/myusername
+
+# 仅同步用户的书籍收藏
+GET /api/v1/anime/sync/myusername?subject_type=1
+
+# 同步单个条目详情
+GET /api/v1/anime/subject/300270/sync
+</code></pre><p><strong>响应示例</strong>：</p>
+<pre data-role="codeBlock" data-info="json" class="language-json json"><code><span class="token punctuation">{</span>
+  <span class="token property">"message"</span><span class="token operator">:</span> <span class="token string">"Successfully synced 42 collections for user myusername"</span><span class="token punctuation">,</span>
+  <span class="token property">"username"</span><span class="token operator">:</span> <span class="token string">"myusername"</span><span class="token punctuation">,</span>
+  <span class="token property">"sync_count"</span><span class="token operator">:</span> <span class="token number">42</span><span class="token punctuation">,</span>
+  <span class="token property">"subject_type"</span><span class="token operator">:</span> <span class="token number">1</span>
+<span class="token punctuation">}</span>
+</code></pre><h3 id="事务处理">事务处理 </h3>
+<p>数据同步过程中使用了事务处理确保数据一致性：</p>
+<ul>
+<li>使用<code>async with db.begin_nested()</code>为每个收藏项创建嵌套事务</li>
+<li>确保动画基础信息和收藏信息要么同时成功入库，要么同时失败</li>
+<li>单个收藏项的处理失败不会影响整体同步流程</li>
+</ul>
+<h3 id="异常处理">异常处理 </h3>
+<p>实现了完整的异常处理机制：</p>
+<ul>
+<li>HTTP状态错误处理（如404用户不存在）</li>
+<li>网络超时和连接错误处理</li>
+<li>数据解析错误处理</li>
+</ul>
+<h2 id="7-多数据源架构设计">7. 多数据源架构设计 </h2>
+<h3 id="71-设计理念">7.1 设计理念 </h3>
+<p>项目采用<strong>统一数据模型 + ETL转换</strong>的多数据源架构设计，核心原则是：</p>
+<ol>
+<li><strong>统一数据逻辑</strong>：所有数据源最终转换为统一的Bangumi标准格式，避免架构分裂</li>
+<li><strong>适配器模式</strong>：为每个数据源实现专门的适配器，负责数据格式转换</li>
+<li><strong>统一存储</strong>：使用统一的Subject和Collection模型存储所有来源的数据</li>
+<li><strong>数据源标识</strong>：通过<code>source</code>和<code>source_id</code>字段区分不同来源的数据</li>
+</ol>
+<h3 id="72-核心设计">7.2 核心设计 </h3>
+<h4 id="数据模型扩展">数据模型扩展 </h4>
+<p>Subject模型通过添加<code>source</code>和<code>source_id</code>字段实现多数据源支持：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/models/subject.py</span>
+<span class="token keyword keyword-class">class</span> <span class="token class-name">Subject</span><span class="token punctuation">(</span>SQLModel<span class="token punctuation">,</span> table<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""通用条目模型，支持多数据源（Bangumi、豆瓣等）"""</span>
+    <span class="token comment"># 基础信息</span>
+    <span class="token builtin">id</span><span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">int</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token boolean">None</span><span class="token punctuation">,</span> primary_key<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"数据库自增主键"</span><span class="token punctuation">)</span>
+    source<span class="token punctuation">:</span> <span class="token builtin">str</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token string">"bangumi"</span><span class="token punctuation">,</span> index<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"数据来源：bangumi/douban"</span><span class="token punctuation">)</span>
+    source_id<span class="token punctuation">:</span> <span class="token builtin">str</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>index<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"原站ID（Bangumi ID或豆瓣ID）"</span><span class="token punctuation">)</span>
+    <span class="token builtin">type</span><span class="token punctuation">:</span> SubjectType <span class="token operator">=</span> Field<span class="token punctuation">(</span>index<span class="token operator">=</span><span class="token boolean">True</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"条目类型：1=书籍/2=动画/3=音乐/4=游戏/6=三次元"</span><span class="token punctuation">)</span>
+    name<span class="token punctuation">:</span> <span class="token builtin">str</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>description<span class="token operator">=</span><span class="token string">"条目原名"</span><span class="token punctuation">)</span>
+    name_cn<span class="token punctuation">:</span> Optional<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">]</span> <span class="token operator">=</span> Field<span class="token punctuation">(</span>default<span class="token operator">=</span><span class="token string">""</span><span class="token punctuation">,</span> description<span class="token operator">=</span><span class="token string">"条目中文名"</span><span class="token punctuation">)</span>
+    <span class="token comment"># ...其他字段</span>
+    
+    <span class="token comment"># 联合唯一索引：确保同一数据源的同一条目不重复</span>
+    __table_args__ <span class="token operator">=</span> <span class="token punctuation">(</span>
+        UniqueConstraint<span class="token punctuation">(</span><span class="token string">'source'</span><span class="token punctuation">,</span> <span class="token string">'source_id'</span><span class="token punctuation">,</span> name<span class="token operator">=</span><span class="token string">'uq_source_source_id'</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+    <span class="token punctuation">)</span>
+</code></pre><h4 id="数据源标识">数据源标识 </h4>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>说明</th>
+<th>示例值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>source</code></td>
+<td>数据来源标识</td>
+<td><code>"bangumi"</code>, <code>"douban"</code></td>
+</tr>
+<tr>
+<td><code>source_id</code></td>
+<td>原站ID</td>
+<td><code>"300270"</code> (Bangumi ID), <code>"35514153"</code> (豆瓣ID)</td>
+</tr>
+<tr>
+<td><code>id</code></td>
+<td>数据库自增主键</td>
+<td><code>1</code>, <code>2</code>, <code>3</code>, ...</td>
+</tr>
+</tbody>
+</table>
+<h4 id="联合唯一索引">联合唯一索引 </h4>
+<p>通过<code>UniqueConstraint('source', 'source_id')</code>确保：</p>
+<ul>
+<li>同一数据源的同一条目不会重复插入</li>
+<li>不同数据源的相同条目可以共存（如Bangumi和豆瓣都有同一部动画）</li>
+</ul>
+<h3 id="73-etl数据转换流程">7.3 ETL数据转换流程 </h3>
+<h4 id="豆瓣数据转换">豆瓣数据转换 </h4>
+<p>豆瓣数据导入采用完整的ETL（Extract-Transform-Load）流程：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/services/db_service.py</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">convert_douban_to_bangumi</span><span class="token punctuation">(</span>item<span class="token punctuation">:</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">-</span><span class="token operator">&gt;</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""
+    将豆瓣数据转换为Bangumi标准格式
+    
+    Args:
+        item: 豆瓣收藏项数据
+        
+    Returns:
+        转换后的Bangumi格式数据
+    """</span>
+    <span class="token comment"># 提取豆瓣条目信息</span>
+    subject <span class="token operator">=</span> item<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"subject"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 状态映射</span>
+    status_map <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token string">"wish"</span><span class="token punctuation">:</span> <span class="token number">1</span><span class="token punctuation">,</span>      <span class="token comment"># 想看</span>
+        <span class="token string">"collect"</span><span class="token punctuation">:</span> <span class="token number">2</span><span class="token punctuation">,</span>   <span class="token comment"># 看过</span>
+        <span class="token string">"do"</span><span class="token punctuation">:</span> <span class="token number">3</span><span class="token punctuation">,</span>        <span class="token comment"># 在看</span>
+        <span class="token string">"on_hold"</span><span class="token punctuation">:</span> <span class="token number">4</span><span class="token punctuation">,</span>   <span class="token comment"># 搁置</span>
+        <span class="token string">"dropped"</span><span class="token punctuation">:</span> <span class="token number">5</span>    <span class="token comment"># 抛弃</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token comment"># 类型映射</span>
+    type_map <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token string">"book"</span><span class="token punctuation">:</span> <span class="token number">1</span><span class="token punctuation">,</span>      <span class="token comment"># 书籍</span>
+        <span class="token string">"movie"</span><span class="token punctuation">:</span> <span class="token number">6</span><span class="token punctuation">,</span>     <span class="token comment"># 电影</span>
+        <span class="token string">"tv"</span><span class="token punctuation">:</span> <span class="token number">6</span><span class="token punctuation">,</span>        <span class="token comment"># 电视剧</span>
+        <span class="token string">"music"</span><span class="token punctuation">:</span> <span class="token number">3</span><span class="token punctuation">,</span>     <span class="token comment"># 音乐</span>
+        <span class="token string">"game"</span><span class="token punctuation">:</span> <span class="token number">4</span>       <span class="token comment"># 游戏</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token comment"># 构建标准的images字典</span>
+    images <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token string">"large"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"pic"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"large"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"common"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"pic"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"normal"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"medium"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"pic"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"small"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"small"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"pic"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"icon"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"grid"</span><span class="token punctuation">:</span> <span class="token string">""</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token comment"># 构建Bangumi标准格式</span>
+    bangumi_format <span class="token operator">=</span> <span class="token punctuation">{</span>
+        <span class="token string">"subject"</span><span class="token punctuation">:</span> <span class="token punctuation">{</span>
+            <span class="token string">"id"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"id"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string">"type"</span><span class="token punctuation">:</span> type_map<span class="token punctuation">.</span>get<span class="token punctuation">(</span>subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"type"</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">2</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string">"name"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"title"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string">"name_cn"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"title"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string">"summary"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"intro"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string">"images"</span><span class="token punctuation">:</span> images<span class="token punctuation">,</span>
+            <span class="token string">"rating"</span><span class="token punctuation">:</span> <span class="token punctuation">{</span>
+                <span class="token string">"score"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"rating"</span><span class="token punctuation">,</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">)</span><span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"value"</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+                <span class="token string">"rank"</span><span class="token punctuation">:</span> <span class="token boolean">None</span>
+            <span class="token punctuation">}</span><span class="token punctuation">,</span>
+            <span class="token string">"date"</span><span class="token punctuation">:</span> subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"pubdate"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+            <span class="token string">"tags"</span><span class="token punctuation">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+            <span class="token string">"meta_tags"</span><span class="token punctuation">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+            <span class="token string">"infobox"</span><span class="token punctuation">:</span> <span class="token punctuation">[</span><span class="token punctuation">]</span><span class="token punctuation">,</span>
+            <span class="token string">"rating_details"</span><span class="token punctuation">:</span> <span class="token punctuation">{</span><span class="token punctuation">}</span><span class="token punctuation">,</span>
+            <span class="token string">"source"</span><span class="token punctuation">:</span> <span class="token string">"douban"</span><span class="token punctuation">,</span>
+            <span class="token string">"source_id"</span><span class="token punctuation">:</span> <span class="token builtin">str</span><span class="token punctuation">(</span>subject<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"id"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+        <span class="token punctuation">}</span><span class="token punctuation">,</span>
+        <span class="token string">"type"</span><span class="token punctuation">:</span> status_map<span class="token punctuation">.</span>get<span class="token punctuation">(</span>item<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"status"</span><span class="token punctuation">,</span> <span class="token string">"wish"</span><span class="token punctuation">)</span><span class="token punctuation">,</span> <span class="token number">1</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"rate"</span><span class="token punctuation">:</span> item<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"rating"</span><span class="token punctuation">,</span> <span class="token number">0</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"comment"</span><span class="token punctuation">:</span> item<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"comment"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"private"</span><span class="token punctuation">:</span> item<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"private"</span><span class="token punctuation">,</span> <span class="token boolean">False</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+        <span class="token string">"updated_at"</span><span class="token punctuation">:</span> item<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"update_time"</span><span class="token punctuation">,</span> datetime<span class="token punctuation">.</span>now<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    <span class="token punctuation">}</span>
+    
+    <span class="token keyword keyword-return">return</span> bangumi_format
+</code></pre><h4 id="数据映射规则">数据映射规则 </h4>
+<table>
+<thead>
+<tr>
+<th>豆瓣字段</th>
+<th>Bangumi字段</th>
+<th>转换规则</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>subject.id</code></td>
+<td><code>source_id</code></td>
+<td>直接映射</td>
+</tr>
+<tr>
+<td><code>subject.title</code></td>
+<td><code>name</code></td>
+<td>直接映射</td>
+</tr>
+<tr>
+<td><code>subject.intro</code></td>
+<td><code>summary</code></td>
+<td>直接映射</td>
+</tr>
+<tr>
+<td><code>subject.pic.large</code></td>
+<td><code>images.large</code></td>
+<td>图片URL映射</td>
+</tr>
+<tr>
+<td><code>subject.rating.value</code></td>
+<td><code>rating.score</code></td>
+<td>评分映射</td>
+</tr>
+<tr>
+<td><code>subject.type</code></td>
+<td><code>type</code></td>
+<td>类型映射（book→1, movie→6等）</td>
+</tr>
+<tr>
+<td><code>status</code></td>
+<td><code>type</code> (Collection)</td>
+<td>状态映射（wish→1, collect→2等）</td>
+</tr>
+</tbody>
+</table>
+<h3 id="74-统一数据入库">7.4 统一数据入库 </h3>
+<p>所有数据源经过ETL转换后，使用统一的<code>upsert_subject</code>函数入库：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># backend/app/services/bangumi_service.py</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">upsert_subject</span><span class="token punctuation">(</span>db<span class="token punctuation">:</span> AsyncSession<span class="token punctuation">,</span> subject_data<span class="token punctuation">:</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">-</span><span class="token operator">&gt;</span> Subject<span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""
+    通用的Subject数据插入或更新函数
+    
+    Args:
+        db: 数据库会话
+        subject_data: Subject数据（Bangumi标准格式）
+        
+    Returns:
+        Subject对象
+    """</span>
+    <span class="token comment"># 提取source和source_id</span>
+    source <span class="token operator">=</span> subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"source"</span><span class="token punctuation">,</span> <span class="token string">"bangumi"</span><span class="token punctuation">)</span>
+    source_id <span class="token operator">=</span> <span class="token builtin">str</span><span class="token punctuation">(</span>subject_data<span class="token punctuation">.</span>get<span class="token punctuation">(</span><span class="token string">"id"</span><span class="token punctuation">,</span> <span class="token string">""</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    
+    <span class="token comment"># 查询现有记录</span>
+    query <span class="token operator">=</span> select<span class="token punctuation">(</span>Subject<span class="token punctuation">)</span><span class="token punctuation">.</span>where<span class="token punctuation">(</span>
+        Subject<span class="token punctuation">.</span>source <span class="token operator">==</span> source<span class="token punctuation">,</span>
+        Subject<span class="token punctuation">.</span>source_id <span class="token operator">==</span> source_id
+    <span class="token punctuation">)</span>
+    result <span class="token operator">=</span> <span class="token keyword keyword-await">await</span> db<span class="token punctuation">.</span>execute<span class="token punctuation">(</span>query<span class="token punctuation">)</span>
+    existing_subject <span class="token operator">=</span> result<span class="token punctuation">.</span>scalar_one_or_none<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    
+    <span class="token keyword keyword-if">if</span> existing_subject<span class="token punctuation">:</span>
+        <span class="token comment"># 更新现有记录</span>
+        <span class="token keyword keyword-for">for</span> field<span class="token punctuation">,</span> value <span class="token keyword keyword-in">in</span> subject_data<span class="token punctuation">.</span>items<span class="token punctuation">(</span><span class="token punctuation">)</span><span class="token punctuation">:</span>
+            <span class="token keyword keyword-if">if</span> <span class="token builtin">hasattr</span><span class="token punctuation">(</span>existing_subject<span class="token punctuation">,</span> field<span class="token punctuation">)</span> <span class="token keyword keyword-and">and</span> value <span class="token keyword keyword-is">is</span> <span class="token keyword keyword-not">not</span> <span class="token boolean">None</span><span class="token punctuation">:</span>
+                <span class="token builtin">setattr</span><span class="token punctuation">(</span>existing_subject<span class="token punctuation">,</span> field<span class="token punctuation">,</span> value<span class="token punctuation">)</span>
+        existing_subject<span class="token punctuation">.</span>updated_at <span class="token operator">=</span> datetime<span class="token punctuation">.</span>now<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    <span class="token keyword keyword-else">else</span><span class="token punctuation">:</span>
+        <span class="token comment"># 创建新记录</span>
+        subject <span class="token operator">=</span> Subject<span class="token punctuation">(</span><span class="token operator">**</span>subject_data<span class="token punctuation">)</span>
+        db<span class="token punctuation">.</span>add<span class="token punctuation">(</span>subject<span class="token punctuation">)</span>
+        <span class="token keyword keyword-await">await</span> db<span class="token punctuation">.</span>flush<span class="token punctuation">(</span><span class="token punctuation">)</span>
+        existing_subject <span class="token operator">=</span> subject
+    
+    <span class="token keyword keyword-return">return</span> existing_subject
+</code></pre><h3 id="75-多数据源查询">7.5 多数据源查询 </h3>
+<p>支持按数据源查询和跨数据源查询：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token comment"># 查询所有Bangumi数据</span>
+query <span class="token operator">=</span> select<span class="token punctuation">(</span>Subject<span class="token punctuation">)</span><span class="token punctuation">.</span>where<span class="token punctuation">(</span>Subject<span class="token punctuation">.</span>source <span class="token operator">==</span> <span class="token string">"bangumi"</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 查询所有豆瓣数据</span>
+query <span class="token operator">=</span> select<span class="token punctuation">(</span>Subject<span class="token punctuation">)</span><span class="token punctuation">.</span>where<span class="token punctuation">(</span>Subject<span class="token punctuation">.</span>source <span class="token operator">==</span> <span class="token string">"douban"</span><span class="token punctuation">)</span>
+
+<span class="token comment"># 查询特定条目（跨数据源）</span>
+query <span class="token operator">=</span> select<span class="token punctuation">(</span>Subject<span class="token punctuation">)</span><span class="token punctuation">.</span>where<span class="token punctuation">(</span>
+    Subject<span class="token punctuation">.</span>name <span class="token operator">==</span> <span class="token string">"进击的巨人"</span>
+<span class="token punctuation">)</span>
+</code></pre><h3 id="76-架构优势">7.6 架构优势 </h3>
+<table>
+<thead>
+<tr>
+<th>优势</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>统一性</strong></td>
+<td>所有数据源转换为统一格式，避免业务逻辑分裂</td>
+</tr>
+<tr>
+<td><strong>可扩展性</strong></td>
+<td>添加新数据源只需实现新的适配器函数</td>
+</tr>
+<tr>
+<td><strong>可维护性</strong></td>
+<td>统一的数据库操作逻辑，减少代码重复</td>
+</tr>
+<tr>
+<td><strong>数据完整性</strong></td>
+<td>联合唯一索引确保数据不重复</td>
+</tr>
+<tr>
+<td><strong>灵活性</strong></td>
+<td>支持跨数据源查询和对比</td>
+</tr>
+</tbody>
+</table>
+<h3 id="77-扩展新数据源">7.7 扩展新数据源 </h3>
+<p>添加新数据源的步骤：</p>
+<ol>
+<li><strong>定义数据源标识</strong>：在<code>source</code>字段中添加新的标识（如<code>"imdb"</code>）</li>
+<li><strong>实现适配器函数</strong>：创建<code>convert_xxx_to_bangumi</code>函数进行数据转换</li>
+<li><strong>调用统一入库函数</strong>：使用<code>upsert_subject</code>函数存储数据</li>
+<li><strong>更新API接口</strong>：添加新的同步接口（如<code>/sync/imdb</code>）</li>
+</ol>
+<p>示例：</p>
+<pre data-role="codeBlock" data-info="python" class="language-python python"><code><span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">convert_imdb_to_bangumi</span><span class="token punctuation">(</span>item<span class="token punctuation">:</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span><span class="token punctuation">)</span> <span class="token operator">-</span><span class="token operator">&gt;</span> Dict<span class="token punctuation">[</span><span class="token builtin">str</span><span class="token punctuation">,</span> Any<span class="token punctuation">]</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""将IMDb数据转换为Bangumi标准格式"""</span>
+    <span class="token comment"># 实现IMDb到Bangumi的转换逻辑</span>
+    <span class="token keyword keyword-pass">pass</span>
+
+<span class="token decorator annotation punctuation">@router<span class="token punctuation">.</span>post</span><span class="token punctuation">(</span><span class="token string">"/sync/imdb"</span><span class="token punctuation">)</span>
+<span class="token keyword keyword-async">async</span> <span class="token keyword keyword-def">def</span> <span class="token function">sync_imdb_collections_endpoint</span><span class="token punctuation">(</span>
+    username<span class="token punctuation">:</span> <span class="token builtin">str</span> <span class="token operator">=</span> Query<span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+    <span class="token builtin">file</span><span class="token punctuation">:</span> UploadFile <span class="token operator">=</span> File<span class="token punctuation">(</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">.</span><span class="token punctuation">)</span><span class="token punctuation">,</span>
+    db<span class="token punctuation">:</span> AsyncSession <span class="token operator">=</span> Depends<span class="token punctuation">(</span>get_session<span class="token punctuation">)</span>
+<span class="token punctuation">)</span><span class="token punctuation">:</span>
+    <span class="token triple-quoted-string string">"""IMDb数据同步接口"""</span>
+    content <span class="token operator">=</span> <span class="token keyword keyword-await">await</span> <span class="token builtin">file</span><span class="token punctuation">.</span>read<span class="token punctuation">(</span><span class="token punctuation">)</span>
+    json_data <span class="token operator">=</span> json<span class="token punctuation">.</span>loads<span class="token punctuation">(</span>content<span class="token punctuation">.</span>decode<span class="token punctuation">(</span><span class="token string">'utf-8'</span><span class="token punctuation">)</span><span class="token punctuation">)</span>
+    
+    import_count <span class="token operator">=</span> <span class="token number">0</span>
+    <span class="token keyword keyword-for">for</span> item <span class="token keyword keyword-in">in</span> json_data<span class="token punctuation">:</span>
+        bangumi_format <span class="token operator">=</span> <span class="token keyword keyword-await">await</span> convert_imdb_to_bangumi<span class="token punctuation">(</span>item<span class="token punctuation">)</span>
+        <span class="token keyword keyword-await">await</span> upsert_subject<span class="token punctuation">(</span>db<span class="token punctuation">,</span> bangumi_format<span class="token punctuation">[</span><span class="token string">"subject"</span><span class="token punctuation">]</span><span class="token punctuation">)</span>
+        import_count <span class="token operator">+=</span> <span class="token number">1</span>
+    
+    <span class="token keyword keyword-return">return</span> <span class="token punctuation">{</span><span class="token string">"message"</span><span class="token punctuation">:</span> <span class="token string-interpolation"><span class="token string">f"Successfully imported </span><span class="token interpolation"><span class="token punctuation">{</span>import_count<span class="token punctuation">}</span></span><span class="token string"> IMDb items"</span></span><span class="token punctuation">}</span>
+</code></pre><h2 id="总结">总结 </h2>
+<p>当前架构已经为AI功能做好了准备，<code>agents/</code> 文件夹可以通过多种方式访问和利用 <code>models/</code> 中的数据，实现丰富的智能应用功能。多数据源架构设计通过统一数据模型和ETL转换，实现了对Bangumi、豆瓣等多个数据源的无缝支持，为未来的扩展提供了良好的基础。</p>
+
+      </div>
+      
+      
+    
+    
+    
+    
+    
+    
+  
+    </body></html>

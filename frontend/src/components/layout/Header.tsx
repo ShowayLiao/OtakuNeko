@@ -1,9 +1,16 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { Loader2, Settings as SettingsIcon, Search, X } from 'lucide-react';
 import { useSync } from '@/hooks/useSync';
-import { getUserCollections, CollectionWithSubject } from '@/lib/api';
+import { useSyncStore } from '@/lib/syncStore';
+import { useManualAddDialogStore } from '@/lib/manualAddDialogStore';
+import { searchMixedSubjects, Subject } from '@/lib/api';
 import { useChatContext } from '@/contexts/ChatContext';
+import { useSettings } from '@/contexts/SettingsContext';
+import { SettingsModal } from '@/components/settings/SettingsModal';
+import { GridImportModal } from '@/components/settings/GridImportModal';
+import { ManualAddDialog } from '@/components/ManualAddDialog';
 import ThemeSwitcher from '@/components/ThemeSwitcher';
 import NavPillSkeleton from '@/components/NavPillSkeleton';
 
@@ -13,14 +20,28 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const { collectionCounts, isSyncing, isLoading, totalItems, handleSync, fetchCollectionCounts } = useSync();
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isGridImportOpen, setIsGridImportOpen] = useState(false);
+  const { collectionCounts, isSyncing, isLoading, totalItems, handleSync } = useSync();
+  const { fetchCollectionCounts } = useSyncStore();
   const { setReferenceItem } = useChatContext();
+  const { openDialog } = useManualAddDialogStore();
+  const { settings, userInfo } = useSettings();
+  const isLocalUser = !userInfo?.bangumi_id;
 
-  // Search related states
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<CollectionWithSubject[]>([]);
+  const [searchResults, setSearchResults] = useState<Subject[]>([]);
   const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [showForceSettings, setShowForceSettings] = useState(false);
+
+  useEffect(() => {
+    if (!settings.username) {
+      setShowForceSettings(true);
+    } else {
+      setShowForceSettings(false);
+    }
+  }, [settings.username]);
 
   // Toggle popover
   const togglePopover = () => {
@@ -28,40 +49,69 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
   };
 
   // Handle search input change
-  const handleSearchInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSearchInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
+  };
 
-    if (query.length > 0) {
-      setIsSearching(true);
-      setIsSearchDropdownOpen(true);
-      
-      try {
-        const results = await getUserCollections(query, 2); // 2 for anime type
-        setSearchResults(results);
-      } catch (error) {
-        console.error('Error searching collections:', error);
-        setSearchResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    } else {
+  // Handle manual search
+  const handleSearch = async () => {
+    if (searchQuery.length < 2) {
       setSearchResults([]);
       setIsSearchDropdownOpen(false);
+      return;
+    }
+
+    setIsSearching(true);
+    setIsSearchDropdownOpen(true);
+    
+    try {
+      const results = await searchMixedSubjects(searchQuery);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Error searching subjects:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
     }
   };
 
+  // Handle Enter key for search
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  // Handle clear search
+  const handleClearSearch = () => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearchDropdownOpen(false);
+  };
+
   // Handle search result selection
-  const handleSelectResult = (result: CollectionWithSubject) => {
-    console.log(`Selected context: ${result.subject.name_cn || result.subject.name}`);
-    setReferenceItem(result.subject);
+  const handleSelectResult = (result: Subject) => {
+    console.log(`Selected context: ${result.name_cn || result.name}`);
+    
+    // Check if we're on the collections page
+    const isCollectionsPage = window.location.pathname === '/collections';
+    
+    if (isCollectionsPage) {
+      // On collections page, open the manual add dialog
+      openDialog(result);
+    } else {
+      // On other pages, set as chat reference
+      setReferenceItem(result);
+    }
+    
     setSearchQuery('');
     setSearchResults([]);
     setIsSearchDropdownOpen(false);
     
     // Optional: Focus the chat input
     const chatInput = document.querySelector('textarea');
-    if (chatInput) {
+    if (chatInput && !isCollectionsPage) {
       chatInput.focus();
     }
   };
@@ -101,38 +151,55 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
       <div className="flex items-center gap-3">
         {/* Search Box */}
         <div className="relative search-container">
-          <input
-            type="text"
-            placeholder="搜索收藏..."
-            className="w-[32rem] px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm max-w-full"
-            value={searchQuery}
-            onChange={handleSearchInputChange}
-            onFocus={() => setIsSearchDropdownOpen(!!searchQuery)}
-          />
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="搜索收藏..."
+                className="w-[32rem] px-4 py-2 border border-gray-300 rounded-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm max-w-full"
+                value={searchQuery}
+                onChange={handleSearchInputChange}
+                onKeyDown={handleKeyDown}
+                onFocus={() => setIsSearchDropdownOpen(!!searchQuery && searchResults.length > 0)}
+              />
+              {searchQuery && (
+                <button
+                  onClick={handleClearSearch}
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            <button
+              onClick={handleSearch}
+              disabled={isSearching || searchQuery.length < 2}
+              className="p-2 bg-blue-500 text-white rounded-full hover:bg-blue-600 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4" />
+              )}
+            </button>
+          </div>
           
           {/* Search Dropdown */}
           {isSearchDropdownOpen && searchResults.length > 0 && (
             <div className="absolute left-0 mt-2 w-[32rem] bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50 max-h-96 overflow-y-auto">
-              {searchResults.map((result) => (
+              {searchResults.map((result, index) => (
                 <div
-                  key={result.subject.id}
+                  key={result.id ?? `search-result-${index}`}
                   className="p-3 hover:bg-gray-50 cursor-pointer flex items-center justify-between transition-colors"
                   onClick={() => handleSelectResult(result)}
                 >
                   <div className="flex-1">
-                    <div className="font-medium text-sm">{result.subject.name_cn || result.subject.name}</div>
-                    <div className="text-xs text-gray-500">{result.subject.name}</div>
+                    <div className="font-medium text-sm">{result.name_cn || result.name}</div>
+                    <div className="text-xs text-gray-500">{result.name}</div>
                   </div>
-                  <div className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">{(result.subject.score ?? result.subject.rating_details?.score ?? result.subject.rating?.score ?? 0).toFixed(1)}</div>
+                  <div className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">{(result.score ?? result.rating_details?.score ?? 0).toFixed(1)}</div>
                 </div>
               ))}
-            </div>
-          )}
-          
-          {/* Searching Indicator */}
-          {isSearching && (
-            <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-              <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin"></div>
             </div>
           )}
         </div>
@@ -144,7 +211,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
         {/* Data Status Capsule */}
         {isLoading ? (
           <NavPillSkeleton width="w-28" />
-        ) : totalItems > 0 && (
+        ) : (
           <div className="relative popover-container">
             <button
               className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 shadow-sm rounded-full px-4 py-2 text-sm font-medium flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-750 transition-colors"
@@ -154,10 +221,8 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
               {totalItems} 收藏
             </button>
 
-            {/* Popover */}
             {isPopoverOpen && (
               <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50">
-                {/* Collection Stats */}
                 <div className="p-3">
                   <h3 className="text-sm font-medium text-gray-700 mb-2">收藏统计</h3>
                   <div className="space-y-1">
@@ -180,29 +245,90 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
                   </div>
                 </div>
 
-                {/* Sync Button */}
-                <div className="p-3 border-t border-gray-100">
-                  <button
-                    className={`w-full py-2 px-3 bg-primary text-white font-medium rounded-lg shadow-sm text-sm hover:bg-primary/90 transition-colors ${isSyncing ? 'opacity-70 cursor-not-allowed' : ''}`}
-                    onClick={async () => {
-                      await handleSync();
-                      setIsPopoverOpen(false);
-                    }}
-                    disabled={isSyncing}
-                  >
-                    {isSyncing ? '正在同步...' : '一键同步'}
-                  </button>
+                <div className="p-3 border-t border-gray-100 space-y-2">
+                  {isLocalUser ? (
+                    <>
+                      <button
+                        className="w-full py-2 px-3 bg-primary text-white font-medium rounded-lg shadow-sm text-sm hover:bg-primary/90 transition-colors"
+                        onClick={() => {
+                          setIsGridImportOpen(true);
+                          setIsPopoverOpen(false);
+                        }}
+                      >
+                        填写宫格图
+                      </button>
+                      <button
+                        className="w-full py-2 px-3 bg-white border border-gray-200 text-gray-700 font-medium rounded-lg shadow-sm text-sm hover:bg-gray-50 transition-colors"
+                        onClick={() => {
+                          openDialog();
+                          setIsPopoverOpen(false);
+                        }}
+                      >
+                        手动增加
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      className={`w-full py-2 px-3 bg-primary text-white font-medium rounded-lg shadow-sm text-sm hover:bg-primary/90 transition-colors ${isSyncing ? 'opacity-70 cursor-not-allowed' : ''}`}
+                      onClick={async () => {
+                        await handleSync();
+                        setIsPopoverOpen(false);
+                      }}
+                      disabled={isSyncing}
+                    >
+                      {isSyncing ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin inline mr-2" />
+                          正在同步...
+                        </>
+                      ) : (
+                        '一键同步'
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
           </div>
         )}
 
-        {/* User Avatar */}
-        <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center font-bold">
-          H
-        </div>
+        {/* User Avatar / Settings Trigger */}
+        <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded-full flex items-center justify-center font-bold hover:bg-purple-200 dark:hover:bg-purple-900/50 transition-colors cursor-pointer overflow-hidden"
+          title="设置"
+        >
+          {userInfo?.avatar?.large ? (
+            <img 
+              src={userInfo.avatar.large} 
+              alt={userInfo.nickname}
+              className="w-full h-full rounded-full object-cover"
+            />
+          ) : settings.username ? settings.username.charAt(0).toUpperCase() : 'H'}
+        </button>
       </div>
+      
+      {/* Settings Modal */}
+      <SettingsModal 
+        isOpen={isSettingsOpen || showForceSettings} 
+        onClose={() => setIsSettingsOpen(false)}
+        forceOpen={showForceSettings}
+      />
+      
+      {/* Grid Import Modal */}
+      <GridImportModal 
+        isOpen={isGridImportOpen} 
+        onClose={() => setIsGridImportOpen(false)} 
+      />
+      
+      {/* Manual Add Dialog */}
+      <ManualAddDialog
+        onSuccess={() => {
+          if (window.location.pathname === '/collections') {
+            window.dispatchEvent(new CustomEvent('refreshCollections'));
+          }
+        }}
+      />
     </header>
   );
 };

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { getImageProps } from '@/lib/image-config';
 
 interface PosterCardProps {
   id: number;
@@ -11,11 +12,21 @@ interface PosterCardProps {
   tags: string[];
   href: string;
   priority?: boolean;
+  images?: {
+    large: string;
+    common: string;
+    medium: string;
+    small: string;
+    grid: string;
+  };
 }
 
-export function PosterCard({ id, name_cn, cover_url, score, tags, href, priority = false }: PosterCardProps) {
+export function PosterCard({ id, name_cn, cover_url, score, tags, href, priority = false, images }: PosterCardProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
+  
+  const imageUrl = images?.common || images?.medium || cover_url;
+  const imageProps = getImageProps(imageUrl);
 
   return (
     <a
@@ -30,7 +41,7 @@ export function PosterCard({ id, name_cn, cover_url, score, tags, href, priority
         {/* 使用Next.js Image组件 */}
         {!imageError ? (
           <Image
-              src={cover_url}
+              src={imageUrl}
               alt={name_cn}
               fill={true}
               sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, (max-width: 1280px) 25vw, 20vw"
@@ -40,6 +51,9 @@ export function PosterCard({ id, name_cn, cover_url, score, tags, href, priority
                 group-hover:scale-110 group-hover:brightness-50
               `}
               priority={priority}
+              loading={priority ? undefined : 'lazy'}
+              unoptimized={imageProps.unoptimized}
+              referrerPolicy={imageProps.referrerPolicy}
               onLoadingComplete={() => setIsLoading(false)}
               onError={() => setImageError(true)}
             />

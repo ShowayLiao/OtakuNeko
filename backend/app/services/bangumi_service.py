@@ -11,12 +11,82 @@ from .bangumi_client import fetch_user_collections
 
 logger = logging.getLogger(__name__)
 
-async def upsert_subject(db: AsyncSession, subject_data: Dict[str, Any]) -> Subject:
-    """智能映射并清洗Subject数据，支持Type A (Nested) 和 Type B (Full) 两种格式
+
+def adapt_bangumi_subject(bangumi_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    将 Bangumi 官方 API 返回的原始 JSON 数据适配为数据库 Subject 模型格式
+    
+    Args:
+        bangumi_data: Bangumi API 返回的原始 JSON 数据 (参考 bangumi_subject.json)
+        
+    Returns:
+        适配后的 Subject 数据字典
+    """
+    # 处理图片
+    images = bangumi_data.get("images", {})
+    cover_url = images.get("large", images.get("common", ""))
+    
+    # 处理评分信息
+    rating = bangumi_data.get("rating", {})
+    score = rating.get("score")
+    rank = rating.get("rank")
+    rating_details = rating.copy()
+    
+    # 处理标签
+    tags = []
+    raw_tags = bangumi_data.get("tags", [])
+    if raw_tags:
+        tags = [tag["name"] for tag in raw_tags if isinstance(tag, dict) and "name" in tag]
+    
+    # 处理收藏统计
+    collection = bangumi_data.get("collection", {})
+    collection_total = sum(collection.values()) if collection else None
+    
+    # 处理类型
+    subject_type = bangumi_data.get("type")
+    try:
+        type_enum = SubjectType(subject_type) if subject_type else None
+    except ValueError:
+        logger.warning(f"未知的Subject类型: {subject_type}, 将使用None")
+        type_enum = None
+    
+    # 构造适配后的数据
+    adapted_data = {
+        "source": "bangumi",
+        "source_id": str(bangumi_data.get("id", "")),
+        "type": type_enum,
+        "name": bangumi_data.get("name", ""),
+        "name_cn": bangumi_data.get("name_cn", ""),
+        "summary": bangumi_data.get("summary"),
+        "cover_url": cover_url,
+        "images": images,
+        "date": bangumi_data.get("date"),
+        "platform": bangumi_data.get("platform"),
+        "score": score,
+        "rank": rank,
+        "eps": bangumi_data.get("eps"),
+        "volumes": bangumi_data.get("volumes"),
+        "collection_total": collection_total,
+        "tags": tags,
+        "meta_tags": bangumi_data.get("meta_tags", []),
+        "infobox": bangumi_data.get("infobox", []),
+        "rating_details": rating_details
+    }
+    
+    return adapted_data
+
+
+async def upsert_subject(db: AsyncSession, subject_data: Dict[str, Any], source: str = "bangumi", source_id: Optional[str] = None) -> Subject:
+    """
+    通用的 Subject 数据写入函数，支持多数据源
+    
+    智能映射并清洗Subject数据，支持Type A (Nested) 和 Type B (Full) 两种格式
     
     Args:
         db: 数据库会话
         subject_data: Subject数据，可以是嵌套的(收藏列表中的)或完整的(详情接口)
+        source: 数据源 (bangumi/douban)，默认为 bangumi
+        source_id: 原站ID，如果不提供则从 subject_data 中提取
     
     Returns:
         更新或创建的Subject对象
@@ -25,12 +95,21 @@ async def upsert_subject(db: AsyncSession, subject_data: Dict[str, Any]) -> Subj
     if "subject" in subject_data:
         subject_data = subject_data["subject"]
     
-    subject_id = subject_data.get("id")
-    if not subject_id:
-        raise ValueError("Subject ID is required")
+    # 如果没有提供 source_id，则从 subject_data 中提取
+    if not source_id:
+        subject_id = subject_data.get("id") if "id" in subject_data else subject_data.get("source_id")
+        # print(subject_data)
+        if not subject_id:
+            raise ValueError("Subject ID is required")
+        source_id = str(subject_id)
     
-    # 查询数据库中是否已存在该Subject
-    result = await db.execute(select(Subject).where(Subject.id == subject_id))
+    # 查询数据库中是否已存在该Subject (通过 source 和 source_id)
+    result = await db.execute(
+        select(Subject).where(
+            Subject.source == source,
+            Subject.source_id == source_id
+        )
+    )
     existing_subject = result.scalar_one_or_none()
     
     # 处理Subject类型
@@ -107,51 +186,40 @@ async def upsert_subject(db: AsyncSession, subject_data: Dict[str, Any]) -> Subj
     infobox = subject_data.get("infobox", [])
     collection_total = subject_data.get("collection_total")
     
+    # 构造 Subject 数据，显式设置 source 和 source_id
+    subject_fields = {
+        "source": source,
+        "source_id": source_id,
+        "type": type_enum,
+        "name": name,
+        "name_cn": name_cn,
+        "summary": final_summary,
+        "cover_url": cover_url,
+        "images": images,
+        "date": date,
+        "platform": platform,
+        "score": score,
+        "rank": rank,
+        "eps": final_eps,
+        "volumes": volumes,
+        "collection_total": collection_total,
+        "tags": tags,
+        "meta_tags": meta_tags,
+        "infobox": infobox,
+        "rating_details": rating_details
+    }
+    
     if existing_subject:
         # 更新现有Subject
-        existing_subject.type = type_enum
-        existing_subject.name = name
-        existing_subject.name_cn = name_cn
-        existing_subject.summary = final_summary
-        existing_subject.cover_url = cover_url
-        existing_subject.date = date
-        existing_subject.platform = platform
-        existing_subject.score = score
-        existing_subject.rank = rank
-        existing_subject.eps = final_eps
-        existing_subject.volumes = volumes
-        existing_subject.collection_total = collection_total
-        existing_subject.tags = tags
-        existing_subject.meta_tags = meta_tags
-        existing_subject.infobox = infobox
-        existing_subject.rating_details = rating_details
-        
+        for field, value in subject_fields.items():
+            setattr(existing_subject, field, value)
         db.add(existing_subject)
         await db.commit()
         await db.refresh(existing_subject)
         return existing_subject
     else:
         # 创建新Subject
-        new_subject = Subject(
-            id=subject_id,
-            type=type_enum,
-            name=name,
-            name_cn=name_cn,
-            summary=final_summary,
-            cover_url=cover_url,
-            date=date,
-            platform=platform,
-            score=score,
-            rank=rank,
-            eps=final_eps,
-            volumes=volumes,
-            collection_total=collection_total,
-            tags=tags,
-            meta_tags=meta_tags,
-            infobox=infobox,
-            rating_details=rating_details
-        )
-        
+        new_subject = Subject(**subject_fields)
         db.add(new_subject)
         await db.commit()
         await db.refresh(new_subject)
@@ -181,7 +249,22 @@ async def _upsert_collection(db: AsyncSession, user_id: int, subject_id: int, co
     
     # 提取其他收藏元数据
     rate = collection_data.get("rate")
+    comment = collection_data.get("comment") or collection_data.get("remark") or ""
     updated_at_str = collection_data.get("updated_at")
+    
+    # 提取标签
+    tags = collection_data.get("tags", [])
+    if tags and isinstance(tags, list):
+        # 如果是字符串列表，直接使用
+        if all(isinstance(tag, str) for tag in tags):
+            tags_list = tags
+        # 如果是对象列表，提取 name 字段
+        elif all(isinstance(tag, dict) and "name" in tag for tag in tags):
+            tags_list = [tag["name"] for tag in tags]
+        else:
+            tags_list = []
+    else:
+        tags_list = []
     
     if not updated_at_str:
         raise ValueError("Updated at time is required")
@@ -209,8 +292,10 @@ async def _upsert_collection(db: AsyncSession, user_id: int, subject_id: int, co
         "subject_id": subject_id,
         "type": collection_status,
         "rate": rate,
+        "comment": comment,
         "updated_at": updated_at,
-        "private": private
+        "private": private,
+        "tags": tags_list
     }
     
     if existing_collection:

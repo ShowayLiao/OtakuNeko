@@ -12,6 +12,8 @@ class User(SQLModel, table=True):
     nickname: str = Field(description="昵称")
     email: str = Field(unique=True, nullable=True, description="邮箱")
     avatar_url: Optional[str] = Field(default=None, description="头像URL")
+    bangumi_id: Optional[int] = Field(default=None, index=True, description="Bangumi ID")
+    sign: Optional[str] = Field(default=None, description="个性签名")
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
     updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
 

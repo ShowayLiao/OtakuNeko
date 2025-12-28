@@ -33,32 +33,32 @@ export interface Subject {
   name: string;
   name_cn: string;
   type: number;
-  image: string;
+  cover_url: string;
   summary: string;
-  air_date: string;
-  air_weekday: number;
-  eps: number;
+  date: string;
+  platform?: string;
+  eps?: number;
+  volumes?: number;
   score?: number;
-  rating?: {
-    total: number;
-    count: {
-      '1': number;
-      '2': number;
-      '3': number;
-      '4': number;
-      '5': number;
-      '6': number;
-      '7': number;
-      '8': number;
-      '9': number;
-      '10': number;
-    };
-    score: number;
-  };
-  rating_details?: {
-    score: number;
-    rank: number;
-  };
+  rank?: number;
+  collection_total?: number;
+  tags: string[];
+  meta_tags: string[];
+  infobox: Record<string, string>;
+  rating_details: Record<string, any>;
+  images: Record<string, any>;
+  is_collected?: boolean;
+  collection_info?: CollectionInfo;
+}
+
+export interface CollectionInfo {
+  subject_id: number;
+  status?: string;
+  rate?: number;
+  comment?: string;
+  private: boolean;
+  tags: string[];
+  updated_at?: string;
 }
 
 export interface Collection {
@@ -96,12 +96,12 @@ export async function fetchDashboardStats(): Promise<DashboardStats> {
 }
 
 // 同步用户数据
-export async function syncUser(username: string): Promise<void> {
+export async function syncUser(username: string, subjectType?: number): Promise<void> {
   try {
     const response = await api.post('/collections/sync', null, {
       params: {
         username: username,
-        subject_type: 2
+        subject_type: subjectType
       },
       timeout: 300000 // 设置为 5 分钟 (300000ms)
     });
@@ -115,21 +115,135 @@ export async function syncUser(username: string): Promise<void> {
 // 获取用户收藏数量
 export async function getUserCollectionCount(username: string, subjectType: number): Promise<number> {
   try {
+    console.log('[API] getUserCollectionCount 调用:', { username, subjectType });
+    
     const response = await api.get('/collections/count', {
       params: { username, subject_type: subjectType }
     });
+    
+    console.log('[API] getUserCollectionCount 响应:', response.data);
+    
     return response.data.count;
   } catch (error) {
-    console.error('Error fetching user collection count:', error);
+    if (error && typeof error === 'object' && 'response' in error) {
+      const axiosError = error as { response?: { status?: number; data?: any }; config?: { url?: string; params?: any } };
+      
+      console.error('[API] getUserCollectionCount 错误:', {
+        status: axiosError.response?.status,
+        data: axiosError.response?.data,
+        url: axiosError.config?.url,
+        params: axiosError.config?.params
+      });
+      
+      if (axiosError.response?.status === 422) {
+        console.error('[API] 参数验证失败:', axiosError.response.data);
+      }
+    } else {
+      console.error('[API] getUserCollectionCount 未知错误:', error);
+    }
+    
     return 0;
   }
 }
 
+// 搜索条目（在所有 Subject 中搜索）
+export interface BangumiSearchResponse {
+  data: BangumiSubject[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface BangumiSubject {
+  id: number;
+  name: string;
+  name_cn?: string;
+  type: number;
+  images?: {
+    large?: string;
+    common?: string;
+    small?: string;
+    grid?: string;
+  };
+  summary?: string;
+  date?: string;
+  platform?: string;
+  eps?: number;
+  volumes?: number;
+  score?: number;
+  rank?: number;
+  collection?: {
+    doing?: number;
+    collect?: number;
+    wish?: number;
+    dropped?: number;
+    on_hold?: number;
+  };
+}
+
+export async function searchBangumiSubjects(keyword?: string, type?: number): Promise<Subject[]> {
+  try {
+    const response = await api.post<BangumiSearchResponse>('/subjects/search-bangumi', null, {
+      params: { keyword, type }
+    });
+    
+    const bangumiSubjects = response.data.data || [];
+    
+    return bangumiSubjects.map(bangumiSubject => ({
+      id: bangumiSubject.id,
+      name: bangumiSubject.name,
+      name_cn: bangumiSubject.name_cn || '',
+      type: bangumiSubject.type,
+      cover_url: bangumiSubject.images?.common || bangumiSubject.images?.large || '',
+      summary: bangumiSubject.summary || '',
+      date: bangumiSubject.date || '',
+      platform: bangumiSubject.platform,
+      eps: bangumiSubject.eps,
+      volumes: bangumiSubject.volumes,
+      score: bangumiSubject.score,
+      rank: bangumiSubject.rank,
+      collection_total: bangumiSubject.collection?.collect,
+      tags: [],
+      meta_tags: [],
+      infobox: {},
+      rating_details: {},
+      images: bangumiSubject.images || {}
+    }));
+  } catch (error) {
+    console.error('Error searching Bangumi subjects:', error);
+    return [];
+  }
+}
+
+export async function searchSubjects(keyword?: string, type?: number): Promise<Subject[]> {
+  try {
+    const response = await api.get('/subjects', {
+      params: { keyword, type }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error searching subjects:', error);
+    return [];
+  }
+}
+
+export async function searchMixedSubjects(keyword?: string, type?: number, username?: string): Promise<Subject[]> {
+  try {
+    const response = await api.get('/subjects/search/mixed', {
+      params: { keyword, type, username }
+    });
+    return response.data.data || [];
+  } catch (error) {
+    console.error('Error searching mixed subjects:', error);
+    return [];
+  }
+}
+
 // 获取用户收藏列表
-export async function getUserCollections(keyword?: string, type?: number): Promise<CollectionWithSubject[]> {
+export async function getUserCollections(username: string, keyword?: string, type?: number): Promise<CollectionWithSubject[]> {
   try {
     const response = await api.get('/collections', {
-      params: { keyword, type }
+      params: { username, keyword, type }
     });
     return response.data;
   } catch (error) {
@@ -153,21 +267,19 @@ export async function getUserCollections(keyword?: string, type?: number): Promi
           name: "Steins;Gate",
           name_cn: "命运石之门",
           type: 2,
-          image: "https://example.com/steinsgate.jpg",
+          cover_url: "https://example.com/steinsgate.jpg",
           summary: "这是一部关于时间旅行的科幻作品...",
-          air_date: "2011-04-06",
-          air_weekday: 4,
+          date: "2011-04-06",
           eps: 24,
           score: 9.5,
-          rating: {
-            total: 10000,
-            count: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 0, "9": 1000, "10": 9000 },
-            score: 9.5
-          },
+          tags: ["科幻", "悬疑"],
+          meta_tags: [],
+          infobox: {},
           rating_details: {
             score: 9.5,
             rank: 1
-          }
+          },
+          images: {}
         }
       },
       {
@@ -187,24 +299,229 @@ export async function getUserCollections(keyword?: string, type?: number): Promi
           name: "Hunter x Hunter",
           name_cn: "全职猎人",
           type: 2,
-          image: "https://example.com/hunterxhunter.jpg",
+          cover_url: "https://example.com/hunterxhunter.jpg",
           summary: "这是一部关于冒险和成长的作品...",
-          air_date: "2011-10-02",
-          air_weekday: 1,
+          date: "2011-10-02",
           eps: 148,
           score: 9.2,
-          rating: {
-            total: 8000,
-            count: { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0, "8": 1000, "9": 5000, "10": 2000 },
-            score: 9.2
-          },
+          tags: ["冒险", "奇幻"],
+          meta_tags: [],
+          infobox: {},
           rating_details: {
             score: 9.2,
             rank: 5
-          }
+          },
+          images: {}
         }
       }
     ];
+  }
+}
+
+// 上传豆瓣数据文件
+export async function uploadDoubanFile(file: File, username: string): Promise<{ message: string; username: string; import_count: number }> {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    console.log('[DEBUG API] uploadDoubanFile 调用:');
+    console.log('[DEBUG API] - username:', username);
+    console.log('[DEBUG API] - file:', file.name, file.size, 'bytes');
+    console.log('[DEBUG API] - 完整URL:', `http://localhost:8000/api/v1/collections/sync/douban?username=${encodeURIComponent(username)}`);
+
+    const response = await api.post<{ message: string; username: string; import_count: number }>('/collections/sync/douban', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+      params: {
+        username: username
+      },
+      timeout: 300000, // 设置为 5 分钟 (300000ms)
+    });
+    
+    console.log('[DEBUG API] 响应成功:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading Douban file:', error);
+    throw error;
+  }
+}
+
+export interface BangumiUser {
+  id: number;
+  username: string;
+  nickname: string;
+  sign: string;
+  bangumi_id?: string;
+  avatar: {
+    large: string;
+    medium: string;
+    small: string;
+  };
+}
+
+export interface ImportItem {
+  subject: Subject;
+  collection: {
+    user_id: number;
+    subject_id: number;
+    status: number;
+    rate: number;
+    comment: string;
+    tags: string[];
+  };
+}
+
+export interface GridSlot {
+  subject: Subject | null;
+  type: 'best' | 'worst';
+}
+
+export interface GridState {
+  [category: string]: {
+    best: GridSlot;
+    worst: GridSlot;
+  };
+}
+
+export async function fetchBangumiUser(username: string): Promise<BangumiUser | null> {
+  try {
+    const response = await axios.get(`https://api.bgm.tv/v0/users/${username}`);
+    
+    return {
+      id: response.data.id,
+      username: response.data.username,
+      nickname: response.data.nickname,
+      sign: response.data.sign,
+      bangumi_id: response.data.id?.toString(),
+      avatar: response.data.avatar
+    };
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      console.warn(`Bangumi user "${username}" not found`);
+      return null;
+    }
+    throw error;
+  }
+}
+
+export interface LocalUserRegisterRequest {
+  username: string;
+  bangumi_id?: number;
+  avatar?: string;
+}
+
+export interface LocalUserRegisterResponse {
+  id: number;
+  username: string;
+  email?: string;
+  avatar_url?: string;
+  bangumi_id?: number;
+  created_at: string;
+}
+
+export async function registerLocalUser(data: LocalUserRegisterRequest): Promise<LocalUserRegisterResponse> {
+  try {
+    const response = await api.post<LocalUserRegisterResponse>('/users/register-local', data);
+    return response.data;
+  } catch (error) {
+    console.error('Error registering local user:', error);
+    throw error;
+  }
+}
+
+export async function batchImportCollections(items: ImportItem[], username: string): Promise<{ message: string; imported_count: number }> {
+  try {
+    const response = await api.post<{ message: string; imported_count: number }>('/collections/batch', items, {
+      params: { username }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error batch importing collections:', error);
+    throw error;
+  }
+}
+
+export async function getUserInfo(username: string): Promise<BangumiUser | null> {
+  try {
+    const response = await api.get<{
+      id: number;
+      username: string;
+      email?: string;
+      avatar_url?: string;
+      bangumi_id?: string;
+      sign?: string;
+      created_at: string;
+    }>('/users/info', {
+      params: { username }
+    });
+    
+    return {
+      id: response.data.id,
+      username: response.data.username,
+      nickname: response.data.username,
+      sign: response.data.sign || '',
+      avatar: {
+        large: response.data.avatar_url || '',
+        medium: response.data.avatar_url || '',
+        small: response.data.avatar_url || ''
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching user info:', error);
+    return null;
+  }
+}
+
+export interface LocalUserCheckResponse {
+  found: boolean;
+  user?: {
+    id: number;
+    username: string;
+    nickname: string;
+    email?: string;
+    avatar_url?: string;
+    bangumi_id?: number;
+    sign: string;
+    created_at?: string;
+  };
+}
+
+export async function checkLocalUser(username: string): Promise<LocalUserCheckResponse> {
+  try {
+    const response = await api.get<LocalUserCheckResponse>('/users/check', {
+      params: { username }
+    });
+    
+    return response.data;
+  } catch (error) {
+    console.error('Error checking local user:', error);
+    return { found: false };
+  }
+}
+
+export interface ManualCollectionData {
+  subject_id?: number;
+  name: string;
+  type: number;
+  status: number;
+  cover_url?: string;
+  rate: number;
+  comment?: string;
+  release_date?: string;
+  publish_date?: string;
+  tags?: string;
+}
+
+export async function createManualCollection(data: ManualCollectionData, username: string): Promise<{ message: string; subject_id: number; collection_id: number }> {
+  try {
+    const response = await api.post<{ message: string; subject_id: number; collection_id: number }>('/collections/manual', data, {
+      params: { username }
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error creating manual collection:', error);
+    throw error;
   }
 }
 

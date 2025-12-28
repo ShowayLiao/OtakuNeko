@@ -83,3 +83,56 @@ async def fetch_subject_detail(subject_id: int) -> Dict:
         except httpx.RequestError as e:
             logger.error(f"网络请求错误: {e}")
             raise
+
+
+async def search_subjects(
+    keyword: str,
+    subject_type: Optional[int] = None,
+    limit: int = 20,
+    offset: int = 0
+) -> Dict:
+    """
+    从 Bangumi API 搜索条目
+    
+    Args:
+        keyword: 搜索关键词
+        subject_type: 可选，条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)
+        limit: 返回结果数量限制，默认20
+        offset: 结果偏移量，默认0
+        
+    Returns:
+        包含搜索结果的字典
+        
+    Raises:
+        httpx.HTTPStatusError: 请求失败时抛出
+        httpx.RequestError: 网络错误时抛出
+    """
+    url = "https://api.bgm.tv/v0/search/subjects"
+    
+    # 构造请求体
+    request_body = {
+        "keyword": keyword,
+        "sort": "rank",
+        "filter": {}
+    }
+    
+    # 添加类型过滤
+    if subject_type is not None:
+        request_body["filter"]["type"] = [subject_type]
+    
+    # 设置请求头，Bangumi API 要求设置 User-Agent
+    headers = {
+        "User-Agent": "OtakuNeko/2.0 (+https://github.com/ShowayLiao/OtakuNeko)"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.post(url, headers=headers, json=request_body, timeout=30.0)
+            response.raise_for_status()  # 检查请求状态
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Bangumi API 请求失败: {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"网络请求错误: {e}")
+            raise

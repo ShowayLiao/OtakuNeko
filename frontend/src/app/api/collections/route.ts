@@ -30,9 +30,9 @@ export async function GET(request: Request) {
       backendUrl.searchParams.append(key, value);
     });
     
-    // 2. 强制补全 username (如果前端没传，默认用 hacci)
+    // 2. 验证 username 参数是否存在
     if (!backendUrl.searchParams.has('username')) {
-      backendUrl.searchParams.append('username', 'hacci');
+      return NextResponse.json({ error: 'Username is required' }, { status: 400 });
     }
     
     console.log(`Proxying to Backend: ${backendUrl.toString()}`);
