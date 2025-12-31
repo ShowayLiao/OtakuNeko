@@ -384,7 +384,7 @@ with st.sidebar:
                 os.kill(os.getpid(), signal.SIGTERM)
         with col2:
             if st.button("✏️", help="修改 API Key"):
-                configure_api_key_dialog()
+                initial_setup_dialog()
 
     with st.sidebar:
         st.markdown("---") # 分割线
