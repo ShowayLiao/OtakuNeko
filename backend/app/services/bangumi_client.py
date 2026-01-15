@@ -1,8 +1,9 @@
 import httpx
-from typing import Dict, List, Optional
 import logging
+from typing import Dict, List, Optional
 
-# 配置日志
+from fastapi_cache.decorator import cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,6 +52,7 @@ async def fetch_user_collections(username: str, subject_type: Optional[int] = No
             raise
 
 
+@cache(expire=604800, namespace="bangumi")
 async def fetch_subject_detail(subject_id: int) -> Dict:
     """
     从 Bangumi API 获取单个条目的详细信息
@@ -85,8 +87,9 @@ async def fetch_subject_detail(subject_id: int) -> Dict:
             raise
 
 
+@cache(expire=86400, namespace="bangumi")
 async def search_subjects(
-    keyword: str,
+    keyword: Optional[str] = None,
     subject_type: Optional[int] = None,
     limit: int = 20,
     offset: int = 0
@@ -107,6 +110,10 @@ async def search_subjects(
         httpx.HTTPStatusError: 请求失败时抛出
         httpx.RequestError: 网络错误时抛出
     """
+    # 如果keyword为None，直接返回空结果
+    if keyword is None:
+        return {"data": [], "total": 0}
+    
     url = "https://api.bgm.tv/v0/search/subjects"
     
     # 构造请求体

@@ -19,7 +19,7 @@ export const useSync = () => {
 
   useEffect(() => {
     if (settings.username) {
-      fetchCollectionCounts(settings.username);
+      fetchCollectionCounts();
     }
   }, [fetchCollectionCounts, settings.username]);
 
@@ -33,7 +33,7 @@ export const useSync = () => {
     }
 
     try {
-      await performSync(settings.username);
+      await performSync("bgm");
       toast({
         type: 'success',
         message: '同步已完成！'

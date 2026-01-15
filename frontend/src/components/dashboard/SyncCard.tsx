@@ -7,6 +7,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { useManualAddDialogStore } from '@/lib/manualAddDialogStore';
 import { GridImportModal } from '@/components/settings/GridImportModal';
 import { Button } from '@/components/ui/Button';
+import { Card, CardHeader, CardContent, CardFooter } from '@/components/ui/Card';
 
 interface SyncCardProps {
   onSyncSuccess: () => void;
@@ -17,7 +18,7 @@ export const SyncCard: React.FC<SyncCardProps> = ({
   onSyncSuccess, 
   className = '' 
 }) => {
-  const { settings, userInfo } = useSettings();
+  const { userInfo } = useSettings();
   const { isSyncing, collectionCounts, handleSync } = useSync();
   const { openDialog } = useManualAddDialogStore();
   const [showGridModal, setShowGridModal] = useState(false);
@@ -41,11 +42,14 @@ export const SyncCard: React.FC<SyncCardProps> = ({
 
   return (
     <>
-      <div className={`bg-white rounded-2xl shadow-xl w-[180px] flex flex-col ${className}`}>
-        <div className="p-4 flex-1">
-          <div className="text-xs text-gray-500 mb-2">
+      <Card className={`w-[180px] flex flex-col ${className}`}>
+        <CardHeader className="pb-4">
+          <div className="text-xs text-gray-500">
             收藏
           </div>
+        </CardHeader>
+        
+        <CardContent className="flex-1">
           <div className="space-y-2">
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">动画:</span>
@@ -64,9 +68,9 @@ export const SyncCard: React.FC<SyncCardProps> = ({
               <span className="text-sm font-medium text-gray-900">{collectionCounts.films}</span>
             </div>
           </div>
-        </div>
+        </CardContent>
         
-        <div className="p-4 border-t border-gray-100">
+        <CardFooter className="pt-4">
           {hasBangumiAccount ? (
             <Button 
               className="w-full flex items-center justify-center gap-2 bg-[#FFB347] text-[#8B4513] hover:bg-[#FF8C00] hover:text-white"
@@ -86,7 +90,7 @@ export const SyncCard: React.FC<SyncCardProps> = ({
               )}
             </Button>
           ) : (
-            <div className="space-y-2">
+            <div className="space-y-2 w-full">
               <Button 
                 className="w-full bg-[#FFB347] text-[#8B4513] hover:bg-[#FF8C00] hover:text-white"
                 onClick={handleGridImportClick}
@@ -102,8 +106,8 @@ export const SyncCard: React.FC<SyncCardProps> = ({
               </Button>
             </div>
           )}
-        </div>
-      </div>
+        </CardFooter>
+      </Card>
 
       <GridImportModal
         isOpen={showGridModal}

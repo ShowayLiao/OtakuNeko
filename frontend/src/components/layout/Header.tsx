@@ -1,38 +1,60 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Loader2, Settings as SettingsIcon, Search, X } from 'lucide-react';
+import Image from 'next/image';
+import { Loader2, Search, X } from 'lucide-react';
 import { useSync } from '@/hooks/useSync';
-import { useSyncStore } from '@/lib/syncStore';
 import { useManualAddDialogStore } from '@/lib/manualAddDialogStore';
-import { searchMixedSubjects, Subject } from '@/lib/api';
+import { searchSubjects, Subject } from '@/lib/api';
 import { useChatContext } from '@/contexts/ChatContext';
 import { useSettings } from '@/contexts/SettingsContext';
+import { useHeaderContext } from '@/contexts/HeaderContext';
 import { SettingsModal } from '@/components/settings/SettingsModal';
 import { GridImportModal } from '@/components/settings/GridImportModal';
-import { ManualAddDialog } from '@/components/ManualAddDialog';
-import ThemeSwitcher from '@/components/ThemeSwitcher';
-import NavPillSkeleton from '@/components/NavPillSkeleton';
+import { ManualAddDialog } from '@/components/settings/ManualAddDialog';
+import { SubjectSearchForm } from '@/components/forms/SubjectSearchForm';
+import { DoubanImportForm } from '@/components/forms/DoubanImportForm';
+import { CollectionEditForm } from '@/components/forms/CollectionEditForm';
+import { CollectionManager } from '@/components/forms/CollectionManager';
+import ThemeSwitcher from '@/components/features/ThemeSwitcher';
+import NavPillSkeleton from '@/components/skeletons/NavPillSkeleton';
 
 interface HeaderProps {
   className?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
-  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isGridImportOpen, setIsGridImportOpen] = useState(false);
+  const {
+    searchQuery,
+    setSearchQuery,
+    searchResults,
+    setSearchResults,
+    isSearchDropdownOpen,
+    setIsSearchDropdownOpen,
+    isSearching,
+    setIsSearching,
+    isPopoverOpen,
+    setIsPopoverOpen,
+    isSettingsOpen,
+    setIsSettingsOpen,
+    isGridImportOpen,
+    setIsGridImportOpen,
+    isSubjectSearchOpen,
+    setIsSubjectSearchOpen,
+    isDoubanImportOpen,
+    setIsDoubanImportOpen,
+    isCollectionEditOpen,
+    setIsCollectionEditOpen,
+    isCollectionManagerOpen,
+    setIsCollectionManagerOpen,
+    clearSearch,
+  } = useHeaderContext();
+
   const { collectionCounts, isSyncing, isLoading, totalItems, handleSync } = useSync();
-  const { fetchCollectionCounts } = useSyncStore();
   const { setReferenceItem } = useChatContext();
   const { openDialog } = useManualAddDialogStore();
   const { settings, userInfo } = useSettings();
   const isLocalUser = !userInfo?.bangumi_id;
-
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<Subject[]>([]);
-  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
-  const [isSearching, setIsSearching] = useState(false);
   const [showForceSettings, setShowForceSettings] = useState(false);
 
   useEffect(() => {
@@ -66,7 +88,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
     setIsSearchDropdownOpen(true);
     
     try {
-      const results = await searchMixedSubjects(searchQuery);
+      const results = await searchSubjects(searchQuery);
       setSearchResults(results);
     } catch (error) {
       console.error('Error searching subjects:', error);
@@ -85,9 +107,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
 
   // Handle clear search
   const handleClearSearch = () => {
-    setSearchQuery('');
-    setSearchResults([]);
-    setIsSearchDropdownOpen(false);
+    clearSearch();
   };
 
   // Handle search result selection
@@ -105,9 +125,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
       setReferenceItem(result);
     }
     
-    setSearchQuery('');
-    setSearchResults([]);
-    setIsSearchDropdownOpen(false);
+    clearSearch();
     
     // Optional: Focus the chat input
     const chatInput = document.querySelector('textarea');
@@ -129,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [setIsSearchDropdownOpen]);
 
   // Close popover when clicking outside
   useEffect(() => {
@@ -144,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, []);
+  }, [setIsPopoverOpen]);
 
   return (
     <header className={`sticky top-0 z-40 bg-white border-b border-gray-100 flex items-center justify-between p-4 ${className}`}>
@@ -189,7 +207,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
             <div className="absolute left-0 mt-2 w-[32rem] bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50 max-h-96 overflow-y-auto">
               {searchResults.map((result, index) => (
                 <div
-                  key={result.id ?? `search-result-${index}`}
+                  key={result.id || `search-result-${index}-${result.name}`}
                   className="p-3 hover:bg-gray-50 cursor-pointer flex items-center justify-between transition-colors"
                   onClick={() => handleSelectResult(result)}
                 >
@@ -197,7 +215,7 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
                     <div className="font-medium text-sm">{result.name_cn || result.name}</div>
                     <div className="text-xs text-gray-500">{result.name}</div>
                   </div>
-                  <div className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">{(result.score ?? result.rating_details?.score ?? 0).toFixed(1)}</div>
+                  <div className="bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded">{Number(result.score ?? result.rating_details?.score ?? 0).toFixed(1)}</div>
                 </div>
               ))}
             </div>
@@ -299,11 +317,15 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
           title="设置"
         >
           {userInfo?.avatar?.large ? (
-            <img 
-              src={userInfo.avatar.large} 
-              alt={userInfo.nickname}
-              className="w-full h-full rounded-full object-cover"
-            />
+            <div className="relative w-full h-full">
+              <Image 
+                src={userInfo.avatar.large} 
+                alt={userInfo.nickname}
+                fill
+                className="rounded-full object-cover"
+                unoptimized
+              />
+            </div>
           ) : settings.username ? settings.username.charAt(0).toUpperCase() : 'H'}
         </button>
       </div>
@@ -323,6 +345,48 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
       
       {/* Manual Add Dialog */}
       <ManualAddDialog
+        onSuccess={() => {
+          if (window.location.pathname === '/collections') {
+            window.dispatchEvent(new CustomEvent('refreshCollections'));
+          }
+        }}
+      />
+      
+      {/* 表单组件 */}
+      <SubjectSearchForm
+        isOpen={isSubjectSearchOpen}
+        onClose={() => setIsSubjectSearchOpen(false)}
+        onSuccess={() => {
+          if (window.location.pathname === '/collections') {
+            window.dispatchEvent(new CustomEvent('refreshCollections'));
+          }
+        }}
+      />
+      
+      <DoubanImportForm
+        isOpen={isDoubanImportOpen}
+        onClose={() => setIsDoubanImportOpen(false)}
+        onSuccess={() => {
+          if (window.location.pathname === '/collections') {
+            window.dispatchEvent(new CustomEvent('refreshCollections'));
+          }
+        }}
+      />
+      
+      <CollectionEditForm
+        isOpen={isCollectionEditOpen}
+        onClose={() => setIsCollectionEditOpen(false)}
+        onSuccess={() => {
+          if (window.location.pathname === '/collections') {
+            window.dispatchEvent(new CustomEvent('refreshCollections'));
+          }
+        }}
+      />
+      
+      {/* 集成新的 CollectionManager 组件 */}
+      <CollectionManager
+        isOpen={isCollectionManagerOpen}
+        onClose={() => setIsCollectionManagerOpen(false)}
         onSuccess={() => {
           if (window.location.pathname === '/collections') {
             window.dispatchEvent(new CustomEvent('refreshCollections'));

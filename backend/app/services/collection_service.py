@@ -1,11 +1,12 @@
-from typing import Optional, List, Dict, Any
-from sqlmodel import select, join, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
-from sqlalchemy import desc, asc
-from datetime import datetime
 import logging
-from app.models import Subject, Collection, CollectionStatus, SubjectType
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+from sqlalchemy import desc, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select
+
+from app.models import Collection, CollectionStatus, Subject, SubjectType
 from app.schemas.collection import CollectionUpdate
 
 logger = logging.getLogger(__name__)
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 async def get_my_collections(
     db: AsyncSession,
     user_id: int,
-    status: Optional[str] = None,
+    status: Optional[CollectionStatus] = None,
     subject_type: Optional[int] = None,
     keyword: Optional[str] = None,
     sort_by: str = "updated_at",
@@ -27,7 +28,7 @@ async def get_my_collections(
     Args:
         db: 数据库会话
         user_id: 用户ID
-        status: 收藏状态 (可选)
+        status: 收藏状态 (可选，CollectionStatus枚举)
         subject_type: 条目类型 (可选)
         keyword: 搜索关键词 (可选)
         sort_by: 排序字段 ("updated_at" 或 "rate")
@@ -37,31 +38,13 @@ async def get_my_collections(
     Returns:
         包含总数和分页后结果的字典
     """
-    # 状态映射: str -> CollectionStatus
-    status_mapping = {
-        'watching': 3,    # 在看
-        'completed': 2,   # 看过
-        'plan': 1,        # 想看
-        'on_hold': 4,     # 搁置
-        'dropped': 5      # 抛弃
-    }
-    
-    # 构建查询
-    # 使用联合查询(select(Collection, Subject))一次性获取所有数据，避免N+1查询问题
-    # 注意：由于Collection和Subject模型之间没有定义SQLAlchemy关系，所以不能使用joinedload
     query = select(Collection, Subject).where(
         Collection.user_id == user_id,
         Collection.subject_id == Subject.id
     )
     
-    # 添加过滤条件
     if status:
-        try:
-            status_code = status_mapping[status]
-            status_enum = CollectionStatus(status_code)
-            query = query.where(Collection.type == status_enum)
-        except (KeyError, ValueError):
-            pass  # 无效状态，忽略过滤
+        query = query.where(Collection.type == status)
     
     if subject_type:
         try:
@@ -173,3 +156,209 @@ async def update_collection(
     await db.refresh(collection)
     
     return collection
+
+
+async def upsert_collection(
+    db: AsyncSession,
+    user_id: int,
+    sid: Optional[int],
+    data: Any
+) -> Collection:
+    """
+    更新或添加收藏
+    
+    统一的收藏操作业务逻辑：
+    - 当提供sid时：更新现有收藏
+    - 当不提供sid时：创建新收藏
+    - 如果提供sid但收藏不存在，则创建新收藏
+    
+    Args:
+        db: 数据库会话
+        user_id: 当前用户ID
+        sid: 条目ID，可选，留空则创建新收藏
+        data: 收藏更新/添加数据
+    
+    Returns:
+        更新或创建后的 Collection 对象
+    """
+    from app.schemas.collection import CollectionUpsertRequest
+    from app.models.enums import CollectionStatus, SubjectType
+    from app.repositories.subject_repo import SubjectRepo
+    from app.repositories.collection_repo import CollectionRepo
+    import time
+    
+    def validate_date_format(date_str: str) -> bool:
+        """验证日期格式是否为 YYYY-MM-DD"""
+        if not date_str:
+            return True
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return True
+        except ValueError:
+            return False
+    
+    def check_date_conflict(release_date: str, publish_date: str) -> tuple[bool, str]:
+        """
+        检查上映时间和发售时间是否存在冲突
+        
+        Args:
+            release_date: 上映日期 (YYYY-MM-DD)
+            publish_date: 发售日期 (YYYY-MM-DD)
+            
+        Returns:
+            (是否有冲突, 错误信息)
+        """
+        if not release_date or not publish_date:
+            return False, ""
+        
+        try:
+            release_dt = datetime.strptime(release_date, "%Y-%m-%d")
+            publish_dt = datetime.strptime(publish_date, "%Y-%m-%d")
+            
+            if release_dt > publish_dt:
+                return True, "上映时间不能晚于发售时间"
+            
+            return False, ""
+        except ValueError:
+            return False, ""
+    
+    # 验证请求数据
+    if sid is None:
+        # 创建新收藏时，必须提供subject数据
+        if not data.subject:
+            raise ValueError("Subject data is required for creating new collection")
+        
+        subject_data = data.subject
+        
+        # 验证日期格式
+        if not validate_date_format(subject_data.release_date):
+            raise ValueError("上映日期格式错误，请使用 YYYY-MM-DD 格式")
+        
+        if not validate_date_format(subject_data.publish_date):
+            raise ValueError("发售日期格式错误，请使用 YYYY-MM-DD 格式")
+        
+        # 检查时间冲突
+        has_conflict, conflict_msg = check_date_conflict(subject_data.release_date, subject_data.publish_date)
+        if has_conflict:
+            raise ValueError(conflict_msg)
+        
+        # 处理Subject数据
+        # 生成唯一的source_id
+        source_id = f"manual_{int(time.time() * 1000)}"
+        
+        # 构造Subject数据
+        subject_dict = {
+            "name": subject_data.name,
+            "name_cn": subject_data.name,
+            "type": subject_data.type,
+            "cover_url": subject_data.cover_url,
+            "date": subject_data.publish_date if subject_data.publish_date else subject_data.release_date,
+            "tags": subject_data.tags if subject_data.tags else [],
+            "images": {}
+        }
+        
+        # 保存Subject，source_id使用生成的manual_xxx
+        subject = await SubjectRepo.save(db, subject_dict, source="manual", source_id=source_id)
+        logger.info(f"Created new manual subject: {subject.id}, source_id: {source_id}")
+        
+        # 构造Collection数据
+        collection_dict = {
+            "type": subject_data.status,
+            "rate": subject_data.rate if subject_data.rate > 0 else None,
+            "comment": subject_data.comment,
+            "private": False,
+            "tags": [],
+            "updated_at": datetime.now().isoformat() + "Z"
+        }
+        
+        # 保存Collection
+        collection = await CollectionRepo.save(db, user_id, subject.id, collection_dict)
+        logger.info(f"Created new collection for manual subject: {collection.id}, subject_id: {subject.id}")
+        
+        return collection
+    else:
+        # 提供了sid，执行更新或创建逻辑
+        # 检查收藏是否存在
+        collection = await CollectionRepo.find_by_user_and_subject(db, user_id, sid)
+        
+        if collection:
+            # 更新现有收藏
+            if not data.collection:
+                raise ValueError("Collection data is required for updating existing collection")
+            
+            # 构造Collection数据
+            collection_dict = {
+                "type": data.collection.status,
+                "rate": data.collection.rate if data.collection.rate > 0 else None,
+                "comment": data.collection.comment,
+                "private": data.collection.private,
+                "tags": data.collection.tags if data.collection.tags else [],
+                "updated_at": datetime.now().isoformat() + "Z"
+            }
+            
+            # 更新Collection
+            collection = await CollectionRepo.save(db, user_id, sid, collection_dict)
+            logger.info(f"Updated collection: {collection.id}, subject_id: {sid}")
+            
+            return collection
+        else:
+            # 创建新收藏
+            if not data.subject:
+                raise ValueError("Subject data is required for creating new collection")
+            
+            subject_data = data.subject
+            
+            # 验证日期格式
+            if not validate_date_format(subject_data.release_date):
+                raise ValueError("上映日期格式错误，请使用 YYYY-MM-DD 格式")
+            
+            if not validate_date_format(subject_data.publish_date):
+                raise ValueError("发售日期格式错误，请使用 YYYY-MM-DD 格式")
+            
+            # 检查时间冲突
+            has_conflict, conflict_msg = check_date_conflict(subject_data.release_date, subject_data.publish_date)
+            if has_conflict:
+                raise ValueError(conflict_msg)
+            
+            # 检查条目是否已存在
+            from app.models import Subject
+            # 正确的检查：使用source_id和source来匹配，而非id
+            result = await db.execute(
+                select(Subject).where(
+                    Subject.source_id == str(sid),
+                    Subject.source == "manual"
+                )
+            )
+            subject = result.scalar_one_or_none()
+            
+            if not subject:
+                # 构造Subject数据
+                subject_dict = {
+                    "name": subject_data.name,
+                    "name_cn": subject_data.name,
+                    "type": subject_data.type,
+                    "cover_url": subject_data.cover_url,
+                    "date": subject_data.publish_date if subject_data.publish_date else subject_data.release_date,
+                    "tags": subject_data.tags if subject_data.tags else [],
+                    "images": {}
+                }
+                
+                # 保存Subject，source_id使用外部源的真实ID（sid）
+                subject = await SubjectRepo.save(db, subject_dict, source="manual", source_id=str(sid))
+                logger.info(f"Created new subject with external ID: {subject.id}, source_id: {str(sid)}")
+            
+            # 构造Collection数据
+            collection_dict = {
+                "type": subject_data.status,
+                "rate": subject_data.rate if subject_data.rate > 0 else None,
+                "comment": subject_data.comment,
+                "private": False,
+                "tags": [],
+                "updated_at": datetime.now().isoformat() + "Z"
+            }
+            
+            # 保存Collection
+            collection = await CollectionRepo.save(db, user_id, subject.id, collection_dict)
+            logger.info(f"Created new collection for subject: {collection.id}, subject_id: {subject.id}")
+            
+            return collection

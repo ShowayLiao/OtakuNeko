@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import Image from 'next/image';
 import { Search, X, Plus, Trash2, Check, Loader2, Star, XCircle, ImageOff, Film } from 'lucide-react';
 import { Dialog } from '../ui/Dialog';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
-import { searchMixedSubjects, batchImportCollections, GridState, GridSlot, Subject, ImportItem } from '@/lib/api';
+import { searchSubjects, batchImportCollections, GridState, GridSlot, Subject, ImportItem, gridStateToImportItems } from '@/lib/api';
 import { useToast } from '../ui/Toast';
 import { useSettings } from '@/contexts/SettingsContext';
 
@@ -46,14 +47,23 @@ export function GridImportModal({ isOpen, onClose, onSuccess }: GridImportModalP
   const [searchResults, setSearchResults] = useState<Subject[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
   const [activeSlot, setActiveSlot] = useState<{ category: string; type: 'best' | 'worst' } | null>(null);
   const [searchKeyword, setSearchKeyword] = useState('');
+
+  // 重置导入进度
+  useEffect(() => {
+    if (!isOpen) {
+      setImportProgress(0);
+    }
+  }, [isOpen]);
 
   const resetState = useCallback(() => {
     setGridState(initialGridState);
     setSearchResults([]);
     setIsSearching(false);
     setIsImporting(false);
+    setImportProgress(0);
     setActiveSlot(null);
     setSearchKeyword('');
   }, []);
@@ -66,7 +76,8 @@ export function GridImportModal({ isOpen, onClose, onSuccess }: GridImportModalP
 
     setIsSearching(true);
     try {
-      const results = await searchMixedSubjects(keyword, 2);
+      // 使用新的searchSubjects方法
+      const results = await searchSubjects(keyword, 2);
       setSearchResults(results);
     } catch (error) {
       console.error('Error searching subjects:', error);
@@ -110,39 +121,8 @@ export function GridImportModal({ isOpen, onClose, onSuccess }: GridImportModalP
   }, []);
 
   const handleImport = useCallback(async () => {
-    const items: ImportItem[] = [];
-    
-    for (const category of CATEGORIES) {
-      const categoryData = gridState[category];
-      
-      if (categoryData.best.subject) {
-        items.push({
-          subject: categoryData.best.subject,
-          collection: {
-            user_id: 0,
-            subject_id: categoryData.best.subject.id,
-            status: 2,
-            rate: 10,
-            comment: '',
-            tags: [category]
-          }
-        });
-      }
-
-      if (categoryData.worst.subject) {
-        items.push({
-          subject: categoryData.worst.subject,
-          collection: {
-            user_id: 0,
-            subject_id: categoryData.worst.subject.id,
-            status: 2,
-            rate: 1,
-            comment: '',
-            tags: [category]
-          }
-        });
-      }
-    }
+    // 使用辅助函数将gridState转换为ImportItem数组
+    const items = gridStateToImportItems(gridState);
 
     if (items.length === 0) {
       toast({
@@ -154,18 +134,35 @@ export function GridImportModal({ isOpen, onClose, onSuccess }: GridImportModalP
 
     setIsImporting(true);
     try {
-      const result = await batchImportCollections(items, settings.username);
+      // 使用新的batchImportCollections方法，不需要用户名参数
+      const result = await batchImportCollections(items);
       toast({
         type: 'success',
-        message: `成功导入 ${result.imported_count} 条数据`
+        message: `成功导入 ${result.sync_count} 条数据`
       });
       onClose();
       onSuccess?.();
     } catch (error) {
       console.error('Error importing grid data:', error);
+      let errorMessage = '导入失败，请稍后重试';
+      
+      // 提取更详细的错误信息
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'object' && error !== null) {
+        if ('response' in error && typeof error.response === 'object' && error.response !== null) {
+          const response = error.response as any;
+          if (response.data && response.data.detail) {
+            errorMessage = response.data.detail;
+          } else if (response.status) {
+            errorMessage = `HTTP错误: ${response.status} ${response.statusText || ''}`;
+          }
+        }
+      }
+      
       toast({
         type: 'error',
-        message: '导入失败，请稍后重试'
+        message: errorMessage
       });
     } finally {
       setIsImporting(false);
@@ -302,11 +299,15 @@ function SlotCard({ slot, onSelect, onClear }: SlotCardProps) {
         <div className="bg-white dark:bg-gray-800 rounded-lg p-2 shadow-sm border border-gray-200 dark:border-gray-600">
           <div className="flex items-center gap-3">
             {slot.subject.cover_url ? (
-              <img
-                src={slot.subject.cover_url}
-                alt={slot.subject.name}
-                className="w-12 h-16 object-cover rounded flex-shrink-0"
-              />
+              <div className="relative w-12 h-16 flex-shrink-0">
+                <Image
+                  src={slot.subject.cover_url}
+                  alt={slot.subject.name}
+                  fill
+                  className="object-cover rounded"
+                  unoptimized
+                />
+              </div>
             ) : (
               <div className="w-12 h-16 bg-gray-200 dark:bg-gray-700 rounded flex-shrink-0 flex items-center justify-center">
                 <Film className="w-5 h-5 text-gray-400" />
@@ -431,16 +432,20 @@ function SubjectSearchDialog({
             <div className="space-y-2">
               {results.map((subject, index) => (
                 <button
-                  key={subject.id ? String(subject.id) : `subject-${index}`}
+                  key={subject.id ? String(subject.id) : `subject-${index}-${subject.name}`}
                   onClick={() => onSelect(subject)}
                   className="w-full flex items-center gap-3 p-3 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors text-left"
                 >
                   {subject.cover_url ? (
-                    <img
-                      src={subject.cover_url}
-                      alt={subject.name}
-                      className="w-12 h-16 object-cover rounded flex-shrink-0"
-                    />
+                    <div className="relative w-12 h-16 flex-shrink-0">
+                      <Image
+                        src={subject.cover_url}
+                        alt={subject.name}
+                        fill
+                        className="object-cover rounded"
+                        unoptimized
+                      />
+                    </div>
                   ) : (
                     <div className="w-12 h-16 bg-gray-200 dark:bg-gray-700 rounded flex-shrink-0 flex items-center justify-center">
                       <ImageOff className="w-5 h-5 text-gray-400" />

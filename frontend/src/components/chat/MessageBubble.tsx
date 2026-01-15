@@ -1,6 +1,7 @@
 "use client";
 
 import React from 'react';
+import Image from 'next/image';
 import { MessageAttachment } from './MessageAttachment';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -53,7 +54,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ role, content, cur
       {/* Avatar */}
       {!isUser && (
         <div className="w-12 h-12 rounded-2xl overflow-hidden flex items-center justify-center bg-gray-100">
-          <img src="/Icon.png" alt="AI" width={40} height={40} className="w-full h-full object-cover" />
+          <Image src="/Icon.png" alt="AI" width={40} height={40} className="w-full h-full object-cover" />
         </div>
       )}
 

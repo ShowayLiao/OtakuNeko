@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 import { MessageBubble } from '@/components/chat/MessageBubble';
 import { ChatInput } from '@/components/chat/ChatInput';
 import { EmptyState } from '@/components/chat/EmptyState';
-import { Header } from '@/components/layout/Header';
+import { LoadingState } from '@/components/state/LoadingState';
+import { GenericEmptyState } from '@/components/state/GenericEmptyState';
 import { useSync } from '@/hooks/useSync';
 import { useSyncStore } from '@/lib/syncStore';
-import { ChatProvider } from '@/contexts/ChatContext';
 import { useSettings } from '@/contexts/SettingsContext';
 
 interface Message {
@@ -34,7 +35,7 @@ export default function Home() {
     const initializeData = async () => {
       setIsLoading(true);
       if (userInfo?.bangumi_id && settings.username) {
-        await fetchCollectionCounts(settings.username);
+        await fetchCollectionCounts();
       }
       setIsLoading(false);
     };
@@ -47,7 +48,7 @@ export default function Home() {
   }, [messages]);
 
   // Helper function to generate assistant response with typing effect
-  const generateAssistantResponse = (messageId: string, isRetry: boolean = false) => {
+  const generateAssistantResponse = (messageId: string) => {
     const assistantResponses = [
       '好的，我来帮你找一下相关的动画资源。',
       '这个作品我很熟悉呢，让我为你详细介绍一下。',
@@ -128,21 +129,16 @@ export default function Home() {
     );
 
     // Regenerate assistant response with typing effect
-    generateAssistantResponse(messageId, true);
+    generateAssistantResponse(messageId);
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50">
-      {/* Header */}
-      <Header />
-
+    <div className="flex flex-col h-full bg-background">
       {/* Main Content */}
       <main className="flex-1 p-4 lg:p-6">
         {isLoading ? (
           // Loading State - Show while checking for synced subjects
-          <div className="flex items-center justify-center h-full">
-            <div className="w-12 h-12 border-4 border-gray-200 border-t-primary rounded-full animate-spin"></div>
-          </div>
+          <LoadingState message="加载中..." size="lg" />
         ) : totalItems === 0 ? (
           // Empty State - Show only when loading is complete and no subjects are synced
           <EmptyState />
@@ -153,11 +149,11 @@ export default function Home() {
             <div className="flex-1 min-h-[300px]">
               {messages.length === 0 ? (
                 // Empty Chat State
-                <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                  <img src="/Icon.png" alt="AI" className="w-32 h-32 mb-4 object-contain" />
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to OtakuNeko!</h2>
-                  <p className="text-gray-600 max-w-md">Type a chat, alert, and allows to rerolce!</p>
-                </div>
+                <GenericEmptyState
+                  title="Welcome to OtakuNeko!"
+                  description="Type a chat, alert, and allows to rerolce!"
+                  icon={<Image src="/Icon.png" alt="AI" width={128} height={128} className="w-32 h-32 object-contain" />}
+                />
               ) : (
                 // Message List
                 <div className="space-y-4">

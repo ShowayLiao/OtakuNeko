@@ -1,7 +1,8 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
-import { fetchBangumiUser, BangumiUser } from '@/lib/api';
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode, useRef } from 'react';
+import { fetchBangumiUser, BangumiUser, login, saveAiToken } from '@/lib/api';
+import { readUserInfoFromLocalStorage } from '@/lib/localAuth';
 
 interface Settings {
   username: string;
@@ -71,21 +72,84 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   };
 
   useEffect(() => {
-    try {
-      const savedSettings = localStorage.getItem(STORAGE_KEY);
-      if (savedSettings) {
-        const parsed = JSON.parse(savedSettings);
-        setSettings({ ...defaultSettings, ...parsed });
-        setIsRemembered(true);
-        if (parsed.userInfo) {
-          setUserInfo(parsed.userInfo);
+    const initializeSettingsAndAutoLogin = async () => {
+      try {
+        const savedSettings = localStorage.getItem(STORAGE_KEY);
+        if (savedSettings) {
+          const parsed = JSON.parse(savedSettings);
+          setSettings({ ...defaultSettings, ...parsed });
+          setIsRemembered(true);
+          if (parsed.userInfo) {
+            setUserInfo(parsed.userInfo);
+          }
         }
+
+        // 实现无感登录逻辑
+        const cloudMode = process.env.NEXT_PUBLIC_CLOUD_MODE?.toLowerCase() === 'true';
+        if (!cloudMode && !settings.username) {
+          // 仅在本地模式且尚未有用户名时执行无感登录
+          const userInfo = readUserInfoFromLocalStorage();
+          
+          if (userInfo) {
+            const { username, aiHost, aiToken, bangumiId, noBangumiAccount } = userInfo;
+            
+            try {
+              // 1. 自动登录用户
+              const loginResponse = await login(username);
+              
+              // 2. 转换为BangumiUser类型用于上下文
+              const bangumiUserInfo: BangumiUser = {
+                id: loginResponse.user.id,
+                username: loginResponse.user.username,
+                nickname: loginResponse.user.nickname,
+                sign: loginResponse.user.sign,
+                avatar: {
+                  large: loginResponse.user.avatar_url || '',
+                  medium: loginResponse.user.avatar_url || '',
+                  small: loginResponse.user.avatar_url || ''
+                },
+                bangumi_id: loginResponse.user.bangumi_id || undefined
+              };
+              
+              // 3. 更新用户信息上下文
+              setUserInfo(bangumiUserInfo);
+              
+              // 4. 保存AI Token
+              saveAiToken(aiToken);
+              
+              // 5. 更新设置
+              const updatedSettings = {
+                username: username,
+                bangumiToken: noBangumiAccount ? undefined : bangumiId,
+                aiHost: aiHost,
+                aiToken: aiToken
+              };
+              setSettings(updatedSettings);
+              
+              // 6. 保存到localStorage
+              try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                  ...updatedSettings,
+                  userInfo: bangumiUserInfo
+                }));
+                setIsRemembered(true);
+              } catch (storageError) {
+                console.error('Error saving auto-login settings to localStorage:', storageError);
+              }
+            } catch (loginError) {
+              console.error('自动登录失败，需要用户手动登录:', loginError);
+              // 自动登录失败，保持默认设置，等待用户手动登录
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing settings and auto-login:', error);
+      } finally {
+        setIsInitialized(true);
       }
-    } catch (error) {
-      console.error('Error loading settings from localStorage:', error);
-    } finally {
-      setIsInitialized(true);
-    }
+    };
+
+    initializeSettingsAndAutoLogin();
 
     return () => {
       clearSessionTimer();
@@ -116,7 +180,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const refreshUserInfo = async (username: string) => {
+  const refreshUserInfo = useCallback(async (username: string) => {
     try {
       const userData = await fetchBangumiUser(username);
       setUserInfo(userData);
@@ -139,7 +203,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
       console.error('Error fetching user info:', error);
       setUserInfo(null);
     }
-  };
+  }, [isRemembered]);
 
   const setUserInfoHandler = (userInfo: BangumiUser | null) => {
     setUserInfo(userInfo);
@@ -164,7 +228,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
     if (settings.username && isInitialized && !userInfo?.bangumi_id) {
       refreshUserInfo(settings.username);
     }
-  }, [settings.username, isInitialized, userInfo?.bangumi_id]);
+  }, [settings.username, isInitialized, userInfo?.bangumi_id, refreshUserInfo]);
 
   if (!isInitialized) {
     return null;

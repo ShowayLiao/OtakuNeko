@@ -1,23 +1,407 @@
-from typing import Optional, List, Dict, Any
-from sqlmodel import select, or_
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.models import Subject, SubjectType, Collection, User
-from app.services.bangumi_client import search_subjects as search_bangumi_subjects
-from app.services.bangumi_service import adapt_bangumi_subject
-from app.schemas.collection import SubjectWithUserStatus, CollectionOut
-from app.models.enums import CollectionStatus
 import logging
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import select, or_
+
+from app.models import Collection, Subject, SubjectType, User
+from app.schemas.collection import CollectionRead
+from app.schemas.subject import SubjectWithUserStatus
+from app.services.bangumi_client import search_subjects as search_bangumi_subjects
+from app.schemas.adapters import adapt_bangumi_subject
+from app.repositories.subject_repo import SubjectRepo
 
 logger = logging.getLogger(__name__)
 
-# 收藏状态枚举值到字符串的映射
-COLLECTION_STATUS_MAP = {
-    CollectionStatus.WISH.value: "wish",       # 1 -> "wish"
-    CollectionStatus.COLLECT.value: "collect", # 2 -> "collect"
-    CollectionStatus.DO.value: "do",           # 3 -> "do"
-    CollectionStatus.ON_HOLD.value: "on_hold", # 4 -> "on_hold"
-    CollectionStatus.DROPPED.value: "dropped"  # 5 -> "dropped"
-}
+
+async def create_subject(
+    db: AsyncSession,
+    subject_data: Dict[str, Any],
+    source: str = "bangumi",
+    source_id: Optional[str] = None
+) -> Subject:
+    """
+    创建新条目
+    
+    Args:
+        db: 数据库会话
+        subject_data: 条目数据
+        source: 数据源
+        source_id: 原站ID
+    
+    Returns:
+        创建的Subject对象
+    """
+    try:
+        new_subject = await SubjectRepo.create(db, subject_data, source, source_id)
+        logger.info(f"创建新条目成功: {new_subject.name} (ID: {new_subject.id})")
+        return new_subject
+    except Exception as e:
+        logger.error(f"创建条目失败: {e}")
+        raise
+
+
+async def get_subject_by_id(
+    db: AsyncSession,
+    subject_id: int,
+    user_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    根据ID获取条目
+    
+    Args:
+        db: 数据库会话
+        subject_id: 条目ID
+        user_id: 用户ID，用于查询收藏状态
+    
+    Returns:
+        包含条目信息和收藏状态的字典
+    """
+    try:
+        subject = await SubjectRepo.get_by_id(db, subject_id)
+        if not subject:
+            return None
+        
+        # 构造返回数据
+        item_dict = SubjectWithUserStatus.model_validate(subject).model_dump()
+        
+        # 检查收藏状态
+        if user_id:
+            from app.repositories.collection_repo import CollectionRepo
+            collection = await CollectionRepo.get_by_user_and_subject(db, user_id, subject_id)
+            if collection:
+                item_dict["is_collected"] = True
+                collection_info = CollectionRead(
+                    subject_id=collection.subject_id,
+                    updated_at=collection.updated_at,
+                    status=collection.type,
+                    rate=collection.rate,
+                    comment=collection.comment,
+                    private=collection.private,
+                    tags=collection.tags or [],
+                    subject=None
+                )
+                item_dict["collection_info"] = collection_info.model_dump()
+            else:
+                item_dict["is_collected"] = False
+                item_dict["collection_info"] = None
+        else:
+            item_dict["is_collected"] = False
+            item_dict["collection_info"] = None
+        
+        return item_dict
+    except Exception as e:
+        logger.error(f"获取条目失败: {e}")
+        raise
+
+
+async def get_subject_by_source(
+    db: AsyncSession,
+    source: str,
+    source_id: str,
+    user_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    根据数据源和ID获取条目
+    
+    Args:
+        db: 数据库会话
+        source: 数据源
+        source_id: 原站ID
+        user_id: 用户ID，用于查询收藏状态
+    
+    Returns:
+        包含条目信息和收藏状态的字典
+    """
+    try:
+        subject = await SubjectRepo.get_by_source(db, source, source_id)
+        if not subject:
+            return None
+        
+        # 构造返回数据
+        item_dict = SubjectWithUserStatus.model_validate(subject).model_dump()
+        
+        # 检查收藏状态
+        if user_id:
+            from app.repositories.collection_repo import CollectionRepo
+            collection = await CollectionRepo.get_by_user_and_subject(db, user_id, subject.id)
+            if collection:
+                item_dict["is_collected"] = True
+                collection_info = CollectionRead(
+                    subject_id=collection.subject_id,
+                    updated_at=collection.updated_at,
+                    status=collection.type,
+                    rate=collection.rate,
+                    comment=collection.comment,
+                    private=collection.private,
+                    tags=collection.tags or [],
+                    subject=None
+                )
+                item_dict["collection_info"] = collection_info.model_dump()
+            else:
+                item_dict["is_collected"] = False
+                item_dict["collection_info"] = None
+        else:
+            item_dict["is_collected"] = False
+            item_dict["collection_info"] = None
+        
+        return item_dict
+    except Exception as e:
+        logger.error(f"获取条目失败: {e}")
+        raise
+
+
+async def update_subject(
+    db: AsyncSession,
+    subject_id: int,
+    subject_data: Dict[str, Any]
+) -> Optional[Subject]:
+    """
+    更新条目
+    
+    Args:
+        db: 数据库会话
+        subject_id: 条目ID
+        subject_data: 更新的条目数据
+    
+    Returns:
+        更新后的Subject对象或None
+    """
+    try:
+        updated_subject = await SubjectRepo.update(db, subject_id, subject_data)
+        if updated_subject:
+            logger.info(f"更新条目成功: {updated_subject.name} (ID: {updated_subject.id})")
+        return updated_subject
+    except Exception as e:
+        logger.error(f"更新条目失败: {e}")
+        raise
+
+
+async def delete_subject(
+    db: AsyncSession,
+    subject_id: int
+) -> bool:
+    """
+    删除条目
+    
+    Args:
+        db: 数据库会话
+        subject_id: 条目ID
+    
+    Returns:
+        删除成功返回True，条目不存在返回False
+    """
+    try:
+        deleted = await SubjectRepo.delete(db, subject_id)
+        if deleted:
+            logger.info(f"删除条目成功: ID {subject_id}")
+        return deleted
+    except Exception as e:
+        logger.error(f"删除条目失败: {e}")
+        raise
+
+
+async def get_all_subjects(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    subject_type: Optional[int] = None,
+    user_id: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """
+    获取所有条目
+    
+    Args:
+        db: 数据库会话
+        skip: 跳过的记录数
+        limit: 返回的最大记录数
+        subject_type: 可选，条目类型过滤
+        user_id: 用户ID，用于查询收藏状态
+    
+    Returns:
+        包含条目信息和收藏状态的字典列表
+    """
+    try:
+        subjects = await SubjectRepo.get_all(db, skip, limit, subject_type)
+        
+        # 构造返回数据
+        final_list = []
+        for subject in subjects:
+            item_dict = SubjectWithUserStatus.model_validate(subject).model_dump()
+            
+            # 检查收藏状态
+            if user_id:
+                from app.repositories.collection_repo import CollectionRepo
+                collection = await CollectionRepo.get_by_user_and_subject(db, user_id, subject.id)
+                if collection:
+                    item_dict["is_collected"] = True
+                    collection_info = CollectionRead(
+                        subject_id=collection.subject_id,
+                        updated_at=collection.updated_at,
+                        status=collection.type,
+                        rate=collection.rate,
+                        comment=collection.comment,
+                        private=collection.private,
+                        tags=collection.tags or [],
+                        subject=None
+                    )
+                    item_dict["collection_info"] = collection_info.model_dump()
+                else:
+                    item_dict["is_collected"] = False
+                    item_dict["collection_info"] = None
+            else:
+                item_dict["is_collected"] = False
+                item_dict["collection_info"] = None
+            
+            final_list.append(item_dict)
+        
+        return final_list
+    except Exception as e:
+        logger.error(f"获取条目列表失败: {e}")
+        raise
+
+
+async def search_subject_by_id(
+    db: AsyncSession,
+    subject_id: int,
+    user_id: Optional[int] = None
+) -> Dict[str, Any]:
+    """
+    基于ID的精确搜索
+    
+    Args:
+        db: 数据库会话
+        subject_id: 条目ID
+        user_id: 用户ID，用于查询收藏状态
+    
+    Returns:
+        包含条目信息和收藏状态的字典
+    """
+    return await get_subject_by_id(db, subject_id, user_id)
+
+
+async def search_subject_by_name(
+    db: AsyncSession,
+    name: str,
+    skip: int = 0,
+    limit: int = 20,
+    user_id: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """
+    基于名称的宽泛搜索
+    
+    Args:
+        db: 数据库会话
+        name: 搜索名称
+        skip: 跳过的记录数
+        limit: 返回的最大记录数
+        user_id: 用户ID，用于查询收藏状态
+    
+    Returns:
+        包含条目信息和收藏状态的字典列表
+    """
+    try:
+        subjects = await SubjectRepo.search_by_name(db, name, skip, limit)
+        
+        # 构造返回数据
+        final_list = []
+        for subject in subjects:
+            item_dict = SubjectWithUserStatus.model_validate(subject).model_dump()
+            
+            # 检查收藏状态
+            if user_id:
+                from app.repositories.collection_repo import CollectionRepo
+                collection = await CollectionRepo.get_by_user_and_subject(db, user_id, subject.id)
+                if collection:
+                    item_dict["is_collected"] = True
+                    collection_info = CollectionRead(
+                        subject_id=collection.subject_id,
+                        updated_at=collection.updated_at,
+                        status=collection.type,
+                        rate=collection.rate,
+                        comment=collection.comment,
+                        private=collection.private,
+                        tags=collection.tags or [],
+                        subject=None
+                    )
+                    item_dict["collection_info"] = collection_info.model_dump()
+                else:
+                    item_dict["is_collected"] = False
+                    item_dict["collection_info"] = None
+            else:
+                item_dict["is_collected"] = False
+                item_dict["collection_info"] = None
+            
+            final_list.append(item_dict)
+        
+        return final_list
+    except Exception as e:
+        logger.error(f"搜索条目失败: {e}")
+        raise
+
+
+async def search_subject_cloud(
+    db: AsyncSession,
+    keyword: Optional[str] = None,
+    subject_type: Optional[int] = None,
+    limit: int = 20,
+    offset: int = 0
+) -> Dict[str, Any]:
+    """
+    调用 Bangumi API 进行搜索
+    
+    Args:
+        db: 数据库会话
+        keyword: 搜索关键词
+        subject_type: 条目类型
+        limit: 返回结果数量限制
+        offset: 结果偏移量
+    
+    Returns:
+        包含搜索结果和来源信息的字典
+    """
+    try:
+        logger.info(f"从 Bangumi API 搜索: {keyword}")
+        remote_response = await search_bangumi_subjects(keyword, subject_type, limit, offset)
+        
+        # 提取数据列表
+        remote_data_list = remote_response.get("data", [])
+        
+        if not remote_data_list:
+            return {
+                "data": [],
+                "source": "remote",
+                "total": 0
+            }
+        
+        # 使用适配器模式转换数据格式
+        adapted_results = []
+        for bangumi_data in remote_data_list:
+            try:
+                adapted_data = adapt_bangumi_subject(bangumi_data)
+                # 远程搜索的数据默认未收藏
+                adapted_data["is_collected"] = False
+                adapted_data["collection_info"] = None
+                adapted_results.append(adapted_data)
+            except Exception as e:
+                logger.error(f"适配 Bangumi 数据失败: {e}, 数据: {bangumi_data}")
+                continue
+        
+        return {
+            "data": adapted_results,
+            "source": "remote",
+            "total": len(adapted_results)
+        }
+        
+    except Exception as e:
+        logger.error(f"远程搜索失败: {e}")
+        # 返回空结果
+        return {
+            "data": [],
+            "source": "remote",
+            "total": 0,
+            "error": str(e)
+        }
 
 
 async def search_subjects(
@@ -93,15 +477,15 @@ async def search_subjects(
         if collection:
             item_dict["is_collected"] = True
             # 构造收藏信息
-            status_str = COLLECTION_STATUS_MAP.get(collection.type.value) if collection.type else None
-            collection_info = CollectionOut(
+            collection_info = CollectionRead(
                 subject_id=collection.subject_id,
-                status=status_str,
+                updated_at=collection.updated_at,
+                status=collection.type,
                 rate=collection.rate,
                 comment=collection.comment,
                 private=collection.private,
                 tags=collection.tags or [],
-                updated_at=collection.updated_at.isoformat() if collection.updated_at else None
+                subject=None
             )
             item_dict["collection_info"] = collection_info.model_dump()
         else:
@@ -115,7 +499,7 @@ async def search_subjects(
 
 async def search_mixed(
     db: AsyncSession,
-    keyword: str,
+    keyword: Optional[str] = None,
     subject_type: Optional[int] = None,
     user_id: Optional[int] = None,
     limit: int = 20,
@@ -157,45 +541,4 @@ async def search_mixed(
         }
     
     # Step 2: 本地无结果，尝试远程搜索
-    try:
-        logger.info(f"本地无结果，尝试从 Bangumi API 搜索: {keyword}")
-        remote_response = await search_bangumi_subjects(keyword, subject_type, limit, offset)
-        
-        # 提取数据列表
-        remote_data_list = remote_response.get("data", [])
-        
-        if not remote_data_list:
-            return {
-                "data": [],
-                "source": "remote",
-                "total": 0
-            }
-        
-        # Step 3: 使用适配器模式转换数据格式
-        adapted_results = []
-        for bangumi_data in remote_data_list:
-            try:
-                adapted_data = adapt_bangumi_subject(bangumi_data)
-                # 远程搜索的数据默认未收藏
-                adapted_data["is_collected"] = False
-                adapted_data["collection_info"] = None
-                adapted_results.append(adapted_data)
-            except Exception as e:
-                logger.error(f"适配 Bangumi 数据失败: {e}, 数据: {bangumi_data}")
-                continue
-        
-        return {
-            "data": adapted_results,
-            "source": "remote",
-            "total": len(adapted_results)
-        }
-        
-    except Exception as e:
-        logger.error(f"远程搜索失败: {e}")
-        # 返回空结果
-        return {
-            "data": [],
-            "source": "remote",
-            "total": 0,
-            "error": str(e)
-        }
+    return await search_subject_cloud(db, keyword, subject_type, limit, offset)

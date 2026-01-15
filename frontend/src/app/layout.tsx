@@ -1,20 +1,11 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import { Sidebar } from "../components/layout/Sidebar";
+import { Header } from "../components/layout/Header";
+import { HeaderProvider } from "@/contexts/HeaderContext";
 import "./globals.css";
 import { ChatProvider } from "@/contexts/ChatContext";
 import { SettingsProvider } from "@/contexts/SettingsContext";
 import { ToastProvider } from "@/components/ui/Toast";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "OtakuNeko Dashboard",
@@ -31,9 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className="antialiased">
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -50,15 +39,20 @@ export default function RootLayout({
         />
         <div className="flex h-screen bg-gray-50">
           <Sidebar />
-          <main className="flex-1 overflow-y-auto">
-            <ToastProvider>
-              <SettingsProvider>
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <SettingsProvider>
+              <ToastProvider>
                 <ChatProvider>
-                  {children}
+                  <HeaderProvider>
+                    <Header />
+                    <main className="flex-1 overflow-y-auto">
+                      {children}
+                    </main>
+                  </HeaderProvider>
                 </ChatProvider>
-              </SettingsProvider>
-            </ToastProvider>
-          </main>
+              </ToastProvider>
+            </SettingsProvider>
+          </div>
         </div>
       </body>
     </html>

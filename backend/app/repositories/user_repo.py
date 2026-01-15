@@ -1,0 +1,215 @@
+from typing import Dict, Any, Optional, List
+import logging
+from sqlmodel import select, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import SQLAlchemyError
+
+from ..models import User
+
+logger = logging.getLogger(__name__)
+
+
+class UserRepo:
+    """
+    User 数据访问层
+    封装所有与 User 相关的数据库操作
+    """
+    
+    @staticmethod
+    async def create(db: AsyncSession, user_data: Dict[str, Any]) -> User:
+        """
+        创建新用户
+        
+        Args:
+            db: 数据库会话
+            user_data: 用户数据字典
+        
+        Returns:
+            创建的User对象
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            new_user = User(**user_data)
+            db.add(new_user)
+            await db.commit()
+            await db.refresh(new_user)
+            return new_user
+        except SQLAlchemyError as e:
+            logger.error(f"创建用户失败: {e}")
+            await db.rollback()
+            raise
+    
+    @staticmethod
+    async def get_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
+        """
+        根据ID获取用户
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+        
+        Returns:
+            User对象或None
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            result = await db.execute(select(User).where(User.id == user_id))
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取用户失败: {e}")
+            raise
+    
+    @staticmethod
+    async def get_by_username(db: AsyncSession, username: str) -> Optional[User]:
+        """
+        根据用户名获取用户
+        
+        Args:
+            db: 数据库会话
+            username: 用户名
+        
+        Returns:
+            User对象或None
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            result = await db.execute(select(User).where(User.username == username))
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取用户失败: {e}")
+            raise
+    
+    @staticmethod
+    async def get_by_bangumi_id(db: AsyncSession, bangumi_id: int) -> Optional[User]:
+        """
+        根据Bangumi ID获取用户
+        
+        Args:
+            db: 数据库会话
+            bangumi_id: Bangumi ID
+        
+        Returns:
+            User对象或None
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            result = await db.execute(select(User).where(User.bangumi_id == bangumi_id))
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取用户失败: {e}")
+            raise
+    
+    @staticmethod
+    async def get_by_email(db: AsyncSession, email: str) -> Optional[User]:
+        """
+        根据邮箱获取用户
+        
+        Args:
+            db: 数据库会话
+            email: 邮箱地址
+        
+        Returns:
+            User对象或None
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            result = await db.execute(select(User).where(User.email == email))
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取用户失败: {e}")
+            raise
+    
+    @staticmethod
+    async def get_all(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
+        """
+        获取所有用户
+        
+        Args:
+            db: 数据库会话
+            skip: 跳过的记录数
+            limit: 返回的最大记录数
+        
+        Returns:
+            User对象列表
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            result = await db.execute(select(User).offset(skip).limit(limit))
+            return list(result.scalars().all())
+        except SQLAlchemyError as e:
+            logger.error(f"获取用户列表失败: {e}")
+            raise
+    
+    @staticmethod
+    async def update(db: AsyncSession, user_id: int, user_data: Dict[str, Any]) -> Optional[User]:
+        """
+        更新用户信息
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            user_data: 更新的用户数据
+        
+        Returns:
+            更新后的User对象或None
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            user = await UserRepo.get_by_id(db, user_id)
+            if not user:
+                return None
+            
+            for field, value in user_data.items():
+                if hasattr(user, field):
+                    setattr(user, field, value)
+            
+            db.add(user)
+            await db.commit()
+            await db.refresh(user)
+            return user
+        except SQLAlchemyError as e:
+            logger.error(f"更新用户失败: {e}")
+            await db.rollback()
+            raise
+    
+    @staticmethod
+    async def delete(db: AsyncSession, user_id: int) -> bool:
+        """
+        删除用户
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+        
+        Returns:
+            删除成功返回True，用户不存在返回False
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            user = await UserRepo.get_by_id(db, user_id)
+            if not user:
+                return False
+            
+            await db.delete(user)
+            await db.commit()
+            return True
+        except SQLAlchemyError as e:
+            logger.error(f"删除用户失败: {e}")
+            await db.rollback()
+            raise

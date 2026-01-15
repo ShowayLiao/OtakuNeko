@@ -1,21 +1,5 @@
 import { NextResponse } from 'next/server';
 
-// 定义收藏项类型，与前端保持一致
-interface CollectionItem {
-  // --- 原始 Bangumi 数据 ---
-  id: number;
-  name_cn: string;
-  name: string;
-  cover_url: string;
-  score: number;
-  type: number; // 1=书籍, 2=动画, 3=音乐, 4=游戏
-  tags: string[];
-  eps: number;
-  // --- 本地数据库附加字段 ---
-  status: 'watching' | 'completed' | 'plan' | 'dropped';
-  updated_at: string; // ISO 时间字符串
-}
-
 // 后端 API 地址
 const BACKEND_URL = 'http://127.0.0.1:8000';
 

@@ -1,38 +1,23 @@
-import asyncio
-from app.db.database import get_session
-from sqlmodel import select
-from app.models.user import User
-from app.models.collection import Collection
-from app.models.subject import Subject
+import requests
+import json
 
-async def test_api():
-    async for session in get_session():
-        result = await session.execute(select(User))
-        users = result.scalars().all()
-        print(f'Users in database: {len(users)}')
-        for u in users:
-            print(f'  - {u.username} (ID: {u.id})')
-        
-        if users:
-            for user in users:
-                result = await session.execute(
-                    select(Collection, Subject)
-                    .where(Collection.user_id == user.id)
-                    .where(Collection.subject_id == Subject.id)
-                    .limit(1)
-                )
-                item = result.first()
-                if item:
-                    collection, subject = item
-                    print(f'\nSample collection for user {user.username}:')
-                    print(f'  Subject ID: {collection.subject_id}')
-                    print(f'  Status (type): {collection.type.value}')
-                    print(f'  Updated at: {collection.updated_at}')
-                    print(f'  Updated at type: {type(collection.updated_at)}')
-                    print(f'  Updated at ISO format: {collection.updated_at.isoformat()}')
-                    print(f'  Subject name: {subject.name}')
-                    break
-        break
+# 测试登录
+print("Testing login...")
+login_url = "http://localhost:8000/api/v1/auth/login"
+login_data = {"username": "testuser1"}
+login_response = requests.post(login_url, json=login_data)
+print(f"Login status code: {login_response.status_code}")
+print(f"Login response: {login_response.json()}")
 
-if __name__ == '__main__':
-    asyncio.run(test_api())
+if login_response.status_code == 200:
+    # 获取 JWT 令牌
+    token = login_response.json()["access_token"]
+    print(f"\nToken: {token}")
+    
+    # 测试获取收藏列表
+    print("\nTesting get collections...")
+    collections_url = "http://localhost:8000/api/v1/collections"
+    headers = {"Authorization": f"Bearer {token}"}
+    collections_response = requests.get(collections_url, headers=headers)
+    print(f"Collections status code: {collections_response.status_code}")
+    print(f"Collections response: {collections_response.json()}")

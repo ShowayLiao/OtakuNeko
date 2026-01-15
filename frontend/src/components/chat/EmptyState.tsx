@@ -9,7 +9,7 @@ import { GridImportModal } from '@/components/settings/GridImportModal';
 
 export const EmptyState: React.FC = () => {
   const { isSyncing, handleSync } = useSync();
-  const { settings, userInfo } = useSettings();
+  const { userInfo } = useSettings();
   const { openDialog } = useManualAddDialogStore();
   const [showGridModal, setShowGridModal] = useState(false);
 

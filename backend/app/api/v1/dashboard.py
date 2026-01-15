@@ -1,78 +1,65 @@
-from fastapi import APIRouter, Depends
-from sqlmodel import select, SQLModel
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
-from app.models.subject import Subject
-from app.models.collection import Collection
-from typing import List, Optional
-from datetime import datetime
-import logging
+from app.services.stats_service import get_user_stats
+from app.schemas.dashboard import DashboardStats
+from app.api.deps import get_current_user
+from fastapi_cache.decorator import cache
 
-# 创建路由器
-router = APIRouter(tags=["Dashboard"])
+router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
-# 定义响应模型
-class DashboardStatsResponse(SQLModel):
-    total_subjects: int
-    total_collections: int
-    system_status: str
-    recent_activity: List[dict]
-
-
-@router.get("/dashboard/stats", response_model=DashboardStatsResponse)
-async def get_dashboard_stats(session: AsyncSession = Depends(get_session)):
+def stats_key_builder(func, namespace: str, request, *args, **kwargs):
     """
-    获取仪表盘统计数据
+    自定义缓存 key 构建器
+    
+    为每个用户生成独立的缓存 key，确保不同用户的统计数据不会混淆
+    
+    Args:
+        func: 被缓存的函数
+        namespace: 命名空间
+        request: FastAPI 请求对象
+        *args, **kwargs: 函数参数
+    
+    Returns:
+        缓存 key 字符串
+    """
+    user = kwargs.get("current_user")
+    if user:
+        return f"{namespace}:{func.__name__}:user_{user.id}"
+    return f"{namespace}:{func.__name__}:unknown"
+
+
+@router.get("/stats", response_model=DashboardStats)
+@cache(expire=600, key_builder=stats_key_builder)
+async def get_user_stats_endpoint(
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    获取用户的仪表板统计数据
+    
+    返回用户在不同分类（动画/书籍/游戏/音乐/三次元）下的收藏总数
+    数据缓存 10 分钟，减少数据库查询压力
+    
+    Args:
+        current_user: 当前认证用户
+        db: 数据库会话
+    
+    Returns:
+        DashboardStats 对象，包含各分类的收藏数量
+    
+    Raises:
+        HTTPException: 当获取统计数据失败时返回 500 错误
     """
     try:
-        # 1. 统计Subject表的总数
-        subject_result = await session.execute(select(Subject))
-        total_subjects = len(subject_result.scalars().all())
+        stats = await get_user_stats(current_user.id, db)
         
-        # 2. 统计Collection表的总数
-        collection_result = await session.execute(select(Collection))
-        total_collections = len(collection_result.scalars().all())
+        return stats
         
-        # 3. 获取最近更新的5条Collection
-        recent_collections_result = await session.execute(
-            select(Collection).order_by(Collection.updated_at.desc()).limit(5)
-        )
-        recent_collections = recent_collections_result.scalars().all()
-        
-        # 构建recent_activity数据
-        recent_activity = []
-        for collection in recent_collections:
-            # 查询关联的subject
-            subject_result = await session.execute(select(Subject).where(Subject.id == collection.subject_id))
-            subject = subject_result.scalars().first()
-            
-            if subject:
-                recent_activity.append({
-                    "id": f"{collection.user_id}-{collection.subject_id}",
-                    "user_id": collection.user_id,
-                    "subject_id": collection.subject_id,
-                    "subject_name": subject.name_cn or subject.name,
-                    "subject_type": subject.type.value,
-                    "collection_type": collection.type.value,
-                    "updated_at": collection.updated_at.isoformat()
-                })
-        
-        # 4. 系统状态（这里简单返回"Pulsed"）
-        system_status = "Pulsed"
-        
-        return DashboardStatsResponse(
-            total_subjects=total_subjects,
-            total_collections=total_collections,
-            system_status=system_status,
-            recent_activity=recent_activity
-        )
     except Exception as e:
-        logging.error(f"Error getting dashboard stats: {e}")
-        # 返回默认值
-        return DashboardStatsResponse(
-            total_subjects=0,
-            total_collections=0,
-            system_status="Running",
-            recent_activity=[]
-        )
+        import traceback
+        print(f"[获取用户统计数据] 错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"获取用户统计数据失败: {str(e)}")
+

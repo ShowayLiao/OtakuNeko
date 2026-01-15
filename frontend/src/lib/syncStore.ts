@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { syncUser, getUserCollectionCount } from '@/lib/api';
+import { syncUser, getUserCollections } from '@/lib/api';
 
 interface CollectionCounts {
   anime: number;
@@ -19,8 +19,8 @@ interface SyncState {
   setCollectionCounts: (counts: CollectionCounts) => void;
   setLastSyncTime: (time: Date | null) => void;
   setSyncError: (error: string | null) => void;
-  fetchCollectionCounts: (username: string) => Promise<void>;
-  performSync: (username: string) => Promise<void>;
+  fetchCollectionCounts: () => Promise<void>;
+  performSync: (source: string, subjectType?: number) => Promise<void>;
 }
 
 export const useSyncStore = create<SyncState>((set, get) => ({
@@ -41,27 +41,23 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   setLastSyncTime: (time) => set({ lastSyncTime: time }),
   setSyncError: (error) => set({ syncError: error }),
 
-  fetchCollectionCounts: async (username: string) => {
-    if (!username) {
-      console.warn('Username is required for fetching collection counts');
-      return;
-    }
-
+  fetchCollectionCounts: async () => {
     set({ isLoading: true });
     try {
-      const [animeCount, booksCount, gamesCount, filmsCount] = await Promise.all([
-        getUserCollectionCount(username, 2),
-        getUserCollectionCount(username, 1),
-        getUserCollectionCount(username, 4),
-        getUserCollectionCount(username, 6)
+      // 使用新的getUserCollections方法获取各类型的收藏数量
+      const [animeResult, booksResult, gamesResult, filmsResult] = await Promise.all([
+        getUserCollections(2, undefined, undefined, 1, 0), // 动画
+        getUserCollections(1, undefined, undefined, 1, 0), // 书籍
+        getUserCollections(4, undefined, undefined, 1, 0), // 游戏
+        getUserCollections(6, undefined, undefined, 1, 0)  // 三次元
       ]);
 
       set({
         collectionCounts: {
-          anime: animeCount,
-          books: booksCount,
-          games: gamesCount,
-          films: filmsCount
+          anime: animeResult.total,
+          books: booksResult.total,
+          games: gamesResult.total,
+          films: filmsResult.total
         }
       });
     } catch (error) {
@@ -71,13 +67,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     }
   },
 
-  performSync: async (username: string) => {
-    if (!username) {
-      console.warn('Username is required for sync');
-      set({ syncError: '用户名不能为空' });
-      return;
-    }
-
+  performSync: async (source: string, subjectType?: number) => {
     const { isSyncing } = get();
     if (isSyncing) {
       console.warn('Sync is already in progress, ignoring duplicate request');
@@ -87,8 +77,8 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     set({ isSyncing: true, syncError: null });
 
     try {
-      await syncUser(username);
-      await get().fetchCollectionCounts(username);
+      await syncUser(source, subjectType);
+      await get().fetchCollectionCounts();
       set({ lastSyncTime: new Date() });
     } catch (error) {
       console.error('Sync failed:', error);

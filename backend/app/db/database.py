@@ -7,7 +7,7 @@ from app.core.config import settings
 # 创建异步引擎
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=settings.DEBUG,  # 在调试模式下打印SQL语句
+    echo=False,  # 设置为False，避免SQL语句输出泛滥
     future=True
 )
 
