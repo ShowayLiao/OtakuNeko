@@ -26,3 +26,6 @@ fastapi-cache2[redis]
 # 认证和安全
 python-jose[cryptography]
 passlib[bcrypt]
+
+# 日志处理
+concurrent-log-handler

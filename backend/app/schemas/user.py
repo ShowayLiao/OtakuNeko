@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 
@@ -9,11 +9,10 @@ class UserBase(BaseModel):
     
     包含用户的可修改基础信息字段
     """
-    nickname: Optional[str] = Field(None, description="昵称")
-    email: Optional[str] = Field(None, description="邮箱")
-    avatar_url: Optional[str] = Field(None, description="头像URL")
-    sign: Optional[str] = Field(None, description="个性签名")
-    bangumi_id: Optional[int] = Field(None, description="Bangumi ID")
+    username: str = Field(..., description="用户名")
+    avatar_url: Optional[str] = Field(default=None, description="头像URL")
+    bangumi_id: Optional[int] = Field(default=None, description="Bangumi ID")
+    sign: Optional[str] = Field(default=None, description="个性签名")
 
     class Config:
         from_attributes = True
@@ -23,19 +22,24 @@ class UserCreate(UserBase):
     """
     用户创建Schema
     
-    用于创建新用户，继承自 UserBase，增加必填字段
+    用于创建新用户，继承自 UserBase
     """
-    username: str = Field(..., description="用户名", min_length=1, max_length=50)
-    has_bangumi_account: bool = Field(..., description="是否关联Bangumi账号")
+    pass
 
 
-class UserUpdate(UserBase):
+class UserUpdate(BaseModel):
     """
     用户更新Schema
     
-    用于更新用户资料，所有字段继承自 UserBase 均为 Optional
+    用于更新用户资料，所有字段均为可选
     """
-    pass
+    username: Optional[str] = Field(None, description="用户名")
+    avatar_url: Optional[str] = Field(None, description="头像URL")
+    bangumi_id: Optional[int] = Field(None, description="Bangumi ID")
+    sign: Optional[str] = Field(None, description="个性签名")
+
+    class Config:
+        from_attributes = True
 
 
 class UserRead(UserBase):
@@ -45,9 +49,39 @@ class UserRead(UserBase):
     用于返回用户信息，继承自 UserBase，增加只读字段
     """
     id: int = Field(..., description="用户ID")
-    username: str = Field(..., description="用户名")
     created_at: datetime = Field(..., description="创建时间")
-    updated_at: datetime = Field(..., description="更新时间")
 
     class Config:
         from_attributes = True
+
+
+class UserList(BaseModel):
+    """
+    用户列表分页响应Schema
+    
+    用于返回分页的用户列表，包含总数和用户列表
+    """
+    total: int = Field(..., description="总记录数")
+    items: List[UserRead] = Field(default_factory=list, description="用户列表")
+
+
+class UserSearch(BaseModel):
+    """
+    用户搜索Schema
+    
+    用于搜索用户，包含分页参数
+    """
+    skip: Optional[int] = Field(default=0, description="跳过的记录数")
+    limit: Optional[int] = Field(default=100, description="返回的最大记录数")
+
+
+class UserLogin(BaseModel):
+    """
+    用户登录Schema
+    
+    用于用户登录，包含用户名和其他登录数据
+    """
+    username: str = Field(..., description="用户名")
+    avatar_url: Optional[str] = Field(default=None, description="头像URL")
+    bangumi_id: Optional[int] = Field(default=None, description="Bangumi ID")
+    sign: Optional[str] = Field(default=None, description="个性签名")

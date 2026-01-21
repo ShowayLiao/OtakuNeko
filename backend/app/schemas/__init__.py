@@ -6,16 +6,14 @@ from app.schemas.user import (
 )
 from app.schemas.subject import (
     SubjectBase,
-    SubjectRead,
-    SubjectDetail,
-    SubjectWithUserStatus
+    SubjectRead
 )
 from app.schemas.collection import (
     CollectionBase,
+    CollectionCreate,
     CollectionUpdate,
     CollectionRead,
-    CollectionList,
-    ManualCollectionCreate
+    CollectionList
 )
 
 __all__ = [
@@ -25,11 +23,9 @@ __all__ = [
     "UserRead",
     "SubjectBase",
     "SubjectRead",
-    "SubjectDetail",
-    "SubjectWithUserStatus",
     "CollectionBase",
+    "CollectionCreate",
     "CollectionUpdate",
     "CollectionRead",
-    "CollectionList",
-    "ManualCollectionCreate"
+    "CollectionList"
 ]

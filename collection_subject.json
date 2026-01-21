@@ -1,0 +1,306 @@
+{
+  "data": [
+    {
+      "updated_at": "2025-12-27T02:01:26+08:00",
+      "comment": null,
+      "tags": [],
+      "subject": {
+      "date": "2014-10-09",
+      "platform": "TV",
+      "images": {
+        "small": "https://lain.bgm.tv/r/200/pic/cover/l/ec/c7/100444_96r3J.jpg",
+        "grid": "https://lain.bgm.tv/r/100/pic/cover/l/ec/c7/100444_96r3J.jpg",
+        "large": "https://lain.bgm.tv/pic/cover/l/ec/c7/100444_96r3J.jpg",
+        "medium": "https://lain.bgm.tv/r/800/pic/cover/l/ec/c7/100444_96r3J.jpg",
+        "common": "https://lain.bgm.tv/r/400/pic/cover/l/ec/c7/100444_96r3J.jpg"
+      },
+      "image": "https://lain.bgm.tv/pic/cover/l/ec/c7/100444_96r3J.jpg",
+      "summary": "　　有马公生的母亲一心想把有马培育成举世闻名的钢琴家，而有马也不负母亲的期望，在念小学时就赢得许多钢琴比赛的大奖。11岁的秋天，有马的母亲过世，从此他再也听不见自己弹奏的钢琴声，沮丧的他也只好放弃演奏，但在14岁那年，经由儿时玩伴的介绍，有马认识了小提琴手宫园薰，并被薰的自由奔放吸引，没想到薰竟开口邀请公生在比赛时担任她的伴奏… ",
+      "name": "四月は君の嘘",
+      "name_cn": "四月是你的谎言",
+      "tags": [
+        {
+          "name": "恋爱",
+          "count": 5382,
+          "total_cont": 471063
+        },
+        {
+          "name": "音乐",
+          "count": 4125,
+          "total_cont": 86482
+        },
+        {
+          "name": "A-1Pictures",
+          "count": 4059,
+          "total_cont": 132027
+        },
+        {
+          "name": "治愈",
+          "count": 3316,
+          "total_cont": 271332
+        },
+        {
+          "name": "青春",
+          "count": 2710,
+          "total_cont": 95311
+        },
+        {
+          "name": "催泪",
+          "count": 2550,
+          "total_cont": 54465
+        },
+        {
+          "name": "四月は君の嘘",
+          "count": 2547,
+          "total_cont": 2560
+        },
+        {
+          "name": "2014年10月",
+          "count": 2224,
+          "total_cont": 28355
+        },
+        {
+          "name": "漫画改",
+          "count": 2156,
+          "total_cont": 732175
+        },
+        {
+          "name": "TV",
+          "count": 1734,
+          "total_cont": 1235131
+        },
+        {
+          "name": "2014",
+          "count": 1099,
+          "total_cont": 65855
+        },
+        {
+          "name": "校园",
+          "count": 915,
+          "total_cont": 380891
+        },
+        {
+          "name": "漫改",
+          "count": 808,
+          "total_cont": 322117
+        },
+        {
+          "name": "花江夏樹",
+          "count": 470,
+          "total_cont": 2206
+        },
+        {
+          "name": "noitaminA",
+          "count": 311,
+          "total_cont": 16885
+        },
+        {
+          "name": "日本",
+          "count": 215,
+          "total_cont": 197298
+        },
+        {
+          "name": "逢坂良太",
+          "count": 110,
+          "total_cont": 2518
+        },
+        {
+          "name": "致郁",
+          "count": 94,
+          "total_cont": 21137
+        },
+        {
+          "name": "石黑恭平",
+          "count": 94,
+          "total_cont": 410
+        },
+        {
+          "name": "横山克",
+          "count": 77,
+          "total_cont": 3685
+        },
+        {
+          "name": "梶裕貴",
+          "count": 73,
+          "total_cont": 2802
+        },
+        {
+          "name": "四月是你的谎言",
+          "count": 65,
+          "total_cont": 459
+        },
+        {
+          "name": "神作",
+          "count": 57,
+          "total_cont": 44461
+        },
+        {
+          "name": "2014年",
+          "count": 54,
+          "total_cont": 3840
+        },
+        {
+          "name": "种田梨沙",
+          "count": 53,
+          "total_cont": 1271
+        },
+        {
+          "name": "日常",
+          "count": 46,
+          "total_cont": 339534
+        },
+        {
+          "name": "成长",
+          "count": 40,
+          "total_cont": 5190
+        },
+        {
+          "name": "イシグロキョウヘイ",
+          "count": 39,
+          "total_cont": 102
+        },
+        {
+          "name": "励志",
+          "count": 33,
+          "total_cont": 25171
+        },
+        {
+          "name": "A-1",
+          "count": 28,
+          "total_cont": 3363
+        }
+      ],
+      "infobox": [
+        {
+          "key": "中文名",
+          "value": "四月是你的谎言"
+        },
+        {
+          "key": "别名",
+          "value": [
+            {
+              "v": "Shigatsu wa Kimi no Uso"
+            },
+            {
+              "v": "Your Lie in April"
+            }
+          ]
+        },
+        {
+          "key": "话数",
+          "value": "22"
+        },
+        {
+          "key": "放送开始",
+          "value": "2014年10月9日"
+        },
+        {
+          "key": "放送星期",
+          "value": "星期四"
+        },
+        {
+          "key": "官方网站",
+          "value": "http://www.kimiuso.jp/"
+        },
+        {
+          "key": "播放电视台",
+          "value": "フジテレビ"
+        },
+        {
+          "key": "播放结束",
+          "value": "2015年3月19日"
+        },
+        {
+          "key": "导演",
+          "value": "イシグロキョウヘイ"
+        },
+        {
+          "key": "Copyright",
+          "value": "©新川直司・講談社/「四月は君の嘘」製作委員会"
+        },
+        {
+          "key": "OP・ED 分镜",
+          "value": "中村亮介（OP1）中村章子（OP2）イシグロキョウヘイ（ED1、2）"
+        },
+        {
+          "key": "原作",
+          "value": "新川直司（講談社「月刊少年マガジン」連載）"
+        },
+        {
+          "key": "人物设定",
+          "value": "愛敬由紀子"
+        },
+        {
+          "key": "动作作画监督",
+          "value": "浅賀和行（演奏作画监督）"
+        },
+        {
+          "key": "总制片人",
+          "value": "岩上敦宏、松崎容子、松下卓也"
+        },
+        {
+          "key": "制片人",
+          "value": "斎藤俊輔、木村誠、立石謙介"
+        },
+        {
+          "key": "製作",
+          "value": "「四月は君の嘘」製作委員会（Aniplex、フジテレビジョン、講談社、京楽産業ホールディングス、関西テレビ放送、ローソンHMVエンタテイメント、電通）；植田益朗、清水賢治、鈴木伸育、中尾勇一、横澤良雄、坂本健、石川豊"
+        },
+        {
+          "key": "特效",
+          "value": "グラフィニカ/齋藤睦、緒方郁子(第2話,第4話-第9話,第11話)、久保田彩(第6話)、内海紗耶(第7話,第12話)、佐藤菜津子(第11話)、原田祥子(第19話)"
+        },
+        {
+          "key": "剪辑",
+          "value": "グラフィニカ"
+        }
+      ],
+      "rating": {
+        "rank": 240,
+        "total": 21509,
+        "count": {
+          "1": 46,
+          "2": 16,
+          "3": 35,
+          "4": 123,
+          "5": 325,
+          "6": 1233,
+          "7": 4392,
+          "8": 8794,
+          "9": 4497,
+          "10": 2048
+        },
+        "score": 8
+      },
+      "collection": {
+        "on_hold": 1823,
+        "dropped": 722,
+        "wish": 5823,
+        "collect": 34257,
+        "doing": 1884
+      },
+      "id": 100444,
+      "eps": 22,
+      "meta_tags": [
+        "TV",
+        "恋爱",
+        "日本",
+        "漫画改",
+        "音乐"
+      ],
+      "volumes": 0,
+      "series": false,
+      "locked": false,
+      "nsfw": false,
+      "type": 2
+    },
+      "subject_id": 498378,
+      "vol_status": 0,
+      "ep_status": 12,
+      "subject_type": 2,
+      "type": 3,
+      "rate": 0,
+      "private": false
+    }
+]
+}

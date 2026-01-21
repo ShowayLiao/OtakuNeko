@@ -1,10 +1,11 @@
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 import logging
 from sqlmodel import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..models import User
+from ..schemas.user import UserCreate, UserUpdate, UserRead, UserSearch
 
 logger = logging.getLogger(__name__)
 
@@ -16,13 +17,13 @@ class UserRepo:
     """
     
     @staticmethod
-    async def create(db: AsyncSession, user_data: Dict[str, Any]) -> User:
+    async def create(db: AsyncSession, user_data: UserCreate) -> User:
         """
         创建新用户
         
         Args:
             db: 数据库会话
-            user_data: 用户数据字典
+            user_data: 用户数据，使用 UserCreate schema
         
         Returns:
             创建的User对象
@@ -31,7 +32,7 @@ class UserRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            new_user = User(**user_data)
+            new_user = User(**user_data.model_dump())
             db.add(new_user)
             await db.commit()
             await db.refresh(new_user)
@@ -130,14 +131,13 @@ class UserRepo:
             raise
     
     @staticmethod
-    async def get_all(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
+    async def get_all(db: AsyncSession, search_data: UserSearch) -> List[User]:
         """
         获取所有用户
         
         Args:
             db: 数据库会话
-            skip: 跳过的记录数
-            limit: 返回的最大记录数
+            search_data: 搜索数据，使用 UserSearch schema
         
         Returns:
             User对象列表
@@ -146,21 +146,21 @@ class UserRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            result = await db.execute(select(User).offset(skip).limit(limit))
+            result = await db.execute(select(User).offset(search_data.skip).limit(search_data.limit))
             return list(result.scalars().all())
         except SQLAlchemyError as e:
             logger.error(f"获取用户列表失败: {e}")
             raise
     
     @staticmethod
-    async def update(db: AsyncSession, user_id: int, user_data: Dict[str, Any]) -> Optional[User]:
+    async def update(db: AsyncSession, user_id: int, user_data: UserUpdate) -> Optional[User]:
         """
         更新用户信息
         
         Args:
             db: 数据库会话
             user_id: 用户ID
-            user_data: 更新的用户数据
+            user_data: 更新的用户数据，使用 UserUpdate schema
         
         Returns:
             更新后的User对象或None
@@ -173,7 +173,9 @@ class UserRepo:
             if not user:
                 return None
             
-            for field, value in user_data.items():
+            # 只更新设置了的字段
+            update_dict = user_data.model_dump(exclude_unset=True)
+            for field, value in update_dict.items():
                 if hasattr(user, field):
                     setattr(user, field, value)
             

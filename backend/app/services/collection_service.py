@@ -1,364 +1,423 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from sqlalchemy import desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.models import Collection, CollectionStatus, Subject, SubjectType
-from app.schemas.collection import CollectionUpdate
+from app.repositories.collection_repo import CollectionRepo
+from app.schemas.collection import (
+    CollectionCreate, CollectionUpdate, CollectionUpdateList,
+    CollectionRead, CollectionList, CollectionReadList,
+    CollectionSearchByID, CollectionSearchBase, CollectionSearchByName
+)
 
 logger = logging.getLogger(__name__)
 
 
-async def get_my_collections(
+async def create_collection(
     db: AsyncSession,
-    user_id: int,
-    status: Optional[CollectionStatus] = None,
-    subject_type: Optional[int] = None,
-    keyword: Optional[str] = None,
-    sort_by: str = "updated_at",
-    limit: int = 20,
-    offset: int = 0
-) -> Dict[str, Any]:
+    collection_data: CollectionCreate
+) -> Collection:
     """
-    获取用户的收藏列表，支持多种筛选和排序
+    创建单个收藏记录
     
     Args:
         db: 数据库会话
-        user_id: 用户ID
-        status: 收藏状态 (可选，CollectionStatus枚举)
-        subject_type: 条目类型 (可选)
-        keyword: 搜索关键词 (可选)
-        sort_by: 排序字段 ("updated_at" 或 "rate")
-        limit: 分页大小
-        offset: 分页偏移
+        collection_data: 收藏数据，使用 CollectionCreate schema
     
     Returns:
-        包含总数和分页后结果的字典
+        创建的收藏记录
     """
-    query = select(Collection, Subject).where(
-        Collection.user_id == user_id,
-        Collection.subject_id == Subject.id
-    )
+    try:
+        # 直接使用 CollectionCreate schema 创建收藏记录
+        collection = await CollectionRepo.create(db, collection_data)
+        logger.info(f"Created collection: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
+        return collection
+    except Exception as e:
+        logger.error(f"Failed to create collection: {e}")
+        raise
+
+
+async def get_collection(
+    db: AsyncSession,
+    search_data: CollectionSearchByID
+) -> Optional[CollectionRead]:
+    """
+    获取单个收藏记录
     
-    if status:
-        query = query.where(Collection.type == status)
+    Args:
+        db: 数据库会话
+        search_data: 搜索数据，使用 CollectionSearchByID schema
     
-    if subject_type:
-        try:
-            # 过滤条目类型
-            query = query.where(Subject.type == SubjectType(subject_type))
-        except ValueError:
-            pass  # 无效类型，忽略过滤
-    
-    if keyword:
-        # 搜索 Subject 的名字
-        query = query.where(
-            Subject.name.contains(keyword) | Subject.name_cn.contains(keyword)
-        )
-    
-    # 添加排序，使用subject_id作为唯一的二级排序键确保稳定性
-    tie_breaker = Collection.subject_id.desc()
-    
-    if sort_by == "rate":
-        # 按用户打分倒序，没打分的排后面
-        query = query.order_by(desc(Collection.rate).nullslast(), tie_breaker)
-    elif sort_by == "score":
-        # 按大众评分倒序，没评分的排后面
-        query = query.order_by(desc(Subject.score).nullslast(), tie_breaker)
-    elif sort_by == "rank":
-        # 按 Bangumi 排名升序，Rank 0 转换为 NULL 放到最后
-        query = query.order_by(func.nullif(Subject.rank, 0).asc().nullslast(), tie_breaker)
-    elif sort_by == "date":
-        # 按条目发行日期倒序，没日期的排后面
-        query = query.order_by(desc(Subject.date).nullslast(), tie_breaker)
-    else:  # 默认按 updated_at 排序
-        query = query.order_by(desc(Collection.updated_at), tie_breaker)
-    
-    # 计算总数
-    total = await db.execute(select(func.count()).select_from(query.subquery()))
-    total_count = total.scalar_one()
-    
-    # 分页
-    query = query.offset(offset).limit(limit)
-    
-    # 执行查询
-    result = await db.execute(query)
-    collections_with_subjects = result.all()
-    
-    # 构建返回结果
-    return {
-        "total": total_count,
-        "items": [{
-            "collection": collection,
-            "subject": subject
-        } for collection, subject in collections_with_subjects]
-    }
+    Returns:
+        收藏记录的读取Schema，如果不存在则返回 None
+    """
+    try:
+        from app.schemas.subject import SubjectRead as SubjectReadSchema
+        
+        # 调用仓库方法获取收藏和关联条目
+        collection_result = await CollectionRepo.get_by_user_and_subject(db, search_data)
+        
+        if not collection_result:
+            return None
+        
+        collection, subject = collection_result
+        
+        # 构造CollectionRead对象
+        collection_dict = collection.model_dump()
+        
+        if subject:
+            # 如果有关联条目，添加到收藏记录中
+            collection_dict["subject"] = SubjectReadSchema.model_validate(subject)
+        else:
+            collection_dict["subject"] = None
+        
+        return CollectionRead(**collection_dict)
+    except Exception as e:
+        logger.error(f"Failed to get collection: {e}")
+        raise
 
 
 async def update_collection(
     db: AsyncSession,
-    user_id: int,
-    subject_id: int,
-    update_data: CollectionUpdate
+    collection_data: CollectionUpdate
 ) -> Optional[Collection]:
     """
     更新用户的收藏信息
     
     Args:
         db: 数据库会话
-        user_id: 用户ID
-        subject_id: 条目ID
-        update_data: 更新数据
+        collection_data: 更新数据，使用 CollectionUpdate schema
     
     Returns:
         更新后的 Collection 对象，如果不存在则返回 None
     """
-    # 查询收藏记录
-    # 注意：更新操作只需要Collection数据，不需要Subject数据
-    query = select(Collection).where(
-        Collection.user_id == user_id,
-        Collection.subject_id == subject_id
-    )
-    result = await db.execute(query)
-    collection = result.scalar_one_or_none()
-    
-    if not collection:
-        return None
-    
-    # 排除未设置的字段
-    obj_data = update_data.model_dump(exclude_unset=True)
-    
-    # 字段映射：API Schema 中的 'status' 对应数据库模型中的 'type'
-    field_mapping = {
-        'status': 'type'
-    }
-    
-    # 更新字段
-    for field, value in obj_data.items():
-        # 应用字段映射
-        mapped_field = field_mapping.get(field, field)
+    try:
+        # 调用仓库方法更新收藏
+        collection = await CollectionRepo.update(db, collection_data)
         
-        # 检查模型是否有该字段
-        if hasattr(collection, mapped_field):
-            setattr(collection, mapped_field, value)
+        if collection:
+            logger.info(f"Updated collection: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
         else:
-            logger.warning(f"Field {mapped_field} not found in Collection model")
+            logger.warning(f"Collection not found for update: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
+        
+        return collection
+    except Exception as e:
+        logger.error(f"Failed to update collection: {e}")
+        raise
+
+
+async def delete_collection(
+    db: AsyncSession,
+    search_data: CollectionSearchByID
+) -> bool:
+    """
+    删除收藏记录
     
-    # 更新时间戳
-    collection.updated_at = datetime.now()
+    Args:
+        db: 数据库会话
+        search_data: 搜索数据，使用 CollectionSearchByID schema
     
-    # 保存更新
-    db.add(collection)
-    await db.commit()
-    await db.refresh(collection)
+    Returns:
+        删除成功返回 True，收藏记录不存在返回 False
+    """
+    try:
+        deleted = await CollectionRepo.delete(db, search_data)
+        if deleted:
+            logger.info(f"Deleted collection: user_id: {search_data.user_id}, source: {search_data.source}, source_id: {search_data.source_id}")
+        else:
+            logger.warning(f"Collection not found for deletion: user_id: {search_data.user_id}, source: {search_data.source}, source_id: {search_data.source_id}")
+        return deleted
+    except Exception as e:
+        logger.error(f"Failed to delete collection: {e}")
+        raise
+
+
+async def get_user_collections(
+    db: AsyncSession,
+    search_data: CollectionSearchBase
+) -> CollectionReadList:
+    """
+    获取用户的收藏列表，支持多种筛选和排序
     
-    return collection
+    Args:
+        db: 数据库会话
+        search_data: 搜索数据，使用 CollectionSearchBase schema
+    
+    Returns:
+        包含总数和分页后结果的CollectionReadList Schema
+    """
+    from app.schemas.subject import SubjectRead as SubjectReadSchema
+    
+    # 调用仓库方法获取收藏列表
+    collection_pairs = await CollectionRepo.get_by_user(db, search_data.user_id, None, search_data.skip, search_data.limit)
+    
+    # 构建CollectionRead对象列表
+    collection_read_items = []
+    for collection, subject in collection_pairs:
+        collection_dict = collection.model_dump()
+        
+        if subject:
+            collection_dict["subject"] = SubjectReadSchema.model_validate(subject)
+        else:
+            collection_dict["subject"] = None
+        
+        collection_read_items.append(CollectionRead(**collection_dict))
+    
+    # 计算总数
+    from sqlalchemy import func
+    from sqlmodel import select, and_, or_
+    
+    # 构建总数查询
+    total_query = select(func.count(Collection.user_id)).where(Collection.user_id == search_data.user_id)
+    
+    total_result = await db.execute(total_query)
+    total_count = total_result.scalar_one()
+    
+    # 返回CollectionReadList
+    return CollectionReadList(
+        total=total_count,
+        items=collection_read_items
+    )
+
+
+async def search_collections(
+    db: AsyncSession,
+    search_data: CollectionSearchByName
+) -> CollectionReadList:
+    """
+    根据关键词搜索收藏记录
+    
+    Args:
+        db: 数据库会话
+        search_data: 搜索数据，使用 CollectionSearchByName schema
+    
+    Returns:
+        包含总数和搜索结果的CollectionReadList Schema
+    """
+    try:
+        from app.schemas.subject import SubjectRead as SubjectReadSchema
+        from sqlalchemy import func
+        from sqlmodel import select, or_, and_
+        
+        # 调用仓库方法获取搜索结果
+        collection_pairs = await CollectionRepo.search_by_keyword(db, search_data)
+        logger.info(f"Search collections found: {len(collection_pairs)} results for keyword: {search_data.keyword}")
+        
+        # 简化转换为CollectionRead对象列表
+        collection_read_items = [
+            CollectionRead(
+                **collection.model_dump(),
+                subject=SubjectReadSchema.model_validate(subject) if subject else None
+            )
+            for collection, subject in collection_pairs
+        ]
+        
+        # 构建并执行总数查询
+        total_query = select(func.count(Collection.user_id)).where(Collection.user_id == search_data.user_id)
+        
+        # 添加关键词搜索条件
+        if search_data.keyword:
+            total_query = total_query.outerjoin(Subject, 
+                and_(Collection.source == Subject.source, Collection.source_id == Subject.source_id))
+            total_query = total_query.where(
+                or_(
+                    Collection.name.ilike(f"%{search_data.keyword}%"),
+                    Collection.name_cn.ilike(f"%{search_data.keyword}%"),
+                    Collection.comment.ilike(f"%{search_data.keyword}%"),
+                    Subject.name.ilike(f"%{search_data.keyword}%"),
+                    Subject.name_cn.ilike(f"%{search_data.keyword}%")
+                )
+            )
+        
+        total_result = await db.execute(total_query)
+        total_count = total_result.scalar_one()
+        
+        # 返回CollectionReadList
+        return CollectionReadList(
+            total=total_count,
+            items=collection_read_items
+        )
+    except Exception as e:
+        logger.error(f"Failed to search collections: {e}")
+        raise
 
 
 async def upsert_collection(
     db: AsyncSession,
     user_id: int,
-    sid: Optional[int],
-    data: Any
+    sid: Optional[int] = None,
+    data: Optional[dict] = None
 ) -> Collection:
     """
     更新或添加收藏
     
     统一的收藏操作业务逻辑：
-    - 当提供sid时：更新现有收藏
-    - 当不提供sid时：创建新收藏
-    - 如果提供sid但收藏不存在，则创建新收藏
+    1. 检查subject是否存在，不存在则创建
+    2. 检查collection是否存在，不存在则创建，存在则更新
     
     Args:
         db: 数据库会话
-        user_id: 当前用户ID
-        sid: 条目ID，可选，留空则创建新收藏
-        data: 收藏更新/添加数据
+        user_id: 用户ID
+        sid: 条目ID，可选
+        data: 收藏更新/添加数据，包含collection和subject字段
     
     Returns:
         更新或创建后的 Collection 对象
+    
+    Raises:
+        ValueError: 必要参数缺失或格式错误
+        SQLAlchemyError: 数据库操作异常
     """
-    from app.schemas.collection import CollectionUpsertRequest
-    from app.models.enums import CollectionStatus, SubjectType
     from app.repositories.subject_repo import SubjectRepo
-    from app.repositories.collection_repo import CollectionRepo
-    import time
+    from app.schemas.subject import SubjectCreate, SubjectSearchByID
+    from app.schemas.collection import CollectionUpdate, CollectionCreate
     
-    def validate_date_format(date_str: str) -> bool:
-        """验证日期格式是否为 YYYY-MM-DD"""
-        if not date_str:
-            return True
-        try:
-            datetime.strptime(date_str, "%Y-%m-%d")
-            return True
-        except ValueError:
-            return False
+    # 从data中提取collection和subject信息
+    collection_data = data.collection if hasattr(data, 'collection') else data.get('collection') if isinstance(data, dict) else None
+    subject_data = data.subject if hasattr(data, 'subject') else data.get('subject') if isinstance(data, dict) else None
     
-    def check_date_conflict(release_date: str, publish_date: str) -> tuple[bool, str]:
-        """
-        检查上映时间和发售时间是否存在冲突
+    # 第一步：检查subject是否存在
+    if sid:
+        # 使用sid查询subject
+        subject = await db.get(Subject, sid)
+        if not subject:
+            raise ValueError(f"Subject with ID {sid} not found")
         
-        Args:
-            release_date: 上映日期 (YYYY-MM-DD)
-            publish_date: 发售日期 (YYYY-MM-DD)
-            
-        Returns:
-            (是否有冲突, 错误信息)
-        """
-        if not release_date or not publish_date:
-            return False, ""
+        # 构建collection搜索数据
+        collection_search_data = CollectionSearchByID(
+            user_id=user_id,
+            source=subject.source,
+            source_id=subject.source_id
+        )
+    elif collection_data:
+        # 使用collection_data中的source和source_id查询subject
+        subject_search_data = SubjectSearchByID(
+            source=collection_data.source,
+            source_id=collection_data.source_id
+        )
+        subject_result = await SubjectRepo.get_by_source(db, subject_search_data)
+        subject = subject_result[0] if subject_result else None
         
-        try:
-            release_dt = datetime.strptime(release_date, "%Y-%m-%d")
-            publish_dt = datetime.strptime(publish_date, "%Y-%m-%d")
-            
-            if release_dt > publish_dt:
-                return True, "上映时间不能晚于发售时间"
-            
-            return False, ""
-        except ValueError:
-            return False, ""
-    
-    # 验证请求数据
-    if sid is None:
-        # 创建新收藏时，必须提供subject数据
-        if not data.subject:
-            raise ValueError("Subject data is required for creating new collection")
-        
-        subject_data = data.subject
-        
-        # 验证日期格式
-        if not validate_date_format(subject_data.release_date):
-            raise ValueError("上映日期格式错误，请使用 YYYY-MM-DD 格式")
-        
-        if not validate_date_format(subject_data.publish_date):
-            raise ValueError("发售日期格式错误，请使用 YYYY-MM-DD 格式")
-        
-        # 检查时间冲突
-        has_conflict, conflict_msg = check_date_conflict(subject_data.release_date, subject_data.publish_date)
-        if has_conflict:
-            raise ValueError(conflict_msg)
-        
-        # 处理Subject数据
-        # 生成唯一的source_id
-        source_id = f"manual_{int(time.time() * 1000)}"
-        
-        # 构造Subject数据
-        subject_dict = {
-            "name": subject_data.name,
-            "name_cn": subject_data.name,
-            "type": subject_data.type,
-            "cover_url": subject_data.cover_url,
-            "date": subject_data.publish_date if subject_data.publish_date else subject_data.release_date,
-            "tags": subject_data.tags if subject_data.tags else [],
-            "images": {}
-        }
-        
-        # 保存Subject，source_id使用生成的manual_xxx
-        subject = await SubjectRepo.save(db, subject_dict, source="manual", source_id=source_id)
-        logger.info(f"Created new manual subject: {subject.id}, source_id: {source_id}")
-        
-        # 构造Collection数据
-        collection_dict = {
-            "type": subject_data.status,
-            "rate": subject_data.rate if subject_data.rate > 0 else None,
-            "comment": subject_data.comment,
-            "private": False,
-            "tags": [],
-            "updated_at": datetime.now().isoformat() + "Z"
-        }
-        
-        # 保存Collection
-        collection = await CollectionRepo.save(db, user_id, subject.id, collection_dict)
-        logger.info(f"Created new collection for manual subject: {collection.id}, subject_id: {subject.id}")
-        
-        return collection
+        # 构建collection搜索数据
+        collection_search_data = CollectionSearchByID(
+            user_id=user_id,
+            source=collection_data.source,
+            source_id=collection_data.source_id
+        )
     else:
-        # 提供了sid，执行更新或创建逻辑
-        # 检查收藏是否存在
-        collection = await CollectionRepo.find_by_user_and_subject(db, user_id, sid)
+        raise ValueError("Either sid or collection_data is required")
+    
+    # 第二步：检查collection是否存在
+    collection_result = await CollectionRepo.get_by_user_and_subject(db, collection_search_data)
+    collection = collection_result[0] if collection_result else None
+    
+    if not collection:
+        # collection不存在，创建新的collection
+        logger.info(f"Collection not found, creating new one: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
         
-        if collection:
-            # 更新现有收藏
-            if not data.collection:
-                raise ValueError("Collection data is required for updating existing collection")
-            
-            # 构造Collection数据
-            collection_dict = {
-                "type": data.collection.status,
-                "rate": data.collection.rate if data.collection.rate > 0 else None,
-                "comment": data.collection.comment,
-                "private": data.collection.private,
-                "tags": data.collection.tags if data.collection.tags else [],
-                "updated_at": datetime.now().isoformat() + "Z"
-            }
-            
-            # 更新Collection
-            collection = await CollectionRepo.save(db, user_id, sid, collection_dict)
-            logger.info(f"Updated collection: {collection.id}, subject_id: {sid}")
-            
-            return collection
-        else:
-            # 创建新收藏
-            if not data.subject:
-                raise ValueError("Subject data is required for creating new collection")
-            
-            subject_data = data.subject
-            
-            # 验证日期格式
-            if not validate_date_format(subject_data.release_date):
-                raise ValueError("上映日期格式错误，请使用 YYYY-MM-DD 格式")
-            
-            if not validate_date_format(subject_data.publish_date):
-                raise ValueError("发售日期格式错误，请使用 YYYY-MM-DD 格式")
-            
-            # 检查时间冲突
-            has_conflict, conflict_msg = check_date_conflict(subject_data.release_date, subject_data.publish_date)
-            if has_conflict:
-                raise ValueError(conflict_msg)
-            
-            # 检查条目是否已存在
-            from app.models import Subject
-            # 正确的检查：使用source_id和source来匹配，而非id
-            result = await db.execute(
-                select(Subject).where(
-                    Subject.source_id == str(sid),
-                    Subject.source == "manual"
-                )
+        # 如果没有collection_data，使用默认值创建
+        if not collection_data:
+            collection_data = CollectionUpdate(
+                user_id=user_id,
+                source=subject.source,
+                source_id=subject.source_id,
+                type=CollectionStatus(2),  # 默认状态为"看过"
+                rate=None,
+                comment=None,
+                private=False,
+                tags=None
             )
-            subject = result.scalar_one_or_none()
+        
+        # 转换为CollectionCreate schema
+        collection_dict = collection_data.model_dump(exclude_unset=True)
+        # 确保设置updated_at字段
+        from datetime import datetime
+        collection_dict['updated_at'] = collection_dict.get('updated_at') or datetime.now()
+        
+        collection_create = CollectionCreate(
+            user_id=user_id,
+            **collection_dict
+        )
+        
+        collection = await CollectionRepo.create(db, collection_create)
+        logger.info(f"Created new collection: user_id={user_id}, source={collection.source}, source_id={collection.source_id}")
+    else:
+        # collection存在，更新现有collection
+        logger.info(f"Collection already exists, updating: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
+        
+        if not collection_data:
+            raise ValueError("collection_data is required for updating collection")
+        
+        # 确保collection_data包含必要的字段
+        collection_data.user_id = user_id
+        collection_data.source = collection_search_data.source
+        collection_data.source_id = collection_search_data.source_id
+        
+        # 更新collection
+        collection = await CollectionRepo.update(db, collection_data)
+        logger.info(f"Updated collection: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
+    
+    return collection
+
+
+async def batch_upsert_collections(
+    db: AsyncSession,
+    collections: CollectionList,
+    user_id: int
+) -> int:
+    """
+    批量更新或添加收藏
+    
+    批量处理收藏操作业务逻辑：
+    1. 遍历CollectionList中的每个CollectionRead对象
+    2. 为每个对象调用upsert_collection函数
+    
+    Args:
+        db: 数据库会话
+        collections: 收藏列表数据，使用 CollectionList schema
+        user_id: 用户ID
+    
+    Returns:
+        成功处理的收藏数量
+    
+    Raises:
+        ValueError: 必要参数缺失或格式错误
+        SQLAlchemyError: 数据库操作异常
+    """
+    from app.schemas.collection import CollectionCreate
+    
+    success_count = 0
+    
+    for collection_read in collections.items:
+        try:
+            # 转换为CollectionCreate schema
+            collection_create = CollectionCreate(
+                user_id=user_id,
+                type=collection_read.type,
+                source=collection_read.source,
+                source_id=collection_read.source_id,
+                updated_at=collection_read.updated_at,
+                rate=collection_read.rate,
+                comment=collection_read.comment,
+                private=collection_read.private,
+                tags=collection_read.tags,
+                vol_status=collection_read.vol_status,
+                ep_status=collection_read.ep_status,
+                subject_type=collection_read.subject_type
+            )
             
-            if not subject:
-                # 构造Subject数据
-                subject_dict = {
-                    "name": subject_data.name,
-                    "name_cn": subject_data.name,
-                    "type": subject_data.type,
-                    "cover_url": subject_data.cover_url,
-                    "date": subject_data.publish_date if subject_data.publish_date else subject_data.release_date,
-                    "tags": subject_data.tags if subject_data.tags else [],
-                    "images": {}
-                }
-                
-                # 保存Subject，source_id使用外部源的真实ID（sid）
-                subject = await SubjectRepo.save(db, subject_dict, source="manual", source_id=str(sid))
-                logger.info(f"Created new subject with external ID: {subject.id}, source_id: {str(sid)}")
-            
-            # 构造Collection数据
-            collection_dict = {
-                "type": subject_data.status,
-                "rate": subject_data.rate if subject_data.rate > 0 else None,
-                "comment": subject_data.comment,
-                "private": False,
-                "tags": [],
-                "updated_at": datetime.now().isoformat() + "Z"
-            }
-            
-            # 保存Collection
-            collection = await CollectionRepo.save(db, user_id, subject.id, collection_dict)
-            logger.info(f"Created new collection for subject: {collection.id}, subject_id: {subject.id}")
-            
-            return collection
+            # 调用upsert_collection函数
+            await upsert_collection(db, collection_create)
+            success_count += 1
+            logger.info(f"Successfully upserted collection: user_id={user_id}, source={collection_read.source}, source_id={collection_read.source_id}")
+        except Exception as e:
+            logger.error(f"Failed to upsert collection: user_id={user_id}, source={collection_read.source}, source_id={collection_read.source_id}, error={e}")
+            continue
+    
+    return success_count
+
+

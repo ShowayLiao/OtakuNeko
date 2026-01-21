@@ -29,8 +29,6 @@ async def get_current_user_endpoint(
         return {
             "id": current_user.id,
             "username": current_user.username,
-            "nickname": current_user.nickname,
-            "email": current_user.email,
             "avatar_url": current_user.avatar_url,
             "bangumi_id": current_user.bangumi_id,
             "sign": current_user.sign,

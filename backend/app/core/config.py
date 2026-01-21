@@ -20,6 +20,14 @@ class Settings(BaseSettings):
     # OpenAI配置
     OPENAI_API_KEY: Optional[str] = None
     
+    # 日志配置
+    LOG_LEVEL: str = "INFO"
+    LOG_DIR: str = "logs"
+    LOG_MAX_BYTES: int = 104857600  # 100MB
+    LOG_BACKUP_COUNT: int = 30  # 保留30天的日志
+    LOG_FORMAT: str = "%(asctime)s - %(levelname)s - %(module)s - %(request_id)s - %(message)s"
+    LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
+    
     class Config:
         env_file = ".env"
         case_sensitive = True

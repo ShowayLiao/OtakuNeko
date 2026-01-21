@@ -15,14 +15,20 @@ from .bangumi_client import fetch_subject_detail, fetch_user_collections
 logger = logging.getLogger(__name__)
 
 
-async def sync_user_collections(username: str, db: AsyncSession, subject_type: Optional[int] = None) -> int:
+from app.schemas.collection import CollectionList, CollectionSyncRequest
+
+async def sync_user_collections(
+    username: str, 
+    db: AsyncSession, 
+    request_data: Optional[CollectionSyncRequest] = None
+) -> int:
     """
     同步用户的 Bangumi 收藏数据到本地数据库
     
     Args:
         username: Bangumi 用户名
         db: 数据库会话
-        subject_type: 可选，条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)
+        request_data: 同步请求数据，包含limit、offset、subject_type等参数
         
     Returns:
         成功同步的收藏数量
@@ -30,6 +36,9 @@ async def sync_user_collections(username: str, db: AsyncSession, subject_type: O
     Raises:
         Exception: 同步过程中发生错误时抛出
     """
+    from app.services.collection_service import batch_upsert_collections
+    from app.schemas.adapters import adapt_bangumi_collection_to_list
+    
     try:
         # --- 获取或创建用户 Start ---
         # 1. 先查数据库里有没有这个用户
@@ -45,19 +54,29 @@ async def sync_user_collections(username: str, db: AsyncSession, subject_type: O
             await db.refresh(user)
         
         user_id = user.id
-        logger.info(f"--- Syncing for User ID: {user_id} ---")
+        logger.info(f"--- Syncing for User ID: {user_id} --- ")
         # --- 获取或创建用户 End ---
         
         # 初始化分页参数
-        limit = 50
-        offset = 0
+        limit = request_data.limit if request_data and request_data.limit else 50
+        offset = request_data.offset if request_data and request_data.offset else 0
+        subject_type = request_data.subject_type if request_data and request_data.subject_type else None
         sync_count = 0
+        total_success = 0
         
         while True:
             logger.info(f"--- Fetching page with offset: {offset}, limit: {limit} ---")
             
             # 获取用户收藏数据（带分页参数）
             response_json = await fetch_user_collections(username, subject_type, limit=limit, offset=offset)
+            
+            # 调用适配器转换为CollectionList格式
+            collections_list = adapt_bangumi_collection_to_list(response_json)
+            
+            # 调用批量插入函数
+            success_count = await batch_upsert_collections(db, collections_list, user_id)
+            total_success += success_count
+            logger.info(f"--- Page processed: {success_count}/{collections_list.total} items successfully synced ---")
             
             # 提取真正的列表
             items = response_json.get("data", [])
@@ -71,43 +90,6 @@ async def sync_user_collections(username: str, db: AsyncSession, subject_type: O
             if not items:
                 logger.info("No more data to fetch.")
                 break
-            
-            # 遍历当前页的收藏数据
-            for item in items:
-                # 确保item是字典
-                if not isinstance(item, dict):
-                    continue
-                try:
-                    # --- 步骤 A: 先处理 Subject (绝对优先) ---
-                    subject_data = item.get("subject")
-                    if not subject_data:
-                        logger.warning(f"收藏项缺少subject数据，跳过: {item}")
-                        continue
-                        
-                    # 调用 SubjectRepo.save() 处理 Subject 入库
-                    # 这个函数负责：查询 DB -> 不存在则 create -> 存在则 update -> session.commit()
-                    current_subject = await SubjectRepo.save(db, subject_data)
-                    
-                    # --- 步骤 B: 再处理 Collection (只引用 ID) ---
-                    # 此时我们只用 subject_id，不再传递整个 Subject 对象，彻底切断 ORM 写入时的纠缠
-                    await CollectionRepo.save(db, user_id, current_subject.id, item)
-                    
-                    sync_count += 1
-                    logger.info(f"同步收藏: {current_subject.name} (ID: {current_subject.id}) [类型: {SubjectType(current_subject.type).name if current_subject.type else '未知'}]")
-                    
-                except SQLAlchemyError as e:
-                    logger.error(f"数据库操作失败: {e}")
-                    await db.rollback()  # 回滚当前事务
-                    # 继续处理下一个条目，不中断整个同步过程
-                    continue
-                except ValueError as e:
-                    logger.error(f"数据验证失败: {e}")
-                    await db.rollback()  # 回滚当前事务
-                    continue
-                except Exception as e:
-                    logger.error(f"处理收藏项失败: {e}")
-                    await db.rollback()  # 回滚当前事务
-                    continue
             
             # 检查是否已经获取了所有数据
             total_in_server = response_json.get('total', 0)
@@ -124,7 +106,7 @@ async def sync_user_collections(username: str, db: AsyncSession, subject_type: O
             # 防封禁延迟：非常重要，避免请求过快被Ban
             await asyncio.sleep(0.5)
         
-        logger.info(f"成功同步 {sync_count} 条收藏记录")
+        logger.info(f"成功同步 {total_success} 条收藏记录")
         
         # 清理用户统计数据缓存，确保首页统计数据即时刷新
         try:
@@ -133,7 +115,7 @@ async def sync_user_collections(username: str, db: AsyncSession, subject_type: O
         except Exception as e:
             logger.warning(f"清理缓存失败: {e}")
         
-        return sync_count
+        return total_success
         
     except Exception as e:
         logger.error(f"同步用户收藏失败: {e}")
@@ -142,13 +124,14 @@ async def sync_user_collections(username: str, db: AsyncSession, subject_type: O
         raise
 
 
-async def sync_subject_detail(subject_id: int, db: AsyncSession) -> Subject:
+async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str = "bangumi") -> Subject:
     """
     从 Bangumi API 同步单个条目的详细信息到本地数据库
     
     Args:
         subject_id: Bangumi 条目 ID
         db: 数据库会话
+        source: 数据来源，默认为 "bangumi"
         
     Returns:
         同步后的 Subject 对象
@@ -163,7 +146,45 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession) -> Subject:
     # 使用适配器转换数据格式
     adapted_data = adapt_bangumi_subject(bangumi_data)
     
-    # 使用 SubjectRepo.save() 写入数据库
-    subject = await SubjectRepo.save(db, adapted_data, source="bangumi", source_id=str(subject_id))
+    # 转换为 SubjectUpdate 对象
+    from app.schemas.subject import SubjectUpdate, SubjectUpdateList
+    subject_update = SubjectUpdate(
+        source=source,
+        source_id=str(subject_id),
+        name=adapted_data.get("name"),
+        name_cn=adapted_data.get("name_cn"),
+        type=adapted_data.get("type"),
+        summary=adapted_data.get("summary"),
+        date=adapted_data.get("date"),
+        platform=adapted_data.get("platform"),
+        eps=adapted_data.get("eps"),
+        volumes=adapted_data.get("volumes"),
+        images=adapted_data.get("images"),
+        image=adapted_data.get("image"),
+        tags=adapted_data.get("tags"),
+        meta_tags=adapted_data.get("meta_tags"),
+        infobox=adapted_data.get("infobox"),
+        rating=adapted_data.get("rating"),
+        collection=adapted_data.get("collection"),
+        series=adapted_data.get("series"),
+        locked=adapted_data.get("locked"),
+        nsfw=adapted_data.get("nsfw")
+    )
     
-    return subject
+    # 创建 SubjectUpdateList
+    subject_update_list = SubjectUpdateList(
+        total=1,
+        items=[subject_update]
+    )
+    
+    # 调用批量更新函数
+    from app.services.subject_service import batch_update_subjects
+    await batch_update_subjects(db, subject_update_list)
+    
+    # 从数据库中获取更新后的 Subject 对象
+    from app.repositories.subject_repo import SubjectRepo
+    from app.schemas.subject import SubjectSearchByID
+    subject_search = SubjectSearchByID(source=source, source_id=str(subject_id))
+    subject_result = await SubjectRepo.get_by_source(db, subject_search)
+    
+    return subject_result[0] if subject_result else None

@@ -61,10 +61,6 @@ async def login(
             update_fields = False
             
             # 更新非空且变更的字段
-            if data.nickname is not None and data.nickname != user.nickname:
-                user.nickname = data.nickname
-                update_fields = True
-            
             if data.bangumi_id is not None and data.bangumi_id != user.bangumi_id:
                 user.bangumi_id = data.bangumi_id
                 update_fields = True
@@ -88,8 +84,6 @@ async def login(
             # 用户不存在，创建新用户
             new_user = User(
                 username=data.username,
-                nickname=data.nickname or data.username,
-                email=None,
                 avatar_url=data.avatar_url,
                 bangumi_id=data.bangumi_id,
                 sign=data.sign or "本地用户"
@@ -107,8 +101,6 @@ async def login(
         user_info = {
             "id": user.id,
             "username": user.username,
-            "nickname": user.nickname,
-            "email": user.email,
             "avatar_url": user.avatar_url,
             "bangumi_id": user.bangumi_id,
             "sign": user.sign,

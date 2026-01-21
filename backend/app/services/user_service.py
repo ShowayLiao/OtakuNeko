@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
-from app.schemas.user import UserCreate, UserUpdate, UserRead
+from app.schemas.user import UserCreate, UserUpdate, UserRead, UserSearch, UserList
 from app.repositories.user_repo import UserRepo
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class UserService:
         
         Args:
             db: 数据库会话
-            user_data: 用户创建数据
+            user_data: 用户创建数据，使用 UserCreate schema
         
         Returns:
             创建的User对象
@@ -38,18 +38,8 @@ class UserService:
             if existing_user:
                 raise ValueError(f"用户 {user_data.username} 已存在")
             
-            # 构造用户数据
-            user_dict = {
-                "username": user_data.username,
-                "nickname": user_data.nickname or user_data.username,
-                "email": user_data.email,
-                "avatar_url": user_data.avatar_url,
-                "bangumi_id": user_data.bangumi_id,
-                "sign": user_data.sign
-            }
-            
-            # 创建用户
-            new_user = await UserRepo.create(db, user_dict)
+            # 直接使用 UserCreate schema 创建用户，不需要构造字典
+            new_user = await UserRepo.create(db, user_data)
             logger.info(f"创建新用户成功: {new_user.username} (ID: {new_user.id})")
             return new_user
         except ValueError as e:
@@ -138,14 +128,13 @@ class UserService:
             raise
     
     @staticmethod
-    async def get_all_users(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[User]:
+    async def get_all_users(db: AsyncSession, search_data: UserSearch) -> List[User]:
         """
         获取所有用户
         
         Args:
             db: 数据库会话
-            skip: 跳过的记录数
-            limit: 返回的最大记录数
+            search_data: 搜索数据，使用 UserSearch schema
         
         Returns:
             User对象列表
@@ -154,7 +143,7 @@ class UserService:
             Exception: 查询失败的异常
         """
         try:
-            users = await UserRepo.get_all(db, skip, limit)
+            users = await UserRepo.get_all(db, search_data)
             logger.info(f"获取用户列表成功: {len(users)} 个用户")
             return users
         except Exception as e:
@@ -169,7 +158,7 @@ class UserService:
         Args:
             db: 数据库会话
             user_id: 用户ID
-            user_data: 用户更新数据
+            user_data: 用户更新数据，使用 UserUpdate schema
         
         Returns:
             更新后的User对象或None
@@ -184,11 +173,8 @@ class UserService:
                 logger.info(f"未找到用户: ID {user_id}")
                 return None
             
-            # 构造更新数据
-            update_dict = user_data.model_dump(exclude_unset=True)
-            
-            # 更新用户
-            updated_user = await UserRepo.update(db, user_id, update_dict)
+            # 直接使用 UserUpdate schema 更新用户，不需要构造字典
+            updated_user = await UserRepo.update(db, user_id, user_data)
             if updated_user:
                 logger.info(f"更新用户成功: {updated_user.username} (ID: {updated_user.id})")
             return updated_user
@@ -228,7 +214,7 @@ class UserService:
             raise
     
     @staticmethod
-    async def login_user(db: AsyncSession, username: str, **login_data) -> User:
+    async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
         """
         用户登录服务
         
@@ -240,8 +226,7 @@ class UserService:
         
         Args:
             db: 数据库会话
-            username: 用户名
-            **login_data: 其他登录数据，如nickname, email, avatar_url, bangumi_id, sign等
+            login_data: 登录数据，使用 UserLogin schema
         
         Returns:
             登录成功的User对象
@@ -251,46 +236,38 @@ class UserService:
         """
         try:
             # 检查用户是否已存在
-            existing_user = await UserRepo.get_by_username(db, username)
+            existing_user = await UserRepo.get_by_username(db, login_data.username)
             
             if existing_user:
                 # 用户存在，执行更新操作
-                logger.info(f"用户 {username} 已存在，执行更新操作")
+                logger.info(f"用户 {login_data.username} 已存在，执行更新操作")
                 
-                # 构造更新数据
-                update_dict = {}
-                if "nickname" in login_data:
-                    update_dict["nickname"] = login_data["nickname"]
-                if "email" in login_data:
-                    update_dict["email"] = login_data["email"]
-                if "avatar_url" in login_data:
-                    update_dict["avatar_url"] = login_data["avatar_url"]
-                if "bangumi_id" in login_data:
-                    update_dict["bangumi_id"] = login_data["bangumi_id"]
-                if "sign" in login_data:
-                    update_dict["sign"] = login_data["sign"]
+                # 直接使用 UserLogin schema 转换为 UserUpdate schema
+                update_data = UserUpdate(
+                    avatar_url=login_data.avatar_url,
+                    bangumi_id=login_data.bangumi_id,
+                    sign=login_data.sign
+                )
                 
                 # 更新用户
-                updated_user = await UserRepo.update(db, existing_user.id, update_dict)
-                logger.info(f"用户 {username} 登录成功，已更新用户信息")
+                updated_user = await UserRepo.update(db, existing_user.id, update_data)
+                logger.info(f"用户 {login_data.username} 登录成功，已更新用户信息")
                 return updated_user
             else:
                 # 用户不存在，执行新增操作
-                logger.info(f"用户 {username} 不存在，执行新增操作")
+                logger.info(f"用户 {login_data.username} 不存在，执行新增操作")
                 
-                # 构造用户数据
-                user_dict = {
-                    "username": username,
-                    "nickname": login_data.get("nickname") or username,
-                    "email": login_data.get("email"),
-                    "avatar_url": login_data.get("avatar_url"),
-                    "bangumi_id": login_data.get("bangumi_id"),
-                    "sign": login_data.get("sign")
-                }
+                # 直接使用 UserLogin schema 转换为 UserCreate schema
+                user_data = UserCreate(
+                    username=login_data.username,
+                    avatar_url=login_data.avatar_url,
+                    bangumi_id=login_data.bangumi_id,
+                    sign=login_data.sign
+                )
                 
                 # 创建用户
-                new_user = await UserRepo.create(db, user_dict)
-                logger.info(f"用户 {username} 登录成功，已创建新用户")
+                new_user = await UserRepo.create(db, user_data)
+                logger.info(f"用户 {login_data.username} 登录成功，已创建新用户")
                 return new_user
         except Exception as e:
             logger.error(f"用户登录失败: {e}")

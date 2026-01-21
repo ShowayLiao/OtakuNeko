@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from app.db.database import init_db
 from app.api import api_router
 from app.core.config import settings
+from app.core.logging import get_logger
 
 # 缓存相关导入
 from fastapi_cache import FastAPICache
@@ -11,6 +12,9 @@ from fastapi_cache.coder import PickleCoder
 from fastapi_cache.backends.redis import RedisBackend
 from redis.asyncio import Redis
 import logging
+
+# 初始化日志系统
+logger = get_logger(__name__)
 
 
 @asynccontextmanager
@@ -34,9 +38,9 @@ async def lifespan(app: FastAPI):
             prefix="fastapi-cache-v2",  # 使用新前缀，完全隔离旧缓存
             coder=PickleCoder  # 使用PickleCoder避免类型转换错误
         )
-        logging.info("Redis cache initialized successfully")
+        logger.info("Redis cache initialized successfully")
     except Exception as e:
-        logging.error(f"Failed to initialize Redis cache: {e}")
+        logger.error(f"Failed to initialize Redis cache: {e}")
         # Redis连接失败时，使用InMemoryBackend作为降级方案
         from fastapi_cache.backends.inmemory import InMemoryBackend
         FastAPICache.init(
@@ -45,7 +49,7 @@ async def lifespan(app: FastAPI):
             prefix="fastapi-cache",
             coder=PickleCoder  # 使用PickleCoder避免类型转换错误
         )
-        logging.info("Fallback to InMemoryBackend for caching")
+        logger.info("Fallback to InMemoryBackend for caching")
     
     yield
     
@@ -53,12 +57,12 @@ async def lifespan(app: FastAPI):
     if redis:
         try:
             await redis.close()
-            logging.info("Redis connection closed")
+            logger.info("Redis connection closed")
         except Exception as e:
-            logging.error(f"Failed to close Redis connection: {e}")
+            logger.error(f"Failed to close Redis connection: {e}")
     
     await FastAPICache.clear()
-    logging.info("Cache cleared")
+    logger.info("Cache cleared")
 
 
 # 创建 FastAPI 应用实例

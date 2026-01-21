@@ -5,10 +5,10 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
-from app.services.collection_service import get_my_collections, update_collection, upsert_collection
+from app.services.collection_service import get_user_collections, update_collection, upsert_collection, get_collection, delete_collection, batch_upsert_collections
 from app.services.bangumi_service import sync_user_collections
-from app.services.douban_importer import sync_user_collections_db
-from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest
+from app.services.douban_service import sync_user_collections_douban
+from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest, CollectionSearchBase, CollectionUpdate
 from app.models.user import User
 from app.models.subject import Subject
 from app.models.collection import Collection
@@ -24,7 +24,7 @@ router = APIRouter(prefix="/collections", tags=["Collections"])
 
 @router.get("/", response_model=CollectionList)
 @cache(expire=60)
-async def get_my_collections_endpoint(
+async def get_user_collect(
     current_user = Depends(get_current_user),
     subject_type: Optional[int] = Query(None, description="条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)"),
     status: Optional[int] = Query(None, description="收藏状态 (1=想看/2=看过/3=在看/4=搁置/5=抛弃)"),
@@ -53,44 +53,33 @@ async def get_my_collections_endpoint(
     
     status_enum = CollectionStatus(status) if status is not None else None
     
-    collections_data = await get_my_collections(
-        db, current_user.id, status_enum, subject_type, keyword, sort_by, limit, offset
+    # 创建CollectionSearchBase对象
+    search_data = CollectionSearchBase(
+        user_id=current_user.id,
+        status=status_enum,
+        type=subject_type,
+        keyword=keyword,
+        sort_by=sort_by,
+        limit=limit,
+        skip=offset
     )
     
-    # 转换为符合响应模型的格式
-    items = []
-    for item in collections_data["items"]:
-        collection = item["collection"]
-        subject = item["subject"]
-        
-        # 转换为 CollectionRead 格式
-        collection_item = {
-            "subject_id": collection.subject_id,
-            "updated_at": collection.updated_at,
-            "status": collection.type,
-            "rate": collection.rate,
-            "comment": collection.comment,
-            "private": collection.private,
-            "tags": collection.tags or [],
-            "subject": subject
-        }
-        items.append(collection_item)
+    # 调用get_user_collections获取收藏列表
+    collections_data = await get_user_collections(db, search_data)
     
-    return {
-        "total": collections_data["total"],
-        "items": items
-    }
+    # 直接返回CollectionList对象，不需要转换格式
+    return collections_data
 
 
 @router.post("/", response_model=CollectionRead)
-async def upsert_collection_endpoint(
+async def create_collection(
     sid: Optional[int] = Query(None, description="条目ID，提供则更新，不提供则创建"),
     data: CollectionUpsertRequest = ...,
     current_user = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    更新或添加收藏
+    创建新收藏
     
     统一的收藏操作接口：
     - 当提供sid查询参数时：更新现有收藏（使用 data.collection 字段）
@@ -117,16 +106,16 @@ async def upsert_collection_endpoint(
             import logging
             logging.error(f"Failed to clear cache: {e}")
         
-        return {
-            "subject_id": collection.subject_id,
-            "updated_at": collection.updated_at,
-            "status": collection.type,
-            "rate": collection.rate,
-            "comment": collection.comment,
-            "private": collection.private,
-            "tags": collection.tags or [],
-            "subject": None
-        }
+        # 调用get_collection获取完整的CollectionRead对象
+        from app.schemas.collection import CollectionSearchByID
+        search_data = CollectionSearchByID(
+            user_id=current_user.id,
+            source=collection.source,
+            source_id=collection.source_id
+        )
+        collection_read = await get_collection(db, search_data)
+        
+        return collection_read
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except HTTPException:
@@ -136,26 +125,218 @@ async def upsert_collection_endpoint(
         import traceback
         print(f"[收藏更新/添加] 错误: {str(e)}")
         print(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Failed to upsert collection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create collection: {str(e)}")
+
+
+@router.get("/{source}/{source_id}", response_model=CollectionRead)
+async def get_collection_endpoint(
+    source: str = Path(..., description="数据来源"),
+    source_id: str = Path(..., description="原站ID"),
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    获取单个收藏
+    
+    Args:
+        source: 数据来源
+        source_id: 原站ID
+        current_user: 当前认证用户
+        db: 数据库会话
+    
+    Returns:
+        收藏对象
+    """
+    try:
+        from app.schemas.collection import CollectionSearchByID
+        search_data = CollectionSearchByID(
+            user_id=current_user.id,
+            source=source,
+            source_id=source_id
+        )
+        collection_read = await get_collection(db, search_data)
+        if not collection_read:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        return collection_read
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        print(f"[获取收藏] 错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to get collection: {str(e)}")
+
+
+@router.put("/{source}/{source_id}", response_model=CollectionRead)
+async def update_collection_endpoint(
+    source: str = Path(..., description="数据来源"),
+    source_id: str = Path(..., description="原站ID"),
+    data: CollectionUpdate = ...,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    更新收藏
+    
+    Args:
+        source: 数据来源
+        source_id: 原站ID
+        data: 收藏更新数据
+        current_user: 当前认证用户
+        db: 数据库会话
+    
+    Returns:
+        更新后的收藏对象
+    """
+    try:
+        # 设置source和source_id
+        data.source = source
+        data.source_id = source_id
+        data.user_id = current_user.id
+        
+        # 调用Service层处理业务逻辑
+        collection = await update_collection(db, data)
+        if not collection:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        
+        # 清除缓存，防止数据不一致
+        try:
+            await FastAPICache.clear()
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to clear cache: {e}")
+        
+        # 调用get_collection获取完整的CollectionRead对象
+        from app.schemas.collection import CollectionSearchByID
+        search_data = CollectionSearchByID(
+            user_id=current_user.id,
+            source=source,
+            source_id=source_id
+        )
+        collection_read = await get_collection(db, search_data)
+        
+        return collection_read
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        print(f"[更新收藏] 错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to update collection: {str(e)}")
+
+
+@router.delete("/{source}/{source_id}", response_model=dict)
+async def delete_collection_endpoint(
+    source: str = Path(..., description="数据来源"),
+    source_id: str = Path(..., description="原站ID"),
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    删除收藏
+    
+    Args:
+        source: 数据来源
+        source_id: 原站ID
+        current_user: 当前认证用户
+        db: 数据库会话
+    
+    Returns:
+        删除结果
+    """
+    try:
+        from app.schemas.collection import CollectionSearchByID
+        search_data = CollectionSearchByID(
+            user_id=current_user.id,
+            source=source,
+            source_id=source_id
+        )
+        deleted = await delete_collection(db, search_data)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Collection not found")
+        
+        # 清除缓存，防止数据不一致
+        try:
+            await FastAPICache.clear()
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to clear cache: {e}")
+        
+        return {"status": "success", "message": f"Collection {source_id} deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        print(f"[删除收藏] 错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to delete collection: {str(e)}")
+
+
+@router.post("/batch", response_model=dict)
+async def batch_upsert_collections_endpoint(
+    data: CollectionList = ...,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    批量创建/更新收藏
+    
+    Args:
+        data: 收藏列表数据
+        current_user: 当前认证用户
+        db: 数据库会话
+    
+    Returns:
+        批量操作结果
+    """
+    try:
+        # 调用Service层处理业务逻辑
+        success_count = await batch_upsert_collections(db, data, current_user.id)
+        
+        # 清除缓存，防止数据不一致
+        try:
+            await FastAPICache.clear()
+        except Exception as e:
+            import logging
+            logging.error(f"Failed to clear cache: {e}")
+        
+        return {
+            "status": "success",
+            "message": f"Successfully upserted {success_count}/{data.total} collections",
+            "success_count": success_count,
+            "total_count": data.total
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        print(f"[批量更新收藏] 错误: {str(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=f"Failed to batch upsert collections: {str(e)}")
 
 
 
 
 
-@router.post("/sync")
-async def sync_collections_endpoint(
+@router.post("/sync/bgm")
+async def sync_bgm(
     data: CollectionSyncRequest,
     current_user = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    统一同步接口，支持 BGM 和 豆瓣两种数据源
+    同步用户的 Bangumi 收藏数据到本地数据库
     
     Args:
-        data: 同步请求数据，包含 source、subject_type 和 data 字段
-              - source: "bgm" 或 "douban"
-              - subject_type: 可选的条目类型
-              - data: 豆瓣数据列表 (仅当source=douban时需要)
+        data: 同步请求数据，包含 subject_type、limit、offset 等参数
         current_user: 当前认证用户
         db: 数据库会话
         
@@ -163,80 +344,16 @@ async def sync_collections_endpoint(
         同步结果
     """
     try:
-        if data.source == "bgm":
-            sync_count = await sync_user_collections(current_user.username, db, data.subject_type)
-            
-            return {
-                "message": f"Successfully synced {sync_count} collections for user {current_user.username}",
-                "username": current_user.username,
-                "sync_count": sync_count,
-                "import_count": sync_count,
-                "subject_type": data.subject_type,
-                "source": "bgm"
-            }
-        elif data.source == "douban":
-            if not data.data:
-                raise HTTPException(status_code=400, detail="Douban data is required when source is 'douban'")
-            
-            import_count = await sync_user_collections_db(current_user.username, db, data.data, data.subject_type)
-            
-            return {
-                "message": f"Successfully imported {import_count} Douban items for user {current_user.username}",
-                "username": current_user.username,
-                "sync_count": import_count,
-                "import_count": import_count,
-                "subject_type": data.subject_type,
-                "source": "douban"
-            }
-        elif data.source == "manual":
-            # 处理手动批量导入
-            if not data.data:
-                raise HTTPException(status_code=400, detail="Data is required when source is 'manual'")
-            
-            from app.repositories import SubjectRepo
-            
-            sync_count = 0
-            user_id = current_user.id
-            
-            for import_item in data.data:
-                try:
-                    # 提取subject数据和collection数据
-                    subject_data = import_item.get("subject", {})
-                    collection_data = import_item.get("collection", {})
-                    
-                    if not subject_data:
-                        continue
-                    
-                    # 保存或更新Subject
-                    subject = await SubjectRepo.save(db, subject_data, source="manual")
-                    
-                    # 准备collection数据，添加必要的字段
-                    collection_data = {
-                        **collection_data,
-                        "updated_at": datetime.now().isoformat() + "Z",  # 添加当前时间
-                        "type": collection_data.get("status", 2),  # 确保type字段存在（status是前端传递的字段名）
-                        "subject_id": subject.id
-                    }
-                    
-                    # 保存或更新Collection
-                    await CollectionRepo.save(db, user_id, subject.id, collection_data)
-                    
-                    sync_count += 1
-                    
-                except Exception as e:
-                    logging.error(f"处理手动导入项失败: {e}, 数据: {import_item}")
-                    continue
-            
-            return {
-                "message": f"Successfully imported {sync_count} items manually for user {current_user.username}",
-                "username": current_user.username,
-                "sync_count": sync_count,
-                "subject_type": data.subject_type,
-                "source": "manual"
-            }
-        else:
-            raise HTTPException(status_code=400, detail=f"Invalid source: {data.source}. Must be 'bgm', 'douban' or 'manual'")
-            
+        sync_count = await sync_user_collections(current_user.username, db, data)
+        
+        return {
+            "message": f"Successfully synced {sync_count} collections for user {current_user.username}",
+            "username": current_user.username,
+            "sync_count": sync_count,
+            "import_count": sync_count,
+            "subject_type": data.subject_type,
+            "source": "bgm"
+        }
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             raise HTTPException(status_code=404, detail=f"User '{current_user.username}' not found")
@@ -247,5 +364,127 @@ async def sync_collections_endpoint(
         raise HTTPException(status_code=400, detail=f"Data validation failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Sync failed: {str(e)}")
+
+
+@router.post("/upload/douban")
+async def upload_douban(
+    data: CollectionSyncRequest,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    上传用户的豆瓣收藏数据到本地数据库
+    
+    Args:
+        data: 同步请求数据，包含 data 字段（豆瓣数据列表）
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        同步结果
+    """
+    try:
+        if not data.data:
+            raise HTTPException(status_code=400, detail="Douban data is required")
+        
+        # 豆瓣数据同步函数不接受直接的数据列表，这里改为直接保存到文件再同步
+        import tempfile
+        import json
+        
+        # 创建临时文件保存豆瓣数据
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
+            json.dump(data.data, f)
+            temp_file_path = f.name
+        
+        try:
+            # 调用豆瓣数据同步函数
+            import_count = await sync_user_collections_douban(current_user.id, db, temp_file_path)
+        finally:
+            # 清理临时文件
+            import os
+            os.unlink(temp_file_path)
+        
+        return {
+            "message": f"Successfully imported {import_count} Douban items for user {current_user.username}",
+            "username": current_user.username,
+            "sync_count": import_count,
+            "import_count": import_count,
+            "subject_type": data.subject_type,
+            "source": "douban"
+        }
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid JSON data: {str(e)}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Data validation failed: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
+
+@router.post("/sync/manual")
+async def sync_manual(
+    data: CollectionSyncRequest,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    手动批量导入收藏数据
+    
+    Args:
+        data: 同步请求数据，包含 data 字段（手动导入数据列表）
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        同步结果
+    """
+    try:
+        if not data.data:
+            raise HTTPException(status_code=400, detail="Data is required when source is 'manual'")
+        
+        from app.repositories import SubjectRepo
+        
+        sync_count = 0
+        user_id = current_user.id
+        
+        for import_item in data.data:
+            try:
+                # 提取subject数据和collection数据
+                subject_data = import_item.get("subject", {})
+                collection_data = import_item.get("collection", {})
+                
+                if not subject_data:
+                    continue
+                
+                # 保存或更新Subject
+                subject = await SubjectRepo.save(db, subject_data, source="manual")
+                
+                # 准备collection数据，添加必要的字段
+                collection_data = {
+                    **collection_data,
+                    "updated_at": datetime.now().isoformat() + "Z",  # 添加当前时间
+                    "type": collection_data.get("status", 2),  # 确保type字段存在（status是前端传递的字段名）
+                    "subject_id": subject.id
+                }
+                
+                # 保存或更新Collection
+                await CollectionRepo.save(db, user_id, subject.id, collection_data)
+                
+                sync_count += 1
+                
+            except Exception as e:
+                logging.error(f"处理手动导入项失败: {e}, 数据: {import_item}")
+                continue
+        
+        return {
+            "message": f"Successfully imported {sync_count} items manually for user {current_user.username}",
+            "username": current_user.username,
+            "sync_count": sync_count,
+            "subject_type": data.subject_type,
+            "source": "manual"
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Data validation failed: {str(e)}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Manual sync failed: {str(e)}")
 
 
