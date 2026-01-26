@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { Header } from '../components/header/Header';
 import { DesktopSidebar } from '@/features/Sidebar';
+import { theme } from 'antd';
 
 export interface APPLayoutProps {
   children: ReactNode;
@@ -12,6 +13,7 @@ export interface APPLayoutProps {
   padding?: 'none' | 'sm' | 'md' | 'lg';
 }
 
+
 export const APPLayout = ({
   children,
   className,
@@ -19,6 +21,8 @@ export const APPLayout = ({
   padding = 'md'
 }: APPLayoutProps) => {
   const pathname = usePathname();
+
+  const { token } = theme.useToken();
   
   // 判断是否为聊天页面，逻辑覆盖根路径和包含 /chat 的路径
   const isChatPage = pathname === '/' || pathname?.includes('/chat');
@@ -49,10 +53,6 @@ export const APPLayout = ({
   };
 
   return (
-    /**
-     * 1. 最外层容器
-     * 使用 fixed 定位锁死视口，禁止 body 滚动
-     */
     <div style={{ 
       position: 'fixed', 
       top: 0, 
@@ -62,11 +62,11 @@ export const APPLayout = ({
       display: 'flex', 
       flexDirection: 'row',
       overflow: 'hidden',
-      background: 'var(--color-bg-layout, #fff)', // 使用主题变量
-      color: 'var(--color-text, #000)'
+      // 3. 核心修复：直接使用 token 中的颜色
+      background: token.colorBgLayout, 
+      color: token.colorTextBase
     }}>
       
-      {/* 左侧全局导航栏 (Sidebar) */}
       <DesktopSidebar />
 
       <div style={{ 
@@ -75,32 +75,23 @@ export const APPLayout = ({
         flexDirection: 'column', 
         height: '100%', 
         position: 'relative',
-        minWidth: 0 // 核心：防止子元素（如长代码块）撑破 Flex 容器
+        minWidth: 0 
       }}>
         
-        {/* 全局顶栏 (Header) */}
         <Header />
         <main style={{ 
           flex: 1, 
           display: 'flex', 
           flexDirection: 'column', 
           position: 'relative', 
-          overflow: 'hidden', // 关键：屏蔽此层滚动，防止出现双滚动条
-          minHeight: 0        // 核心：允许子 Flex 元素在空间不足时收缩
+          overflow: 'hidden', 
+          minHeight: 0        
         }}>
           {isChatPage ? (
-            /* 聊天模式：
-               1. 直接渲染 children (ChatPage)
-               2. 确保它继承 flex: 1 和 height: 100%
-            */
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
               {children}
             </div>
           ) : (
-            /* 普通页面模式：
-               1. 允许在此层级进行垂直滚动
-               2. 应用 maxWidth 和内边距
-            */
             <div style={{ flex: 1, overflowY: 'auto' }}>
               <div style={contentStyle} className={className}>
                 {children}

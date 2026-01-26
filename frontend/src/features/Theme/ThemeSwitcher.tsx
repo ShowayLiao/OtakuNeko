@@ -153,7 +153,7 @@ export const ThemeSwitcher = () => {
         className="hover:bg-neutral-100 dark:hover:bg-neutral-800"
       >
         <Palette size={16} style={{ opacity: 0.7 }} />
-        <span style={{ fontSize: 14, fontWeight: 500 }}>Theme</span>
+        <span style={{ fontSize: 14, fontWeight: 500 }}>主题颜色</span>
         <div
            style={{
              width: 12,

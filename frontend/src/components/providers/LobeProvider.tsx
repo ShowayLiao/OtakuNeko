@@ -2,34 +2,16 @@
 
 import React, { createContext, useContext, ReactNode, useEffect, useState, useMemo } from 'react';
 import { ThemeProvider } from '@lobehub/ui';
-// 1. 引入 Ant Design 核心组件：ConfigProvider 用于配置，App 用于挂载变量
 import { ConfigProvider, App, theme as antTheme } from 'antd';
 import type { NeutralColors } from '@lobehub/ui';
 
-// 官方预设颜色列表
-const DEFAULT_PRESETS = [
-  'blue', 'purple', 'green', 'orange', 'gold', 'cyan',
-  'red', 'magenta', 'volcano', 'geekblue', 'lime'
-];
-
-// 预设颜色映射：将预设颜色名称转换为对应的 HEX 值
-const PRESET_COLOR_MAP: Record<string, string> = {
-  blue: '#0072F5',
-  purple: '#BD54C6',
-  green: '#78B885',
-  orange: '#F1AD63',
-  gold: '#EAB85E',
-  cyan: '#00B8D9',
-  red: '#F4416C',
-  magenta: '#E34BA9',
-  volcano: '#EC5E41',
-  geekblue: '#0072F5',
-  lime: '#4CAF50',
-};
+// 类型定义
+type ThemeAppearance = 'auto' | 'light' | 'dark';
 
 interface AppThemeContextType {
-  mode: 'light' | 'dark';
-  setMode: (mode: 'light' | 'dark') => void;
+  appearance: ThemeAppearance;        // 用户偏好：自动/亮/暗
+  setAppearance: (mode: ThemeAppearance) => void; 
+  isDarkMode: boolean;               // 实际渲染结果：是否为暗色
   primaryColor: string;
   setPrimaryColor: (color: string) => void;
   neutralColor: NeutralColors;
@@ -40,120 +22,133 @@ const AppThemeContext = createContext<AppThemeContextType | undefined>(undefined
 
 export const useAppTheme = () => {
   const context = useContext(AppThemeContext);
-  if (context === undefined) {
-    throw new Error('useAppTheme must be used within an AppThemeProvider');
-  }
+  if (!context) throw new Error('useAppTheme must be used within LobeProvider');
   return context;
 };
 
-interface LobeProviderProps {
-  children: ReactNode;
-}
+// --- 辅助函数：获取系统是否为暗色 ---
+const getSystemIsDarkMode = () => {
+  if (typeof window === 'undefined') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+};
 
-export const LobeProvider = ({ children }: LobeProviderProps) => {
-  const [mode, setMode] = useState<'light' | 'dark'>('light');
-  const [primaryColor, setPrimaryColor] = useState<string>('blue');
+// --- 颜色映射表，与 ThemeSwitcher 保持一致 ---
+const COLOR_KEY_TO_HEX = {
+  purple: '#BD54C6',
+  green: '#78B885',
+  orange: '#F1AD63',
+  gold: '#EAB85E',
+  red: '#F4416C',
+  magenta: '#E34BA9',
+  volcano: '#EC5E41',
+  geekblue: '#0072F5',
+};
+
+// --- 辅助函数：将颜色 key 转换为十六进制颜色值 ---
+const resolvePrimaryColor = (color: string): string => {
+  // 如果已经是十六进制颜色值，直接返回
+  if (color.startsWith('#')) return color;
+  // 否则尝试从映射表中获取
+  return COLOR_KEY_TO_HEX[color as keyof typeof COLOR_KEY_TO_HEX] || color;
+};
+
+export const LobeProvider = ({ children }: { children: ReactNode }) => {
+  // 1. 核心状态：用户偏好 (默认为 auto)
+  const [appearance, setAppearance] = useState<ThemeAppearance>('auto');
+  // 2. 衍生状态：系统当前是否为暗色
+  const [systemIsDark, setSystemIsDark] = useState(false);
+  
+  const [primaryColor, setPrimaryColor] = useState<string>('#0072F5'); // 默认蓝色 Hex
   const [neutralColor, setNeutralColor] = useState<NeutralColors>('slate');
   const [isMounted, setIsMounted] = useState(false);
 
-  // --- 挂载与状态同步逻辑 (保持原样) ---
+  // --- 初始化与监听 ---
   useEffect(() => {
     setIsMounted(true);
-    const savedMode = localStorage.getItem('mode');
-    if (savedMode === 'light' || savedMode === 'dark') {
-      setMode(savedMode);
-    } else {
-      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      setMode(mediaQuery.matches ? 'dark' : 'light');
-    }
+    
+    // 初始化系统状态
+    setSystemIsDark(getSystemIsDarkMode());
+
+    // 读取本地存储
+    const savedAppearance = localStorage.getItem('APP_THEME_APPEARANCE') as ThemeAppearance;
+    if (savedAppearance) setAppearance(savedAppearance);
+    
     const savedColor = localStorage.getItem('APP_PRIMARY_COLOR');
     if (savedColor) setPrimaryColor(savedColor);
+
+    // 监听系统主题变化
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleSystemChange = (e: MediaQueryListEvent) => {
+      setSystemIsDark(e.matches);
+    };
+    
+    // 现代浏览器监听方式
+    try {
+      mediaQuery.addEventListener('change', handleSystemChange);
+    } catch (e) {
+      // 兼容旧浏览器
+      mediaQuery.addListener(handleSystemChange);
+    }
+
+    return () => {
+      try {
+        mediaQuery.removeEventListener('change', handleSystemChange);
+      } catch (e) {
+        mediaQuery.removeListener(handleSystemChange);
+      }
+    };
   }, []);
 
+  // --- 持久化存储 ---
   useEffect(() => {
-    if (isMounted) localStorage.setItem('APP_PRIMARY_COLOR', primaryColor);
-  }, [primaryColor, isMounted]);
+    if (isMounted) {
+      localStorage.setItem('APP_THEME_APPEARANCE', appearance);
+      localStorage.setItem('APP_PRIMARY_COLOR', primaryColor);
+    }
+  }, [appearance, primaryColor, isMounted]);
 
-  useEffect(() => {
-    if (isMounted) localStorage.setItem('mode', mode);
-  }, [mode, isMounted]);
+  // --- 核心逻辑：计算最终其实际是 light 还是 dark ---
+  const isDarkMode = useMemo(() => {
+    if (appearance === 'auto') return systemIsDark;
+    return appearance === 'dark';
+  }, [appearance, systemIsDark]);
 
-  useEffect(() => {
-    if (!isMounted) return;
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = (e: MediaQueryListEvent) => {
-      if (!localStorage.getItem('mode')) setMode(e.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
-  }, [isMounted]);
+  // 这里的 mode 专门传给 UI 组件库
+  const resolvedMode = isDarkMode ? 'dark' : 'light';
 
-  useEffect(() => {
-    if (!isMounted) return;
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === 'mode' && event.newValue) setMode(event.newValue as 'light' | 'dark');
-      if (event.key === 'APP_PRIMARY_COLOR' && event.newValue) setPrimaryColor(event.newValue);
-    };
-    window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
-  }, [isMounted]);
-
-  // --- 样式逻辑核心 --- 
-
-  // 计算是否为预设颜色
-  const isPreset = DEFAULT_PRESETS.includes(primaryColor);
-  
-  // 获取实际的 HEX 颜色值
-  const actualColor = isPreset ? PRESET_COLOR_MAP[primaryColor] || primaryColor : primaryColor;
-
-  // 1. 为了防止 Lobe UI 崩溃或黑屏，我们必须欺骗它
-  // 如果是自定义 HEX，告诉外层 "我是蓝色"，让它先生成基础样式
-  const customTheme = useMemo(() => {
-    return {
+  // --- 样式逻辑 (使用 resolvePrimaryColor 处理 primaryColor) ---
+  const customTheme = useMemo(() => ({
       neutralColor,
-      primaryColor: isPreset ? primaryColor : 'blue', 
-    } as any;
-  }, [isPreset, primaryColor, neutralColor]);
+      primaryColor: resolvePrimaryColor(primaryColor), 
+    } as any), [primaryColor, neutralColor]);
 
-  if (!isMounted) {
-    return null;
-  }
-
-  // 提供给上下文的主题颜色：始终是 HEX 值
-  const contextPrimaryColor = actualColor;
+  if (!isMounted) return null;
 
   return (
-    <AppThemeContext.Provider value={{ mode, setMode, primaryColor: contextPrimaryColor, setPrimaryColor, neutralColor, setNeutralColor }}>
+    <AppThemeContext.Provider value={{ 
+      appearance, 
+      setAppearance, 
+      isDarkMode,
+      primaryColor, 
+      setPrimaryColor, 
+      neutralColor, 
+      setNeutralColor 
+    }}>
       <ThemeProvider 
-        // Key 包含 primaryColor 和 mode，确保切换颜色或模式时都能彻底刷新
-        // 同时解决闪屏问题：重建时直接使用正确的主题模式
-        key={`${primaryColor}-${mode}`} 
-        themeMode={mode} 
+        key={`${primaryColor}-${resolvedMode}`} 
+        themeMode={resolvedMode} 
         customTheme={customTheme}
       >
-        {/* 根据是否为预设颜色动态渲染
-           - 预设颜色：使用 ConfigProvider 确保颜色正确应用
-           - 自定义颜色：使用 ConfigProvider 强行覆盖 Token
-        */}
         <ConfigProvider
           theme={{
             token: { 
-              // 直接使用实际的 HEX 颜色
-              colorPrimary: actualColor,
-              colorInfo: actualColor 
+              colorPrimary: resolvePrimaryColor(primaryColor),
+              colorInfo: resolvePrimaryColor(primaryColor) 
             },
-            // 开启 CSS 变量，确保 --ant-color-primary 生成
-            // key: 'app' 是为了让样式作用域更稳定
             cssVar: { key: 'app' },
-            // 同步暗黑模式算法
-            algorithm: mode === 'dark' ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
+            algorithm: isDarkMode ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
           }}
         >
-          {/* 3. 实体挂载点：App 组件
-            ConfigProvider 只是配置，不渲染 DOM。
-            App 组件会渲染一个 div，并把 --ant-color-primary 挂在这个 div 上。
-            这样内部所有的原生 html 标签（如你的 button）才能继承到这个变量。
-          */}
           <App style={{ minHeight: 'inherit', width: 'inherit', display: 'flex', flexDirection: 'column' }}>
             {children}
           </App>

@@ -28,6 +28,7 @@ OtakuNeko采用JWT（JSON Web Token）进行身份认证，所有需要认证的
 | 分类 | 路径 | 方法 | 功能描述 | 认证要求 |
 |------|------|------|----------|----------|
 | 认证 | `/api/v1/auth/login` | POST | 用户登录/注册/信息更新 | 无需认证 |
+| Agent | `/api/v1/agent` | GET | AI Agent 相关功能 | 需要JWT |
 | 收藏 | `/api/v1/collections` | GET | 获取用户收藏列表 | 需要JWT |
 | 收藏 | `/api/v1/collections/{sid}` | PUT | 更新或添加收藏 | 需要JWT |
 | 收藏 | `/api/v1/collections/sync` | POST | 同步收藏（支持BGM和豆瓣） | 需要JWT |
@@ -687,9 +688,19 @@ curl -X GET http://localhost:8000/api/v1/users/me \
 
 ## 7. 缓存机制
 
-- **收藏列表**：缓存60秒
-- **用户统计数据**：缓存10分钟（600秒）
-- **搜索结果**：缓存60秒
-- **条目详情**：不缓存
+### 7.1 缓存架构
+
+OtakuNeko 使用 Redis 作为主要缓存后端，通过 fastapi-cache2 实现声明式缓存，并在 Redis 连接失败时提供 InMemoryBackend 作为降级方案。
+
+### 7.2 缓存策略
+
+| 接口 | 缓存时间 | 说明 |
+|------|---------|------|
+| GET `/api/v1/subjects/` | 60秒 | 条目搜索结果 |
+| GET `/api/v1/subjects/{id}` | 7天 | 条目详情 |
+| GET `/api/v1/dashboard/stats` | 10分钟 | 用户统计数据 |
+| GET `/api/v1/collections/` | 60秒 | 收藏列表 |
+
+### 7.3 缓存失效
 
 当数据发生变化时，相关缓存会自动清除，确保数据一致性。

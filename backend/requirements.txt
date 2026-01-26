@@ -1,31 +1,31 @@
 # Web 框架
-fastapi
-uvicorn[standard]
+fastapi>=0.100.0
+uvicorn[standard]>=0.20.0
 
 # 数据库/ORM
-sqlmodel
-asyncpg
-aioqlite
-alembic
+sqlmodel>=0.0.10
+asyncpg>=0.28.0
+aioqlite>=0.19.0
+alembic>=1.10.0
 
 # 配置管理
-pydantic-settings
-python-dotenv
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
 
 # AI/Agent
-langgraph
-langchain
-langchain-openai
+langgraph>=0.1.0
+langchain>=0.1.0
+langchain-openai>=0.0.1
 
 # 工具
-httpx
+httpx>=0.24.0
 
 # 缓存
-fastapi-cache2[redis]
+fastapi-cache2[redis]>=0.2.1
 
 # 认证和安全
-python-jose[cryptography]
-passlib[bcrypt]
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
 
 # 日志处理
-concurrent-log-handler
+concurrent-log-handler>=0.9.23

@@ -3,11 +3,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { MessageSquare, Grid, Wrench, UserCircle, Settings } from 'lucide-react';
 import { Avatar, DraggableSideNav, ActionIcon, Flexbox, Menu, Text, type MenuItemType } from '@lobehub/ui';
-import { ChevronDown } from 'lucide-react';
+import { theme } from 'antd';
 
 export const DesktopSidebar = () => {
   const pathname = usePathname();
   const router = useRouter();
+  const { token } = theme.useToken();
   const [width, setWidth] = useState(280);
   const [expand, setExpand] = useState(true);
   const [activeKey, setActiveKey] = useState<string>(pathname || '');
@@ -28,6 +29,14 @@ export const DesktopSidebar = () => {
   
   return (
     <DraggableSideNav
+      style={{
+        background: token.colorBgContainer, // 之前改过的亮色背景
+
+        // ✅ 行业推荐写法：保持 1px，但使用标准边框色 (更深)
+        borderRight: `1px solid ${token.colorBorder}`, 
+        
+        height: '100vh'
+      }}
       body={(isExpanded) => (
         <Flexbox style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
           <Menu

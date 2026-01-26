@@ -196,7 +196,7 @@ OtakuNeko后端采用**分层架构**设计，遵循关注点分离原则：
 backend/app/
 ├── __init__.py              # 应用初始化
 ├── main.py                  # FastAPI应用入口
-├── agents/                  # AI Agent模块 (待实现)
+├── agents/                  # AI Agent模块
 │   ├── __init__.py
 │   ├── graph.py
 │   └── nodes/
@@ -207,8 +207,8 @@ backend/app/
 │   ├── deps.py              # 依赖注入 (认证)
 │   └── v1/
 │       ├── __init__.py
+│       ├── agent.py         # Agent相关API
 │       ├── auth.py          # 认证接口
-│       ├── agent.py         # Agent相关API (待实现)
 │       ├── collections.py   # 收藏接口
 │       ├── dashboard.py     # 仪表盘接口
 │       ├── subjects.py      # 条目接口
@@ -216,6 +216,7 @@ backend/app/
 ├── core/                    # 核心配置
 │   ├── __init__.py
 │   ├── config.py            # 配置管理
+│   ├── logging.py           # 日志配置
 │   └── security.py          # 安全工具 (JWT, 密码)
 ├── db/                      # 数据库连接
 │   ├── __init__.py
@@ -229,12 +230,12 @@ backend/app/
 ├── repositories/            # 数据访问层
 │   ├── __init__.py
 │   ├── collection_repo.py   # 收藏数据访问
-│   └── subject_repo.py      # 条目数据访问
+│   ├── subject_repo.py      # 条目数据访问
+│   └── user_repo.py         # 用户数据访问
 ├── schemas/                 # Pydantic Schema
 │   ├── __init__.py
 │   ├── adapters.py          # 数据适配器
 │   ├── collection.py        # 收藏 Schema
-│   ├── common.py            # 通用 Schema
 │   ├── dashboard.py         # 仪表盘 Schema
 │   ├── subject.py           # 条目 Schema
 │   └── user.py              # 用户 Schema
@@ -243,11 +244,11 @@ backend/app/
 │   ├── bangumi_client.py    # Bangumi API 客户端
 │   ├── bangumi_service.py   # Bangumi 业务逻辑
 │   ├── collection_service.py# 收藏业务逻辑
-│   ├── douban_importer.py   # 豆瓣数据导入
+│   ├── douban_service.py    # 豆瓣业务逻辑
 │   ├── stats_service.py     # 统计服务
-│   └── subject_service.py   # 条目搜索服务
-├── utils/                   # 工具函数 (空目录)
-└── worker/                  # 异步任务 (待实现)
+│   ├── subject_service.py   # 条目搜索服务
+│   └── user_service.py      # 用户服务
+└── worker/                  # 异步任务
     ├── __init__.py
     └── celery_app.py
 ```
@@ -258,25 +259,30 @@ backend/app/
 |------|------|------|
 | [main.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/main.py) | 应用入口、生命周期管理、中间件配置、缓存初始化 | ✅ 已实现 |
 | [api/v1/auth.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/v1/auth.py) | 用户登录/注册、JWT 令牌签发 | ✅ 已实现 |
+| [api/v1/agent.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/v1/agent.py) | AI Agent 相关 API | ✅ 已实现 |
 | [api/deps.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/deps.py) | 认证依赖注入、当前用户获取 | ✅ 已实现 |
 | [api/v1/subjects.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/v1/subjects.py) | 条目搜索、详情获取、同步 | ✅ 已实现 |
 | [api/v1/collections.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/v1/collections.py) | 收藏管理、导入导出 | ✅ 已实现 |
 | [api/v1/users.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/v1/users.py) | 用户注册、信息查询 | ✅ 已实现 |
 | [api/v1/dashboard.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/api/v1/dashboard.py) | 仪表盘统计 | ✅ 已实现 |
+| [core/config.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/core/config.py) | 环境变量配置管理 | ✅ 已实现 |
+| [core/logging.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/core/logging.py) | 日志配置和管理 | ✅ 已实现 |
 | [core/security.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/core/security.py) | JWT 令牌创建/解码、密码哈希/验证 | ✅ 已实现 |
-| [core/config.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/core/config.py) | 环境配置管理 | ✅ 已实现 |
 | [repositories/subject_repo.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/repositories/subject_repo.py) | Subject 数据访问层 | ✅ 已实现 |
 | [repositories/collection_repo.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/repositories/collection_repo.py) | Collection 数据访问层 | ✅ 已实现 |
+| [repositories/user_repo.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/repositories/user_repo.py) | User 数据访问层 | ✅ 已实现 |
 | [models/subject.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/models/subject.py) | 条目数据模型 | ✅ 已实现 |
 | [models/collection.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/models/collection.py) | 收藏数据模型 | ✅ 已实现 |
 | [models/user.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/models/user.py) | 用户数据模型 | ✅ 已实现 |
+| [services/bangumi_client.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/bangumi_client.py) | Bangumi API 客户端 | ✅ 已实现 |
 | [services/bangumi_service.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/bangumi_service.py) | Bangumi 数据处理 | ✅ 已实现 |
 | [services/collection_service.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/collection_service.py) | 收藏业务逻辑 | ✅ 已实现 |
+| [services/douban_service.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/douban_service.py) | 豆瓣业务逻辑 | ✅ 已实现 |
 | [services/subject_service.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/subject_service.py) | 条目搜索服务 | ✅ 已实现 |
 | [services/stats_service.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/stats_service.py) | 统计数据服务 | ✅ 已实现 |
-| [services/douban_importer.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/douban_importer.py) | 豆瓣数据导入 | ✅ 已实现 |
-| [agents/](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/agents/) | AI Agent 功能 | 🚧 待实现 |
-| [worker/](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/worker/) | 异步任务处理 | 🚧 待实现 |
+| [services/user_service.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/services/user_service.py) | 用户业务逻辑 | ✅ 已实现 |
+| [agents/](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/agents/) | AI Agent 功能 | 未实现 |
+| [worker/](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/worker/) | 异步任务处理 | 未实现 |
 
 ---
 
@@ -292,16 +298,20 @@ backend/app/
 ### 3.2 认证相关 API
 
 #### POST `/api/v1/auth/login`
-用户登录/注册接口
+用户登录/注册/信息更新综合接口
 
-采用"存在即登录"策略：
-- 如果用户名已存在，直接返回该用户的 JWT token
-- 如果用户名不存在，自动创建新用户并返回 JWT token
+采用智能判断策略：
+- 如果用户名不存在：自动创建新用户，使用请求中的可选字段（如果提供），否则使用默认值
+- 如果用户名已存在：选择性更新非空且变更的字段
 
 **请求体**:
 ```json
 {
-  "username": "testuser"
+  "username": "testuser",
+  "nickname": "Test User",
+  "bangumi_id": 12345,
+  "avatar_url": "http://example.com/avatar.jpg",
+  "sign": "Hello World!"
 }
 ```
 
@@ -309,11 +319,24 @@ backend/app/
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | username | string | 是 | 用户名 (1-50字符) |
+| nickname | string | 否 | 用户昵称 (最大100字符) |
+| bangumi_id | integer | 否 | 第三方平台ID |
+| avatar_url | string | 否 | 头像图片URL (最大255字符) |
+| sign | string | 否 | 用户签名/个性签名 (最大200字符) |
 
 **响应示例**:
 ```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "bearer",
+  "user": {
+    "id": 1,
+    "username": "testuser",
+    "avatar_url": "http://example.com/avatar.jpg",
+    "bangumi_id": 12345,
+    "sign": "Hello World!",
+    "created_at": "2023-12-30T10:00:00"
+  }
 }
 ```
 
@@ -870,22 +893,39 @@ settings = Settings()
 
 ### 7.1 缓存架构
 
-OtakuNeko 使用 Redis 作为缓存后端，通过 fastapi-cache2 实现声明式缓存。
+OtakuNeko 使用 Redis 作为缓存后端，通过 fastapi-cache2 实现声明式缓存，并在 Redis 连接失败时提供 InMemoryBackend 作为降级方案。
 
 **初始化** (在 [main.py](file:///e:/HACCI/Documents/tools/OtakuNeko/backend/app/main.py)):
 ```python
 from fastapi_cache import FastAPICache
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.backends.redis import RedisBackend
+from fastapi_cache.backends.inmemory import InMemoryBackend
 from redis.asyncio import Redis
 
-redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
-FastAPICache.init(
-    RedisBackend(redis),
-    expire=60,
-    prefix="fastapi-cache-v2",
-    coder=PickleCoder
-)
+redis = None
+try:
+    # Pickle需要二进制数据，所以decode_responses设置为False
+    redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+    # 测试连接
+    await redis.ping()
+    
+    # 初始化FastAPICache，使用新的前缀避免旧缓存影响
+    FastAPICache.init(
+        RedisBackend(redis),
+        expire=60,  # 全局默认过期时间为60秒
+        prefix="fastapi-cache-v2",  # 使用新前缀，完全隔离旧缓存
+        coder=PickleCoder  # 使用PickleCoder避免类型转换错误
+    )
+except Exception as e:
+    logger.error(f"Failed to initialize Redis cache: {e}")
+    # Redis连接失败时，使用InMemoryBackend作为降级方案
+    FastAPICache.init(
+        InMemoryBackend(),
+        expire=60,
+        prefix="fastapi-cache",
+        coder=PickleCoder  # 使用PickleCoder避免类型转换错误
+    )
 ```
 
 ### 7.2 缓存策略
@@ -1239,5 +1279,5 @@ FastAPICache.init(InMemoryBackend(), expire=60)
 ---
 
 **文档版本**: v2.0.0  
-**最后更新**: 2025-12-30  
+**最后更新**: 2026-01-26 
 **维护者**: OtakuNeko Team
