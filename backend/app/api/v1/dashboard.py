@@ -4,34 +4,11 @@ from app.db.database import get_session
 from app.services.stats_service import get_user_stats
 from app.schemas.dashboard import DashboardStats
 from app.api.deps import get_current_user
-from fastapi_cache.decorator import cache
 
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 
-def stats_key_builder(func, namespace: str, request, *args, **kwargs):
-    """
-    自定义缓存 key 构建器
-    
-    为每个用户生成独立的缓存 key，确保不同用户的统计数据不会混淆
-    
-    Args:
-        func: 被缓存的函数
-        namespace: 命名空间
-        request: FastAPI 请求对象
-        *args, **kwargs: 函数参数
-    
-    Returns:
-        缓存 key 字符串
-    """
-    user = kwargs.get("current_user")
-    if user:
-        return f"{namespace}:{func.__name__}:user_{user.id}"
-    return f"{namespace}:{func.__name__}:unknown"
-
-
 @router.get("/stats", response_model=DashboardStats)
-@cache(expire=600, key_builder=stats_key_builder)
 async def get_user_stats_endpoint(
     current_user = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)

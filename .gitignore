@@ -15,6 +15,14 @@ env/
 .env.*.local
 .env.production
 .env.development
+.env.production.local
+.env.development.local
+
+
+# trae
+.trae/
+
+
 
 # Database
 *.sqlite3
@@ -33,16 +41,21 @@ htmlcov/
 
 # Node.js
 node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Next.js
 .next/
 out/
 .npm
 .eslintcache
+.turbo/
 
 # Build outputs
 dist/
 build/
+*.tsbuildinfo
 
 # System
 Thumbs.db
@@ -72,6 +85,7 @@ lerna-debug.log*
 # Caching
 .cache/
 .next/cache/
+.prettiercache
 
 # Docker
 .dockerignore
@@ -81,6 +95,10 @@ Dockerfile.local
 # Deployment
 *.pem
 *.pub
+.vercel/
+.netlify/
+.firebaserc
+.firebase/
 
 # Temporary files
 *.tmp
@@ -90,5 +108,16 @@ Dockerfile.local
 # Data
 data/
 dumps/
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+.vitest/
+
+# Storybook
+.storybook/out/
+
+# 3rd party libraries
+lobe-ui/
 
 

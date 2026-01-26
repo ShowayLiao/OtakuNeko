@@ -68,15 +68,20 @@ async def sync_user_collections(
             logger.info(f"--- Fetching page with offset: {offset}, limit: {limit} ---")
             
             # 获取用户收藏数据（带分页参数）
+            logger.info(f"准备请求Bangumi API: username={username}, subject_type={subject_type}, limit={limit}, offset={offset}")
             response_json = await fetch_user_collections(username, subject_type, limit=limit, offset=offset)
+            logger.info(f"Bangumi API response received, data count: {len(response_json.get('data', []))}, total: {response_json.get('total', 0)}")
             
             # 调用适配器转换为CollectionList格式
             collections_list = adapt_bangumi_collection_to_list(response_json)
             
-            # 调用批量插入函数
+            # 导入需要的模块
+            from app.services.collection_service import batch_upsert_collections
+            
+            # 调用批量插入函数，实际执行数据库操作
             success_count = await batch_upsert_collections(db, collections_list, user_id)
             total_success += success_count
-            logger.info(f"--- Page processed: {success_count}/{collections_list.total} items successfully synced ---")
+            logger.info(f"--- Page processed: {success_count}/{collections_list.total} items successfully synced --- ")
             
             # 提取真正的列表
             items = response_json.get("data", [])
@@ -118,7 +123,9 @@ async def sync_user_collections(
         return total_success
         
     except Exception as e:
+        import traceback
         logger.error(f"同步用户收藏失败: {e}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
         # 回滚事务
         await db.rollback()
         raise

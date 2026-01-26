@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
-import { Sidebar } from "../components/layout/Sidebar";
-import { Header } from "../components/layout/Header";
-import { HeaderProvider } from "@/contexts/HeaderContext";
 import "./globals.css";
-import { ChatProvider } from "@/contexts/ChatContext";
-import { SettingsProvider } from "@/contexts/SettingsContext";
-import { ToastProvider } from "@/components/ui/Toast";
+import { LobeProvider } from "@/components/providers/LobeProvider";
+import { APPLayout } from "./APPLayout";
 
 export const metadata: Metadata = {
   title: "OtakuNeko Dashboard",
@@ -14,15 +10,11 @@ export const metadata: Metadata = {
     icon: "/Icon.png",
   },
 };
-
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <body className="antialiased">
+    // 关键：html 和 body 必须设为 h-full (height: 100%)
+    <html lang="en" className="h-full" suppressHydrationWarning>
+      <body className="antialiased h-full m-0 p-0 overflow-hidden">
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -37,23 +29,11 @@ export default function RootLayout({
             `,
           }}
         />
-        <div className="flex h-screen bg-gray-50">
-          <Sidebar />
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <SettingsProvider>
-              <ToastProvider>
-                <ChatProvider>
-                  <HeaderProvider>
-                    <Header />
-                    <main className="flex-1 overflow-y-auto">
-                      {children}
-                    </main>
-                  </HeaderProvider>
-                </ChatProvider>
-              </ToastProvider>
-            </SettingsProvider>
-          </div>
-        </div>
+        <LobeProvider>
+          <APPLayout>
+            {children}
+          </APPLayout>
+        </LobeProvider>
       </body>
     </html>
   );

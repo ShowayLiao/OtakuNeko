@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from app.models.enums import CollectionStatus
 from app.schemas.subject import SubjectRead
@@ -145,6 +145,7 @@ class CollectionSyncRequest(BaseModel):
     limit: Optional[int] = Field(default=50, ge=1, le=100, description="每页请求数量")
     offset: Optional[int] = Field(default=0, ge=0, description="分页偏移量")
     sync_count: Optional[int] = Field(default=0, ge=0, description="已同步数量")
+    data: Optional[List[Dict[str, Any]]] = Field(None, description="用于豆瓣上传的数据列表")
 
 
 class CollectionUpsertRequest(BaseModel):

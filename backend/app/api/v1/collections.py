@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from typing import Optional, List
 from datetime import datetime
 import logging
+import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
@@ -344,7 +345,8 @@ async def sync_bgm(
         同步结果
     """
     try:
-        sync_count = await sync_user_collections(current_user.username, db, data)
+        # 使用'hacci'作为Bangumi用户名进行同步
+        sync_count = await sync_user_collections("hacci", db, data)
         
         return {
             "message": f"Successfully synced {sync_count} collections for user {current_user.username}",
@@ -389,7 +391,6 @@ async def upload_douban(
         
         # 豆瓣数据同步函数不接受直接的数据列表，这里改为直接保存到文件再同步
         import tempfile
-        import json
         
         # 创建临时文件保存豆瓣数据
         with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:

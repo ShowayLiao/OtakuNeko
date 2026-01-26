@@ -1,4 +1,4 @@
-from sqlalchemy import func, select
+from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_cache.decorator import cache
 
@@ -40,8 +40,11 @@ async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
         DashboardStats 对象，包含各分类的收藏数量
     """
     statement = (
-        select(Subject.type, func.count(Collection.subject_id))
-        .join(Collection, Subject.id == Collection.subject_id)
+        select(Subject.type, func.count(Collection.source_id))
+        .join(Collection, and_(
+            Collection.source == Subject.source,
+            Collection.source_id == Subject.source_id
+        ))
         .where(Collection.user_id == user_id)
         .group_by(Subject.type)
     )

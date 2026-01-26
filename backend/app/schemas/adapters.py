@@ -76,18 +76,24 @@ def convert_douban_to_bangumi(douban_item: Dict[str, Any]) -> Dict[str, Any]:
         "game": 4
     }
 
-    db_status = douban_item.get("status", "")
+    # 直接使用douban_item作为interest数据，因为它已经是interest列表中的元素
+    db_interest = douban_item
+    
+    # 获取状态和类型
+    db_status = db_interest.get("status", "")
     bgm_type = status_map.get(db_status, 2)
 
-    db_subject_type = douban_item.get("type", "")
+    # 直接从interest数据中获取subject
+    db_subject = db_interest.get("subject", {})
+    
+    # 获取subject类型
+    db_subject_type = db_subject.get("type", "")
     bgm_subject_type = subject_type_map.get(db_subject_type, 1)
 
     if db_subject_type not in subject_type_map:
         logger.warning(f"无法识别的豆瓣类型: '{db_subject_type}'，使用默认值 1 (书籍)")
 
-    db_interest = douban_item.get("interest", {})
-    db_subject = db_interest.get("subject", {})
-
+    # 处理图片
     pic = db_subject.get("pic", {})
     large_url = pic.get("large", "")
     normal_url = pic.get("normal", "")
@@ -97,9 +103,11 @@ def convert_douban_to_bangumi(douban_item: Dict[str, Any]) -> Dict[str, Any]:
     
     cover_url = large_url or normal_url or ""
 
+    # 处理评分
     rating = db_interest.get("rating", {})
     rate = rating.get("value", 0) if rating else 0
 
+    # 处理标签
     db_tags = db_subject.get("genres", [])
     bangumi_tags = []
     for tag in db_tags:
@@ -116,7 +124,7 @@ def convert_douban_to_bangumi(douban_item: Dict[str, Any]) -> Dict[str, Any]:
                 "total_cont": tag.get("total_cont", 0)
             })
 
-
+    # 构造bangumi格式数据
     bangumi_data = {
         "updated_at": db_interest.get("create_time", ""),
         "comment": db_interest.get("comment", "") or None,
@@ -351,8 +359,8 @@ def adapt_to_collection_list(subjects: List[Any], collections: List[Optional[Any
     
     # 构造CollectionList数据
     return CollectionList(
-        total=len(collection_read_items),
-        items=collection_read_items
+        total=len(collection_base_items),
+        items=collection_base_items
     )
 
 
@@ -377,8 +385,8 @@ def adapt_bangumi_collection_to_list(bangumi_data: Dict[str, Any]) -> Any:
     if not isinstance(raw_items, list):
         raw_items = []
     
-    # 构造CollectionRead列表
-    collection_read_items = []
+    # 构造CollectionBase列表
+    collection_base_items = []
     for item in raw_items:
         # 确保item是字典
         if not isinstance(item, dict):
@@ -390,24 +398,32 @@ def adapt_bangumi_collection_to_list(bangumi_data: Dict[str, Any]) -> Any:
             if not subject_data:
                 continue
             
-            # 处理subject数据
-            if "source" not in subject_data:
-                subject_data["source"] = "bangumi"
-            if "source_id" not in subject_data:
-                subject_data["source_id"] = str(subject_data.get("id", ""))
+            # 构造CollectionBase数据，使用兼容的方式解析日期字符串
+            updated_at_str = item.get("updated_at")
+            if updated_at_str:
+                try:
+                    # 尝试使用fromisoformat（Python 3.7+）
+                    updated_at = datetime.datetime.fromisoformat(updated_at_str)
+                    # 移除时区信息，转换为 naive datetime
+                    updated_at = updated_at.replace(tzinfo=None)
+                except (AttributeError, ValueError):
+                    # 如果不支持fromisoformat或格式错误，使用dateutil.parser（兼容Python 3.6-）
+                    try:
+                        from dateutil.parser import parse
+                        updated_at = parse(updated_at_str)
+                        # 移除时区信息，转换为 naive datetime
+                        updated_at = updated_at.replace(tzinfo=None)
+                    except Exception:
+                        # 如果所有解析方法都失败，使用当前时间
+                        updated_at = datetime.datetime.now()
+            else:
+                updated_at = datetime.datetime.now()
             
-            # 构造SubjectRead数据
-            subject_read = SubjectRead(
-                id=0,  # 默认ID，会在数据库中生成
-                **subject_data
-            )
-            
-            # 构造CollectionBase数据
             collection_base = CollectionBase(
                 type=CollectionStatus(item.get("type", 0)),
                 source="bangumi",
                 source_id=str(item.get("subject_id", subject_data.get("id", ""))),
-                updated_at=datetime.fromisoformat(item.get("updated_at", datetime.now().isoformat())),
+                updated_at=updated_at,
                 rate=item.get("rate"),
                 comment=item.get("comment"),
                 private=item.get("private", False),
@@ -417,22 +433,16 @@ def adapt_bangumi_collection_to_list(bangumi_data: Dict[str, Any]) -> Any:
                 subject_type=item.get("subject_type", subject_data.get("type", 0))
             )
             
-            # 构造CollectionRead数据
-            collection_read = CollectionRead(
-                user_id=0,  # 默认用户ID，会在后续处理中设置
-                subject=subject_read,
-                **collection_base.model_dump()
-            )
-            
-            collection_read_items.append(collection_read)
+            # 将CollectionBase对象添加到列表中
+            collection_base_items.append(collection_base)
         except Exception as e:
             logger.error(f"转换bangumi_collection数据失败: {e}, 数据: {item}")
             continue
     
     # 构造CollectionList数据
     return CollectionList(
-        total=len(collection_read_items),
-        items=collection_read_items
+        total=len(collection_base_items),
+        items=collection_base_items
     )
 
 
@@ -533,18 +543,36 @@ def adapt_douban_data_to_collection_list(douban_data: List[Dict[str, Any]]) -> A
             if "source_id" not in subject_data:
                 subject_data["source_id"] = str(subject_data.get("id", ""))
             
-            # 构造SubjectRead数据
+            # 构造SubjectRead数据，确保id参数只传递一次
+            subject_copy = subject_data.copy()
+            # 移除subject_copy中的id字段，使用显式传递的id=0
+            subject_copy.pop('id', None)
+            
             subject_read = SubjectRead(
                 id=0,  # 默认ID，会在数据库中生成
-                **subject_data
+                **subject_copy
             )
+            
+            # 处理updated_at字段，兼容豆瓣的时间格式
+            updated_at_str = bangumi_data.get("updated_at", "")
+            try:
+                if updated_at_str:
+                    # 将豆瓣时间格式转换为ISO格式（替换空格为T）
+                    if " " in updated_at_str:
+                        updated_at_str = updated_at_str.replace(" ", "T")
+                    updated_at = datetime.fromisoformat(updated_at_str)
+                else:
+                    updated_at = datetime.now()
+            except ValueError:
+                # 如果解析失败，使用当前时间
+                updated_at = datetime.now()
             
             # 构造CollectionBase数据
             collection_base = CollectionBase(
                 type=CollectionStatus(bangumi_data.get("type", 0)),
                 source="douban",
                 source_id=str(bangumi_data.get("subject_id", subject_data.get("id", ""))),
-                updated_at=datetime.fromisoformat(bangumi_data.get("updated_at", datetime.now().isoformat())),
+                updated_at=updated_at,
                 rate=bangumi_data.get("rate"),
                 comment=bangumi_data.get("comment"),
                 private=bangumi_data.get("private", False),

@@ -220,37 +220,36 @@ def test_upload_douban(auth_client):
     session = auth_client.get_authenticated_client()
     base_url = auth_client.base_url
     
-    # 测试上传豆瓣收藏
-    douban_data = {
-        "subject_type": None,
-        "data": [
-            {
-                "rating": {
-                    "value": 8.5
-                },
-                "subject": {
-                    "title": "测试条目",
-                    "url": "https://movie.douban.com/subject/12345678/",
-                    "type": "movie",
-                    "rating": {
-                        "average": 8.5
-                    },
-                    "id": "12345678"
-                },
-                "status": "done"
-            }
-        ]
-    }
+    # 读取用户提供的豆瓣数据文件
+    douban_file_path = r"e:\HACCI\Documents\tools\OtakuNeko\tofu[208745052].json"
     
-    upload_response = session.post(f"{base_url}/api/v1/collections/upload/douban", json=douban_data)
-    
-    if upload_response.status_code == 200:
-        upload_result = upload_response.json()
-        print(f"上传豆瓣收藏成功！")
-        print(f"上传结果: {upload_result}")
-        return True
-    else:
-        print(f"上传豆瓣收藏失败: {upload_response.status_code} {upload_response.text}")
+    try:
+        with open(douban_file_path, 'r', encoding='utf-8') as f:
+            douban_data_json = json.load(f)
+        
+        # 提取 interest 数组
+        interest_list = douban_data_json.get('interest', [])
+        
+        # 转换为 API 所需的格式
+        douban_data = {
+            "subject_type": None,
+            "data": interest_list
+        }
+        
+        print(f"读取到 {len(interest_list)} 条豆瓣收藏数据")
+        
+        upload_response = session.post(f"{base_url}/api/v1/collections/upload/douban", json=douban_data)
+        
+        if upload_response.status_code == 200:
+            upload_result = upload_response.json()
+            print(f"上传豆瓣收藏成功！")
+            print(f"上传结果: {upload_result}")
+            return True
+        else:
+            print(f"上传豆瓣收藏失败: {upload_response.status_code} {upload_response.text}")
+            return False
+    except Exception as e:
+        print(f"读取豆瓣数据文件失败: {e}")
         return False
 
 
@@ -305,13 +304,11 @@ def main():
             # 测试删除收藏
             test_results["delete"] = test_delete_collection(auth_client, source, source_id)
         
-        # 暂时跳过同步 BGM 收藏测试
-        # test_results["sync_bgm"] = test_sync_bgm(auth_client)
-        test_results["sync_bgm"] = True
+        # 测试同步 BGM 收藏
+        test_results["sync_bgm"] = test_sync_bgm(auth_client)
         
-        # 暂时跳过上传豆瓣收藏测试
-        # test_results["upload_douban"] = test_upload_douban(auth_client)
-        test_results["upload_douban"] = True
+        # 测试上传豆瓣收藏
+        test_results["upload_douban"] = test_upload_douban(auth_client)
         
         print("\n=== 测试结果汇总 ===")
         for test_name, result in test_results.items():

@@ -373,8 +373,8 @@ async def batch_upsert_collections(
     批量更新或添加收藏
     
     批量处理收藏操作业务逻辑：
-    1. 遍历CollectionList中的每个CollectionRead对象
-    2. 为每个对象调用upsert_collection函数
+    1. 遍历CollectionList中的每个CollectionBase对象
+    2. 为每个对象先检查是否存在，存在则更新，否则创建
     
     Args:
         db: 数据库会话
@@ -388,34 +388,74 @@ async def batch_upsert_collections(
         ValueError: 必要参数缺失或格式错误
         SQLAlchemyError: 数据库操作异常
     """
-    from app.schemas.collection import CollectionCreate
+    from app.schemas.collection import CollectionCreate, CollectionUpdate, CollectionSearchByID
+    from sqlalchemy import select
+    from app.models.collection import Collection
     
     success_count = 0
     
-    for collection_read in collections.items:
+    for collection_base in collections.items:
         try:
-            # 转换为CollectionCreate schema
-            collection_create = CollectionCreate(
+            # 创建搜索数据，用于检查记录是否存在
+            search_data = CollectionSearchByID(
                 user_id=user_id,
-                type=collection_read.type,
-                source=collection_read.source,
-                source_id=collection_read.source_id,
-                updated_at=collection_read.updated_at,
-                rate=collection_read.rate,
-                comment=collection_read.comment,
-                private=collection_read.private,
-                tags=collection_read.tags,
-                vol_status=collection_read.vol_status,
-                ep_status=collection_read.ep_status,
-                subject_type=collection_read.subject_type
+                source=collection_base.source,
+                source_id=collection_base.source_id
             )
             
-            # 调用upsert_collection函数
-            await upsert_collection(db, collection_create)
-            success_count += 1
-            logger.info(f"Successfully upserted collection: user_id={user_id}, source={collection_read.source}, source_id={collection_read.source_id}")
+            # 检查记录是否存在，使用直接查询而不是Repo方法，避免ORM对象延迟加载问题
+            stmt = select(Collection).where(
+                Collection.user_id == user_id,
+                Collection.source == collection_base.source,
+                Collection.source_id == collection_base.source_id
+            )
+            result = await db.execute(stmt)
+            existing_collection = result.scalars().first()
+            
+            if existing_collection:
+                # 记录存在，执行更新操作
+                # 直接更新ORM对象，避免使用Repo方法
+                existing_collection.type = collection_base.type
+                existing_collection.updated_at = collection_base.updated_at
+                existing_collection.rate = collection_base.rate
+                existing_collection.comment = collection_base.comment
+                existing_collection.private = collection_base.private
+                existing_collection.tags = collection_base.tags
+                existing_collection.vol_status = collection_base.vol_status
+                existing_collection.ep_status = collection_base.ep_status
+                existing_collection.subject_type = collection_base.subject_type
+                
+                await db.commit()
+                await db.refresh(existing_collection)
+                success_count += 1
+            else:
+                # 记录不存在，执行创建操作
+                # 直接创建ORM对象，避免使用Repo方法
+                new_collection = Collection(
+                    user_id=user_id,
+                    type=collection_base.type,
+                    source=collection_base.source,
+                    source_id=collection_base.source_id,
+                    updated_at=collection_base.updated_at,
+                    rate=collection_base.rate,
+                    comment=collection_base.comment,
+                    private=collection_base.private,
+                    tags=collection_base.tags,
+                    vol_status=collection_base.vol_status,
+                    ep_status=collection_base.ep_status,
+                    subject_type=collection_base.subject_type
+                )
+                db.add(new_collection)
+                await db.commit()
+                await db.refresh(new_collection)
+                success_count += 1
+            
+            logger.info(f"Successfully upserted collection: user_id={user_id}, source={collection_base.source}, source_id={collection_base.source_id}")
         except Exception as e:
-            logger.error(f"Failed to upsert collection: user_id={user_id}, source={collection_read.source}, source_id={collection_read.source_id}, error={e}")
+            import traceback
+            logger.error(f"Failed to upsert collection: user_id={user_id}, source={collection_base.source}, source_id={collection_base.source_id}, error={e}")
+            logger.error(f"Error details: {traceback.format_exc()}")
+            await db.rollback()
             continue
     
     return success_count
