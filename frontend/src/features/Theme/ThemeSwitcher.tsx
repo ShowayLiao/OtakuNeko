@@ -143,36 +143,16 @@ export const ThemeSwitcher = () => {
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 8,
-          padding: '8px 12px',
+          gap: 4,
+          padding: 8,
           cursor: 'pointer',
-          borderRadius: 8,
+          borderRadius: 6,
           transition: 'all 0.2s',
           background: open ? 'var(--lobe-color-fill-tertiary)' : 'transparent',
         }}
         className="hover:bg-neutral-100 dark:hover:bg-neutral-800"
       >
-        <Palette size={16} style={{ opacity: 0.7 }} />
-        <span style={{ fontSize: 14, fontWeight: 500 }}>主题颜色</span>
-        <div
-           style={{
-             width: 12,
-             height: 12,
-             borderRadius: '50%',
-             background: displayColor,
-             marginLeft: 'auto',
-             marginRight: 4,
-             border: '1px solid rgba(0,0,0,0.1)' // 增加描边以防颜色太浅看不清
-           }}
-        />
-        <ChevronDown
-           size={14}
-           style={{
-             opacity: 0.5,
-             transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-             transition: 'transform 0.2s'
-           }}
-        />
+        <Palette size={30} strokeWidth={1.5} color={displayColor} />
       </div>
     </Popover>
   );

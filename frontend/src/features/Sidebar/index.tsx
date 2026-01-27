@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { MessageSquare, Grid, Wrench, UserCircle, Settings } from 'lucide-react';
 import { Avatar, DraggableSideNav, ActionIcon, Flexbox, Menu, Text, type MenuItemType } from '@lobehub/ui';
 import { theme } from 'antd';
+import { ThemeSwitcher } from '@/features/Theme/ThemeSwitcher';
+import { ThemeModeSwitcher } from '@/features/Theme/ThemeModeSwitcher';
 
 export const DesktopSidebar = () => {
   const pathname = usePathname();
@@ -15,11 +17,11 @@ export const DesktopSidebar = () => {
   
   // 主导航项
   const mainItems: MenuItemType[] = [
-    { key: '/', icon: <MessageSquare className="h-5 w-5" />, label: 'Chat' },
-    { key: '/collections', icon: <Grid className="h-5 w-5" />, label: 'Collections' },
-    { key: '/tools', icon: <Wrench className="h-5 w-5" />, label: 'Tools' },
-    { key: '/role', icon: <UserCircle className="h-5 w-5" />, label: 'Role' },
-    { key: '/settings', icon: <Settings className="h-5 w-5" />, label: 'Settings' },
+    { key: '/', icon: <MessageSquare strokeWidth={1.5} />, label: '聊天' },
+    { key: '/collections', icon: <Grid strokeWidth={1.5} />, label: '收藏' },
+    { key: '/tools', icon: <Wrench strokeWidth={1.5} />, label: '工具' },
+    { key: '/role', icon: <UserCircle strokeWidth={1.5} />, label: '角色' },
+    { key: '/settings', icon: <Settings strokeWidth={1.5} />, label: '设置' },
   ];
 
   const handleSelect = (key: string) => {
@@ -51,7 +53,51 @@ export const DesktopSidebar = () => {
         </Flexbox>
       )}
       expand={expand}
-      footer={() => null}
+      footer={(isExpanded) => (
+        <Flexbox
+          align={'flex-start'}
+          gap={8}
+          direction={'vertical'}
+          justify={'flex-start'}
+          padding={4}
+          style={{
+            width: '100%',
+          }}
+        >
+          <Flexbox
+            align={'center'}
+            gap={8}
+            horizontal
+            justify={'flex-start'}
+            style={{
+              width: '100%',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <ThemeSwitcher />
+            {isExpanded && (
+              <span style={{ fontSize: 14, color: token.colorText, fontWeight: 500 }}>主题颜色</span>
+            )}
+          </Flexbox>
+          <Flexbox
+            align={'center'}
+            gap={8}
+            horizontal
+            justify={'flex-start'}
+            style={{
+              width: '100%',
+              overflow: 'hidden',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <ThemeModeSwitcher />
+            {isExpanded && (
+              <span style={{ fontSize: 14, color: token.colorText, fontWeight: 500 }}>主题模式</span>
+            )}
+          </Flexbox>
+        </Flexbox>
+      )}
       header={(isExpanded) => (
         <Flexbox>
           <Flexbox

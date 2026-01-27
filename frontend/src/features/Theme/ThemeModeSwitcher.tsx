@@ -76,7 +76,7 @@ export const ThemeModeSwitcher = () => {
           background: open ? 'var(--lobe-color-fill-tertiary)' : 'transparent',
         }}
       >
-        <CurrentIcon size={20} style={{ opacity: 0.8 }} />
+        <CurrentIcon size={30} strokeWidth={1.5} style={{ opacity: 0.8 }} />
       </div>
     </Popover>
   );

@@ -43,15 +43,14 @@ export const Header: React.FC<HeaderProps> = ({ className = '' }) => {
       }
       actions={
         <div className="flex items-center gap-2">
-          <SearchBar className="w-64" />
+          {/* <SearchBar className="w-64" /> */}
           <User />
         </div>
       }
       
       nav={
         <div className="flex items-center gap-2">
-          <ThemeSwitcher />
-          <ThemeModeSwitcher />
+          {/* 主题切换器已迁移到侧边栏 */}
         </div>
       }
     />

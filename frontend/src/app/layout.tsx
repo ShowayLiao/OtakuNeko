@@ -30,7 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           }}
         />
         <LobeProvider>
-          <APPLayout>
+          <APPLayout maxWidth="full" padding="lg" className="h-full">
             {children}
           </APPLayout>
         </LobeProvider>
