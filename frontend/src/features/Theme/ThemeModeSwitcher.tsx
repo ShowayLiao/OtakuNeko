@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Popover, Flexbox } from '@lobehub/ui';
+import { Popover, Flexbox, ActionIcon } from '@lobehub/ui';
 import { Monitor, Moon, Sun, Check } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 
@@ -62,22 +62,11 @@ export const ThemeModeSwitcher = () => {
         </Flexbox>
       }
     >
-      <div 
-        className="hover:bg-neutral-100 dark:hover:bg-neutral-800"
-        style={{
-          padding: 8,
-          borderRadius: 6,
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s',
-          // 只有打开菜单时才显示背景色
-          background: open ? 'var(--lobe-color-fill-tertiary)' : 'transparent',
-        }}
-      >
-        <CurrentIcon size={30} strokeWidth={1.5} style={{ opacity: 0.8 }} />
-      </div>
+      <ActionIcon
+        icon={() => <CurrentIcon />}
+        size="large"
+        variant="borderless"
+      />
     </Popover>
   );
 };

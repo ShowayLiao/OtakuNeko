@@ -10,6 +10,7 @@ from app.core.logging import get_logger
 from fastapi_cache import FastAPICache
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.backends.redis import RedisBackend
+from fastapi_cache.backends.inmemory import InMemoryBackend  # <--- 必须导入这个
 from redis.asyncio import Redis
 import logging
 
@@ -20,40 +21,61 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理，初始化数据库和缓存"""
-    # 启动时初始化数据库
-    await init_db()
     
-    # 初始化Redis缓存
+    # 1. 数据库初始化
+    # 如果是本地 SQLite，这一步会自动生成 .db 文件并建表
+    logger.info(f"Initializing database with URL: {settings.DATABASE_URL}")
+    await init_db()
+    logger.info("Database initialized successfully")
+    
+    # 2. 缓存初始化 (智能切换逻辑)
     redis = None
-    try:
-        # Pickle需要二进制数据，所以decode_responses设置为False
-        redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
-        # 测试连接
-        await redis.ping()
-        
-        # 初始化FastAPICache，使用新的前缀避免旧缓存影响
-        FastAPICache.init(
-            RedisBackend(redis),
-            expire=60,  # 全局默认过期时间为60秒
-            prefix="fastapi-cache-v2",  # 使用新前缀，完全隔离旧缓存
-            coder=PickleCoder  # 使用PickleCoder避免类型转换错误
-        )
-        logger.info("Redis cache initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Redis cache: {e}")
-        # Redis连接失败时，使用InMemoryBackend作为降级方案
-        from fastapi_cache.backends.inmemory import InMemoryBackend
+    
+    # 判断是否为 SQLite (本地模式)
+    is_local_mode = "sqlite" in settings.DATABASE_URL
+    
+    if is_local_mode:
+        # === 分支 A: 本地模式 (无需 Redis) ===
+        logger.info("🚀 Local mode (SQLite) detected. Using In-Memory Cache.")
         FastAPICache.init(
             InMemoryBackend(),
             expire=60,
-            prefix="fastapi-cache",
-            coder=PickleCoder  # 使用PickleCoder避免类型转换错误
+            prefix="fastapi-cache-local",
+            coder=PickleCoder
         )
-        logger.info("Fallback to InMemoryBackend for caching")
+        
+    else:
+        # === 分支 B: 生产模式 (Postgres + Redis) ===
+        logger.info("🚀 Production mode detected. Attempting to connect to Redis...")
+        try:
+            # Pickle需要二进制数据，所以decode_responses设置为False
+            redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+            # 测试连接
+            await redis.ping()
+            
+            # 初始化FastAPICache
+            FastAPICache.init(
+                RedisBackend(redis),
+                expire=60,
+                prefix="fastapi-cache-v2",
+                coder=PickleCoder
+            )
+            logger.info("✅ Redis cache initialized successfully")
+            
+        except Exception as e:
+            # 生产环境如果 Redis 挂了，自动降级到内存，保证服务不崩
+            logger.error(f"❌ Failed to initialize Redis cache: {e}")
+            logger.warning("⚠️ Falling back to InMemoryBackend")
+            FastAPICache.init(
+                InMemoryBackend(),
+                expire=60,
+                prefix="fastapi-cache-fallback",
+                coder=PickleCoder
+            )
     
     yield
     
-    # 关闭资源
+    # 3. 关闭资源
     if redis:
         try:
             await redis.close()
@@ -76,7 +98,8 @@ app = FastAPI(
 # 配置 CORS 中间件
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"],  # 允许多个本地开发端口
+    # 允许多个本地开发端口
+    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002", "http://localhost:3003"],
     allow_credentials=True,
     allow_methods=["*"],  # 允许所有HTTP方法
     allow_headers=["*"],  # 允许所有HTTP头

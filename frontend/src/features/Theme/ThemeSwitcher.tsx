@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Popover, Flexbox } from '@lobehub/ui';
+import { Popover, Flexbox, ActionIcon } from '@lobehub/ui';
 import { Palette, ChevronDown, Check } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { PrimaryColors } from '@lobehub/ui';
@@ -139,21 +139,11 @@ export const ThemeSwitcher = () => {
         </Flexbox>
       }
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: 8,
-          cursor: 'pointer',
-          borderRadius: 6,
-          transition: 'all 0.2s',
-          background: open ? 'var(--lobe-color-fill-tertiary)' : 'transparent',
-        }}
-        className="hover:bg-neutral-100 dark:hover:bg-neutral-800"
-      >
-        <Palette size={30} strokeWidth={1.5} color={displayColor} />
-      </div>
+      <ActionIcon
+        icon={() => <Palette color={displayColor}  />}
+        size="large"
+        variant="borderless"
+      />
     </Popover>
   );
 };

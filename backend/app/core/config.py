@@ -1,36 +1,44 @@
 from typing import Optional
 from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
-
-# 加载环境变量
-load_dotenv()
+from pydantic import computed_field # 新增这个导入
 
 class Settings(BaseSettings):
-    # 应用配置
     PROJECT_NAME: str = "OtakuNeko"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = True
-    
-    # 数据库配置
-    DATABASE_URL: str = "postgresql+asyncpg://otaku:password@localhost:5432/otakuneko"
-    
-    # Redis配置
-    REDIS_URL: str = "redis://localhost:6379/0"
-    
-    # OpenAI配置
     OPENAI_API_KEY: Optional[str] = None
     
-    # 日志配置
-    LOG_LEVEL: str = "INFO"
-    LOG_DIR: str = "logs"
-    LOG_MAX_BYTES: int = 104857600  # 100MB
-    LOG_BACKUP_COUNT: int = 30  # 保留30天的日志
-    LOG_FORMAT: str = "%(asctime)s - %(levelname)s - %(module)s - %(request_id)s - %(message)s"
-    LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
-    
+    # 1. 读取模式开关
+    DEPLOY_MODE: str = "local" # 默认为 local
+
+    # 2. 读取 Local 模式配置
+    SQLITE_FILE: str = "./local.db"
+
+    # 3. 读取 Cloud 模式配置
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "otaku"
+    POSTGRES_PASSWORD: str = "password"
+    POSTGRES_DB: str = "otakuneko"
+    REDIS_URL: Optional[str] = "redis://localhost:6379/0"
+
+    # 4. 【核心逻辑】自动生成 DATABASE_URL
+    @computed_field
+    @property
+    def DATABASE_URL(self) -> str:
+        if self.DEPLOY_MODE == "local":
+            # 自动拼接 SQLite 链接
+            return f"sqlite+aiosqlite:///{self.SQLITE_FILE}"
+        else:
+            # 自动拼接 Postgres 链接
+            return (
+                f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore" # 忽略多余的配置项
 
-# 创建配置实例
 settings = Settings()

@@ -2,7 +2,6 @@
 
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { Header } from '../components/header/Header';
 import { DesktopSidebar } from '@/features/Sidebar';
 import { theme } from 'antd';
 
@@ -25,7 +24,7 @@ export const APPLayout = ({
   const { token } = theme.useToken();
   
   // 判断是否为聊天页面，逻辑覆盖根路径和包含 /chat 的路径
-  const isChatPage = pathname === '/' || pathname?.includes('/chat');
+  const isFullScreenPage = pathname === '/' || pathname?.includes('/chat') || pathname === '/collections';
 
   // 样式映射表
   const paddingMap: Record<string, string> = {
@@ -78,7 +77,6 @@ export const APPLayout = ({
         minWidth: 0 
       }}>
         
-        <Header />
         <main style={{ 
           flex: 1, 
           display: 'flex', 
@@ -87,11 +85,14 @@ export const APPLayout = ({
           overflow: 'hidden', 
           minHeight: 0        
         }}>
-          {isChatPage ? (
+          {isFullScreenPage ? (
+            // ✅ 全屏模式：无 Padding，无默认滚动，高度 100%
+            // 这时候你的 CollectionPage 就必须自己写 flex flex-col 和 overflow-y-auto
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%' }}>
               {children}
             </div>
           ) : (
+            // ❌ 普通文档模式（设置页等）：有 Padding，Layout 负责滚动
             <div style={{ flex: 1, overflowY: 'auto' }}>
               <div style={contentStyle} className={className}>
                 {children}
