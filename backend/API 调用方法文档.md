@@ -37,6 +37,8 @@ OtakuNeko采用JWT（JSON Web Token）进行身份认证，所有需要认证的
 | 条目 | `/api/v1/subjects/{subject_id}` | GET | 获取单个条目详情 | 需要JWT |
 | 条目 | `/api/v1/subjects/{subject_id}` | PUT | 修改条目信息 | 需要JWT |
 | 用户 | `/api/v1/users/me` | GET | 获取当前用户信息 | 需要JWT |
+| 用户 | `/api/v1/users/me` | PUT | 更新当前用户信息 | 需要JWT |
+| 用户 | `/api/v1/users/me` | DELETE | 删除当前用户 | 需要JWT |
 
 ## 4. API详细说明
 
@@ -651,6 +653,85 @@ curl -X PUT http://localhost:8000/api/v1/subjects/12345 \
 
 ```bash
 curl -X GET http://localhost:8000/api/v1/users/me \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json"
+```
+
+#### 4.5.2 更新当前用户信息
+
+**路径**：`/api/v1/users/me`
+
+**方法**：`PUT`
+
+**功能**：更新当前登录用户的详细信息。
+
+**请求体**：
+
+```json
+{
+  "username": "string", // 用户名，可选
+  "avatar_url": "string", // 头像URL，可选
+  "bangumi_id": 12345, // Bangumi ID，可选
+  "sign": "string" // 个性签名，可选
+}
+```
+
+**响应**：
+
+```json
+{
+  "id": 1,
+  "username": "updateduser",
+  "avatar_url": "https://example.com/avatar.jpg",
+  "bangumi_id": 12345,
+  "sign": "Updated sign",
+  "created_at": "2023-12-30T10:00:00"
+}
+```
+
+**状态码**：
+
+| 状态码 | 描述 |
+|--------|------|
+| 200 | 更新成功 |
+| 401 | 未认证或认证失败 |
+| 404 | 用户不存在 |
+| 500 | 服务器内部错误 |
+
+**示例请求**：
+
+```bash
+curl -X PUT http://localhost:8000/api/v1/users/me \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "updateduser", "avatar_url": "https://example.com/avatar.jpg", "sign": "Updated sign"}'
+```
+
+#### 4.5.3 删除当前用户
+
+**路径**：`/api/v1/users/me`
+
+**方法**：`DELETE`
+
+**功能**：删除当前登录用户。
+
+**响应**：
+
+无内容，返回状态码 204。
+
+**状态码**：
+
+| 状态码 | 描述 |
+|--------|------|
+| 204 | 删除成功 |
+| 401 | 未认证或认证失败 |
+| 404 | 用户不存在 |
+| 500 | 服务器内部错误 |
+
+**示例请求**：
+
+```bash
+curl -X DELETE http://localhost:8000/api/v1/users/me \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json"
 ```

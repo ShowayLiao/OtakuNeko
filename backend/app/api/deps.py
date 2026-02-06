@@ -6,6 +6,7 @@ from sqlalchemy import select
 
 from app.db.database import get_session
 from app.models.user import User
+from app.schemas.user import UserRead
 from app.core.security import decode_access_token
 
 security = HTTPBearer()
@@ -14,7 +15,7 @@ security = HTTPBearer()
 async def get_current_user(
     token_auth: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_session)
-) -> User:
+) -> UserRead:
     """
     获取当前认证用户
     
@@ -65,4 +66,4 @@ async def get_current_user(
     if user is None:
         raise credentials_exception
     
-    return user
+    return UserRead.model_validate(user)

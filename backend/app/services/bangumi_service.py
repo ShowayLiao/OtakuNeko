@@ -9,8 +9,9 @@ from sqlmodel import select
 
 from ..models import Subject, SubjectType, User
 from ..repositories import CollectionRepo, SubjectRepo
-from ..schemas.adapters import adapt_bangumi_subject
-from .bangumi_client import fetch_subject_detail, fetch_user_collections
+from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
+from ..schemas.user import UserRead
+from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ logger = logging.getLogger(__name__)
 from app.schemas.collection import CollectionList, CollectionSyncRequest
 
 async def sync_user_collections(
-    username: str, 
+    user: UserRead, 
     db: AsyncSession, 
     request_data: Optional[CollectionSyncRequest] = None
 ) -> int:
@@ -26,7 +27,7 @@ async def sync_user_collections(
     同步用户的 Bangumi 收藏数据到本地数据库
     
     Args:
-        username: Bangumi 用户名
+        user: 用户信息（UserRead schema）
         db: 数据库会话
         request_data: 同步请求数据，包含limit、offset、subject_type等参数
         
@@ -36,22 +37,29 @@ async def sync_user_collections(
     Raises:
         Exception: 同步过程中发生错误时抛出
     """
+    username = user.username
     from app.services.collection_service import batch_upsert_collections
-    from app.schemas.adapters import adapt_bangumi_collection_to_list
+    from app.schemas.adaptersV2 import bangumi_subject_to_subjectlist
+    from app.services.subject_service import batch_upsert_subjects
     
     try:
         # --- 获取或创建用户 Start ---
-        # 1. 先查数据库里有没有这个用户
-        result = await db.execute(select(User).where(User.username == username))
-        user = result.scalars().first()
+        # 1. 先查数据库里有没有这个用户（使用 id 字段查询，更高效）
+        result = await db.execute(select(User).where(User.id == user.id))
+        db_user = result.scalars().first()
         
         # 2. 如果没有，就现场创建一个（为了防止同步失败）
-        if not user:
-            logger.info(f"User {username} not found, creating new user...")
-            user = User(username=username, nickname=username, email=f"{username}@placeholder.com")
-            db.add(user)
+        if not db_user:
+            logger.info(f"User {user.username} not found, creating new user...")
+            db_user = User(
+                id=user.id,
+                username=user.username,
+                nickname=user.username,
+                email=f"{user.username}@placeholder.com"
+            )
+            db.add(db_user)
             await db.commit()
-            await db.refresh(user)
+            await db.refresh(db_user)
         
         user_id = user.id
         logger.info(f"--- Syncing for User ID: {user_id} --- ")
@@ -68,20 +76,29 @@ async def sync_user_collections(
             logger.info(f"--- Fetching page with offset: {offset}, limit: {limit} ---")
             
             # 获取用户收藏数据（带分页参数）
-            logger.info(f"准备请求Bangumi API: username={username}, subject_type={subject_type}, limit={limit}, offset={offset}")
-            response_json = await fetch_user_collections(username, subject_type, limit=limit, offset=offset)
+            # 优先使用 bangumi_id，如果没有则使用 username
+            bangumi_name = user.bangumi_name
+            api_username = bangumi_name if bangumi_name else username
+            logger.info(f"准备请求Bangumi API: username={api_username}, subject_type={subject_type}, limit={limit}, offset={offset}")
+            response_json = await fetch_user_collections(api_username, subject_type, limit=limit, offset=offset)
             logger.info(f"Bangumi API response received, data count: {len(response_json.get('data', []))}, total: {response_json.get('total', 0)}")
             
-            # 调用适配器转换为CollectionList格式
-            collections_list = adapt_bangumi_collection_to_list(response_json)
-            
-            # 导入需要的模块
-            from app.services.collection_service import batch_upsert_collections
+            # 调用适配器转换为SubjectUpsertList格式
+            subjects_list = bangumi_subject_to_subjectlist(response_json)
+
+            # 调用批量插入函数，实际执行数据库操作
+            subject_success_count = await batch_upsert_subjects(db, subjects_list)
+            total_success += subject_success_count
+            logger.info(f"--- Page processed: {subject_success_count}/{subjects_list.total} items successfully synced --- ")
+
+            # 调用适配器转换为CollectionUpsertList格式
+            from app.schemas.adaptersV2 import bangumi_collection_to_collectionlist
+            collections_list = bangumi_collection_to_collectionlist(response_json, user_id)
             
             # 调用批量插入函数，实际执行数据库操作
-            success_count = await batch_upsert_collections(db, collections_list, user_id)
-            total_success += success_count
-            logger.info(f"--- Page processed: {success_count}/{collections_list.total} items successfully synced --- ")
+            collection_success_count = await batch_upsert_collections(db, collections_list, user_id)
+            total_success += collection_success_count
+            logger.info(f"--- Page processed: {collection_success_count}/{collections_list.total} items successfully synced --- ")
             
             # 提取真正的列表
             items = response_json.get("data", [])
@@ -151,38 +168,49 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str 
     bangumi_data = await fetch_subject_detail(subject_id)
     
     # 使用适配器转换数据格式
-    adapted_data = adapt_bangumi_subject(bangumi_data)
-    
-    # 转换为 SubjectUpdate 对象
     from app.schemas.subject import SubjectUpdate, SubjectUpdateList
-    subject_update = SubjectUpdate(
-        source=source,
-        source_id=str(subject_id),
-        name=adapted_data.get("name"),
-        name_cn=adapted_data.get("name_cn"),
-        type=adapted_data.get("type"),
-        summary=adapted_data.get("summary"),
-        date=adapted_data.get("date"),
-        platform=adapted_data.get("platform"),
-        eps=adapted_data.get("eps"),
-        volumes=adapted_data.get("volumes"),
-        images=adapted_data.get("images"),
-        image=adapted_data.get("image"),
-        tags=adapted_data.get("tags"),
-        meta_tags=adapted_data.get("meta_tags"),
-        infobox=adapted_data.get("infobox"),
-        rating=adapted_data.get("rating"),
-        collection=adapted_data.get("collection"),
-        series=adapted_data.get("series"),
-        locked=adapted_data.get("locked"),
-        nsfw=adapted_data.get("nsfw")
-    )
+    # 构造符合 bangumi_subject_to_subjectlist 接口的数据结构
+    bangumi_data_with_data = {"data": [bangumi_data]}
+    subject_upsert_list = bangumi_subject_to_subjectlist(bangumi_data_with_data)
     
-    # 创建 SubjectUpdateList
-    subject_update_list = SubjectUpdateList(
-        total=1,
-        items=[subject_update]
-    )
+    # 提取第一个条目数据
+    if subject_upsert_list.items:
+        adapted_data = subject_upsert_list.items[0]
+        # 转换为 SubjectUpdate 对象
+        subject_update = SubjectUpdate(
+            source=source,
+            source_id=str(subject_id),
+            name=adapted_data.name,
+            name_cn=adapted_data.name_cn,
+            type=adapted_data.type,
+            summary=adapted_data.summary,
+            date=adapted_data.date,
+            platform=adapted_data.platform,
+            eps=adapted_data.eps,
+            volumes=adapted_data.volumes,
+            images=adapted_data.images,
+            image=adapted_data.image,
+            tags=adapted_data.tags,
+            meta_tags=adapted_data.meta_tags,
+            infobox=adapted_data.infobox,
+            rating=adapted_data.rating,
+            collection=adapted_data.collection,
+            series=adapted_data.series,
+            locked=adapted_data.locked,
+            nsfw=adapted_data.nsfw
+        )
+        
+        # 创建 SubjectUpdateList
+        subject_update_list = SubjectUpdateList(
+            total=1,
+            items=[subject_update]
+        )
+    else:
+        # 如果转换失败，创建一个空的 SubjectUpdateList
+        subject_update_list = SubjectUpdateList(
+            total=0,
+            items=[]
+        )
     
     # 调用批量更新函数
     from app.services.subject_service import batch_update_subjects
@@ -195,3 +223,33 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str 
     subject_result = await SubjectRepo.get_by_source(db, subject_search)
     
     return subject_result[0] if subject_result else None
+
+
+async def get_bangumi_user_info(username: str) -> Dict:
+    """
+    获取 Bangumi 用户信息
+    
+    Args:
+        username: Bangumi 用户名
+        
+    Returns:
+        包含用户信息的字典
+        
+    Raises:
+        Exception: 获取用户信息过程中发生错误时抛出
+    """
+    try:
+        logger.info(f"获取 Bangumi 用户信息: {username}")
+        
+        # 调用 bangumi_client.py 中的 fetch_user_info 函数获取用户信息
+        user_info = await fetch_user_info(username)
+        
+        logger.info(f"成功获取 Bangumi 用户信息: {username}")
+        
+        return user_info
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"获取 Bangumi 用户信息失败: {e}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        raise

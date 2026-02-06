@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import User
-from app.schemas.user import UserCreate, UserUpdate, UserRead, UserSearch, UserList
+from app.schemas.user import UserCreate, UserUpdate, UserRead, UserSearch, UserList, UserLogin
 from app.repositories.user_repo import UserRepo
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ class UserService:
     """
     
     @staticmethod
-    async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
+    async def create_user(db: AsyncSession, user_data: UserCreate) -> UserRead:
         """
         创建新用户
         
@@ -26,7 +26,7 @@ class UserService:
             user_data: 用户创建数据，使用 UserCreate schema
         
         Returns:
-            创建的User对象
+            创建的UserRead对象
         
         Raises:
             ValueError: 用户已存在
@@ -41,7 +41,7 @@ class UserService:
             # 直接使用 UserCreate schema 创建用户，不需要构造字典
             new_user = await UserRepo.create(db, user_data)
             logger.info(f"创建新用户成功: {new_user.username} (ID: {new_user.id})")
-            return new_user
+            return UserRead.model_validate(new_user)
         except ValueError as e:
             logger.error(f"创建用户失败: {e}")
             raise
@@ -50,7 +50,7 @@ class UserService:
             raise
     
     @staticmethod
-    async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[User]:
+    async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[UserRead]:
         """
         根据ID获取用户
         
@@ -59,7 +59,7 @@ class UserService:
             user_id: 用户ID
         
         Returns:
-            User对象或None
+            UserRead对象或None
         
         Raises:
             Exception: 查询失败的异常
@@ -68,15 +68,16 @@ class UserService:
             user = await UserRepo.get_by_id(db, user_id)
             if user:
                 logger.info(f"获取用户成功: {user.username} (ID: {user.id})")
+                return UserRead.model_validate(user)
             else:
                 logger.info(f"未找到用户: ID {user_id}")
-            return user
+                return None
         except Exception as e:
             logger.error(f"获取用户失败: {e}")
             raise
     
     @staticmethod
-    async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
+    async def get_user_by_username(db: AsyncSession, username: str) -> Optional[UserRead]:
         """
         根据用户名获取用户
         
@@ -85,7 +86,7 @@ class UserService:
             username: 用户名
         
         Returns:
-            User对象或None
+            UserRead对象或None
         
         Raises:
             Exception: 查询失败的异常
@@ -94,15 +95,16 @@ class UserService:
             user = await UserRepo.get_by_username(db, username)
             if user:
                 logger.info(f"获取用户成功: {user.username} (ID: {user.id})")
+                return UserRead.model_validate(user)
             else:
                 logger.info(f"未找到用户: {username}")
-            return user
+                return None
         except Exception as e:
             logger.error(f"获取用户失败: {e}")
             raise
     
     @staticmethod
-    async def get_user_by_bangumi_id(db: AsyncSession, bangumi_id: int) -> Optional[User]:
+    async def get_user_by_bangumi_id(db: AsyncSession, bangumi_id: int) -> Optional[UserRead]:
         """
         根据Bangumi ID获取用户
         
@@ -111,7 +113,7 @@ class UserService:
             bangumi_id: Bangumi ID
         
         Returns:
-            User对象或None
+            UserRead对象或None
         
         Raises:
             Exception: 查询失败的异常
@@ -120,15 +122,16 @@ class UserService:
             user = await UserRepo.get_by_bangumi_id(db, bangumi_id)
             if user:
                 logger.info(f"获取用户成功: {user.username} (Bangumi ID: {bangumi_id})")
+                return UserRead.model_validate(user)
             else:
                 logger.info(f"未找到用户: Bangumi ID {bangumi_id}")
-            return user
+                return None
         except Exception as e:
             logger.error(f"获取用户失败: {e}")
             raise
     
     @staticmethod
-    async def get_all_users(db: AsyncSession, search_data: UserSearch) -> List[User]:
+    async def get_all_users(db: AsyncSession, search_data: UserSearch) -> List[UserRead]:
         """
         获取所有用户
         
@@ -137,7 +140,7 @@ class UserService:
             search_data: 搜索数据，使用 UserSearch schema
         
         Returns:
-            User对象列表
+            UserRead对象列表
         
         Raises:
             Exception: 查询失败的异常
@@ -145,13 +148,13 @@ class UserService:
         try:
             users = await UserRepo.get_all(db, search_data)
             logger.info(f"获取用户列表成功: {len(users)} 个用户")
-            return users
+            return [UserRead.model_validate(user) for user in users]
         except Exception as e:
             logger.error(f"获取用户列表失败: {e}")
             raise
     
     @staticmethod
-    async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> Optional[User]:
+    async def update_user(db: AsyncSession, user_id: int, user_data: UserUpdate) -> Optional[UserRead]:
         """
         更新用户信息
         
@@ -161,7 +164,7 @@ class UserService:
             user_data: 用户更新数据，使用 UserUpdate schema
         
         Returns:
-            更新后的User对象或None
+            更新后的UserRead对象或None
         
         Raises:
             Exception: 更新失败的异常
@@ -177,7 +180,8 @@ class UserService:
             updated_user = await UserRepo.update(db, user_id, user_data)
             if updated_user:
                 logger.info(f"更新用户成功: {updated_user.username} (ID: {updated_user.id})")
-            return updated_user
+                return UserRead.model_validate(updated_user)
+            return None
         except Exception as e:
             logger.error(f"更新用户失败: {e}")
             raise
@@ -214,7 +218,7 @@ class UserService:
             raise
     
     @staticmethod
-    async def login_user(db: AsyncSession, login_data: UserLogin) -> User:
+    async def login_user(db: AsyncSession, login_data: UserLogin) -> UserRead:
         """
         用户登录服务
         
@@ -229,7 +233,7 @@ class UserService:
             login_data: 登录数据，使用 UserLogin schema
         
         Returns:
-            登录成功的User对象
+            登录成功的UserRead对象
         
         Raises:
             Exception: 登录失败的异常
@@ -246,13 +250,14 @@ class UserService:
                 update_data = UserUpdate(
                     avatar_url=login_data.avatar_url,
                     bangumi_id=login_data.bangumi_id,
+                    bangumi_name=login_data.bangumi_name,
                     sign=login_data.sign
                 )
                 
                 # 更新用户
                 updated_user = await UserRepo.update(db, existing_user.id, update_data)
                 logger.info(f"用户 {login_data.username} 登录成功，已更新用户信息")
-                return updated_user
+                return UserRead.model_validate(updated_user)
             else:
                 # 用户不存在，执行新增操作
                 logger.info(f"用户 {login_data.username} 不存在，执行新增操作")
@@ -262,13 +267,14 @@ class UserService:
                     username=login_data.username,
                     avatar_url=login_data.avatar_url,
                     bangumi_id=login_data.bangumi_id,
+                    bangumi_name=login_data.bangumi_name,
                     sign=login_data.sign
                 )
                 
                 # 创建用户
                 new_user = await UserRepo.create(db, user_data)
                 logger.info(f"用户 {login_data.username} 登录成功，已创建新用户")
-                return new_user
+                return UserRead.model_validate(new_user)
         except Exception as e:
             logger.error(f"用户登录失败: {e}")
             raise

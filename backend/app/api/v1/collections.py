@@ -9,7 +9,8 @@ from app.db.database import get_session
 from app.services.collection_service import get_user_collections, update_collection, upsert_collection, get_collection, delete_collection, batch_upsert_collections
 from app.services.bangumi_service import sync_user_collections
 from app.services.douban_service import sync_user_collections_douban
-from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest, CollectionSearchBase, CollectionUpdate
+from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest, CollectionSearchByName, CollectionUpdate
+from app.schemas.adaptersV2 import UnifiedList
 from app.models.user import User
 from app.models.subject import Subject
 from app.models.collection import Collection
@@ -23,12 +24,12 @@ from fastapi_cache import FastAPICache
 router = APIRouter(prefix="/collections", tags=["Collections"])
 
 
-@router.get("/", response_model=CollectionList)
+@router.get("/", response_model=UnifiedList)
 @cache(expire=60)
 async def get_user_collect(
     current_user = Depends(get_current_user),
     subject_type: Optional[int] = Query(None, description="条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)"),
-    status: Optional[int] = Query(None, description="收藏状态 (1=想看/2=看过/3=在看/4=搁置/5=抛弃)"),
+    status: Optional[int] = Query(None, description="收藏状态 (1=想看/2=看过/3在看/4搁置/5抛弃)"),
     keyword: Optional[str] = Query(None, description="搜索关键词"),
     limit: int = Query(20, description="分页大小，默认 20"),
     offset: int = Query(0, description="分页偏移，默认 0"),
@@ -48,27 +49,41 @@ async def get_user_collect(
         sort_by: 排序字段
     
     Returns:
-        包含 Subject 信息的聚合对象列表
+        统一视图模型列表
     """
     from app.models.enums import CollectionStatus
+    from app.services.collection_service import get_user_collections, search_collections
     
     status_enum = CollectionStatus(status) if status is not None else None
     
-    # 创建CollectionSearchBase对象
-    search_data = CollectionSearchBase(
-        user_id=current_user.id,
-        status=status_enum,
-        type=subject_type,
-        keyword=keyword,
-        sort_by=sort_by,
-        limit=limit,
-        skip=offset
-    )
+    # 根据keyword是否存在使用不同的搜索方法
+    if keyword:
+        # 有关键词，使用search_collections
+        search_data = CollectionSearchByName(
+            user_id=current_user.id,
+            status=status_enum,
+            type=subject_type,
+            keyword=keyword,
+            sort_by=sort_by,
+            limit=limit,
+            skip=offset
+        )
+        # 调用search_collections进行关键词搜索
+        collections_data = await search_collections(db, search_data)
+    else:
+        # 无关键词，使用get_user_collections
+        search_data = CollectionSearchBase(
+            user_id=current_user.id,
+            status=status_enum,
+            type=subject_type,
+            keyword=keyword,
+            sort_by=sort_by,
+            limit=limit,
+            skip=offset
+        )
+        # 调用get_user_collections获取收藏列表
+        collections_data = await get_user_collections(db, search_data)
     
-    # 调用get_user_collections获取收藏列表
-    collections_data = await get_user_collections(db, search_data)
-    
-    # 直接返回CollectionList对象，不需要转换格式
     return collections_data
 
 
@@ -346,7 +361,7 @@ async def sync_bgm(
     """
     try:
         # 使用'hacci'作为Bangumi用户名进行同步
-        sync_count = await sync_user_collections("hacci", db, data)
+        sync_count = await sync_user_collections(current_user, db, data)
         
         return {
             "message": f"Successfully synced {sync_count} collections for user {current_user.username}",

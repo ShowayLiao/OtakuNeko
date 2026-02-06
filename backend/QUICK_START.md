@@ -44,74 +44,162 @@ pip install -r requirements.txt
 
 ## 3. 配置环境变量
 
-### 3.1 创建 .env 文件
+### 3.1 模式选择
 
-在 `backend` 目录下创建 `.env` 文件，根据你的环境配置以下内容：
+系统支持两种部署模式，通过 `.env` 文件中的 `DEPLOY_MODE` 变量切换：
+
+- **local**：本地模式，使用 SQLite 数据库和内存缓存，无需额外服务
+- **cloud**：云模式，使用 PostgreSQL 数据库和 Redis 缓存，适合生产环境
+
+### 3.2 创建 .env 文件
+
+在 `backend` 目录下创建 `.env` 文件，根据你的部署模式选择以下配置：
+
+#### 本地模式配置 (推荐用于开发测试)
 
 ```env
-# 应用配置
-DEBUG=True
+# ==============================
+# 模式开关
+# local = 本地模式 (用 SQLite, 无 Redis)
+# cloud = 生产/容器模式 (用 Postgres + Redis)
+# ==============================
+DEPLOY_MODE=local
+
+# ==============================
+# 基础配置
+# ==============================
 PROJECT_NAME=OtakuNeko
 API_V1_STR=/api/v1
+DEBUG=true
+# 这里的 Key 保持您原本测试用的即可
+OPENAI_API_KEY=test-secret-key-for-jwt-debugging
 
-# 数据库配置
-# PostgreSQL 连接字符串 (推荐)
-DATABASE_URL=postgresql+asyncpg://username:password@localhost:5432/otakuneko
-# 或 SQLite 连接字符串 (仅用于开发测试)
-# DATABASE_URL=sqlite+aiosqlite:///./otakuneko.db
-
-# Redis 配置 (可选)
-REDIS_URL=redis://localhost:6379/0
-
-# AI/Agent 配置 (可选)
-OPENAI_API_KEY=your-openai-api-key
+# ==============================
+# 模式 A: Local 配置
+# ==============================
+SQLITE_FILE=./test.db
 ```
 
-### 3.2 配置说明
+#### 云模式配置 (推荐用于生产环境)
 
-| 环境变量 | 说明 | 默认值 |
-|---------|------|--------|
-| DEBUG | 调试模式 | True |
-| PROJECT_NAME | 项目名称 | OtakuNeko |
-| API_V1_STR | API 版本前缀 | /api/v1 |
-| DATABASE_URL | 数据库连接字符串 | - |
-| REDIS_URL | Redis 连接字符串 | redis://localhost:6379/0 |
-| OPENAI_API_KEY | OpenAI API 密钥 | - |
+```env
+# ==============================
+# 模式开关
+# local = 本地模式 (用 SQLite, 无 Redis)
+# cloud = 生产/容器模式 (用 Postgres + Redis)
+# ==============================
+DEPLOY_MODE=cloud
+
+# ==============================
+# 基础配置
+# ==============================
+PROJECT_NAME=OtakuNeko
+API_V1_STR=/api/v1
+DEBUG=false
+# 生产环境请使用真实的 API Key
+OPENAI_API_KEY=your-real-openai-api-key
+
+# ==============================
+# 模式 B: Cloud 配置
+# ==============================
+POSTGRES_SERVER=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=otaku
+POSTGRES_PASSWORD=password
+POSTGRES_DB=otakuneko
+
+# 云端模式下的 Redis
+REDIS_URL=redis://localhost:6379/0
+```
+
+### 3.3 配置说明
+
+| 环境变量 | 说明 | 默认值 | 适用模式 |
+|---------|------|--------|----------|
+| DEPLOY_MODE | 部署模式 (local/cloud) | local | 通用 |
+| DEBUG | 调试模式 | True | 通用 |
+| PROJECT_NAME | 项目名称 | OtakuNeko | 通用 |
+| API_V1_STR | API 版本前缀 | /api/v1 | 通用 |
+| SQLITE_FILE | SQLite 数据库文件路径 | ./test.db | 仅本地模式 |
+| POSTGRES_SERVER | PostgreSQL 服务器地址 | localhost | 仅云模式 |
+| POSTGRES_PORT | PostgreSQL 端口 | 5432 | 仅云模式 |
+| POSTGRES_USER | PostgreSQL 用户名 | otaku | 仅云模式 |
+| POSTGRES_PASSWORD | PostgreSQL 密码 | password | 仅云模式 |
+| POSTGRES_DB | PostgreSQL 数据库名 | otakuneko | 仅云模式 |
+| REDIS_URL | Redis 连接字符串 | redis://localhost:6379/0 | 仅云模式 |
+| OPENAI_API_KEY | OpenAI API 密钥 | - | 通用 |
 
 ## 4. 数据库初始化
 
-### 4.1 初始化 PostgreSQL 数据库 (推荐)
+### 4.1 本地模式 (SQLite)
 
-1. 创建数据库：
-   ```bash
-   createdb otakuneko
-   ```
+**无需手动创建数据库**，系统会自动创建 SQLite 文件并初始化表结构。
 
-2. 初始化数据库表结构：
-   ```bash
-   python -m app.db.database
-   ```
-
-### 4.2 初始化 SQLite 数据库 (仅用于开发测试)
-
-直接运行数据库初始化脚本：
-
-```bash
-python -m app.db.database
-```
-
-## 5. 启动服务
-
-### 5.1 开发模式
+直接启动服务即可：
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-### 5.2 生产模式
+### 4.2 云模式 (PostgreSQL)
+
+1. **创建 PostgreSQL 数据库**：
+   ```bash
+   createdb otakuneko
+   ```
+
+2. **启动服务**（系统会自动初始化表结构）：
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+
+### 4.3 快速配置指南
+
+#### 本地模式快速启动
+
+1. 确保 `.env` 文件中设置了 `DEPLOY_MODE=local`
+2. 安装依赖：`pip install -r requirements.txt`
+3. 启动服务：`uvicorn app.main:app --reload`
+4. 访问：`http://localhost:8000`
+
+**特点**：无需额外服务，一键启动，适合开发测试
+
+#### 云模式快速启动
+
+1. 确保 `.env` 文件中设置了 `DEPLOY_MODE=cloud`
+2. 安装依赖：`pip install -r requirements.txt`
+3. 启动 PostgreSQL 和 Redis 服务（使用 Docker Compose）：
+   ```bash
+   # 在项目根目录执行
+   docker compose up -d
+   ```
+4. 启动应用：`uvicorn app.main:app --reload`
+5. 访问：`http://localhost:8000`
+
+**特点**：适合生产环境，性能更好，支持更多功能
+
+## 5. 启动服务
+
+### 5.1 本地模式
 
 ```bash
-# 使用 Gunicorn + Uvicorn
+# 开发模式
+uvicorn app.main:app --reload
+
+# 生产模式 (本地)
+gunicorn app.main:app \
+  --workers 2 \
+  --worker-class uvicorn.workers.UvicornWorker \
+  --bind 0.0.0.0:8000
+```
+
+### 5.2 云模式
+
+```bash
+# 开发模式
+uvicorn app.main:app --reload
+
+# 生产模式 (云)
 gunicorn app.main:app \
   --workers 4 \
   --worker-class uvicorn.workers.UvicornWorker \
@@ -155,26 +243,43 @@ curl -X GET http://localhost:8000/api/v1/dashboard/stats \
 
 ## 7. 常见问题与解决方案
 
-### 7.1 数据库连接错误
+### 7.1 本地模式问题
+
+**问题**：`Database connection error: unable to open database file`
+
+**解决方案**：
+1. 确保应用有写入权限到当前目录
+2. 检查 `.env` 文件中的 `SQLITE_FILE` 路径是否正确
+3. 确保磁盘有足够空间
+
+### 7.2 云模式问题
 
 **问题**：`Database connection error: could not connect to server: Connection refused`
 
 **解决方案**：
 1. 确保 PostgreSQL 服务正在运行
-2. 检查 `.env` 文件中的 `DATABASE_URL` 配置是否正确
+2. 检查 `.env` 文件中的 PostgreSQL 配置是否正确
 3. 确保数据库用户名和密码正确
 4. 确保数据库 `otakuneko` 已创建
-
-### 7.2 Redis 连接错误
 
 **问题**：`Failed to initialize Redis cache: Connection refused`
 
 **解决方案**：
 1. 确保 Redis 服务正在运行
 2. 检查 `.env` 文件中的 `REDIS_URL` 配置是否正确
-3. 或注释掉 `REDIS_URL` 配置，应用将自动使用内存缓存作为降级方案
+3. 注意：即使 Redis 连接失败，系统也会自动降级到内存缓存，服务仍会正常运行
 
-### 7.3 依赖安装错误
+### 7.3 模式切换问题
+
+**问题**：切换模式后服务无法启动
+
+**解决方案**：
+1. 确保 `.env` 文件中的 `DEPLOY_MODE` 值正确（`local` 或 `cloud`）
+2. 本地模式：确保没有设置 PostgreSQL 相关配置
+3. 云模式：确保 PostgreSQL 相关配置完整
+4. 重启服务
+
+### 7.4 依赖安装错误
 
 **问题**：`ERROR: Could not find a version that satisfies the requirement XYZ`
 
@@ -221,15 +326,27 @@ mypy app
 
 ## 9. 部署建议
 
-### 9.1 生产环境配置
+### 9.1 本地模式部署
 
+**适合场景**：个人开发、测试、小型应用
+
+**配置建议**：
+- 可以保持 `DEBUG=True` 方便开发
+- 无需额外服务配置
+- 适合直接在本地机器上运行
+- 可通过 `systemd` 或 `pm2` 管理进程
+
+### 9.2 云模式部署
+
+**适合场景**：生产环境、团队协作、大型应用
+
+**配置建议**：
 - 设置 `DEBUG=False`
-- 使用 PostgreSQL 数据库
-- 配置 Redis 缓存
-- 设置强密码的 JWT 密钥
+- 配置强密码的 JWT 密钥
 - 配置 HTTPS
+- 建议使用容器化部署
 
-### 9.2 容器化部署
+### 9.3 容器化部署 (云模式)
 
 使用 Docker 和 Docker Compose 部署：
 
@@ -251,7 +368,7 @@ services:
   db:
     image: postgres:14
     environment:
-      POSTGRES_USER: username
+      POSTGRES_USER: otaku
       POSTGRES_PASSWORD: password
       POSTGRES_DB: otakuneko
     volumes:
@@ -266,6 +383,19 @@ volumes:
   postgres_data:
   redis_data:
 ```
+
+### 9.4 快速切换指南
+
+**从本地模式切换到云模式**：
+1. 修改 `.env` 文件：`DEPLOY_MODE=cloud`
+2. 配置 PostgreSQL 和 Redis 相关参数
+3. 启动 PostgreSQL 和 Redis 服务
+4. 重启应用
+
+**从云模式切换到本地模式**：
+1. 修改 `.env` 文件：`DEPLOY_MODE=local`
+2. 无需启动额外服务
+3. 重启应用
 
 ## 10. 联系与支持
 

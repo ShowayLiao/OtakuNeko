@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
 from app.models.user import User
 from app.core.security import create_access_token
+from app.services.user_service import UserService
+from app.schemas.user import UserLogin
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -14,6 +15,7 @@ class LoginRequest(BaseModel):
     username: str = Field(..., min_length=1, max_length=50, description="用户名")
     nickname: Optional[str] = Field(None, max_length=100, description="用户昵称")
     bangumi_id: Optional[int] = Field(None, description="第三方平台ID")
+    bangumi_name: Optional[str] = Field(None, max_length=50, description="Bangumi 用户名")
     avatar_url: Optional[str] = Field(None, max_length=255, description="头像图片URL")
     sign: Optional[str] = Field(None, max_length=200, description="用户签名/个性签名")
     
@@ -50,52 +52,20 @@ async def login(
         HTTPException: 当数据库操作失败时返回 500 错误
     """
     try:
-        # 查询用户
-        result = await db.execute(
-            select(User).where(User.username == data.username)
+        # 将 LoginRequest 转换为 UserLogin
+        login_data = UserLogin(
+            username=data.username,
+            avatar_url=data.avatar_url,
+            bangumi_id=data.bangumi_id,
+            bangumi_name = data.bangumi_name,
+            sign=data.sign
         )
-        user = result.scalars().first()
         
-        if user:
-            # 用户已存在，选择性更新字段
-            update_fields = False
-            
-            # 更新非空且变更的字段
-            if data.bangumi_id is not None and data.bangumi_id != user.bangumi_id:
-                user.bangumi_id = data.bangumi_id
-                update_fields = True
-            
-            if data.avatar_url is not None and data.avatar_url != user.avatar_url:
-                user.avatar_url = data.avatar_url
-                update_fields = True
-            
-            if data.sign is not None and data.sign != user.sign:
-                user.sign = data.sign
-                update_fields = True
-            
-            # 如果有字段更新，保存到数据库
-            if update_fields:
-                await db.commit()
-                await db.refresh(user)
-            
-            # 生成 token
-            token = create_access_token(data={"sub": str(user.id), "username": user.username})
-        else:
-            # 用户不存在，创建新用户
-            new_user = User(
-                username=data.username,
-                avatar_url=data.avatar_url,
-                bangumi_id=data.bangumi_id,
-                sign=data.sign or "本地用户"
-            )
-            
-            db.add(new_user)
-            await db.commit()
-            await db.refresh(new_user)
-            
-            # 为新用户生成 token
-            token = create_access_token(data={"sub": str(new_user.id), "username": new_user.username})
-            user = new_user
+        # 调用 UserService.login_user 方法
+        user = await UserService.login_user(db, login_data)
+        
+        # 生成 token
+        token = create_access_token(data={"sub": str(user.id), "username": user.username})
         
         # 构建用户信息响应
         user_info = {
@@ -103,6 +73,7 @@ async def login(
             "username": user.username,
             "avatar_url": user.avatar_url,
             "bangumi_id": user.bangumi_id,
+            "bangumi_name": user.bangumi_name,
             "sign": user.sign,
             "created_at": user.created_at
         }

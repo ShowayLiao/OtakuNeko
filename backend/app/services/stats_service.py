@@ -24,7 +24,7 @@ def stats_key_builder(func, namespace: str, request, *args, **kwargs):
     user_id = kwargs.get("user_id", args[0] if args else None)
     return f"dashboard:stats:{user_id}"
 
-
+# TODO：这里要调用repo中方法去查询，不在这里直接查询
 @cache(expire=600, namespace="dashboard", key_builder=stats_key_builder)
 async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
     """
@@ -58,12 +58,15 @@ async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
         if subject_type == SubjectType.ANIME:
             stats.anime = count
         elif subject_type == SubjectType.BOOK:
-            stats.book = count
+            stats.books = count
         elif subject_type == SubjectType.MUSIC:
             stats.music = count
         elif subject_type == SubjectType.GAME:
-            stats.game = count
+            stats.games = count
         elif subject_type == SubjectType.REAL:
             stats.real = count
+    
+    # 计算总收藏数量
+    stats.total = stats.anime + stats.books + stats.music + stats.games + stats.real
     
     return stats

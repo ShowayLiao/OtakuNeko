@@ -12,6 +12,7 @@ class UserBase(BaseModel):
     username: str = Field(..., description="用户名")
     avatar_url: Optional[str] = Field(default=None, description="头像URL")
     bangumi_id: Optional[int] = Field(default=None, description="Bangumi ID")
+    bangumi_name: Optional[str] = Field(default=None, description="Bangumi 用户名")
     sign: Optional[str] = Field(default=None, description="个性签名")
 
     class Config:
@@ -36,6 +37,7 @@ class UserUpdate(BaseModel):
     username: Optional[str] = Field(None, description="用户名")
     avatar_url: Optional[str] = Field(None, description="头像URL")
     bangumi_id: Optional[int] = Field(None, description="Bangumi ID")
+    bangumi_name: Optional[str] = Field(None, description="Bangumi 用户名")
     sign: Optional[str] = Field(None, description="个性签名")
 
     class Config:
@@ -84,4 +86,31 @@ class UserLogin(BaseModel):
     username: str = Field(..., description="用户名")
     avatar_url: Optional[str] = Field(default=None, description="头像URL")
     bangumi_id: Optional[int] = Field(default=None, description="Bangumi ID")
+    bangumi_name: Optional[str] = Field(default=None, description="Bangumi 用户名")
     sign: Optional[str] = Field(default=None, description="个性签名")
+
+
+class BangumiAvatar(BaseModel):
+    """
+    Bangumi用户头像Schema
+    
+    用于表示Bangumi用户的头像信息
+    """
+    large: str = Field(..., description="大尺寸头像URL")
+    medium: str = Field(..., description="中尺寸头像URL")
+    small: str = Field(..., description="小尺寸头像URL")
+
+
+class BangumiUserInfo(BaseModel):
+    """
+    Bangumi用户信息Schema
+    
+    用于表示从Bangumi API返回的用户信息
+    """
+    avatar: BangumiAvatar = Field(..., description="用户头像信息")
+    sign: Optional[str] = Field(default=None, description="用户签名")
+    url: str = Field(..., description="用户个人页面URL")
+    username: str = Field(..., description="用户名")
+    nickname: str = Field(..., description="用户昵称")
+    id: int = Field(..., description="用户ID")
+    user_group: int = Field(..., description="用户组")

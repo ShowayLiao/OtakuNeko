@@ -8,7 +8,7 @@ from app.services.subject_service import (
     get_subject_by_source
 )
 from app.services.bangumi_service import sync_subject_detail
-from app.schemas.adapters import adapt_bangumi_subject
+from app.schemas.adaptersV2 import bangumi_subject_to_subjectlist,UnifiedCollectionSubject
 from app.models import Subject, Collection
 from app.schemas.subject import (
     SubjectRead, SubjectUpdate, SubjectCreate, 
@@ -25,8 +25,9 @@ router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 BANGUMI_API_BASE = "https://api.bgm.tv"
 
+from app.schemas.adaptersV2 import UnifiedList
 
-@router.get("/", response_model=CollectionList)
+@router.get("/", response_model=UnifiedList)
 @cache(expire=60)
 async def search_subjects_endpoint(
     q: Optional[str] = Query(None, description="搜索关键词"),
@@ -48,12 +49,12 @@ async def search_subjects_endpoint(
         db: 数据库会话
     
     Returns:
-        统一格式的 CollectionList 对象
+        统一视图模型列表
     """
     user_id = current_user.id if current_user else None
     
     # 使用search_mixed函数进行混合搜索
-    search_data = SubjectSearchBase(
+    search_data = SubjectSearchByName(
         keyword=q or "",
         type=type,
         skip=offset,
@@ -64,7 +65,7 @@ async def search_subjects_endpoint(
     return await search_mixed(db, search_data)
 
 
-@router.get("/{subject_id}", response_model=CollectionRead)
+@router.get("/{subject_id}", response_model=UnifiedCollectionSubject)
 async def get_subject(
     subject_id: int,
     source: str = Query("bangumi", description="数据来源: bangumi/douban"),
@@ -81,7 +82,7 @@ async def get_subject(
         db: 数据库会话
         
     Returns:
-        CollectionRead 对象，包含条目信息和收藏状态
+        统一视图模型对象，包含条目信息和收藏状态
         
     Raises:
         HTTPException: 当条目不存在时返回404错误
@@ -100,7 +101,7 @@ async def get_subject(
     return collection_read
 
 
-@router.put("/{subject_id}", response_model=CollectionRead)
+@router.put("/{subject_id}", response_model=UnifiedCollectionSubject)
 async def update_subject(
     subject_id: int,
     data: SubjectUpdate,
@@ -121,7 +122,7 @@ async def update_subject(
         db: 数据库会话
         
     Returns:
-        更新后的 CollectionRead 对象，包含条目信息和收藏状态
+        更新后的统一视图模型对象，包含条目信息和收藏状态
         
     Raises:
         HTTPException: 当条目不存在时返回404
@@ -136,7 +137,7 @@ async def update_subject(
     if not updated_subject:
         raise HTTPException(status_code=404, detail="Subject not found")
     
-    # 使用get_subject_by_source获取完整的CollectionRead对象
+    # 使用get_subject_by_source获取完整的UnifiedCollectionSubject对象
     user_id = current_user.id if current_user else None
     search_data = SubjectSearchByID(
         source=source,
@@ -150,7 +151,7 @@ async def update_subject(
     return collection_read
 
 
-@router.post("/", response_model=CollectionRead)
+@router.post("/", response_model=UnifiedCollectionSubject)
 async def create_subject_endpoint(
     data: SubjectCreate,
     current_user = Depends(get_current_user),
@@ -165,7 +166,7 @@ async def create_subject_endpoint(
         db: 数据库会话
         
     Returns:
-        创建后的 CollectionRead 对象，包含条目信息和收藏状态
+        创建后的统一视图模型对象，包含条目信息和收藏状态
         
     Raises:
         HTTPException: 当创建失败时返回错误
@@ -174,9 +175,16 @@ async def create_subject_endpoint(
         # 调用服务层的create_subject函数
         created_subject = await create_subject(db, data)
         
-        # 转换为CollectionRead格式
-        from app.schemas.adapters import adapt_to_collection_read
-        collection_read = adapt_to_collection_read(created_subject)
+        # 使用get_subject_by_source获取完整的UnifiedCollectionSubject对象
+        from app.schemas.subject import SubjectSearchByID
+        search_data = SubjectSearchByID(
+            source=data.source,
+            source_id=data.source_id,
+            user_id=current_user.id
+        )
+        collection_read = await get_subject_by_source(db, search_data)
+        if not collection_read:
+            raise HTTPException(status_code=404, detail="Subject not found after creation")
         return collection_read
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"创建条目失败: {str(e)}")

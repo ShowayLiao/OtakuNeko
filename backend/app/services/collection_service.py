@@ -8,10 +8,17 @@ from sqlmodel import select
 
 from app.models import Collection, CollectionStatus, Subject, SubjectType
 from app.repositories.collection_repo import CollectionRepo
+from app.repositories.subject_repo import SubjectRepo
 from app.schemas.collection import (
     CollectionCreate, CollectionUpdate, CollectionUpdateList,
     CollectionRead, CollectionList, CollectionReadList,
-    CollectionSearchByID, CollectionSearchBase, CollectionSearchByName
+    CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionCreateList,
+    CollectionWithSubject, CollectionWithSubjectList, CollectionUpsertList
+)
+from app.schemas.subject import SubjectCreate, SubjectSearchByID
+from app.schemas.adaptersV2 import (
+    UnifiedCollectionSubject, UnifiedList,
+    collection_with_subject_to_unified, collection_with_subject_list_to_unified_list
 )
 
 logger = logging.getLogger(__name__)
@@ -40,11 +47,10 @@ async def create_collection(
         logger.error(f"Failed to create collection: {e}")
         raise
 
-
 async def get_collection(
     db: AsyncSession,
     search_data: CollectionSearchByID
-) -> Optional[CollectionRead]:
+) -> Optional[UnifiedCollectionSubject]:
     """
     获取单个收藏记录
     
@@ -53,29 +59,17 @@ async def get_collection(
         search_data: 搜索数据，使用 CollectionSearchByID schema
     
     Returns:
-        收藏记录的读取Schema，如果不存在则返回 None
+        统一视图模型对象，如果不存在则返回 None
     """
     try:
-        from app.schemas.subject import SubjectRead as SubjectReadSchema
-        
         # 调用仓库方法获取收藏和关联条目
         collection_result = await CollectionRepo.get_by_user_and_subject(db, search_data)
         
         if not collection_result:
             return None
         
-        collection, subject = collection_result
-        
-        # 构造CollectionRead对象
-        collection_dict = collection.model_dump()
-        
-        if subject:
-            # 如果有关联条目，添加到收藏记录中
-            collection_dict["subject"] = SubjectReadSchema.model_validate(subject)
-        else:
-            collection_dict["subject"] = None
-        
-        return CollectionRead(**collection_dict)
+        # 使用转换函数转换为统一视图模型
+        return collection_with_subject_to_unified(collection_result)
     except Exception as e:
         logger.error(f"Failed to get collection: {e}")
         raise
@@ -135,11 +129,10 @@ async def delete_collection(
         logger.error(f"Failed to delete collection: {e}")
         raise
 
-
 async def get_user_collections(
     db: AsyncSession,
     search_data: CollectionSearchBase
-) -> CollectionReadList:
+) -> UnifiedList:
     """
     获取用户的收藏列表，支持多种筛选和排序
     
@@ -148,46 +141,23 @@ async def get_user_collections(
         search_data: 搜索数据，使用 CollectionSearchBase schema
     
     Returns:
-        包含总数和分页后结果的CollectionReadList Schema
+        统一视图模型列表
     """
-    from app.schemas.subject import SubjectRead as SubjectReadSchema
-    
-    # 调用仓库方法获取收藏列表
-    collection_pairs = await CollectionRepo.get_by_user(db, search_data.user_id, None, search_data.skip, search_data.limit)
-    
-    # 构建CollectionRead对象列表
-    collection_read_items = []
-    for collection, subject in collection_pairs:
-        collection_dict = collection.model_dump()
+    try:
+        # 调用仓库方法获取收藏列表
+        collection_with_subject_list = await CollectionRepo.get_by_user(db, search_data.user_id, search_data.type, search_data.skip, search_data.limit)
+        logger.info(f"Get collections found: {collection_with_subject_list.total} results for user_id: {search_data.user_id}, type: {search_data.type}")
         
-        if subject:
-            collection_dict["subject"] = SubjectReadSchema.model_validate(subject)
-        else:
-            collection_dict["subject"] = None
-        
-        collection_read_items.append(CollectionRead(**collection_dict))
-    
-    # 计算总数
-    from sqlalchemy import func
-    from sqlmodel import select, and_, or_
-    
-    # 构建总数查询
-    total_query = select(func.count(Collection.user_id)).where(Collection.user_id == search_data.user_id)
-    
-    total_result = await db.execute(total_query)
-    total_count = total_result.scalar_one()
-    
-    # 返回CollectionReadList
-    return CollectionReadList(
-        total=total_count,
-        items=collection_read_items
-    )
-
+        # 使用转换函数转换为统一视图模型列表
+        return collection_with_subject_list_to_unified_list(collection_with_subject_list)
+    except Exception as e:
+        logger.error(f"Failed to get collections: {e}")
+        raise
 
 async def search_collections(
     db: AsyncSession,
     search_data: CollectionSearchByName
-) -> CollectionReadList:
+) -> UnifiedList:
     """
     根据关键词搜索收藏记录
     
@@ -196,51 +166,15 @@ async def search_collections(
         search_data: 搜索数据，使用 CollectionSearchByName schema
     
     Returns:
-        包含总数和搜索结果的CollectionReadList Schema
+        统一视图模型列表
     """
     try:
-        from app.schemas.subject import SubjectRead as SubjectReadSchema
-        from sqlalchemy import func
-        from sqlmodel import select, or_, and_
-        
         # 调用仓库方法获取搜索结果
-        collection_pairs = await CollectionRepo.search_by_keyword(db, search_data)
-        logger.info(f"Search collections found: {len(collection_pairs)} results for keyword: {search_data.keyword}")
+        collection_with_subject_list = await CollectionRepo.search_by_keyword(db, search_data)
+        logger.info(f"Search collections found: {collection_with_subject_list.total} results for keyword: {search_data.keyword}")
         
-        # 简化转换为CollectionRead对象列表
-        collection_read_items = [
-            CollectionRead(
-                **collection.model_dump(),
-                subject=SubjectReadSchema.model_validate(subject) if subject else None
-            )
-            for collection, subject in collection_pairs
-        ]
-        
-        # 构建并执行总数查询
-        total_query = select(func.count(Collection.user_id)).where(Collection.user_id == search_data.user_id)
-        
-        # 添加关键词搜索条件
-        if search_data.keyword:
-            total_query = total_query.outerjoin(Subject, 
-                and_(Collection.source == Subject.source, Collection.source_id == Subject.source_id))
-            total_query = total_query.where(
-                or_(
-                    Collection.name.ilike(f"%{search_data.keyword}%"),
-                    Collection.name_cn.ilike(f"%{search_data.keyword}%"),
-                    Collection.comment.ilike(f"%{search_data.keyword}%"),
-                    Subject.name.ilike(f"%{search_data.keyword}%"),
-                    Subject.name_cn.ilike(f"%{search_data.keyword}%")
-                )
-            )
-        
-        total_result = await db.execute(total_query)
-        total_count = total_result.scalar_one()
-        
-        # 返回CollectionReadList
-        return CollectionReadList(
-            total=total_count,
-            items=collection_read_items
-        )
+        # 使用转换函数转换为统一视图模型列表
+        return collection_with_subject_list_to_unified_list(collection_with_subject_list)
     except Exception as e:
         logger.error(f"Failed to search collections: {e}")
         raise
@@ -251,7 +185,7 @@ async def upsert_collection(
     user_id: int,
     sid: Optional[int] = None,
     data: Optional[dict] = None
-) -> Collection:
+) -> UnifiedCollectionSubject:
     """
     更新或添加收藏
     
@@ -266,16 +200,12 @@ async def upsert_collection(
         data: 收藏更新/添加数据，包含collection和subject字段
     
     Returns:
-        更新或创建后的 Collection 对象
+        统一视图模型对象
     
     Raises:
         ValueError: 必要参数缺失或格式错误
         SQLAlchemyError: 数据库操作异常
     """
-    from app.repositories.subject_repo import SubjectRepo
-    from app.schemas.subject import SubjectCreate, SubjectSearchByID
-    from app.schemas.collection import CollectionUpdate, CollectionCreate
-    
     # 从data中提取collection和subject信息
     collection_data = data.collection if hasattr(data, 'collection') else data.get('collection') if isinstance(data, dict) else None
     subject_data = data.subject if hasattr(data, 'subject') else data.get('subject') if isinstance(data, dict) else None
@@ -313,7 +243,7 @@ async def upsert_collection(
     
     # 第二步：检查collection是否存在
     collection_result = await CollectionRepo.get_by_user_and_subject(db, collection_search_data)
-    collection = collection_result[0] if collection_result else None
+    collection = collection_result.collection if collection_result else None
     
     if not collection:
         # collection不存在，创建新的collection
@@ -361,24 +291,28 @@ async def upsert_collection(
         collection = await CollectionRepo.update(db, collection_data)
         logger.info(f"Updated collection: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
     
-    return collection
+    # 重新获取完整的收藏和关联条目信息
+    final_result = await CollectionRepo.get_by_user_and_subject(db, collection_search_data)
+    if not final_result:
+        raise ValueError("Failed to get updated collection")
+    
+    # 使用转换函数转换为统一视图模型
+    return collection_with_subject_to_unified(final_result)
 
 
 async def batch_upsert_collections(
     db: AsyncSession,
-    collections: CollectionList,
+    collections: CollectionUpsertList,
     user_id: int
 ) -> int:
     """
     批量更新或添加收藏
     
-    批量处理收藏操作业务逻辑：
-    1. 遍历CollectionList中的每个CollectionBase对象
-    2. 为每个对象先检查是否存在，存在则更新，否则创建
+    使用CollectionRepo的batch_upsert方法实现批量操作
     
     Args:
         db: 数据库会话
-        collections: 收藏列表数据，使用 CollectionList schema
+        collections: 收藏列表数据，使用 CollectionUpsertList schema
         user_id: 用户ID
     
     Returns:
@@ -388,76 +322,17 @@ async def batch_upsert_collections(
         ValueError: 必要参数缺失或格式错误
         SQLAlchemyError: 数据库操作异常
     """
-    from app.schemas.collection import CollectionCreate, CollectionUpdate, CollectionSearchByID
-    from sqlalchemy import select
-    from app.models.collection import Collection
-    
-    success_count = 0
-    
-    for collection_base in collections.items:
-        try:
-            # 创建搜索数据，用于检查记录是否存在
-            search_data = CollectionSearchByID(
-                user_id=user_id,
-                source=collection_base.source,
-                source_id=collection_base.source_id
-            )
-            
-            # 检查记录是否存在，使用直接查询而不是Repo方法，避免ORM对象延迟加载问题
-            stmt = select(Collection).where(
-                Collection.user_id == user_id,
-                Collection.source == collection_base.source,
-                Collection.source_id == collection_base.source_id
-            )
-            result = await db.execute(stmt)
-            existing_collection = result.scalars().first()
-            
-            if existing_collection:
-                # 记录存在，执行更新操作
-                # 直接更新ORM对象，避免使用Repo方法
-                existing_collection.type = collection_base.type
-                existing_collection.updated_at = collection_base.updated_at
-                existing_collection.rate = collection_base.rate
-                existing_collection.comment = collection_base.comment
-                existing_collection.private = collection_base.private
-                existing_collection.tags = collection_base.tags
-                existing_collection.vol_status = collection_base.vol_status
-                existing_collection.ep_status = collection_base.ep_status
-                existing_collection.subject_type = collection_base.subject_type
-                
-                await db.commit()
-                await db.refresh(existing_collection)
-                success_count += 1
-            else:
-                # 记录不存在，执行创建操作
-                # 直接创建ORM对象，避免使用Repo方法
-                new_collection = Collection(
-                    user_id=user_id,
-                    type=collection_base.type,
-                    source=collection_base.source,
-                    source_id=collection_base.source_id,
-                    updated_at=collection_base.updated_at,
-                    rate=collection_base.rate,
-                    comment=collection_base.comment,
-                    private=collection_base.private,
-                    tags=collection_base.tags,
-                    vol_status=collection_base.vol_status,
-                    ep_status=collection_base.ep_status,
-                    subject_type=collection_base.subject_type
-                )
-                db.add(new_collection)
-                await db.commit()
-                await db.refresh(new_collection)
-                success_count += 1
-            
-            logger.info(f"Successfully upserted collection: user_id={user_id}, source={collection_base.source}, source_id={collection_base.source_id}")
-        except Exception as e:
-            import traceback
-            logger.error(f"Failed to upsert collection: user_id={user_id}, source={collection_base.source}, source_id={collection_base.source_id}, error={e}")
-            logger.error(f"Error details: {traceback.format_exc()}")
-            await db.rollback()
-            continue
-    
-    return success_count
+    try:
+        if not collections.collections:
+            return 0
+        
+        # 直接传递 CollectionUpsertList 对象给 CollectionRepo.batch_upsert 方法
+        await CollectionRepo.batch_upsert(db, collections)
+        
+        logger.info(f"批量 Upsert 收藏记录成功，处理了 {len(collections.collections)} 条记录")
+        return len(collections.collections)
+    except Exception as e:
+        logger.error(f"批量 Upsert 收藏记录失败: {e}")
+        raise
 
 

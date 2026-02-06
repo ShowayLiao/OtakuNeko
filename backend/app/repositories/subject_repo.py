@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from ..models import Subject, SubjectType, Collection
-from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName
+from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectList, SubjectUpsertList, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName, SubjectWithCollection, SubjectWithCollectionList
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class SubjectRepo:
             raise
     
     @staticmethod
-    async def get_by_source(db: AsyncSession, search_data: SubjectSearchByID) -> Tuple[Optional[Subject], Optional[Collection]]:
+    async def get_by_source(db: AsyncSession, search_data: SubjectSearchByID) -> Optional[SubjectWithCollection]:
         """
         根据数据源和ID查找Subject，并左外连接Collection表获取用户收藏状态
         
@@ -81,7 +81,7 @@ class SubjectRepo:
             search_data: 搜索条件，使用 SubjectSearchByID schema
         
         Returns:
-            (Subject对象, Collection对象)元组，如果Subject不存在则返回(None, None)
+            SubjectWithCollection对象，如果Subject不存在则返回None
         
         Raises:
             SQLAlchemyError: 数据库操作异常
@@ -107,15 +107,15 @@ class SubjectRepo:
             
             if row:
                 subject, collection = row
-                return subject, collection
+                return SubjectWithCollection(subject=subject, collection=collection)
             else:
-                return None, None
+                return None
         except SQLAlchemyError as e:
             logger.error(f"获取Subject失败: {e}")
             raise
     
     @staticmethod
-    async def search_by_name(db: AsyncSession, search_data: SubjectSearchByName) -> List[Tuple[Subject, Optional[Collection]]]:
+    async def search_by_name(db: AsyncSession, search_data: SubjectSearchByName) -> SubjectWithCollectionList:
         """
         根据名称搜索Subject（支持模糊匹配），并左外连接Collection表获取用户收藏状态
         
@@ -124,7 +124,7 @@ class SubjectRepo:
             search_data: 搜索条件，使用 SubjectSearchByName schema
         
         Returns:
-            包含(Subject对象, Collection对象)元组的列表，Collection可能为None
+            SubjectWithCollectionList对象，包含条目及其关联收藏信息的列表
         
         Raises:
             SQLAlchemyError: 数据库操作异常
@@ -142,12 +142,46 @@ class SubjectRepo:
                     Collection.source_id == Subject.source_id,
                     Collection.user_id == search_data.user_id if search_data.user_id else false()
                 )
-            ).where(
-                or_(
-                    Subject.name.ilike(search_term),
-                    Subject.name_cn.ilike(search_term)
-                )
             )
+            
+            # 构建搜索条件
+            conditions = [
+                Subject.name.ilike(search_term),
+                Subject.name_cn.ilike(search_term),
+                Subject.summary.ilike(search_term),
+                Collection.comment.ilike(search_term) if Collection.comment is not None else False
+            ]
+            
+            # 添加 JSON 字段搜索（使用PostgreSQL兼容的操作）
+            from sqlalchemy import cast, String
+            from sqlalchemy.dialects.postgresql import JSONB
+            
+            # 安全处理Collection.tags（JSON数组）
+            conditions.append(
+                Collection.tags.isnot(None) & 
+                cast(Collection.tags, String).ilike(f"%{search_data.keyword}%")
+            )
+            
+            # 安全处理Subject.tags（JSON数组）
+            conditions.append(
+                Subject.tags.isnot(None) & 
+                cast(Subject.tags, String).ilike(f"%{search_data.keyword}%")
+            )
+            
+            # 安全处理Subject.meta_tags（JSON数组）
+            conditions.append(
+                Subject.meta_tags.isnot(None) & 
+                cast(Subject.meta_tags, String).ilike(f"%{search_data.keyword}%")
+            )
+            
+            # 安全处理Subject.infobox（JSON数组）
+            conditions.append(
+                Subject.infobox.isnot(None) & 
+                cast(Subject.infobox, String).ilike(f"%{search_data.keyword}%")
+            )
+            
+            # 应用搜索条件
+            query = query.where(or_(*conditions))
             
             # 应用类型过滤
             if search_data.type is not None:
@@ -157,13 +191,21 @@ class SubjectRepo:
             query = query.offset(search_data.skip).limit(search_data.limit)
             
             result = await db.execute(query)
-            return list(result.all())
+            rows = result.all()
+            
+            # 转换为SubjectWithCollection对象列表
+            items = []
+            for subject, collection in rows:
+                items.append(SubjectWithCollection(subject=subject, collection=collection))
+            
+            # 创建并返回SubjectWithCollectionList对象
+            return SubjectWithCollectionList(total=len(items), items=items)
         except SQLAlchemyError as e:
             logger.error(f"搜索Subject失败: {e}")
             raise
     
     @staticmethod
-    async def get_all(db: AsyncSession, search_data: SubjectSearchBase) -> List[Tuple[Subject, Optional[Collection]]]:
+    async def get_all(db: AsyncSession, search_data: SubjectSearchBase) -> SubjectWithCollectionList:
         """
         获取所有Subject记录，并左外连接Collection表获取用户收藏状态
         
@@ -172,7 +214,7 @@ class SubjectRepo:
             search_data: 搜索条件，使用 SubjectSearchBase schema
         
         Returns:
-            包含(Subject对象, Collection对象)元组的列表，Collection可能为None
+            SubjectWithCollectionList对象，包含条目及其关联收藏信息的列表
         
         Raises:
             SQLAlchemyError: 数据库操作异常
@@ -196,7 +238,15 @@ class SubjectRepo:
             
             # 添加分页
             result = await db.execute(query.offset(search_data.skip).limit(search_data.limit))
-            return list(result.all())
+            rows = result.all()
+            
+            # 转换为SubjectWithCollection对象列表
+            items = []
+            for subject, collection in rows:
+                items.append(SubjectWithCollection(subject=subject, collection=collection))
+            
+            # 创建并返回SubjectWithCollectionList对象
+            return SubjectWithCollectionList(total=len(items), items=items)
         except SQLAlchemyError as e:
             logger.error(f"获取Subject列表失败: {e}")
             raise
@@ -249,11 +299,16 @@ class SubjectRepo:
             from sqlalchemy import func
             
             search_term = f"%{name}%"
+            # 构建搜索条件
+            conditions = [
+                Subject.name.ilike(search_term),
+                Subject.name_cn.ilike(search_term),
+                Subject.summary.ilike(search_term)
+            ]
+            
+            # 构建查询
             query = select(func.count(Subject.id)).where(
-                or_(
-                    Subject.name.ilike(search_term),
-                    Subject.name_cn.ilike(search_term)
-                )
+                or_(*conditions)
             )
             
             result = await db.execute(query)
@@ -349,6 +404,80 @@ class SubjectRepo:
             return True
         except SQLAlchemyError as e:
             logger.error(f"删除Subject失败: {e}")
+            await db.rollback()
+            raise
+    
+    @staticmethod
+    async def batch_upsert(db: AsyncSession, data_list: SubjectUpsertList) -> int:
+        """
+        批量 Upsert Subject 方法
+        
+        Args:
+            db: 数据库会话
+            data_list: Subject列表，使用 SubjectUpsertList schema
+        
+        Returns:
+            处理的条目数量
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            from ..core.config import settings
+            if settings.DEPLOY_MODE == "local":
+                from sqlalchemy.dialects.sqlite import insert
+            elif settings.DEPLOY_MODE == "cloud":
+                from sqlalchemy.dialects.postgresql import insert
+            else:
+                logging.error("Deploy mode not supported")
+                return 0
+
+            from app.models.subject import Subject
+            
+            if not data_list.items:
+                return 0
+            
+            # 固定的唯一键字段
+            unique_fields = ['source', 'source_id']
+            
+            # 1. 将 SubjectUpsert 对象转换为字典列表
+            subject_dicts = []
+            for subject_upsert in data_list.items:
+                # 使用 model_dump 转换为字典，排除 unset 的字段
+                subject_dict = subject_upsert.model_dump(exclude_unset=True)
+                subject_dicts.append(subject_dict)
+            
+            if not subject_dicts:
+                return 0
+            
+            # 2. 构建 Insert 语句
+            stmt = insert(Subject).values(subject_dicts)
+            
+            # 3. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
+            # 获取模型的所有列名
+            all_columns = {col.name for col in Subject.__table__.columns}
+            # 排除掉唯一键 (因为唯一键冲突时不用更新它自己)
+            update_cols = all_columns - set(unique_fields)
+            
+            # 4. 构建 set_ 字典
+            # 这里的 getattr(stmt.excluded, col) 是核心
+            set_dict = {col: getattr(stmt.excluded, col) for col in update_cols}
+            
+            # 5. 添加 On Conflict 子句
+            stmt = stmt.on_conflict_do_update(
+                index_elements=unique_fields,
+                set_=set_dict
+            )
+            
+            # 6. 执行语句
+            result = await db.execute(stmt)
+            await db.commit()
+            
+            logger.info(f"批量 Upsert 完成: {len(subject_dicts)} 个 Subject 处理成功")
+            return len(subject_dicts)
+            
+        except SQLAlchemyError as e:
+            logger.error(f"批量 Upsert Subject 失败: {e}")
             await db.rollback()
             raise
     

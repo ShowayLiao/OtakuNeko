@@ -5,13 +5,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, or_
 
 from app.models import Collection, Subject, SubjectType, User
-from app.schemas.collection import CollectionRead, CollectionList
+from app.schemas.collection import CollectionRead, CollectionList, CollectionWithSubjectList
 from app.schemas.subject import (
-    SubjectCreate, SubjectUpdate, SubjectUpdateList, 
-    SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName
+    SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectList, SubjectUpsertList,
+    SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName,
+    SubjectWithCollection, SubjectWithCollectionList
 )
 from app.services.bangumi_client import search_subjects as search_bangumi_subjects
 from app.repositories.subject_repo import SubjectRepo
+from app.schemas.adaptersV2 import (
+    UnifiedList,
+    subject_with_collection_list_to_unified_list,
+    UnifiedCollectionSubject
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,11 +46,10 @@ async def create_subject(
         raise
 
 
-
 async def get_subject_by_source(
     db: AsyncSession,
     search_data: SubjectSearchByID
-) -> Optional[CollectionRead]:
+) -> Optional[UnifiedCollectionSubject]:
     """
     根据数据源和ID获取条目
     
@@ -53,17 +58,25 @@ async def get_subject_by_source(
         search_data: 搜索条件，使用SubjectSearchByID schema
     
     Returns:
-        包含条目信息的CollectionRead对象
+        统一视图模型对象
     """
     try:
-        from app.schemas.adapters import adapt_to_collection_read
+        from app.schemas.adaptersV2 import subject_with_collection_to_unified
+        from app.schemas.adaptersV2 import UnifiedCollectionSubject
+        from app.schemas.subject import SubjectWithCollection
         
         subject, collection = await SubjectRepo.get_by_source(db, search_data)
         if not subject:
             return None
         
-        # 转换为CollectionRead格式
-        return adapt_to_collection_read(subject, collection)
+        # 构建SubjectWithCollection对象
+        subject_with_collection = SubjectWithCollection(
+            subject=subject,
+            collection=collection
+        )
+        
+        # 转换为UnifiedCollectionSubject格式
+        return subject_with_collection_to_unified(subject_with_collection)
     except Exception as e:
         logger.error(f"获取条目失败: {e}")
         raise
@@ -126,6 +139,33 @@ async def batch_update_subjects(
     return success_count
 
 
+async def batch_upsert_subjects(
+    db: AsyncSession,
+    subject_list: SubjectUpsertList
+) -> int:
+    """
+    批量 Upsert 条目，使用SubjectUpsertList schema
+    
+    Args:
+        db: 数据库会话
+        subject_list: 条目列表数据，使用SubjectUpsertList schema
+    
+    Returns:
+        处理的条目数量
+    
+    Raises:
+        SQLAlchemyError: 数据库操作异常
+    """
+    try:
+        # 调用 SubjectRepo 的 batch_upsert 方法
+        processed_count = await SubjectRepo.batch_upsert(db, subject_list)
+        logger.info(f"批量 Upsert 完成，处理了 {processed_count} 个条目")
+        return processed_count
+    except Exception as e:
+        logger.error(f"批量 Upsert 条目失败: {e}")
+        raise
+
+
 async def delete_subject(
     db: AsyncSession,
     search_data: SubjectSearchByID
@@ -150,11 +190,10 @@ async def delete_subject(
         logger.error(f"删除条目失败: {e}")
         raise
 
-
 async def get_all_subjects(
     db: AsyncSession,
     search_data: SubjectSearchBase
-) -> CollectionList:
+) -> UnifiedList:
     """
     获取所有条目，使用SubjectSearchBase schema
     
@@ -163,20 +202,14 @@ async def get_all_subjects(
         search_data: 搜索条件，使用SubjectSearchBase schema
     
     Returns:
-        包含总记录数和条目列表的CollectionList对象
+        统一视图模型列表
     """
     try:
-        from app.schemas.adapters import adapt_to_collection_list
+        # SubjectRepo.get_all 现在返回 SubjectWithCollectionList 对象
+        subject_with_collection_list = await SubjectRepo.get_all(db, search_data)
         
-        subject_collection_tuples = await SubjectRepo.get_all(db, search_data)
-        total = await SubjectRepo.count(db, search_data.type)
-        
-        # 分离subject和collection对象
-        subjects = [subject for subject, _ in subject_collection_tuples]
-        collections = [collection for _, collection in subject_collection_tuples]
-        
-        # 转换为CollectionList格式
-        return adapt_to_collection_list(subjects, collections)
+        # 转换为UnifiedList格式
+        return subject_with_collection_list_to_unified_list(subject_with_collection_list)
     except Exception as e:
         logger.error(f"获取条目列表失败: {e}")
         raise
@@ -184,11 +217,10 @@ async def get_all_subjects(
 
 
 
-
 async def search_subject_by_name(
     db: AsyncSession,
     search_data: SubjectSearchByName
-) -> CollectionList:
+) -> UnifiedList:
     """
     基于名称的宽泛搜索，使用SubjectSearchByName schema
     
@@ -197,29 +229,22 @@ async def search_subject_by_name(
         search_data: 搜索条件，使用SubjectSearchByName schema
     
     Returns:
-        包含总记录数和搜索结果列表的CollectionList对象
+        统一视图模型列表
     """
     try:
-        from app.schemas.adapters import adapt_to_collection_list
+        # SubjectRepo.search_by_name 现在返回 SubjectWithCollectionList 对象
+        subject_with_collection_list = await SubjectRepo.search_by_name(db, search_data)
         
-        subject_collection_tuples = await SubjectRepo.search_by_name(db, search_data)
-        total = await SubjectRepo.count_by_name(db, search_data.keyword)
-        
-        # 分离subject和collection对象
-        subjects = [subject for subject, _ in subject_collection_tuples]
-        collections = [collection for _, collection in subject_collection_tuples]
-        
-        # 转换为CollectionList格式
-        return adapt_to_collection_list(subjects, collections)
+        # 转换为UnifiedList格式
+        return subject_with_collection_list_to_unified_list(subject_with_collection_list)
     except Exception as e:
         logger.error(f"搜索条目失败: {e}")
         raise
 
-
 async def search_subject_cloud(
     db: AsyncSession,
     search_data: SubjectSearchCloud
-) -> CollectionList:
+) -> UnifiedList:
     """
     调用 Bangumi API 进行搜索，使用SubjectSearchCloud schema
     
@@ -228,32 +253,30 @@ async def search_subject_cloud(
         search_data: 搜索条件，使用SubjectSearchCloud schema
     
     Returns:
-        包含总记录数和远程搜索结果的CollectionList对象
+        统一视图模型列表
     """
     try:
-        from app.schemas.adapters import adapt_remote_data_to_collection_list
+        from app.schemas.adaptersV2 import bangumi_search_to_unified_list
         
         logger.info(f"从 Bangumi API 搜索: {search_data.keyword}")
         remote_response = await search_bangumi_subjects(search_data.keyword, search_data.type, search_data.limit, search_data.offset)
         
-        # 转换为CollectionList格式
-        return adapt_remote_data_to_collection_list(remote_response)
+        # 直接使用 bangumi_search_to_unified_list 函数转换为 UnifiedList 格式
+        return bangumi_search_to_unified_list(remote_response)
         
     except Exception as e:
         logger.error(f"远程搜索失败: {e}")
-        from app.schemas.collection import CollectionList
         # 返回空结果列表
-        return CollectionList(
+        return UnifiedList(
             total=0,
             items=[]
         )
 
 
-
 async def search_mixed(
     db: AsyncSession,
     search_data: SubjectSearchBase
-) -> CollectionList:
+) -> UnifiedList:
     """
     混合搜索服务：本地优先，远程回退
     
@@ -261,16 +284,15 @@ async def search_mixed(
     1. Step 1 (Local): 使用 SQL LIKE 查询本地 Subject 表
     2. Step 2 (Remote Check): 如果本地结果数量为 0，则调用 Bangumi API
     3. Step 3 (Adaptation): 如果数据来自 Remote，使用适配器模式转换为统一格式，但不入库
+    4. Step 4 (Conversion): 将结果转换为 UnifiedList 格式后返回
     
     Args:
         db: 数据库会话
         search_data: 搜索条件，使用 SubjectSearchBase schema
     
     Returns:
-        包含总记录数和搜索结果列表的CollectionList对象
+        统一视图模型列表
     """
-    from app.schemas.subject import SubjectSearchByName
-    
     # 根据是否有关键词创建相应的搜索数据
     if hasattr(search_data, 'keyword') and search_data.keyword:
         # 有关键词，使用 search_subject_by_name
@@ -280,13 +302,12 @@ async def search_mixed(
         local_results = await get_all_subjects(db, search_data)
     
     if local_results.items:
-        # 本地有结果，记录日志并直接返回CollectionList
+        # 本地有结果，记录日志并直接返回
         logger.info(f"本地搜索结果: {len(local_results.items)} 条记录")
         return local_results
     
     # Step 2: 本地无结果，尝试远程搜索 - 使用 search_subject_cloud
     # 创建 SubjectSearchCloud 数据
-    from app.schemas.subject import SubjectSearchCloud
     cloud_search_data = SubjectSearchCloud(
         keyword=search_data.keyword if hasattr(search_data, 'keyword') else '',
         type=search_data.type,
@@ -297,7 +318,7 @@ async def search_mixed(
     remote_results = await search_subject_cloud(db, cloud_search_data)
     logger.info(f"远程搜索结果: {len(remote_results.items)} 条记录")
     
-    # 远程搜索结果已为CollectionList，直接返回
+    # 直接返回远程搜索结果
     return remote_results
 
 

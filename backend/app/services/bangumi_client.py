@@ -143,3 +143,38 @@ async def search_subjects(
         except httpx.RequestError as e:
             logger.error(f"网络请求错误: {e}")
             raise
+
+
+@cache(expire=86400, namespace="bangumi")
+async def fetch_user_info(username: str) -> Dict:
+    """
+    从 Bangumi API 获取用户信息
+    
+    Args:
+        username: Bangumi 用户名
+        
+    Returns:
+        包含用户信息的字典
+        
+    Raises:
+        httpx.HTTPStatusError: 请求失败时抛出
+        httpx.RequestError: 网络错误时抛出
+    """
+    url = f"https://api.bgm.tv/v0/users/{username}"
+    
+    # 设置请求头，Bangumi API 要求设置 User-Agent
+    headers = {
+        "User-Agent": "OtakuNeko/2.0 (+https://github.com/ShowayLiao/OtakuNeko)"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(url, headers=headers, timeout=30.0)
+            response.raise_for_status()  # 检查请求状态
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Bangumi API 请求失败: {e.response.status_code} - {e.response.text}")
+            raise
+        except httpx.RequestError as e:
+            logger.error(f"网络请求错误: {e}")
+            raise

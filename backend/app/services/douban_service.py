@@ -9,7 +9,7 @@ from sqlmodel import select
 
 from ..models import Collection, CollectionStatus, Subject, SubjectType, User
 from ..repositories import CollectionRepo, SubjectRepo
-from ..schemas.adapters import convert_douban_to_bangumi
+from ..schemas.adaptersV2 import douban_to_bangumi_list
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ async def sync_user_collections_douban(
         Exception: 同步过程中发生错误时抛出
     """
     import json
-    from app.schemas.adapters import adapt_douban_data_to_collection_list
+    from app.schemas.adaptersV2 import douban_to_bangumi_list, douban_to_collectionlist
     from app.services.collection_service import batch_upsert_collections
     
     try:
@@ -55,10 +55,12 @@ async def sync_user_collections_douban(
         
         logger.info(f"Loaded {len(douban_data)} Douban items")
         
-        # 将豆瓣数据转换为CollectionList格式
-        logger.info("Converting Douban data to CollectionList format...")
-        collections_list = adapt_douban_data_to_collection_list(douban_data)
-        logger.info(f"Converted {collections_list.total} items to CollectionList format")
+        # 将豆瓣数据转换为CollectionUpsertList格式
+        logger.info("Converting Douban data to CollectionUpsertList format...")
+        # 构造符合 douban_to_collectionlist 接口的数据结构
+        douban_data_with_interest = {"interest": douban_data}
+        collections_list = douban_to_collectionlist(douban_data_with_interest, user_id)
+        logger.info(f"Converted {collections_list.total} items to CollectionUpsertList format")
         
         # 调用批量插入函数
         logger.info("Calling batch_upsert_collections...")
