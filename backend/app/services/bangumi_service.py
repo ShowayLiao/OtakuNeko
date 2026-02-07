@@ -1,5 +1,4 @@
 import asyncio
-import logging
 from typing import Any, Dict, Optional
 
 from fastapi_cache import FastAPICache
@@ -12,8 +11,9 @@ from ..repositories import CollectionRepo, SubjectRepo
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
 from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 from app.schemas.collection import CollectionList, CollectionSyncRequest

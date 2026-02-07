@@ -388,7 +388,8 @@ def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int) -> 
         collection_upsert_data = {
             "user_id": user_id,
             "source": "bangumi",
-            "source_id": str(item.get("subject_id", subject_data.get("id", "")))
+            "source_id": str(item.get("subject_id", subject_data.get("id", ""))),
+            "type": CollectionStatus(2)  # 默认值为"看过"
         }
         
         # 处理其他字段
@@ -396,8 +397,8 @@ def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int) -> 
             try:
                 collection_upsert_data["type"] = CollectionStatus(item["type"])
             except ValueError:
-                logger.warning(f"未知的Collection类型: {item['type']}, 将使用None")
-                collection_upsert_data["type"] = None
+                logger.warning(f"未知的Collection类型: {item['type']}, 将使用默认值 2 (看过)")
+                collection_upsert_data["type"] = CollectionStatus(2)
         
         if "rate" in item:
             collection_upsert_data["rate"] = item["rate"]

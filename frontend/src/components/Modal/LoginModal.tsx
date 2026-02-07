@@ -1,4 +1,4 @@
-import { Modal, Button, Input, Flexbox, Icon, Tooltip, ToastHost, toast, Avatar } from '@lobehub/ui';
+import { Modal, Button, Input, Flexbox, Icon, Tooltip, toast, Avatar } from '@lobehub/ui';
 import { 
   User, Fingerprint, Link as LinkIcon, FileText, 
   ChevronDown, ChevronRight, CircleHelp,
@@ -358,8 +358,6 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }: LoginModalProps) => {
           )}
         </Flexbox>
       </Modal>
-      
-      <ToastHost />
     </>
   );
 };

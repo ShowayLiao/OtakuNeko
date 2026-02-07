@@ -1,10 +1,10 @@
 import httpx
-import logging
 from typing import Dict, List, Optional
 
 from fastapi_cache.decorator import cache
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def fetch_user_collections(username: str, subject_type: Optional[int] = None, limit: int = 50, offset: int = 0) -> Dict:
@@ -116,8 +116,20 @@ async def search_subjects(
     
     url = "https://api.bgm.tv/v0/search/subjects"
     
-    # 构造请求体
-    request_body = {
+    # 设置 URL 查询参数 (Query Parameters)
+    params = {
+        "limit": limit,
+        "offset": offset
+    }
+    
+    # 设置请求头 (Headers)
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "OtakuNeko/2.0 (+https://github.com/ShowayLiao/OtakuNeko)"
+    }
+    
+    # 构建请求体 (Request Body)
+    payload = {
         "keyword": keyword,
         "sort": "rank",
         "filter": {}
@@ -125,16 +137,18 @@ async def search_subjects(
     
     # 添加类型过滤
     if subject_type is not None:
-        request_body["filter"]["type"] = [subject_type]
-    
-    # 设置请求头，Bangumi API 要求设置 User-Agent
-    headers = {
-        "User-Agent": "OtakuNeko/2.0 (+https://github.com/ShowayLiao/OtakuNeko)"
-    }
+        payload["filter"]["type"] = [subject_type]
     
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.post(url, headers=headers, json=request_body, timeout=30.0)
+            # 发送 POST 请求
+            response = await client.post(
+                url,
+                params=params,
+                json=payload,
+                headers=headers,
+                timeout=30.0
+            )
             response.raise_for_status()  # 检查请求状态
             return response.json()
         except httpx.HTTPStatusError as e:

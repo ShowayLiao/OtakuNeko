@@ -4,6 +4,9 @@ from fastapi_cache.decorator import cache
 
 from app.models import Collection, Subject, SubjectType
 from app.schemas.dashboard import DashboardStats
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def stats_key_builder(func, namespace: str, request, *args, **kwargs):
@@ -24,7 +27,6 @@ def stats_key_builder(func, namespace: str, request, *args, **kwargs):
     user_id = kwargs.get("user_id", args[0] if args else None)
     return f"dashboard:stats:{user_id}"
 
-# TODO：这里要调用repo中方法去查询，不在这里直接查询
 @cache(expire=600, namespace="dashboard", key_builder=stats_key_builder)
 async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
     """

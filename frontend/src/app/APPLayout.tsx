@@ -4,6 +4,7 @@ import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { DesktopSidebar } from '@/features/Sidebar';
 import { theme } from 'antd';
+import { ToastHost } from '@lobehub/ui';
 
 export interface APPLayoutProps {
   children: ReactNode;
@@ -101,6 +102,7 @@ export const APPLayout = ({
           )}
         </main>
       </div>
+      <ToastHost />
     </div>
   );
 };

@@ -15,6 +15,10 @@ from app.schemas.collection import (
     CollectionRead,
     CollectionList
 )
+from app.schemas.agent import (
+    Message,
+    ChatRequest
+)
 
 __all__ = [
     "UserBase",
@@ -27,5 +31,7 @@ __all__ = [
     "CollectionCreate",
     "CollectionUpdate",
     "CollectionRead",
-    "CollectionList"
+    "CollectionList",
+    "Message",
+    "ChatRequest"
 ]

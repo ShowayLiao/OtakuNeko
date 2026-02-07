@@ -1,8 +1,10 @@
-import logging
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, or_
+
+from fastapi_cache import FastAPICache
+from app.core.logging import get_logger
 
 from app.models import Collection, Subject, SubjectType, User
 from app.schemas.collection import CollectionRead, CollectionList, CollectionWithSubjectList
@@ -19,12 +21,13 @@ from app.schemas.adaptersV2 import (
     UnifiedCollectionSubject
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def create_subject(
     db: AsyncSession,
     subject_data: SubjectCreate,
+    user_id: Optional[int] = None
 ) -> Subject:
     """
     创建新条目，使用SubjectCreate格式
@@ -32,6 +35,7 @@ async def create_subject(
     Args:
         db: 数据库会话
         subject_data: 条目数据，使用SubjectCreate schema
+        user_id: 用户ID，可选
     
     Returns:
         创建的Subject对象
@@ -40,6 +44,12 @@ async def create_subject(
         # 直接创建subject，不需要转换数据类型
         created_subject = await SubjectRepo.create(db, subject_data)
         logger.info(f"创建条目成功: {created_subject.name} (ID: {created_subject.id})")
+        
+        # 清除用户的统计数据缓存
+        if user_id:
+            await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+            logger.info(f"Cleared stats cache for user_id: {user_id}")
+        
         return created_subject
     except Exception as e:
         logger.error(f"创建条目失败: {e}")
@@ -84,7 +94,8 @@ async def get_subject_by_source(
 
 async def update_subject(
     db: AsyncSession,
-    subject_data: SubjectUpdate
+    subject_data: SubjectUpdate,
+    user_id: Optional[int] = None
 ) -> Optional[Subject]:
     """
     更新条目，使用SubjectUpdate schema
@@ -92,6 +103,7 @@ async def update_subject(
     Args:
         db: 数据库会话
         subject_data: 更新的条目数据，使用SubjectUpdate schema
+        user_id: 用户ID，可选
     
     Returns:
         更新后的Subject对象或None
@@ -102,6 +114,11 @@ async def update_subject(
         
         if updated_subject:
             logger.info(f"更新条目成功: {updated_subject.name} (ID: {updated_subject.id})")
+            
+            # 清除用户的统计数据缓存
+            if user_id:
+                await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+                logger.info(f"Cleared stats cache for user_id: {user_id}")
         return updated_subject
     except Exception as e:
         logger.error(f"更新条目失败: {e}")
@@ -110,7 +127,8 @@ async def update_subject(
 
 async def batch_update_subjects(
     db: AsyncSession,
-    subject_list: SubjectUpdateList
+    subject_list: SubjectUpdateList,
+    user_id: Optional[int] = None
 ) -> int:
     """
     批量更新条目，使用SubjectUpdateList schema
@@ -118,6 +136,7 @@ async def batch_update_subjects(
     Args:
         db: 数据库会话
         subject_list: 更新的条目列表数据，使用SubjectUpdateList schema
+        user_id: 用户ID，可选
     
     Returns:
         成功更新的条目数量
@@ -127,7 +146,7 @@ async def batch_update_subjects(
     for subject_data in subject_list.items:
         try:
             # 调用单个更新方法
-            result = await update_subject(db, subject_data)
+            result = await update_subject(db, subject_data, user_id)
             if result:
                 success_count += 1
         except Exception as e:
@@ -136,12 +155,19 @@ async def batch_update_subjects(
             continue
     
     logger.info(f"批量更新完成，成功更新 {success_count}/{subject_list.total} 个条目")
+    
+    # 清除用户的统计数据缓存
+    if user_id and success_count > 0:
+        await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+        logger.info(f"Cleared stats cache for user_id: {user_id}")
+    
     return success_count
 
 
 async def batch_upsert_subjects(
     db: AsyncSession,
-    subject_list: SubjectUpsertList
+    subject_list: SubjectUpsertList,
+    user_id: Optional[int] = None
 ) -> int:
     """
     批量 Upsert 条目，使用SubjectUpsertList schema
@@ -149,6 +175,7 @@ async def batch_upsert_subjects(
     Args:
         db: 数据库会话
         subject_list: 条目列表数据，使用SubjectUpsertList schema
+        user_id: 用户ID，可选
     
     Returns:
         处理的条目数量
@@ -160,6 +187,12 @@ async def batch_upsert_subjects(
         # 调用 SubjectRepo 的 batch_upsert 方法
         processed_count = await SubjectRepo.batch_upsert(db, subject_list)
         logger.info(f"批量 Upsert 完成，处理了 {processed_count} 个条目")
+        
+        # 清除用户的统计数据缓存
+        if user_id and processed_count > 0:
+            await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+            logger.info(f"Cleared stats cache for user_id: {user_id}")
+        
         return processed_count
     except Exception as e:
         logger.error(f"批量 Upsert 条目失败: {e}")
@@ -168,7 +201,8 @@ async def batch_upsert_subjects(
 
 async def delete_subject(
     db: AsyncSession,
-    search_data: SubjectSearchByID
+    search_data: SubjectSearchByID,
+    user_id: Optional[int] = None
 ) -> bool:
     """
     删除条目，使用SubjectSearchByID schema
@@ -176,6 +210,7 @@ async def delete_subject(
     Args:
         db: 数据库会话
         search_data: 搜索条件，使用SubjectSearchByID schema
+        user_id: 用户ID，可选
     
     Returns:
         删除成功返回True，条目不存在返回False
@@ -185,6 +220,11 @@ async def delete_subject(
         deleted = await SubjectRepo.delete(db, search_data)
         if deleted:
             logger.info(f"删除条目成功: source={search_data.source}, source_id={search_data.source_id}")
+            
+            # 清除用户的统计数据缓存
+            if user_id:
+                await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+                logger.info(f"Cleared stats cache for user_id: {user_id}")
         return deleted
     except Exception as e:
         logger.error(f"删除条目失败: {e}")
@@ -278,13 +318,13 @@ async def search_mixed(
     search_data: SubjectSearchBase
 ) -> UnifiedList:
     """
-    混合搜索服务：本地优先，远程回退
+    混合搜索服务：并行搜索 + 结果合并
     
     实现策略：
-    1. Step 1 (Local): 使用 SQL LIKE 查询本地 Subject 表
-    2. Step 2 (Remote Check): 如果本地结果数量为 0，则调用 Bangumi API
-    3. Step 3 (Adaptation): 如果数据来自 Remote，使用适配器模式转换为统一格式，但不入库
-    4. Step 4 (Conversion): 将结果转换为 UnifiedList 格式后返回
+    1. 同时执行本地搜索和云端搜索
+    2. 合并两个搜索结果
+    3. 根据 source 和 source_id 去重
+    4. 优先展示本地条目，补充展示云端条目
     
     Args:
         db: 数据库会话
@@ -293,21 +333,9 @@ async def search_mixed(
     Returns:
         统一视图模型列表
     """
-    # 根据是否有关键词创建相应的搜索数据
-    if hasattr(search_data, 'keyword') and search_data.keyword:
-        # 有关键词，使用 search_subject_by_name
-        local_results = await search_subject_by_name(db, search_data)
-    else:
-        # 无关键词时使用 get_all_subjects
-        local_results = await get_all_subjects(db, search_data)
+    import asyncio
     
-    if local_results.items:
-        # 本地有结果，记录日志并直接返回
-        logger.info(f"本地搜索结果: {len(local_results.items)} 条记录")
-        return local_results
-    
-    # Step 2: 本地无结果，尝试远程搜索 - 使用 search_subject_cloud
-    # 创建 SubjectSearchCloud 数据
+    # 创建云端搜索数据
     cloud_search_data = SubjectSearchCloud(
         keyword=search_data.keyword if hasattr(search_data, 'keyword') else '',
         type=search_data.type,
@@ -315,10 +343,60 @@ async def search_mixed(
         offset=search_data.skip,
         user_id=search_data.user_id
     )
-    remote_results = await search_subject_cloud(db, cloud_search_data)
-    logger.info(f"远程搜索结果: {len(remote_results.items)} 条记录")
     
-    # 直接返回远程搜索结果
-    return remote_results
+    # 并行执行本地搜索和云端搜索
+    if hasattr(search_data, 'keyword') and search_data.keyword:
+        # 有关键词，使用 search_subject_by_name
+        local_task = search_subject_by_name(db, search_data)
+    else:
+        # 无关键词时使用 get_all_subjects
+        local_task = get_all_subjects(db, search_data)
+    
+    # 云端搜索任务
+    remote_task = search_subject_cloud(db, cloud_search_data)
+    
+    # 并行执行
+    local_results, remote_results = await asyncio.gather(local_task, remote_task, return_exceptions=True)
+    
+    # 处理异常情况
+    if isinstance(local_results, Exception):
+        logger.error(f"本地搜索失败: {local_results}")
+        local_results = UnifiedList(total=0, items=[])
+    
+    if isinstance(remote_results, Exception):
+        logger.error(f"云端搜索失败: {remote_results}")
+        remote_results = UnifiedList(total=0, items=[])
+    
+    logger.info(f"本地搜索结果: {len(local_results.items)} 条记录")
+    logger.info(f"云端搜索结果: {len(remote_results.items)} 条记录")
+    
+    # 合并结果：优先保留本地条目，补充云端独有的条目
+    # 创建本地结果的唯一标识集合，用于去重
+    local_identifiers = set()
+    for item in local_results.items:
+        # 确保 item 有 subject 属性，且 subject 有 source 和 source_id 属性
+        if hasattr(item, 'subject') and item.subject and hasattr(item.subject, 'source') and hasattr(item.subject, 'source_id'):
+            local_identifiers.add((item.subject.source, item.subject.source_id))
+    
+    # 合并结果列表
+    merged_items = list(local_results.items)
+    
+    # 补充云端独有的条目
+    for item in remote_results.items:
+        if hasattr(item, 'subject') and item.subject and hasattr(item.subject, 'source') and hasattr(item.subject, 'source_id'):
+            item_identifier = (item.subject.source, item.subject.source_id)
+            if item_identifier not in local_identifiers:
+                merged_items.append(item)
+                local_identifiers.add(item_identifier)  # 避免重复添加
+    
+    # 构建合并后的结果
+    merged_result = UnifiedList(
+        total=len(merged_items),
+        items=merged_items
+    )
+    
+    logger.info(f"合并后搜索结果: {len(merged_items)} 条记录")
+    
+    return merged_result
 
 

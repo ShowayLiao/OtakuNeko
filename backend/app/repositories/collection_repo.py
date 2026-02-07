@@ -1,10 +1,10 @@
 from typing import Dict, Any, Optional, List, Tuple
-import logging
 from datetime import datetime
 from sqlmodel import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.logging import get_logger
 from ..models import Collection, CollectionStatus, Subject
 from ..schemas.collection import (
     CollectionCreate, CollectionUpdate, CollectionSearchByID, 
@@ -12,7 +12,7 @@ from ..schemas.collection import (
     CollectionWithSubject, CollectionWithSubjectList, CollectionUpsertList
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class CollectionRepo:

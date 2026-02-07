@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime
 from typing import Any, Dict, Optional, List
 
@@ -20,8 +19,10 @@ from app.schemas.adaptersV2 import (
     UnifiedCollectionSubject, UnifiedList,
     collection_with_subject_to_unified, collection_with_subject_list_to_unified_list
 )
+from fastapi_cache import FastAPICache
+from app.core.logging import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 async def create_collection(
@@ -42,6 +43,11 @@ async def create_collection(
         # 直接使用 CollectionCreate schema 创建收藏记录
         collection = await CollectionRepo.create(db, collection_data)
         logger.info(f"Created collection: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
+        
+        # 清除用户的统计数据缓存
+        await FastAPICache.clear(key=f'dashboard:stats:{collection_data.user_id}')
+        logger.info(f"Cleared stats cache for user_id: {collection_data.user_id}")
+        
         return collection
     except Exception as e:
         logger.error(f"Failed to create collection: {e}")
@@ -95,6 +101,9 @@ async def update_collection(
         
         if collection:
             logger.info(f"Updated collection: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
+            # 清除用户的统计数据缓存
+            await FastAPICache.clear(key=f'dashboard:stats:{collection_data.user_id}')
+            logger.info(f"Cleared stats cache for user_id: {collection_data.user_id}")
         else:
             logger.warning(f"Collection not found for update: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
         
@@ -122,6 +131,9 @@ async def delete_collection(
         deleted = await CollectionRepo.delete(db, search_data)
         if deleted:
             logger.info(f"Deleted collection: user_id: {search_data.user_id}, source: {search_data.source}, source_id: {search_data.source_id}")
+            # 清除用户的统计数据缓存
+            await FastAPICache.clear(key=f'dashboard:stats:{search_data.user_id}')
+            logger.info(f"Cleared stats cache for user_id: {search_data.user_id}")
         else:
             logger.warning(f"Collection not found for deletion: user_id: {search_data.user_id}, source: {search_data.source}, source_id: {search_data.source_id}")
         return deleted
@@ -191,7 +203,7 @@ async def upsert_collection(
     
     统一的收藏操作业务逻辑：
     1. 检查subject是否存在，不存在则创建
-    2. 检查collection是否存在，不存在则创建，存在则更新
+    2. 使用batch_upsert方法更新或添加收藏
     
     Args:
         db: 数据库会话
@@ -223,6 +235,19 @@ async def upsert_collection(
             source=subject.source,
             source_id=subject.source_id
         )
+        
+        # 如果没有collection_data，使用默认值
+        if not collection_data:
+            collection_data = {
+                'user_id': user_id,
+                'source': subject.source,
+                'source_id': subject.source_id,
+                'type': CollectionStatus(2),  # 默认状态为"看过"
+                'rate': None,
+                'comment': None,
+                'private': False,
+                'tags': None
+            }
     elif collection_data:
         # 使用collection_data中的source和source_id查询subject
         subject_search_data = SubjectSearchByID(
@@ -241,55 +266,36 @@ async def upsert_collection(
     else:
         raise ValueError("Either sid or collection_data is required")
     
-    # 第二步：检查collection是否存在
-    collection_result = await CollectionRepo.get_by_user_and_subject(db, collection_search_data)
-    collection = collection_result.collection if collection_result else None
+    # 第二步：使用batch_upsert方法更新或添加收藏
+    from app.schemas.collection import CollectionUpsert, CollectionUpsertList
     
-    if not collection:
-        # collection不存在，创建新的collection
-        logger.info(f"Collection not found, creating new one: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
-        
-        # 如果没有collection_data，使用默认值创建
-        if not collection_data:
-            collection_data = CollectionUpdate(
-                user_id=user_id,
-                source=subject.source,
-                source_id=subject.source_id,
-                type=CollectionStatus(2),  # 默认状态为"看过"
-                rate=None,
-                comment=None,
-                private=False,
-                tags=None
-            )
-        
-        # 转换为CollectionCreate schema
-        collection_dict = collection_data.model_dump(exclude_unset=True)
-        # 确保设置updated_at字段
-        from datetime import datetime
-        collection_dict['updated_at'] = collection_dict.get('updated_at') or datetime.now()
-        
-        collection_create = CollectionCreate(
+    # 构建CollectionUpsert对象
+    if isinstance(collection_data, dict):
+        # 从字典构建
+        upsert_data = CollectionUpsert(
             user_id=user_id,
-            **collection_dict
+            source=collection_search_data.source,
+            source_id=collection_search_data.source_id,
+            **collection_data
         )
-        
-        collection = await CollectionRepo.create(db, collection_create)
-        logger.info(f"Created new collection: user_id={user_id}, source={collection.source}, source_id={collection.source_id}")
     else:
-        # collection存在，更新现有collection
-        logger.info(f"Collection already exists, updating: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
-        
-        if not collection_data:
-            raise ValueError("collection_data is required for updating collection")
-        
-        # 确保collection_data包含必要的字段
-        collection_data.user_id = user_id
-        collection_data.source = collection_search_data.source
-        collection_data.source_id = collection_search_data.source_id
-        
-        # 更新collection
-        collection = await CollectionRepo.update(db, collection_data)
-        logger.info(f"Updated collection: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
+        # 从对象构建
+        upsert_dict = collection_data.model_dump(exclude_unset=True)
+        upsert_data = CollectionUpsert(
+            user_id=user_id,
+            source=collection_search_data.source,
+            source_id=collection_search_data.source_id,
+            **upsert_dict
+        )
+    
+    # 构建CollectionUpsertList对象
+    upsert_list = CollectionUpsertList(
+        collections=[upsert_data]
+    )
+    
+    # 调用batch_upsert方法
+    logger.info(f"Upsert collection: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
+    await CollectionRepo.batch_upsert(db, upsert_list)
     
     # 重新获取完整的收藏和关联条目信息
     final_result = await CollectionRepo.get_by_user_and_subject(db, collection_search_data)
@@ -330,9 +336,77 @@ async def batch_upsert_collections(
         await CollectionRepo.batch_upsert(db, collections)
         
         logger.info(f"批量 Upsert 收藏记录成功，处理了 {len(collections.collections)} 条记录")
+        
+        # 清除用户的统计数据缓存
+        await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+        logger.info(f"Cleared stats cache for user_id: {user_id}")
+        
         return len(collections.collections)
     except Exception as e:
         logger.error(f"批量 Upsert 收藏记录失败: {e}")
+        raise
+
+
+async def import_json_collections(
+    db: AsyncSession,
+    json_data: dict,
+    user_id: int
+) -> int:
+    """
+    导入JSON格式的收藏数据到数据库
+    
+    参考sync_user_collections函数的逻辑，将接收到的JSON数据插入到数据库中
+    
+    Args:
+        db: 数据库会话
+        json_data: JSON格式的收藏数据，格式类似于Bangumi API返回的收藏数据
+        user_id: 用户ID
+    
+    Returns:
+        成功导入的收藏数量
+    
+    Raises:
+        ValueError: 必要参数缺失或格式错误
+        SQLAlchemyError: 数据库操作异常
+    """
+    from app.services.subject_service import batch_upsert_subjects
+    from app.schemas.adaptersV2 import bangumi_subject_to_subjectlist, bangumi_collection_to_collectionlist
+    
+    try:
+        # 验证输入数据格式
+        if not isinstance(json_data, dict):
+            raise ValueError("Input data must be a dictionary")
+        
+        total_success = 0
+        
+        # 第一步：导入条目数据
+        logger.info(f"开始导入条目数据...")
+        subjects_list = bangumi_subject_to_subjectlist(json_data)
+        subject_success_count = await batch_upsert_subjects(db, subjects_list, user_id)
+        total_success += subject_success_count
+        logger.info(f"条目数据导入完成: {subject_success_count}/{subjects_list.total} 条成功")
+        
+        # 第二步：导入收藏数据
+        logger.info(f"开始导入收藏数据...")
+        collections_list = bangumi_collection_to_collectionlist(json_data, user_id)
+        collection_success_count = await batch_upsert_collections(db, collections_list, user_id)
+        total_success += collection_success_count
+        logger.info(f"收藏数据导入完成: {collection_success_count}/{collections_list.total} 条成功")
+        
+        # 清除用户的统计数据缓存
+        await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+        logger.info(f"Cleared stats cache for user_id: {user_id}")
+        
+        logger.info(f"成功导入 {total_success} 条数据")
+        
+        return total_success
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"导入JSON收藏数据失败: {e}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        # 回滚事务
+        await db.rollback()
         raise
 
 

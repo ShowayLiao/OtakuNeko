@@ -4,9 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 // 1. 引入图标并重命名，防止命名冲突
 import { Eraser, Languages, User as UserIcon, Bot as BotIcon } from 'lucide-react';
 import { theme } from 'antd';
-import { ChatInputArea, ChatSendButton, ChatInputActionBar, TokenTag, ChatItem } from '@lobehub/ui/chat';
+import { ChatInputArea, ChatInputActionBar, TokenTag, ChatItem, ChatSendButton } from '@lobehub/ui/chat';
 import { ActionIcon } from '@lobehub/ui';
 import { useAppTheme } from '@/components/providers/LobeProvider';
+import { ModelSelector } from './ModelSelector';
+import SearchTrigger from './SearchBar';
+import ApiKeyModal from '../Modal/ApiKeyModal';
+import { chatWithBackend } from '@/lib/fetcher';
 
 // --- 2. 定义消息数据结构 ---
 interface Message {
@@ -38,6 +42,11 @@ export default function ChatPage() {
       createAt: Date.now(),
     }
   ]);
+  // 模型选择相关状态
+  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
+  const [selectedProvider, setSelectedProvider] = useState('openai');
+  // API 管理模态框状态
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const heights = {
     inputHeight: 160, 
     minHeight: 128,
@@ -48,11 +57,22 @@ export default function ChatPage() {
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // 处理模型选择变化
+  const handleModelChange = (modelId: string, provider: string) => {
+    setSelectedModel(modelId);
+    setSelectedProvider(provider);
+  };
+
+  // 打开 API 管理模态框
+  const handleOpenSettings = () => {
+    setIsApiKeyModalOpen(true);
+  };
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, loading]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!value.trim()) return;
 
     const userMsg: Message = {
@@ -66,19 +86,76 @@ export default function ChatPage() {
     setValue('');
     setLoading(true);
 
-    setTimeout(() => {
-      const randomResponse = MOCK_RESPONSES[Math.floor(Math.random() * MOCK_RESPONSES.length)];
-      
+    try {
+      // Create a new AI message with an ID, but empty content for streaming
+      const aiMsgId = (Date.now() + 1).toString();
       const aiMsg: Message = {
-        id: (Date.now() + 1).toString(),
+        id: aiMsgId,
         role: 'assistant',
-        content: randomResponse,
+        content: '',
         createAt: Date.now(),
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+
+      // Prepare the message format for the backend
+      const formattedMessages = [
+        ...messages.map(msg => ({
+          role: msg.role,
+          content: msg.content
+        })),
+        { role: 'user', content: value }
+      ];
+
+      // Call the backend API
+      const response = await chatWithBackend({
+        messages: formattedMessages,
+        provider: selectedProvider,
+        model: selectedModel,
+        temperature: 0.7
+      });
+
+      if (!response.ok) {
+        throw new Error(`API request failed: ${response.status}`);
+      }
+
+      // Handle streaming response
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body');
+      }
+
+      const decoder = new TextDecoder();
+      let accumulatedContent = '';
+
+      // Stream the response
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        accumulatedContent += chunk;
+
+        // Update the AI message with the accumulated content
+        setMessages((prev) => prev.map(msg => 
+          msg.id === aiMsgId ? { ...msg, content: accumulatedContent } : msg
+        ));
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+      
+      // Add an error message to the chat
+      const errorMsg: Message = {
+        id: (Date.now() + 2).toString(),
+        role: 'assistant',
+        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        createAt: Date.now(),
+      };
+
+      setMessages((prev) => [...prev, errorMsg]);
+    } finally {
       setLoading(false);
-    }, 1500); 
+    }
   };
 
   return (
@@ -159,16 +236,22 @@ export default function ChatPage() {
       >
         <ChatInputArea 
           topAddons={
-            <ChatInputActionBar
-              leftAddons={
-                <>
-                  <ActionIcon icon={Languages} title="翻译" />
-                  <ActionIcon icon={Eraser} title="清除" />
-                  <TokenTag maxValue={5000} value={1000} />
-                </>
-              }
-            />
-          }
+              <ChatInputActionBar
+                leftAddons={
+                  <div style={{ marginLeft: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <ModelSelector 
+                      value={selectedModel} 
+                      onChange={handleModelChange} 
+                      onOpenSettings={handleOpenSettings} 
+                    />
+                    <SearchTrigger />
+                    <ActionIcon icon={Languages} title="翻译" />
+                    <ActionIcon icon={Eraser} title="清除" />
+                    <TokenTag maxValue={5000} value={1000} />
+                  </div>
+                }
+              />
+            }
           // ✅ 修复点 1：给发送按钮绑定 handleSend，并绑定 loading 状态
           bottomAddons={<ChatSendButton loading={loading} onSend={handleSend} />}
           
@@ -210,6 +293,12 @@ export default function ChatPage() {
             overflow: 'hidden', // 确保内部内容不溢出圆角
           }}
           className="w-full"
+        />
+
+        {/* API Key 管理模态框 */}
+        <ApiKeyModal
+          open={isApiKeyModalOpen}
+          onClose={() => setIsApiKeyModalOpen(false)}
         />
       </div>
     </div>

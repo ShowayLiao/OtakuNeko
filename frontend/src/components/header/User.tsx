@@ -21,6 +21,8 @@ import {
 import type { FC } from 'react';
 import { useEffect, useState } from 'react';
 import LoginModal from '../Modal/LoginModal';
+import ImportModal from '../Modal/ImportModal';
+import ApiKeyModal from '../Modal/ApiKeyModal';
 import { dashboardService, type DashboardStats } from '@/services/dashboard';
 import { collectionService } from '@/services/collections';
 
@@ -94,9 +96,12 @@ const User: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState<boolean>(false);
   const [syncLoading, setSyncLoading] = useState<boolean>(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   // 从后端API获取用户信息
   const fetchUserInfo = async () => {
@@ -292,9 +297,15 @@ const User: React.FC = () => {
 
             {/* Menu Items */}
             <Flexbox gap={2}>
-              <MenuItem icon={CreditCard}>API管理</MenuItem>
+              <MenuItem icon={CreditCard} onClick={() => {
+                setIsApiKeyModalOpen(true);
+                setPopoverOpen(false);
+              }}>API管理</MenuItem>
               <MenuItem icon={RefreshCw} onClick={handleSyncCollections} loading={syncLoading}>同步收藏</MenuItem>
-              <MenuItem icon={Download}>导入数据</MenuItem>
+              <MenuItem icon={Download} onClick={() => {
+                setIsImportModalOpen(true);
+                setPopoverOpen(false);
+              }}>导入数据</MenuItem>
             </Flexbox>
 
             {/* Divider */}
@@ -317,7 +328,10 @@ const User: React.FC = () => {
                   padding: '10px 16px',
                 }}
                 type="text"
-                onClick={() => setIsLoginModalOpen(true)}
+                onClick={() => {
+                  setIsLoginModalOpen(true);
+                  setPopoverOpen(false);
+                }}
               >
                 登录
               </Button>
@@ -340,6 +354,8 @@ const User: React.FC = () => {
         }
         placement="bottomRight"
         trigger="click"
+        open={popoverOpen}
+        onOpenChange={setPopoverOpen}
       >
         <button
           style={{
@@ -355,6 +371,7 @@ const User: React.FC = () => {
             whiteSpace: 'nowrap',
             outline: 'none',
           }}
+          onClick={() => setPopoverOpen(!popoverOpen)}
         >
           <Avatar
             avatar={avatarUrl}
@@ -378,6 +395,18 @@ const User: React.FC = () => {
         isOpen={isLoginModalOpen}
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
+      />
+      
+      {/* Import Modal */}
+      <ImportModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
+      
+      {/* API Key Modal */}
+      <ApiKeyModal
+        open={isApiKeyModalOpen}
+        onClose={() => setIsApiKeyModalOpen(false)}
       />
     </Flexbox>
   );

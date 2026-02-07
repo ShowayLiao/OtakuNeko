@@ -1,13 +1,13 @@
 from typing import Dict, Any, Optional, List, Tuple
-import logging
 from sqlmodel import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.logging import get_logger
 from ..models import Subject, SubjectType, Collection
 from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectList, SubjectUpsertList, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName, SubjectWithCollection, SubjectWithCollectionList
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class SubjectRepo:

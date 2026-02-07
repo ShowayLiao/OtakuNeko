@@ -1,13 +1,13 @@
 from typing import Optional, List
-import logging
 from sqlmodel import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.logging import get_logger
 from ..models import User
 from ..schemas.user import UserCreate, UserUpdate, UserRead, UserSearch
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class UserRepo:

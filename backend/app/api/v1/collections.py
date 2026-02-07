@@ -457,39 +457,17 @@ async def sync_manual(
         if not data.data:
             raise HTTPException(status_code=400, detail="Data is required when source is 'manual'")
         
-        from app.repositories import SubjectRepo
+        from app.services.collection_service import import_json_collections
         
-        sync_count = 0
+        # 包装数据为 import_json_collections 函数期望的格式
+        json_data = {
+            "data": data.data
+        }
+        
         user_id = current_user.id
         
-        for import_item in data.data:
-            try:
-                # 提取subject数据和collection数据
-                subject_data = import_item.get("subject", {})
-                collection_data = import_item.get("collection", {})
-                
-                if not subject_data:
-                    continue
-                
-                # 保存或更新Subject
-                subject = await SubjectRepo.save(db, subject_data, source="manual")
-                
-                # 准备collection数据，添加必要的字段
-                collection_data = {
-                    **collection_data,
-                    "updated_at": datetime.now().isoformat() + "Z",  # 添加当前时间
-                    "type": collection_data.get("status", 2),  # 确保type字段存在（status是前端传递的字段名）
-                    "subject_id": subject.id
-                }
-                
-                # 保存或更新Collection
-                await CollectionRepo.save(db, user_id, subject.id, collection_data)
-                
-                sync_count += 1
-                
-            except Exception as e:
-                logging.error(f"处理手动导入项失败: {e}, 数据: {import_item}")
-                continue
+        # 调用 import_json_collections 函数处理导入
+        sync_count = await import_json_collections(db, json_data, user_id)
         
         return {
             "message": f"Successfully imported {sync_count} items manually for user {current_user.username}",
