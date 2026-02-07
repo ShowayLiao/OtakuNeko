@@ -157,8 +157,8 @@ async def get_user_collections(
     """
     try:
         # 调用仓库方法获取收藏列表
-        collection_with_subject_list = await CollectionRepo.get_by_user(db, search_data.user_id, search_data.type, search_data.skip, search_data.limit)
-        logger.info(f"Get collections found: {collection_with_subject_list.total} results for user_id: {search_data.user_id}, type: {search_data.type}")
+        collection_with_subject_list = await CollectionRepo.get_by_user(db, search_data.user_id, search_data.type, search_data.status, search_data.skip, search_data.limit, getattr(search_data, 'sort_by', 'updated_at'))
+        logger.info(f"Get collections found: {collection_with_subject_list.total} results for user_id: {search_data.user_id}, type: {search_data.type}, status: {search_data.status}")
         
         # 使用转换函数转换为统一视图模型列表
         return collection_with_subject_list_to_unified_list(collection_with_subject_list)
@@ -183,7 +183,7 @@ async def search_collections(
     try:
         # 调用仓库方法获取搜索结果
         collection_with_subject_list = await CollectionRepo.search_by_keyword(db, search_data)
-        logger.info(f"Search collections found: {collection_with_subject_list.total} results for keyword: {search_data.keyword}")
+        logger.info(f"Search collections found: {collection_with_subject_list.total} results for keyword: {search_data.keyword}, status: {getattr(search_data, 'status', None)}, sort_by: {getattr(search_data, 'sort_by', 'updated_at')}")
         
         # 使用转换函数转换为统一视图模型列表
         return collection_with_subject_list_to_unified_list(collection_with_subject_list)

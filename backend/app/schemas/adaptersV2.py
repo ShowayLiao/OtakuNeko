@@ -97,7 +97,7 @@ def convert_to_collection_subject_list(
     )
 
 
-def bangumi_subject_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList:
+def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") -> SubjectUpsertList:
     """
     将 Bangumi 条目数据格式或收藏数据格式转换为 SubjectUpsertList 格式
     输入参考 bangumi_subject.json 或 bangumi_collection.json
@@ -134,19 +134,19 @@ def bangumi_subject_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList:
             subject_id = item.get("subject_id")
             if subject_id:
                 subject_upsert_data = {
-                    "source": "bangumi",
+                    "source": source,
                     "source_id": str(subject_id)
                 }
             else:
                 subject_upsert_data = {
-                    "source": "bangumi",
+                    "source": source,
                     "source_id": str(subject_data.get("id", ""))
                 }
         else:
             # 使用直接的条目格式数据
             subject_data = item
             subject_upsert_data = {
-                "source": "bangumi",
+                "source": source,
                 "source_id": str(item.get("id", ""))
             }
         
@@ -347,7 +347,7 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
     )
 
 
-def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int) -> CollectionUpsertList:
+def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int, source: str="bangumi") -> CollectionUpsertList:
     """
     将 Bangumi 收藏数据格式转换为 CollectionUpsertList 格式
     输入参考 bangumi_collection.json
@@ -387,7 +387,7 @@ def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int) -> 
         # 设置默认值
         collection_upsert_data = {
             "user_id": user_id,
-            "source": "bangumi",
+            "source": source,
             "source_id": str(item.get("subject_id", subject_data.get("id", ""))),
             "type": CollectionStatus(2)  # 默认值为"看过"
         }

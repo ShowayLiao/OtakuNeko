@@ -2,6 +2,7 @@ import { ActionIcon, SearchBar as LobeSearchBar } from '@lobehub/ui';
 import { Popover, Input, Button, Tag, Space } from 'antd';
 import { Hash, FileCode, Search, Star, CheckCircle2 } from 'lucide-react';
 import React, { useState, useRef } from 'react';
+import { searchService, SearchResult } from '../../services/search';
 
 // 搜索面板的样式容器
 const SearchPanelWrapper = ({ children }: { children: React.ReactNode }) => (
@@ -11,7 +12,7 @@ const SearchPanelWrapper = ({ children }: { children: React.ReactNode }) => (
 );
 
 // 搜索结果数据结构
-interface SearchResultItem {
+export interface SearchResultItem {
   id: string;
   title: string;
   cover: string;
@@ -19,10 +20,17 @@ interface SearchResultItem {
   tags: string[];
   hasCollection: boolean;
   source: string;
-  sourceId: string;
+  sourceId: number;
+  fullItem?: any; // 存储完整的 item 结构
 }
 
-const SearchTrigger = () => {
+// 修改 Props 定义，增加 onSelect 回调
+interface SearchTriggerProps {
+  onSelect?: (item: SearchResultItem) => void; // 新增
+}
+
+// 在组件参数里解构 onSelect
+const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -46,25 +54,16 @@ const SearchTrigger = () => {
       // 获取当前偏移量
       const currentOffset = isLoadMore ? offset : 0;
       
-      // 调用后端 API
-      const token = localStorage.getItem('token');
-      const response = await fetch(`/api/v1/subjects/?q=${encodeURIComponent(keyword)}&limit=10&offset=${currentOffset}&type=2`, {
-        method: 'GET',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json',
-        },
+      // 调用搜索服务
+      const searchResults = await searchService.searchSubjects({
+        keyword,
+        offset: currentOffset,
+        limit: 10
       });
-
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
       
-      // 处理后端返回的数据
-      if (data.items && data.items.length > 0) {
-        const results = data.items.map((item: any): SearchResultItem => {
+      // 处理搜索结果
+      if (searchResults && searchResults.length > 0) {
+        const results = searchResults.map((item: SearchResult): SearchResultItem => {
           const subject = item.subject;
           const collection = item.collection;
           
@@ -76,7 +75,8 @@ const SearchTrigger = () => {
             tags: subject.tags ? subject.tags.map((tag: any) => tag.name || tag) : [],
             hasCollection: !!collection,
             source: subject.source,
-            sourceId: subject.source_id
+            sourceId: subject.source_id ?? 0,
+            fullItem: item // 存储完整的 item 结构
           };
         });
 
@@ -129,8 +129,10 @@ const SearchTrigger = () => {
 
   // 处理结果选择
   const handleResultSelect = (item: SearchResultItem) => {
-    console.log('选中了:', item.title);
-    setOpen(false); // 选中后关闭
+    if (onSelect) {
+      onSelect(item);
+      setOpen(false); // 选中后关闭浮层
+    }
     setKeyword(''); // 清空搜索
   };
 
@@ -253,7 +255,7 @@ const SearchTrigger = () => {
         overlayInnerStyle={{ padding: 4 }}
       >
         <ActionIcon 
-          icon={Hash} 
+          icon={Search} 
           title="搜索并插入" 
           size={{ blockSize: 32 }}
           active={open} // 激活状态下图标会变色

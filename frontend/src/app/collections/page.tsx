@@ -1,61 +1,81 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import CollectionHeader from '@/components/header/CollectionHeader';
 import CollectionContent from '@/components/collection/CollectionContent';
-
-// --- 类型定义与模拟数据 ---
-type MediaType = 'anime' | 'movie' | 'manga';
-
-interface MediaItem {
-  id: string;
-  title: string;
-  cover: string;
-  type: MediaType;
-  status: 'watching' | 'completed' | 'planned';
-  score: number;
-  eps?: number; // 补充定义
-}
-
-// 模拟数据
-const mockData: MediaItem[] = [
-  { id: '1', title: '葬送的芙莉莲', type: 'anime', status: 'watching', score: 9.8, cover: 'https://cdn.myanimelist.net/images/anime/1015/138006l.jpg', eps: 28 },
-  { id: '2', title: '奥本海默', type: 'movie', status: 'completed', score: 9.2, cover: 'https://image.tmdb.org/t/p/w500/8Gxv8gSFCU0XGDykEGv7zR1n2ua.jpg' },
-  { id: '3', title: '电锯人', type: 'manga', status: 'completed', score: 8.9, cover: 'https://cdn.myanimelist.net/images/manga/3/216464l.jpg' },
-  { id: '4', title: '赛博朋克：边缘行者', type: 'anime', status: 'completed', score: 9.5, cover: 'https://cdn.myanimelist.net/images/anime/1846/126432l.jpg', eps: 10 },
-  { id: '5', title: '千与千寻', type: 'movie', status: 'completed', score: 9.6, cover: 'https://image.tmdb.org/t/p/w500/39wmItIWsg5sZMyRUKGk25sF5QP.jpg' },
-];
+import { collectionService, CollectionItem } from '@/services/collections';
 
 export default function CollectionPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchKw, setSearchKw] = useState('');
   // 对应 Header 里 Segmented 的 value: 'all' | 'anime' | 'books' | 'games' | 'real'
   const [filterValue, setFilterValue] = useState('all'); 
+  // 状态筛选值: 'all' | 'watching' | 'planned' | 'on_hold' | 'completed'
+  const [statusValue, setStatusValue] = useState('all');
+  const [sortBy, setSortBy] = useState('updated_at');
+  const [items, setItems] = useState<CollectionItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // 逻辑处理：过滤数据
-  const filteredItems = mockData.filter(item => {
-    // 1. 搜索过滤
-    const matchesSearch = item.title.toLowerCase().includes(searchKw.toLowerCase());
-    
-    // 2. 筛选过滤 (注意：这里需要把 UI 的 value 映射到数据的 type)
-    let matchesFilter = true;
-    if (filterValue !== 'all') {
-      if (filterValue === 'books') {
-         // UI叫 books，数据叫 manga
-         matchesFilter = item.type === 'manga'; 
-      } else if (filterValue === 'anime') {
-         // UI叫 anime，数据里可能是 anime 或 movie (或者你可以拆分 movie)
-         matchesFilter = item.type === 'anime';
-      } else if (filterValue === 'real') {
-         matchesFilter = item.type === 'movie'; // 假设三次元对应 movie
-      } else {
-         // 其他情况直接匹配
-         matchesFilter = item.type === (filterValue as MediaType);
-      }
+  // 映射 UI 筛选值到后端 subject_type
+  const mapFilterToSubjectType = (filter: string): number | undefined => {
+    switch (filter) {
+      case 'books':
+        return 1; // 书籍
+      case 'anime':
+        return 2; // 动画
+      case 'games':
+        return 4; // 游戏
+      case 'real':
+        return 6; // 三次元
+      default:
+        return undefined;
     }
-    
-    return matchesSearch && matchesFilter;
-  });
+  };
+
+  // 映射 UI 状态值到后端 CollectionStatus 枚举值
+  const mapStatusToCollectionStatus = (status: string): number | undefined => {
+    switch (status) {
+      case 'watching':
+        return 3; // DO (在看)
+      case 'planned':
+        return 1; // WISH (想看)
+      case 'on_hold':
+        return 4; // ON_HOLD (搁置)
+      case 'completed':
+        return 2; // COLLECT (看过)
+      default:
+        return undefined;
+    }
+  };
+
+  // 获取收藏数据
+  const fetchCollections = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const subject_type = mapFilterToSubjectType(filterValue);
+      const status = mapStatusToCollectionStatus(statusValue);
+      const response = await collectionService.getCollections({
+        subject_type,
+        keyword: searchKw,
+        limit: 100,
+        sort_by: sortBy,
+        status: status || undefined,
+      });
+      setItems(response.items);
+    } catch (err) {
+      setError('获取收藏列表失败，请稍后重试');
+      console.error('Error fetching collections:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 当搜索关键词、筛选条件、状态或排序方式变化时，重新获取数据
+  useEffect(() => {
+    fetchCollections();
+  }, [searchKw, filterValue, statusValue, sortBy]);
 
   return (
     <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-neutral-900">
@@ -71,12 +91,29 @@ export default function CollectionPage() {
             filterValue={filterValue} 
             // onFilterChange 告诉父组件“用户点了哪个按钮”
             onFilterChange={setFilterValue}
+            
+            // 状态筛选相关
+            statusValue={statusValue}
+            onStatusChange={setStatusValue}
+            
+            // 排序变化回调
+            onSortChange={setSortBy}
          />
       </div>
 
       {/* 内容区 */}
       <div className="flex-1 overflow-y-auto">
-         <CollectionContent items={filteredItems} />
+        {loading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : error ? (
+          <div className="flex items-center justify-center h-full text-red-500">
+            {error}
+          </div>
+        ) : (
+          <CollectionContent items={items} />
+        )}
       </div>
       
     </div>

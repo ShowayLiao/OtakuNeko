@@ -5,6 +5,8 @@ import { useAppTheme } from '@/components/providers/LobeProvider';
 import { Segmented, SearchBar, ActionIcon, Icon } from '@lobehub/ui';
 import { Bookmark, Film, Book, Gamepad2, Users, Filter, LayoutGrid } from 'lucide-react';
 import { useState } from 'react';
+import { Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
 
 interface CollectionHeaderProps {
   onSearch?: (value: string) => void;
@@ -14,13 +16,23 @@ interface CollectionHeaderProps {
   filterValue: string;
   // 🔥 核心：通知父组件改变筛选值
   onFilterChange: (value: string) => void;
+  
+  // 状态筛选相关
+  statusValue?: string;
+  onStatusChange?: (value: string) => void;
+  
+  // 排序相关
+  onSortChange?: (value: string) => void;
 }
 
 export default function CollectionHeader({ 
   onSearch, 
   onViewModeChange, 
   filterValue, 
-  onFilterChange 
+  onFilterChange,
+  statusValue = 'all',
+  onStatusChange,
+  onSortChange
 }: CollectionHeaderProps) {
   const { primaryColor } = useAppTheme();
   // 搜索框通常保留本地状态，用于处理输入时的即时显示，回车或防抖后再通知父组件
@@ -30,6 +42,28 @@ export default function CollectionHeader({
     const value = e.target.value;
     setSearchKw(value);
     onSearch?.(value);
+  };
+
+  // 排序选项配置
+  const sortOptions = [
+    { value: 'updated_at', label: '更新时间' },
+    { value: 'rate', label: '用户评分' },
+    { value: 'score', label: '网站得分' },
+    { value: 'date', label: '日期' },
+  ];
+
+  // 排序菜单配置
+  const items: MenuProps['items'] = sortOptions.map((option) => ({
+    key: option.value,
+    label: option.label,
+    onClick: () => {
+      onSortChange?.(option.value);
+    },
+  }));
+
+  // 菜单项点击处理函数
+  const handleMenuClick: MenuProps['onClick'] = (e) => {
+    onSortChange?.(e.key);
   };
 
   return (
@@ -92,6 +126,10 @@ export default function CollectionHeader({
             {/* --- 状态筛选组件 --- */}
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Segmented
+                value={statusValue}
+                onChange={(value) => {
+                  onStatusChange?.(value as string);
+                }}
                 options={[
                   {
                     label: '全部',
@@ -115,12 +153,21 @@ export default function CollectionHeader({
                   },
                 ]}
               />
-              <ActionIcon 
-                icon={Filter} 
-                title="高级筛选" 
-                size="large" 
-                className="border border-slate-200 dark:border-slate-700 rounded-lg"
-              />
+              <Dropdown 
+                menu={{ 
+                  items, 
+                  onClick: handleMenuClick,
+                  title: "排序方式"
+                }} 
+                trigger={['click']}
+              >
+                <ActionIcon 
+                  icon={Filter} 
+                  title="排序方式" 
+                  size="large" 
+                  className="border border-slate-200 dark:border-slate-700 rounded-lg"
+                />
+              </Dropdown>
             </div>
             
             <div style={{ marginLeft: 'auto' }}>

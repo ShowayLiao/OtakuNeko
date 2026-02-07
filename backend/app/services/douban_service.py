@@ -18,7 +18,7 @@ logger = get_logger(__name__)
 async def sync_user_collections_douban(
     user_id: int,
     db: AsyncSession,
-    file_path: str
+    douban_data: list[dict]
 ) -> int:
     """
     同步用户的豆瓣收藏数据到本地数据库
@@ -26,7 +26,7 @@ async def sync_user_collections_douban(
     Args:
         user_id: 用户ID
         db: 数据库会话
-        file_path: 豆瓣数据JSON文件路径
+        douban_data: 豆瓣数据列表
 
     Returns:
         成功同步的收藏数量
@@ -34,17 +34,11 @@ async def sync_user_collections_douban(
     Raises:
         Exception: 同步过程中发生错误时抛出
     """
-    import json
     from app.schemas.adaptersV2 import douban_to_bangumi_list, douban_to_collectionlist
     from app.services.collection_service import batch_upsert_collections
     
     try:
-        logger.info(f"--- Syncing Douban collections for User ID: {user_id} ---")
-        
-        # 加载JSON文件
-        logger.info(f"Loading Douban data from file: {file_path}")
-        with open(file_path, 'r', encoding='utf-8') as f:
-            douban_data = json.load(f)
+        logger.info(f"--- Syncing Douban collections for User ID: {user_id} ---)")
         
         # 确保加载的数据是列表
         if not isinstance(douban_data, list):
@@ -55,7 +49,7 @@ async def sync_user_collections_douban(
             logger.info("No data to process.")
             return 0
         
-        logger.info(f"Loaded {len(douban_data)} Douban items")
+        logger.info(f"Processing {len(douban_data)} Douban items")
         
         # 将豆瓣数据转换为Bangumi格式
         logger.info("Converting Douban data to Bangumi format...")
@@ -70,7 +64,7 @@ async def sync_user_collections_douban(
         
         # 调用适配器转换为SubjectUpsertList格式
         logger.info("Converting Bangumi data to SubjectUpsertList format...")
-        subjects_list = bangumi_subject_to_subjectlist(bangumi_data)
+        subjects_list = bangumi_subject_to_subjectlist(bangumi_data, source="douban")
         logger.info(f"Converted {subjects_list.total} items to SubjectUpsertList format")
 
         # 调用批量插入函数，实际执行数据库操作
@@ -80,7 +74,7 @@ async def sync_user_collections_douban(
 
         # 调用适配器转换为CollectionUpsertList格式
         logger.info("Converting Bangumi data to CollectionUpsertList format...")
-        collections_list = bangumi_collection_to_collectionlist(bangumi_data, user_id)
+        collections_list = bangumi_collection_to_collectionlist(bangumi_data, user_id, source="douban")
         logger.info(f"Converted {collections_list.total} items to CollectionUpsertList format")
         
         # 调用批量插入函数，实际执行数据库操作

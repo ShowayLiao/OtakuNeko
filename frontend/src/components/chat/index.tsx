@@ -1,61 +1,61 @@
 "use client";
 
 import { useState, useRef, useEffect } from 'react';
+import { v4 as uuidv4 } from 'uuid';
 // 1. 引入图标并重命名，防止命名冲突
-import { Eraser, Languages, User as UserIcon, Bot as BotIcon } from 'lucide-react';
+import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare } from 'lucide-react';
 import { theme } from 'antd';
-import { ChatInputArea, ChatInputActionBar, TokenTag, ChatItem, ChatSendButton } from '@lobehub/ui/chat';
-import { ActionIcon } from '@lobehub/ui';
+import { ChatItem } from '@lobehub/ui/chat';
+import { ActionIcon, DraggablePanel } from '@lobehub/ui';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ModelSelector } from './ModelSelector';
-import SearchTrigger from './SearchBar';
+import SearchTrigger, { SearchResultItem } from './SearchBar';
+import ChatInput from './ChatInput';
 import ApiKeyModal from '../Modal/ApiKeyModal';
 import { chatWithBackend } from '@/lib/fetcher';
-
-// --- 2. 定义消息数据结构 ---
-interface Message {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  createAt: number;
-}
-
-const MOCK_RESPONSES = [
-  "收到！正在为你分析这段代码...",
-  "根据量子力学，薛定谔的猫现在可能在吃罐头。🐱",
-  "这个问题很有趣，我们需要从架构层面来重新思考。",
-  "系统检测到您的颜值过高，已自动开启高性能模式！🚀",
-  "正在调用 OtakuNeko 的神经网络...",
-  "请稍等，我正在查阅开发文档。",
-  "代码看起来没问题，建议检查一下环境变量配置。",
-];
+import useChatStore, { Message } from '../../stores/useChatStore';
 
 export default function ChatPage() {
-  const [isExpand, setIsExpand] = useState(false);
-  const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'init-1',
-      role: 'assistant',
-      content: '你好！我是 OtakuNeko，今天想聊点什么？😸',
-      createAt: Date.now(),
-    }
-  ]);
   // 模型选择相关状态
   const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
   const [selectedProvider, setSelectedProvider] = useState('openai');
   // API 管理模态框状态
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const heights = {
-    inputHeight: 160, 
-    minHeight: 128,
-    maxHeight: 600, 
-  };
 
   const { token } = theme.useToken();
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 使用聊天存储
+  const {
+    sessions,
+    chatMessages: rawChatMessages,
+    activeSessionId,
+    createSession,
+    sendMessage,
+    updateMessage,
+    switchSession,
+    deleteSession,
+    updateSessionTitle,
+  } = useChatStore();
+
+  // 确保 chatMessages 是一个 Map 对象
+  const chatMessages = rawChatMessages && typeof rawChatMessages.get === 'function' 
+    ? rawChatMessages 
+    : new Map();
+
+  // 确保有一个活跃会话
+  useEffect(() => {
+    if (!activeSessionId && sessions.length === 0) {
+      createSession();
+    }
+  }, [activeSessionId, sessions.length, createSession]);
+
+  // 获取当前会话的消息
+  const currentMessages = activeSessionId && chatMessages && typeof chatMessages.get === 'function' 
+    ? chatMessages.get(activeSessionId) || [] 
+    : [];
 
   // 处理模型选择变化
   const handleModelChange = (modelId: string, provider: string) => {
@@ -70,42 +70,62 @@ export default function ChatPage() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, loading]);
+  }, [currentMessages, loading]);
 
-  const handleSend = async () => {
-    if (!value.trim()) return;
+  const handleSend = async (text: string, contextItems: SearchResultItem[]) => {
+    if (!text.trim() && contextItems.length === 0) return;
+    if (!activeSessionId) return;
 
-    const userMsg: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: value,
-      createAt: Date.now(),
+    // 1. UI 消息构建
+    // 创建 userMessage
+    const userMessage = {
+      id: uuidv4(),
+      role: 'user' as const,
+      content: text, // 仅存放纯文本，保持界面整洁
+      createdAt: new Date(),
+      extra: { contextItems } // 将 contextItems 存入 extra 字段，用于元数据持久化
     };
 
-    setMessages((prev) => [...prev, userMsg]);
-    setValue('');
-    setLoading(true);
+    // 添加用户消息到存储中
+    sendMessage(activeSessionId, userMessage);
 
+    // 2. 后端 Payload 构建 (RAG)
+    // 准备格式化的消息
+    const formattedMessages = [
+      ...currentMessages.map((msg: Message) => ({
+        role: msg.role,
+        content: msg.content
+      }))
+    ];
+
+    // 构建用户消息
+    let userContent = text;
+    if (contextItems.length > 0) {
+      // 将 contextItems 格式化为 XML 字符串
+      const contextXml = contextItems.map(item => {
+        return `<Entity id="${item.id}" source="${item.source}" sourceId="${item.sourceId}">${item.title}</Entity>`;
+      }).join('\n');
+      
+      // 将格式化后的 Context 拼接到 Prompt 中
+      userContent = `Context:\n${contextXml}\n\nUser Question:\n${text}`;
+    }
+    
+    formattedMessages.push({ role: 'user', content: userContent });
+
+    // 3. 请求发送
     try {
-      // Create a new AI message with an ID, but empty content for streaming
-      const aiMsgId = (Date.now() + 1).toString();
-      const aiMsg: Message = {
-        id: aiMsgId,
-        role: 'assistant',
+      // 开始加载状态
+      setLoading(true);
+      
+      // 为 AI 回复创建一个占位消息
+      const aiMessageId = uuidv4();
+      const aiMessage = {
+        id: aiMessageId,
+        role: 'assistant' as const,
         content: '',
-        createAt: Date.now(),
+        createdAt: new Date()
       };
-
-      setMessages((prev) => [...prev, aiMsg]);
-
-      // Prepare the message format for the backend
-      const formattedMessages = [
-        ...messages.map(msg => ({
-          role: msg.role,
-          content: msg.content
-        })),
-        { role: 'user', content: value }
-      ];
+      sendMessage(activeSessionId, aiMessage);
 
       // Call the backend API
       const response = await chatWithBackend({
@@ -137,22 +157,13 @@ export default function ChatPage() {
         accumulatedContent += chunk;
 
         // Update the AI message with the accumulated content
-        setMessages((prev) => prev.map(msg => 
-          msg.id === aiMsgId ? { ...msg, content: accumulatedContent } : msg
-        ));
+        updateMessage(activeSessionId, accumulatedContent, aiMessageId);
       }
     } catch (error) {
       console.error('Error sending message:', error);
       
-      // Add an error message to the chat
-      const errorMsg: Message = {
-        id: (Date.now() + 2).toString(),
-        role: 'assistant',
-        content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        createAt: Date.now(),
-      };
-
-      setMessages((prev) => [...prev, errorMsg]);
+      // Update the AI message with the error content
+      updateMessage(activeSessionId, `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -160,147 +171,187 @@ export default function ChatPage() {
 
   return (
     <div 
-      className="flex-1 flex flex-col min-h-0 w-full relative overflow-hidden"
+      className="flex-1 flex min-h-0 w-full relative overflow-hidden"
       style={{ background: 'transparent' }} 
     >
-      <div 
-        className="flex-1 overflow-y-auto p-4"
-        style={{ paddingBottom: 200 }} 
-      >
-        <div className="max-w-3xl mx-auto space-y-6">
-          
-          {messages.map((msg) => (
-            <ChatItem
-              key={msg.id}
-              placement={msg.role === 'user' ? 'right' : 'left'}
-              message={msg.content}
-              time={msg.createAt}
-              
-              // 使用图标作为头像，避免 Image 组件警告
-              avatar={{ 
-                title: msg.role === 'user' ? '用户' : 'OtakuNeko',
-                avatar: '/Icon.png',
-              }}
-              
-              avatarProps={{
-              size: 40,
-              style: {
-                // 🛑 绝对不要写 'pixelated' 或 'crisp-edges' (那是给像素画用的)
-                // ✅ 强制浏览器使用平滑算法 (Bilinear/Bicubic)
-                imageRendering: 'auto', 
-                
-                // ✅ 某些浏览器 (如 Chrome) 在极度缩小图片时需要这个属性来开启抗锯齿
-                WebkitFontSmoothing: 'antialiased', 
-                
-                // ✅ 确保图片填满圆形且不变形
-                objectFit: 'cover',
-                
-                // 保持之前的背景色逻辑
-                backgroundColor: msg.role === 'user' ? token.colorWarning : undefined,
-              }
-            }}
-            />
-          ))}
-
-          {loading && (
-            <ChatItem
-              placement="left"
-              loading={true}
-              
-              // 使用图标作为头像，避免 Image 组件警告
-              avatar={{ 
-                title: 'OtakuNeko',
-                avatar: '/Icon.png',
-              }}
-              
-              avatarProps={{
-                size: 40,
-              }}
-            />
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
-      </div>
-
-      <div
+      {/* 侧边栏：会话列表 */}
+      <DraggablePanel
+        defaultExpand={true}
+        expandable={true}
+        minWidth={200}
+        mode="fixed"
+        pin={true}
+        placement="left"
+        showBorder={true}
         style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          width: '100%',
-          // 🔥 关键点1：外部留白，制造“悬浮”感
-          padding: '0 16px 24px 16px', 
-          zIndex: 10,
+          background: isDarkMode ? '#1e1e1e' : '#ffffff',
         }}
       >
-        <ChatInputArea 
-          topAddons={
-              <ChatInputActionBar
-                leftAddons={
-                  <div style={{ marginLeft: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <ModelSelector 
-                      value={selectedModel} 
-                      onChange={handleModelChange} 
-                      onOpenSettings={handleOpenSettings} 
-                    />
-                    <SearchTrigger />
-                    <ActionIcon icon={Languages} title="翻译" />
-                    <ActionIcon icon={Eraser} title="清除" />
-                    <TokenTag maxValue={5000} value={1000} />
+        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 16 }}>
+          {/* 侧边栏标题和新建按钮 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold' }}>会话</h3>
+            <ActionIcon 
+              icon={Plus} 
+              title="新建会话" 
+              onClick={createSession}
+              style={{ cursor: 'pointer' }}
+            />
+          </div>
+
+          {/* 会话列表 */}
+          <div style={{ flex: 1, overflowY: 'auto', gap: 8, display: 'flex', flexDirection: 'column' }}>
+            {sessions.map((session) => (
+              <div
+                key={session.id}
+                style={{
+                  padding: 12,
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  backgroundColor: activeSessionId === session.id 
+                    ? (isDarkMode ? 'rgba(75, 85, 99, 0.5)' : 'rgba(229, 231, 235, 0.8)')
+                    : 'transparent',
+                  border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+                  transition: 'all 0.2s ease',
+                }}
+                onClick={() => switchSession(session.id)}
+              >
+                <div style={{ flex: 1, marginRight: 8 }}>
+                  <div style={{ fontWeight: '500', fontSize: 14, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {session.title}
                   </div>
-                }
-              />
-            }
-          // ✅ 修复点 1：给发送按钮绑定 handleSend，并绑定 loading 状态
-          bottomAddons={<ChatSendButton loading={loading} onSend={handleSend} />}
-          
-          expand={isExpand}
-          setExpand={setIsExpand}
-          heights={heights}
-          value={value}
-          onInput={setValue}
-          
-          // ✅ 修复点 2：这里必须调用 handleSend，而不是只清空
-          // handleSend 内部已经包含了 setValue('') 的逻辑，所以不用重复写
-          onSend={handleSend}
-          
-          placeholder="输入消息..."
-          
-          // 🔥 关键点2：整容级样式覆盖
-          style={{
-            // 1. 背景：根据 isDarkMode 手动调教最佳透明度
-            //    - 亮色：白色 60% 透明度
-            //    - 暗色：深灰 (#1e1e1e) 60% 透明度 (比纯黑更透气)
-            background: isDarkMode 
-              ? 'rgba(30, 30, 30, 0.6)' 
-              : 'rgba(255, 255, 255, 0.6)',
+                  <div style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
+                    {new Date(session.updatedAt).toLocaleString()}
+                  </div>
+                </div>
+                <ActionIcon 
+                  icon={Trash2} 
+                  title="删除会话" 
+                  size={16}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSession(session.id);
+                  }}
+                  style={{ color: isDarkMode ? '#ef4444' : '#dc2626', cursor: 'pointer' }}
+                />
+              </div>
+            ))}
 
-            // 2. 磨砂效果：增加饱和度让背后的色彩更鲜艳
-            backdropFilter: 'saturate(180%) blur(12px)',
-            
-            // 3. 边框：极其微弱的边框，暗色下几乎不可见，亮色下淡淡的灰
-            border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-            
-            // 4. 光影魔法：
-            //    - 外阴影 (Drop Shadow): 让卡片浮起来
-            //    - 内阴影 (Inset Shadow): 模拟玻璃厚度的反光 (顶部高光)
-            boxShadow: isDarkMode
-              ? '0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 0.05)'
-              : '0 8px 32px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.6)',
-            
-            borderRadius: 16, // 大圆角
-            overflow: 'hidden', // 确保内部内容不溢出圆角
-          }}
-          className="w-full"
-        />
+            {/* 空会话提示 */}
+            {sessions.length === 0 && (
+              <div style={{ textAlign: 'center', padding: 24, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
+                <MessageSquare size={24} style={{ margin: '0 auto 8px' }} />
+                <p>没有会话</p>
+                <p style={{ fontSize: 12 }}>点击上方按钮创建新会话</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </DraggablePanel>
 
-        {/* API Key 管理模态框 */}
-        <ApiKeyModal
-          open={isApiKeyModalOpen}
-          onClose={() => setIsApiKeyModalOpen(false)}
-        />
+      {/* 主聊天区域 */}
+      <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+        <div 
+          className="flex-1 overflow-y-auto p-4"
+          style={{ paddingBottom: 200 }} 
+        >
+          <div className="max-w-3xl mx-auto space-y-6">
+            
+              {currentMessages.map((msg: Message) => (
+                <>
+                  <ChatItem
+                    key={msg.id}
+                    placement={msg.role === 'user' ? 'right' : 'left'}
+                    message={msg.content}
+                    time={msg.createdAt instanceof Date ? msg.createdAt.getTime() : Number(msg.createdAt)}
+                    
+                    // 使用图标作为头像，避免 Image 组件警告
+                    avatar={{ 
+                      title: msg.role === 'user' ? '用户' : 'OtakuNeko',
+                      avatar: '/Icon.png',
+                    }}
+                    
+                    avatarProps={{
+                    size: 40,
+                    style: {
+                      // 🛑 绝对不要写 'pixelated' 或 'crisp-edges' (那是给像素画用的)
+                      // ✅ 强制浏览器使用平滑算法 (Bilinear/Bicubic)
+                      imageRendering: 'auto', 
+                      
+                      // ✅ 某些浏览器 (如 Chrome) 在极度缩小图片时需要这个属性来开启抗锯齿
+                      WebkitFontSmoothing: 'antialiased', 
+                      
+                      // ✅ 确保图片填满圆形且不变形
+                      objectFit: 'cover',
+                      
+                      // 保持之前的背景色逻辑
+                      backgroundColor: msg.role === 'user' ? token.colorWarning : undefined,
+                    }
+                  }}
+                  />
+                  
+                  {/* 添加引用胶囊，作为ChatItem的兄弟元素 */}
+                  {msg.role === 'user' && msg.extra?.contextItems?.length > 0 && (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, justifyContent: 'flex-end' }}>
+                      {msg.extra.contextItems.map((ref: any) => (
+                        <div
+                          key={ref.id}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 4,
+                            fontSize: 12, padding: '4px 8px', borderRadius: 12,
+                            background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                            color: isDarkMode ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)',
+                          }}
+                        >
+                          <img src={ref.cover} alt={ref.title} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
+                          <span>{ref.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ))}
+
+              {/* 修复：只有当消息列表最后一条不是 assistant 角色时，才显示 Loading 气泡 */}
+              {loading && currentMessages.length > 0 && currentMessages[currentMessages.length - 1].role !== 'assistant' && (
+                <ChatItem
+                  placement="left"
+                  loading={true}
+                  
+                  // 使用图标作为头像，避免 Image 组件警告
+                  avatar={{ 
+                    title: 'OtakuNeko',
+                    avatar: '/Icon.png',
+                  }}
+                  
+                  avatarProps={{
+                    size: 40,
+                  }}
+                />
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+          </div>
+
+          <ChatInput
+            onSend={handleSend}
+            loading={loading}
+            selectedModel={selectedModel}
+            selectedProvider={selectedProvider}
+            onModelChange={handleModelChange}
+            onOpenSettings={handleOpenSettings}
+          />
+
+          {/* API Key 管理模态框 */}
+          <ApiKeyModal
+            open={isApiKeyModalOpen}
+            onClose={() => setIsApiKeyModalOpen(false)}
+          />
+        </div>
       </div>
-    </div>
   );
 }

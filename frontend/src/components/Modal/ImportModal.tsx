@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Modal, Button, Input, Icon, TextArea, Select, Tooltip, toast, Tag } from '@lobehub/ui';
 import { Search, FileJson, Upload, FileUp, Check, BookOpen, ChevronDown, ChevronUp, XCircle, CheckCircle2, AlertCircle, Star } from 'lucide-react';
+import { searchService, SearchResult } from '../../services/search';
+import { collectionService } from '../../services/collections';
 
 // 添加加载动画样式
 const style = document.createElement('style');
@@ -40,7 +42,7 @@ interface Subject {
 
 interface FormData {
   // Subject 相关字段
-  id?: string;
+  id?: number;
   title: string; // 显示标题（优先使用name_cn，其次name）
   subject: Subject;
   cover?: string; // 封面图
@@ -101,7 +103,7 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   const [jsonError, setJsonError] = useState('');
   
   // 搜索结果状态
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   
   // 控制搜索结果下拉框显示
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
@@ -132,35 +134,26 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
     }
 
     try {
-      // 调用后端 API 进行搜索
-      const token = localStorage.getItem('token');
+      // 调用搜索服务进行搜索
       const currentOffset = isLoadMore ? offset : 0;
-      const response = await fetch(`http://localhost:8000/api/v1/subjects/?q=${encodeURIComponent(keyword)}&limit=10&offset=${currentOffset}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json',
-        },
+      const results = await searchService.searchSubjects({
+        keyword,
+        offset: currentOffset,
+        limit: 10
       });
-
-      if (!response.ok) {
-        throw new Error(`Search failed: ${response.statusText}`);
-      }
-
-      const data = await response.json();
       
-      // 处理后端返回的 UnifiedList 数据
-      if (data.items && data.items.length > 0) {
+      // 处理搜索结果
+      if (results && results.length > 0) {
         // 存储完整搜索结果并显示下拉框
         if (isLoadMore) {
-          setSearchResults(prev => [...prev, ...data.items]);
+          setSearchResults(prev => [...prev, ...results]);
           setOffset(prev => prev + 10);
         } else {
-          setSearchResults(data.items);
+          setSearchResults(results);
           setOffset(10);
         }
         // 检查是否还有更多数据
-        setHasMore(data.items.length >= 10);
+        setHasMore(results.length >= 10);
         setShowDropdown(true);
       } else {
         if (!isLoadMore) {
@@ -186,73 +179,56 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
     }
   };
 
-  // B. JSON 文件解析逻辑
+  // B. JSON 文件上传逻辑
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
+        setLoading(true);
         const text = event.target?.result as string;
         const parsed = JSON.parse(text);
         
-        // 处理 bangumi_collection.json 格式
-        let subjectData = null;
-        let collectionData = null;
-        
-        // 检查是否为 bangumi_collection.json 格式（包含 data 数组）
-        if (parsed.data && Array.isArray(parsed.data) && parsed.data.length > 0) {
-          const firstItem = parsed.data[0];
-          subjectData = firstItem.subject;
-          collectionData = firstItem;
-        } else if (parsed.subject) {
-          // 检查是否为单个条目格式（包含 subject 对象）
-          subjectData = parsed.subject;
-          collectionData = parsed;
-        } else {
-          // 检查是否为直接的表单数据格式
-          subjectData = null;
-          collectionData = parsed;
+        // 提取收藏数据，兼容多种格式
+        let uploadData = [];
+        if (parsed.data) {
+          // 格式1: { "data": [...] }
+          uploadData = parsed.data;
+        } else if (parsed.interest) {
+          // 格式2: { "interest": [...] } (tofu[208745052].json 格式)
+          uploadData = parsed.interest;
+        } else if (Array.isArray(parsed)) {
+          // 格式3: [...] (直接的列表格式)
+          uploadData = parsed;
         }
         
-        // 构建表单数据
-        const newFormData: FormData = {
-          ...formData,
-          title: (subjectData?.name_cn || subjectData?.name || collectionData?.title || ''),
-          subject: {
-            id: (subjectData?.id || subjectData?.source_id || collectionData?.subjectId || 0),
-            date: (subjectData?.date || collectionData?.date || ''),
-            images: subjectData?.images || {
-              small: '',
-              grid: '',
-              large: '',
-              medium: '',
-              common: (subjectData?.image || collectionData?.cover || '')
-            },
-            name: (subjectData?.name || ''),
-            name_cn: (subjectData?.name_cn || ''),
-            short_summary: (subjectData?.summary || subjectData?.short_summary || collectionData?.desc || ''),
-            tags: subjectData?.tags || [],
-            score: (subjectData?.rating && subjectData?.rating.score ? subjectData?.rating.score : (subjectData?.score || collectionData?.rating || 0)),
-            type: (subjectData?.type || collectionData?.subjectType || 0),
-            eps: (subjectData?.eps || collectionData?.eps || 0),
-            volumes: (subjectData?.volumes || collectionData?.volumes || 0),
-            source: (subjectData?.source || collectionData?.source || '')
-          },
-          cover: (subjectData?.image || (subjectData?.images && subjectData?.images.common ? subjectData?.images.common : '') || collectionData?.cover || ''),
-          collectionType: (collectionData?.type || collectionData?.collectionType || 0),
-          rate: (collectionData?.rate || 0),
-          comment: (collectionData?.comment || ''),
-          volStatus: (collectionData?.vol_status || collectionData?.volStatus || 0),
-          epStatus: (collectionData?.ep_status || collectionData?.epStatus || 0),
-          tags: (collectionData?.tags && Array.isArray(collectionData.tags) ? collectionData.tags.join(', ') : (collectionData?.tags || ''))
-        };
-        
-        setFormData(newFormData);
+        // 直接调用后端 API 上传数据
+        const result = await collectionService.uploadDouban({
+          data: uploadData
+        });
+
+        // 显示成功通知
+        toast.success({
+          title: '上传成功',
+          description: `成功导入 ${result.sync_count} 条数据`,
+          icon: CheckCircle2,
+          duration: 3000,
+        });
+
         setJsonError('');
       } catch (err) {
-        setJsonError('JSON 格式错误，无法解析');
+        setJsonError('上传失败，请检查文件格式');
+        // 显示错误通知
+        toast.error({
+          title: '上传失败',
+          description: err instanceof Error ? err.message : '上传失败，请重试',
+          icon: XCircle,
+          duration: 3000,
+        });
+      } finally {
+        setLoading(false);
       }
     };
     reader.readAsText(file);
@@ -266,12 +242,8 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
       setLoading(true);
 
       // 构建请求数据
-      const now = new Date();
-      const updatedAt = now.toISOString();
-      
       const requestData = {
         data: [{
-          updated_at: updatedAt,
           subject: formData.subject,
           collection: {
             type: formData.collectionType || 2, // 默认值为"看过"
@@ -285,21 +257,7 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
       };
 
       // 调用后端 API
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:8000/api/v1/collections/sync/manual', {
-        method: 'POST',
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Upload failed: ${response.statusText}`);
-      }
-
-      const result = await response.json();
+      const result = await collectionService.uploadDouban(requestData);
 
       // 显示成功通知
       toast.success({
@@ -632,10 +590,18 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
               <Button 
                 icon={<Icon icon={FileJson} />}
                 onClick={() => fileInputRef.current?.click()}
+                loading={loading}
               >
                 上传
               </Button>
             </Tooltip>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              style={{ display: 'none' }}
+              onChange={handleFileChange}
+            />
           </div>
           
           {/* JSON 上传错误提示 */}

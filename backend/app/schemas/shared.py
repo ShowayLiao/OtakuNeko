@@ -23,3 +23,5 @@ class SearchBase(BaseModel):
     skip: Optional[int] = Field(default=0, description="跳过的记录数")
     limit: Optional[int] = Field(default=10, description="返回的最大记录数")
     user_id: Optional[int] = Field(None, description="用户ID")
+    sort_by: Optional[str] = Field(default="updated_at", description="排序字段")
+    keyword: Optional[str] = Field(None, description="搜索关键词")

@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime
 from sqlmodel import select, and_
+from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -92,7 +93,7 @@ class CollectionRepo:
             raise
     
     @staticmethod
-    async def get_by_user(db: AsyncSession, user_id: int, subject_type: Optional[int] = None, skip: int = 0, limit: int = 100) -> CollectionWithSubjectList:
+    async def get_by_user(db: AsyncSession, user_id: int, subject_type: Optional[int] = None, status: Optional[int] = None, skip: int = 0, limit: int = 100, sort_by: str = 'updated_at') -> CollectionWithSubjectList:
         """
         根据用户ID获取所有Collection，并左外连接Subject表
         
@@ -100,8 +101,10 @@ class CollectionRepo:
             db: 数据库会话
             user_id: 用户ID
             subject_type: 可选，条目类型过滤
+            status: 可选，收藏状态过滤
             skip: 跳过的记录数
             limit: 返回的最大记录数
+            sort_by: 排序字段
         
         Returns:
             CollectionWithSubjectList对象，包含收藏及其关联条目信息的列表
@@ -129,6 +132,22 @@ class CollectionRepo:
                         (Subject.id.is_(None))
                     )
                 )
+            
+            # 应用状态过滤
+            if status is not None:
+                query = query.where(Collection.type == status)
+            
+            # 应用排序
+            if sort_by == 'updated_at':
+                query = query.order_by(desc(Collection.updated_at))
+            elif sort_by == 'rate':
+                query = query.order_by(desc(Collection.rate))
+            elif sort_by == 'score':
+                # 使用 rating 字段中的 score 值进行排序
+                from sqlalchemy import cast, Float
+                query = query.order_by(desc(cast(Subject.rating.op('->>')('score'), Float)))
+            elif sort_by == 'date':
+                query = query.order_by(desc(Subject.date))
             
             # 添加分页
             query = query.offset(skip).limit(limit)
@@ -345,6 +364,23 @@ class CollectionRepo:
                 )
                 
                 query = query.where(or_(*conditions))
+            
+            # 应用状态过滤
+            if getattr(search_data, 'status', None) is not None:
+                query = query.where(Collection.status == search_data.status)
+            
+            # 应用排序
+            sort_by = getattr(search_data, 'sort_by', 'updated_at')
+            if sort_by == 'updated_at':
+                query = query.order_by(desc(Collection.updated_at))
+            elif sort_by == 'rate':
+                query = query.order_by(desc(Collection.rate))
+            elif sort_by == 'score':
+                # 使用 rating 字段中的 score 值进行排序
+                from sqlalchemy import cast, Float
+                query = query.order_by(desc(cast(Subject.rating.op('->>')('score'), Float)))
+            elif sort_by == 'date':
+                query = query.order_by(desc(Subject.date))
             
             # 添加分页
             query = query.offset(search_data.skip).limit(search_data.limit)

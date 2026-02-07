@@ -148,7 +148,7 @@ class CollectionSearchBase(SearchBase):
     用于搜索Cloud数据库中的收藏记录，包含关键词、类型、数据源等参数
     """
     user_id: int = Field(..., description="用户ID")
-    type: Optional[CollectionStatus] = Field(None, description="收藏类型：1想看/2看过/3在看/4搁置/5抛弃")
+    status: Optional[CollectionStatus] = Field(None, description="收藏状态：1想看/2看过/3在看/4搁置/5抛弃")
     limit: int = Field(default=10, description="返回的最大记录数")
 
 class CollectionSearchByName(CollectionSearchBase):

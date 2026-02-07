@@ -9,7 +9,7 @@ from app.db.database import get_session
 from app.services.collection_service import get_user_collections, update_collection, upsert_collection, get_collection, delete_collection, batch_upsert_collections
 from app.services.bangumi_service import sync_user_collections
 from app.services.douban_service import sync_user_collections_douban
-from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest, CollectionSearchByName, CollectionUpdate
+from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest, CollectionSearchByName, CollectionUpdate, CollectionSearchBase
 from app.schemas.adaptersV2 import UnifiedList
 from app.models.user import User
 from app.models.subject import Subject
@@ -17,6 +17,10 @@ from app.models.collection import Collection
 from app.api.deps import get_current_user
 from app.repositories import CollectionRepo, SubjectRepo
 import httpx
+
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 from fastapi_cache.decorator import cache
 from fastapi_cache import FastAPICache
@@ -76,10 +80,9 @@ async def get_user_collect(
             user_id=current_user.id,
             status=status_enum,
             type=subject_type,
-            keyword=keyword,
-            sort_by=sort_by,
             limit=limit,
-            skip=offset
+            skip=offset,
+            sort_by=sort_by
         )
         # 调用get_user_collections获取收藏列表
         collections_data = await get_user_collections(db, search_data)
@@ -385,7 +388,7 @@ async def sync_bgm(
 
 @router.post("/upload/douban")
 async def upload_douban(
-    data: CollectionSyncRequest,
+    data: dict,
     current_user = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
@@ -393,7 +396,7 @@ async def upload_douban(
     上传用户的豆瓣收藏数据到本地数据库
     
     Args:
-        data: 同步请求数据，包含 data 字段（豆瓣数据列表）
+        data: 包含豆瓣数据列表的字典，格式为 { "data": [...] }
         current_user: 当前认证用户
         db: 数据库会话
         
@@ -401,38 +404,52 @@ async def upload_douban(
         同步结果
     """
     try:
-        if not data.data:
+        logger.info(f"--- Starting Douban upload for user {current_user.username} (ID: {current_user.id}) ---)")
+        
+        # 提取豆瓣数据列表，兼容多种格式
+        douban_data = []
+        if 'data' in data:
+            # 格式1: { "data": [...] }
+            douban_data = data.get('data', [])
+        elif 'interest' in data:
+            # 格式2: { "interest": [...] } (直接上传的 JSON 文件格式)
+            douban_data = data.get('interest', [])
+        else:
+            # 格式3: [...] (直接的列表格式)
+            if isinstance(data, list):
+                douban_data = data
+        
+        if not douban_data:
+            logger.warning(f"User {current_user.username} attempted to upload empty Douban data")
             raise HTTPException(status_code=400, detail="Douban data is required")
         
-        # 豆瓣数据同步函数不接受直接的数据列表，这里改为直接保存到文件再同步
-        import tempfile
+        logger.info(f"Received {len(douban_data)} Douban items for upload")
         
-        # 创建临时文件保存豆瓣数据
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False, encoding='utf-8') as f:
-            json.dump(data.data, f)
-            temp_file_path = f.name
+        # 直接调用豆瓣数据同步函数，传递 JSON 数据
+        logger.info("Calling sync_user_collections_douban function")
+        import_count = await sync_user_collections_douban(current_user.id, db, douban_data)
+        logger.info(f"sync_user_collections_douban completed successfully, imported {import_count} items")
         
-        try:
-            # 调用豆瓣数据同步函数
-            import_count = await sync_user_collections_douban(current_user.id, db, temp_file_path)
-        finally:
-            # 清理临时文件
-            import os
-            os.unlink(temp_file_path)
+        logger.info(f"--- Douban upload completed successfully for user {current_user.username}, imported {import_count} items ---)")
         
         return {
             "message": f"Successfully imported {import_count} Douban items for user {current_user.username}",
             "username": current_user.username,
             "sync_count": import_count,
             "import_count": import_count,
-            "subject_type": data.subject_type,
+            "subject_type": data.get('subject_type'),
             "source": "douban"
         }
     except json.JSONDecodeError as e:
+        logger.error(f"JSON decode error during Douban upload: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Invalid JSON data: {str(e)}")
     except ValueError as e:
+        logger.error(f"Value error during Douban upload: {str(e)}")
         raise HTTPException(status_code=400, detail=f"Data validation failed: {str(e)}")
     except Exception as e:
+        logger.error(f"Unexpected error during Douban upload: {str(e)}")
+        import traceback
+        logger.error(f"Error traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
