@@ -4,18 +4,15 @@ uvicorn[standard]>=0.20.0
 
 # 数据库/ORM
 sqlmodel>=0.0.10
+sqlalchemy>=2.0.0
 asyncpg>=0.28.0
 aioqlite>=0.19.0
 alembic>=1.10.0
 
 # 配置管理
+pydantic>=2.0.0
 pydantic-settings>=2.0.0
 python-dotenv>=1.0.0
-
-# AI/Agent
-langgraph>=0.1.0
-langchain>=0.1.0
-langchain-openai>=0.0.1
 
 # 工具
 httpx>=0.24.0
