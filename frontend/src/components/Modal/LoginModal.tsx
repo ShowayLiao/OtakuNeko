@@ -215,6 +215,7 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }: LoginModalProps) => {
         centered
         width={400}
         okButtonProps={{ loading }}
+        mask={{ closable: true }}
       >
         {error && (
           <Flexbox 

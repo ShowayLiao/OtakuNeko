@@ -1,55 +1,51 @@
 # Web 框架
-fastapi>=0.127.0
-uvicorn[standard]>=0.40.0
+# FastAPI 0.100+ 完美支持 Pydantic V2，放宽限制让它适配 Starlette
+fastapi>=0.109.0 
+uvicorn[standard]>=0.27.0
 
 # 数据库/ORM
-sqlmodel>=0.0.27
-sqlalchemy>=2.0.45
-asyncpg>=0.31.0
-aiosqlite>=0.22.0
-alembic>=1.17.2
+# SQLModel 对 SQLAlchemy 和 Pydantic 的版本很敏感
+# 0.0.14+ 开始支持 Pydantic V2，建议不锁死上限，让它自动匹配 SQLAlchemy
+sqlmodel>=0.0.16
+sqlalchemy>=2.0.25
+aiosqlite>=0.20.0
+alembic>=1.13.0
 
 # 配置管理
-pydantic>=2.12.5
-pydantic-settings>=2.12.0
-python-dotenv>=1.2.1
+# Pydantic 2.x 是核心，必须保留，但不要锁死在 2.12.5 这种高位
+pydantic>=2.6.0 
+pydantic-settings>=2.1.0
+python-dotenv>=1.0.0
 
 # 工具
-httpx>=0.28.0
+httpx>=0.26.0
 
 # 缓存
 fastapi-cache2[redis]>=0.2.2
 
 # 认证和安全
-python-jose[cryptography]>=3.5.0
+# python-jose 维护较慢，建议安装 cryptography 扩展以防报错
+python-jose[cryptography]>=3.3.0
 passlib[bcrypt]>=1.7.4
 
 # 日志处理
-concurrent-log-handler>=0.9.28
+concurrent-log-handler>=0.9.20
 
 # 语言模型
-langchain>=1.2.0
-langchain-core>=1.2.5
-langchain-openai>=1.1.6
-langgraph>=1.0.5
-langgraph-checkpoint>=3.0.1
-langgraph-prebuilt>=1.0.5
-langgraph-sdk>=0.3.1
-langsmith>=0.5.0
-openai>=2.14.0
-
-# 测试
-pytest>=9.0.2
-pytest-asyncio>=1.3.0
+openai>=2.20.0
 
 # 其他依赖
-annotated-doc>=0.0.4
-anyio>=4.12.0
-certifi>=2025.11.12
-click>=8.3.1
-colorama>=0.4.6
-cryptography>=46.0.3
-httptools>=0.7.1
-python-multipart>=0.0.21
-redis>=4.6.0
-websockets>=15.0.1
+# 通常不需要手动指定这些库的版本，除非代码特定依赖
+# 建议移除严格限制，由主库（FastAPI/SQLModel）自动拉取兼容版本
+python-multipart>=0.0.9
+click>=8.1.0
+anyio>=4.0.0
+
+# 如果你的环境必须校验 SSL 证书，保留 certifi，但通常由 httpx 管理
+certifi>=2024.02.02
+
+# 数据库（PostgreSQL）
+asyncpg>=0.31.0
+
+# Redis 缓存
+redis>=7.1.1

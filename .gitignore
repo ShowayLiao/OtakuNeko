@@ -1,4 +1,6 @@
-# Python
+# ==========================
+# 1. Python & Backend
+# ==========================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,41 +11,20 @@ venv/
 env/
 .env/
 
-# Environment files
-.env
-.env.local
-.env.*.local
-.env.production
-.env.development
-.env.production.local
-.env.development.local
+# uv (Python manager)
+# 注意：uv.lock 必须提交，所以不要写在这里
+.uv/
 
-
-# trae
-.trae/
-
-
-
-# Database
-*.sqlite3
-*.db
-*.db-journal
-
-# Database migrations
-alembic/versions/
-
-# Testing
-htmlcov/
-.coverage
-.coverage.*
-.pytest_cache/
-.tox/
-
-# Node.js
+# ==========================
+# 2. Node.js & Frontend
+# ==========================
 node_modules/
+
+# Package Locks
+# 我们只用 pnpm，所以忽略其他包管理器的锁文件，防止混乱
 package-lock.json
 yarn.lock
-pnpm-lock.yaml
+# 注意：pnpm-lock.yaml 必须提交，所以不要写在这里！
 
 # Next.js
 .next/
@@ -51,29 +32,46 @@ out/
 .npm
 .eslintcache
 .turbo/
-
-# Build outputs
-dist/
 build/
+dist/
 *.tsbuildinfo
 
-# System
-Thumbs.db
-.DS_Store
-*.swp
-*.swo
-*~
+# Storybook
+.storybook/out/
+lobe-ui/
 
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# ==========================
+# 3. Environment & Secrets (重要!)
+# ==========================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+# 排除 Docker Compose 的环境文件
+.env.docker
 
-# Editor directories and files
+# ==========================
+# 4. Database & Migrations
+# ==========================
+*.sqlite3
+*.db
+*.db-journal
+
+# !!! 关键修正：保留 alembic/versions/ 
+# 这里只忽略 alembic 产生的缓存，不要忽略 versions 文件夹
+__pycache__/
+
+# Docker 挂载的持久化数据 (防止把几个G的数据库传上去)
+data/postgres_data/
+data/redis_data/
+# 如果你有不想提交的测试数据放在 data 根目录，保留下面这行
+data/
+
+# ==========================
+# 5. IDE & Tools
+# ==========================
+.trae/
 .vscode/
 .idea/
 *.suo
@@ -82,42 +80,41 @@ lerna-debug.log*
 *.sln
 *.sw?
 
-# Caching
-.cache/
-.next/cache/
-.prettiercache
-
-# Docker
+# ==========================
+# 6. Docker & Deployment
+# ==========================
 .dockerignore
 Dockerfile.local
-*.dockerfile
-
-# Deployment
+# 如果你的 .pem 证书是部署用的，千万别传
 *.pem
 *.pub
-.vercel/
-.netlify/
-.firebaserc
-.firebase/
 
-# Temporary files
+# ==========================
+# 7. Local Runtime (项目特有)
+# ==========================
+# Windows 一键启动脚本下载的临时环境，绝对不能传
+.runtime/
+.node_runtime/
+uv.exe
+node.exe
+npm.cmd
+npx.cmd
+
+# ==========================
+# 8. Logs & Temp
+# ==========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
 *.tmp
 *.temp
 *.bak
 
-# Data
-data/
-dumps/
-
-# Testing & Coverage
-coverage/
-.nyc_output/
-.vitest/
-
-# Storybook
-.storybook/out/
-
-# 3rd party libraries
-lobe-ui/
-
-
+# System
+Thumbs.db
+.DS_Store

@@ -1,24 +1,95 @@
 version: '3.8'
 
 services:
+  # ----------------------------------------------------------------
+  # 1. 数据库服务 (PostgreSQL)
+  # ----------------------------------------------------------------
   db:
     image: postgres:15-alpine
     container_name: otakuneko-db
+    restart: always
     environment:
+      # 这些变量用于初始化数据库
       POSTGRES_USER: otaku
       POSTGRES_PASSWORD: password
       POSTGRES_DB: otakuneko
     volumes:
+      # 数据持久化挂载
       - ./data/postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U otaku -d otakuneko"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # ----------------------------------------------------------------
+  # 2. 缓存服务 (Redis)
+  # ----------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: otakuneko-redis
+    restart: always
     volumes:
       - ./data/redis_data:/data
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  # ----------------------------------------------------------------
+  # 3. 后端服务 (Backend)
+  # ----------------------------------------------------------------
+  backend:
+    build: ./backend
+    container_name: otakuneko-backend
     restart: always
+    ports:
+      - "8000:8000"
+    # 【关键点】这里定义的变量会覆盖 .env 文件中的同名变量
+    environment:
+      # 1. 强制切换为 cloud 模式
+      - DEPLOY_MODE=cloud
+      
+      # 2. 覆盖数据库地址
+      # 在 Docker 网络中，不能用 localhost，必须用服务名 'db'
+      - POSTGRES_SERVER=db
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=otaku
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=otakuneko
+      
+      # 3. 覆盖 Redis 地址
+      # 同理，必须用服务名 'redis'
+      - REDIS_URL=redis://redis:6379/0
+      
+      # 4. 其他配置保持默认或按需覆盖
+      - PROJECT_NAME=OtakuNeko
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # ----------------------------------------------------------------
+  # 4. 前端服务 (Frontend)
+  # ----------------------------------------------------------------
+  frontend:
+    build: ./frontend
+    container_name: otakuneko-frontend
+    restart: always
+    ports:
+      - "3000:3000"
+    environment:
+      # 1. 浏览器端用的地址 (浏览器 -> 宿主机)
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      
+      # 2. 【新增】Next.js 服务端转发用的地址 (Next容器 -> Backend容器)
+      # 必须填 docker-compose 里的后端服务名 "backend"
+      - API_PROXY_URL=http://backend:8000
+    depends_on:
+      - backend

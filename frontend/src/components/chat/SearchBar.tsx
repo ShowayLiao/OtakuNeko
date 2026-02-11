@@ -252,7 +252,7 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
         onOpenChange={setOpen}
         placement="bottomLeft"
         // 抵消 Popover 的默认内边距，让我们的内容铺满
-        overlayInnerStyle={{ padding: 4 }}
+        styles={{ container: { padding: 4 } }}
       >
         <ActionIcon 
           icon={Search} 

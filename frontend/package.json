@@ -10,9 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@lobehub/icons": "^1.59.1",
-    "@lobehub/ui": "^1.153.8",
-    "antd": "^6.2.3",
+    "@lobehub/fluent-emoji": "^4.1.0",
+    "@lobehub/icons": "^4.4.3",
+    "@lobehub/ui": "^4.35.3",
+    "antd": "^6.3.0",
     "antd-style": "^4.1.0",
     "axios": "^1.13.5",
     "class-variance-authority": "^0.7.1",
@@ -24,6 +25,7 @@
     "react-intersection-observer": "^10.0.2",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.4.0",
+    "uuid": "^13.0.0",
     "zustand": "^5.0.11"
   },
   "devDependencies": {
