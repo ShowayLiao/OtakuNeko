@@ -297,6 +297,10 @@ async def upsert_collection(
     logger.info(f"Upsert collection: user_id={user_id}, source={collection_search_data.source}, source_id={collection_search_data.source_id}")
     await CollectionRepo.batch_upsert(db, upsert_list)
     
+    # 清除用户的统计数据缓存
+    await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+    logger.info(f"Cleared stats cache for user_id: {user_id}")
+    
     # 重新获取完整的收藏和关联条目信息
     final_result = await CollectionRepo.get_by_user_and_subject(db, collection_search_data)
     if not final_result:

@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 from fastapi_cache import FastAPICache
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,13 +10,91 @@ from ..models import Subject, SubjectType, User
 from ..repositories import CollectionRepo, SubjectRepo
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
-from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info
+from ..schemas.bangumi import StaffInfo, SubjectDetail
+from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info, bangumi_client
 from app.core.logging import get_logger
+from app.schemas.collection import CollectionList, CollectionSyncRequest
 
 logger = get_logger(__name__)
 
+# === 核心映射表 (The Magic) ===
+# 将 Bangumi 的非标准叫法映射为 AI 易读的叫法
+ROLE_MAPPING = {
+    "导演": "Director (监督)",
+    "总导演": "Chief Director (总监督)",
+    "脚本": "Script (脚本)",
+    "系列构成": "Series Composition (系构)",
+    "原作": "Original Creator (原作)",
+    "人物设定": "Character Design (人设)",
+    "动画制作": "Studio (制作公司)",  # 关键：把公司提取出来
+    "音乐": "Music (音乐)",
+    "美术监督": "Art Director (美监)",
+    "作画监督": "Animation Director (作监)",
+    "总作画监督": "Chief Animation Director (总作监)"
+}
 
-from app.schemas.collection import CollectionList, CollectionSyncRequest
+async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
+    """
+    获取条目详情，并自动清洗 Staff 数据。
+    """
+    try:
+        # 并行请求：同时获取"详情"和"角色/制作人员"
+        # 获取条目详情
+        subject_data = await fetch_subject_detail(subject_id)
+        
+        # 获取人员信息
+        persons_data = await bangumi_client.get_persons_raw(subject_id)
+        
+        # 处理 Staff 数据
+        raw_staff = []
+        
+        # 从 persons_data 中提取 staff 信息
+        for person in persons_data:
+            for relation in person.get('relations', []):
+                raw_staff.append({
+                    "name": person.get('name', ''),
+                    "relation": relation.get('name', '')
+                })
+        
+        # 清洗 staff 数据
+        cleaned_staff = _clean_staff_data(raw_staff)
+        
+        return SubjectDetail(
+            id=subject_data.get("id", subject_id),
+            name=subject_data.get("name", ""),
+            name_cn=subject_data.get("name_cn"),
+            summary=subject_data.get("summary", ""),
+            score=subject_data.get("rating", {}).get("score", 0.0),
+            rank=subject_data.get("rating", {}).get("rank", 0),
+            core_staff=cleaned_staff
+        )
+    except Exception as e:
+        logger.error(f"获取条目详情失败: {e}")
+        raise
+
+def _clean_staff_data(raw_staff_list: List[Dict[str, Any]]) -> List[StaffInfo]:
+    """
+    私有辅助函数：清洗 Staff 列表，过滤噪音，标准化职位。
+    """
+    cleaned = []
+    seen = set() # 用于去重
+
+    for person in raw_staff_list:
+        # API 返回的 relation 可能是 "动画制作" 或者 "CV"
+        raw_relation = person.get("relation", "")
+        name = person.get("name", "")
+        
+        # 1. 检查是否在我们的白名单里
+        if raw_relation in ROLE_MAPPING:
+            standardized_role = ROLE_MAPPING[raw_relation]
+            
+            # 2. 去重 (防止同一个人同一个职位出现两次)
+            identifier = f"{name}-{standardized_role}"
+            if identifier not in seen:
+                cleaned.append(StaffInfo(name=name, role=standardized_role))
+                seen.add(identifier)
+    
+    return cleaned
 
 async def sync_user_collections(
     user: UserRead, 

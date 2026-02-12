@@ -41,6 +41,8 @@ async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
     Returns:
         DashboardStats 对象，包含各分类的收藏数量
     """
+    logger.info(f"开始获取用户统计数据: user_id={user_id}")
+    
     statement = (
         select(Subject.type, func.count(Collection.source_id))
         .join(Collection, and_(
@@ -51,24 +53,41 @@ async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
         .group_by(Subject.type)
     )
     
+    logger.debug(f"构建的查询语句: {statement}")
+    
     result = await db.execute(statement)
     results = result.all()
     
+    logger.info(f"查询完成，获取到 {len(results)} 条结果")
+    logger.debug(f"查询结果: {results}")
+    
     stats = DashboardStats()
+    logger.info(f"初始化 DashboardStats 对象: anime={stats.anime}, books={stats.books}, music={stats.music}, games={stats.games}, real={stats.real}, total={stats.total}")
     
     for subject_type, count in results:
+        logger.debug(f"处理结果: subject_type={subject_type}, count={count}")
         if subject_type == SubjectType.ANIME:
             stats.anime = count
+            logger.info(f"设置 anime 数量: {count}")
         elif subject_type == SubjectType.BOOK:
             stats.books = count
+            logger.info(f"设置 books 数量: {count}")
         elif subject_type == SubjectType.MUSIC:
             stats.music = count
+            logger.info(f"设置 music 数量: {count}")
         elif subject_type == SubjectType.GAME:
             stats.games = count
+            logger.info(f"设置 games 数量: {count}")
         elif subject_type == SubjectType.REAL:
             stats.real = count
+            logger.info(f"设置 real 数量: {count}")
+        else:
+            logger.warning(f"未知的 subject_type: {subject_type}")
     
     # 计算总收藏数量
     stats.total = stats.anime + stats.books + stats.music + stats.games + stats.real
+    logger.info(f"计算总收藏数量: {stats.total}")
+    
+    logger.info(f"完成获取用户统计数据: user_id={user_id}, 结果: anime={stats.anime}, books={stats.books}, music={stats.music}, games={stats.games}, real={stats.real}, total={stats.total}")
     
     return stats
