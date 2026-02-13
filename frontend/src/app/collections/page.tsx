@@ -4,8 +4,11 @@ import React, { useState, useEffect } from 'react';
 import CollectionHeader from '@/components/header/CollectionHeader';
 import CollectionContent from '@/components/collection/CollectionContent';
 import { collectionService, CollectionItem } from '@/services/collections';
+import { useAppTheme } from '@/components/providers/LobeProvider';
 
 export default function CollectionPage() {
+  const { isDarkMode } = useAppTheme();
+  
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [searchKw, setSearchKw] = useState('');
   // 对应 Header 里 Segmented 的 value: 'all' | 'anime' | 'books' | 'games' | 'real'
@@ -78,10 +81,10 @@ export default function CollectionPage() {
   }, [searchKw, filterValue, statusValue, sortBy]);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-gray-50 dark:bg-neutral-900">
+    <div className={`flex flex-col h-full overflow-hidden ${isDarkMode ? 'dark:bg-neutral-900' : 'bg-gray-50'}`}>
       
       {/* 顶部 Header */}
-      <div className="flex-none bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-800 z-10">
+      <div className={`flex-none ${isDarkMode ? 'dark:bg-gray-800 border-b border-gray-800' : 'bg-white border-b border-gray-100'} z-10`}>
          <CollectionHeader 
             onSearch={setSearchKw}
             onViewModeChange={setViewMode}

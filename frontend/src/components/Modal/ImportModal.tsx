@@ -1,8 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Modal, Button, Input, Icon, TextArea, Select, Tooltip, toast, Tag } from '@lobehub/ui';
-import { Search, FileJson, Upload, FileUp, Check, BookOpen, ChevronDown, ChevronUp, XCircle, CheckCircle2, AlertCircle, Star } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Modal, Button, Input, Icon, Tooltip, toast, Tag } from '@lobehub/ui';
+import { Search, FileJson, BookOpen, XCircle, CheckCircle2, Star } from 'lucide-react';
 import { searchService, SearchResult } from '../../services/search';
 import { collectionService } from '../../services/collections';
+import { useAppTheme } from '@/components/providers/LobeProvider';
+import SubjectForm from './form/SubjectForm';
+import { FormData } from './types';
 
 // 添加加载动画样式
 const style = document.createElement('style');
@@ -14,54 +17,16 @@ style.textContent = `
 `;
 document.head.appendChild(style);
 
-// 1. 定义导入数据的类型结构（根据 bangumi_collection.json）
-interface Subject {
-  id: number;
-  date: string;
-  images?: {
-    small?: string;
-    grid?: string;
-    large?: string;
-    medium?: string;
-    common?: string;
-  };
-  name: string;
-  name_cn: string;
-  short_summary: string;
-  tags?: Array<{
-    name: string;
-    count: number;
-    total_cont: number;
-  }>;
-  score: number;
-  type: number;
-  eps: number;
-  volumes: number;
-  source: string;
-}
 
-interface FormData {
-  // Subject 相关字段
-  id?: number;
-  title: string; // 显示标题（优先使用name_cn，其次name）
-  subject: Subject;
-  cover?: string; // 封面图
-  // Collection 相关字段
-  collectionType?: number;
-  rate?: number;
-  comment?: string;
-  volStatus?: number;
-  epStatus?: number;
-  tags?: string;
-}
 
 interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
-export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
+const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   // --- 状态管理 ---
+  const { isDarkMode } = useAppTheme();
   
   // 搜索模式状态
   const [keyword, setKeyword] = useState('');
@@ -107,9 +72,6 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   
   // 控制搜索结果下拉框显示
   const [showDropdown, setShowDropdown] = useState<boolean>(false);
-  
-  // 控制subject详情展开/收起
-  const [showSubjectDetails, setShowSubjectDetails] = useState<boolean>(false);
   
   // 分页相关状态
   const [offset, setOffset] = useState<number>(0);
@@ -303,7 +265,6 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
       setKeyword('');
       setSearchResults([]);
       setShowDropdown(false);
-      setShowSubjectDetails(false);
       setJsonError('');
     } catch (error) {
       console.error('Upload error:', error);
@@ -446,10 +407,10 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                     maxHeight: '300px', 
                     overflowY: 'auto', 
                     marginTop: 4,
-                    border: '1px solid #e5e7eb', 
+                    border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`, 
                     borderRadius: 8,
                     padding: 8,
-                    backgroundColor: '#ffffff',
+                    backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
                     boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
                   }}>
                   {searchResults.map((result, index) => {
@@ -471,8 +432,8 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                           padding: 12,
                           borderRadius: 8,
                           marginBottom: 8,
-                          backgroundColor: '#ffffff',
-                          border: '1px solid #e5e7eb',
+                          backgroundColor: isDarkMode ? '#1f2937' : '#ffffff',
+                          border: `1px solid ${isDarkMode ? '#374151' : '#e5e7eb'}`,
                           cursor: 'pointer',
                           transition: 'all 0.2s'
                         }}
@@ -510,7 +471,7 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                         {/* 右侧信息 */}
                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <div style={{ fontWeight: 'bold', fontSize: 14 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: 14, color: isDarkMode ? '#f3f4f6' : '#111827' }}>
                               {subject.name_cn || subject.name}
                             </div>
                             
@@ -524,7 +485,7 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                           
                           {/* 评分信息 */}
                           {score > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#6b7280' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
                               <Icon icon={Star} size={12} style={{ color: '#f59e0b' }} />
                               <span>{score}</span>
                             </div>
@@ -532,7 +493,7 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                           
                           {/* 标签信息 */}
                           {subject.tags && subject.tags.length > 0 && (
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 11, color: '#6b7280' }}>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, fontSize: 11, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
                               {subject.tags.slice(0, 4).map((tag: { name: string }, index: number) => (
                                 <Tag key={index} color="gray" style={{ fontSize: 10, fontWeight: 500 }}>
                                   {tag.name}
@@ -554,12 +515,12 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                       padding: 12,
                       marginTop: 8,
                       borderRadius: 8,
-                      backgroundColor: '#f9fafb'
+                      backgroundColor: isDarkMode ? '#374151' : '#f9fafb'
                     }}>
                       <div style={{
                         width: 16,
                         height: 16,
-                        border: '2px solid #e5e7eb',
+                        border: `2px solid ${isDarkMode ? '#4b5563' : '#e5e7eb'}`,
                         borderTop: '2px solid #3b82f6',
                         borderRadius: '50%',
                         animation: 'spin 1s linear infinite'
@@ -574,8 +535,8 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
                       padding: 12,
                       marginTop: 8,
                       fontSize: 12,
-                      color: '#6b7280',
-                      backgroundColor: '#f9fafb',
+                      color: isDarkMode ? '#9ca3af' : '#6b7280',
+                      backgroundColor: isDarkMode ? '#374151' : '#f9fafb',
                       borderRadius: 8
                     }}>
                       没有更多结果了
@@ -608,284 +569,7 @@ export const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
           {jsonError && <div style={{ color: 'red', fontSize: 12 }}>{jsonError}</div>}
 
           {/* 2. 底部编辑区 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Subject 信息栏 */}
-            <div style={{ 
-              border: '1px solid #e5e7eb', 
-              borderRadius: 8, 
-              padding: 12,
-              background: '#f9fafb'
-            }}>
-              {/* Subject 栏头部 */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                <h4 style={{ margin: 0, fontSize: 14, fontWeight: 'bold' }}>条目信息</h4>
-                <Button 
-                  icon={showSubjectDetails ? <Icon icon={ChevronUp} /> : <Icon icon={ChevronDown} />}
-                  size="small"
-                  onClick={() => setShowSubjectDetails(!showSubjectDetails)}
-                >
-                  {showSubjectDetails ? '收起' : '展开手动编辑'}
-                </Button>
-              </div>
-              
-              {/* Subject 基本信息 */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {formData.cover && (
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <img 
-                      src={formData.cover} 
-                      alt={formData.title} 
-                      style={{ width: 80, height: 120, objectFit: 'cover', borderRadius: 4 }}
-                    />
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <div>
-                        <span style={{ fontSize: 12, color: '#666' }}>条目名称</span>
-                        <Input 
-                          value={formData.title} 
-                          onChange={(e) => setFormData({...formData, title: e.target.value})}
-                          disabled={!showSubjectDetails}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: 12, color: '#666' }}>条目类型</span>
-                          <Select
-                              placeholder="请选择条目类型"
-                              options={[
-                                  { label: '书籍/小说', value: '1' },
-                                  { label: '动画', value: '2' },
-                                  { label: '音乐', value: '3' },
-                                  { label: '游戏', value: '4' },
-                                  { label: '三次元', value: '6' }
-                              ]}
-                              style={{ width: '100%' }}
-                              value={formData.subject.type?.toString() || ''}
-                              onChange={(value) => setFormData({...formData, subject: {...formData.subject, type: parseInt(value) || 0}})}
-                              disabled={!showSubjectDetails}
-                          />
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <span style={{ fontSize: 12, color: '#666' }}>评分</span>
-                          <Input 
-                            value={formData.subject.score || ''} 
-                            onChange={(e) => setFormData({...formData, subject: {...formData.subject, score: parseFloat(e.target.value) || 0}})}
-                            disabled={!showSubjectDetails}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {!formData.cover && (
-                  <div>
-                    <div>
-                      <span style={{ fontSize: 12, color: '#666' }}>条目名称</span>
-                      <Input 
-                        value={formData.title} 
-                        onChange={(e) => setFormData({...formData, title: e.target.value})}
-                        disabled={!showSubjectDetails}
-                      />
-                    </div>
-                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>条目类型</span>
-                        <Select
-                            placeholder="请选择条目类型"
-                            options={[
-                                { label: '书籍/小说', value: '1' },
-                                { label: '动画', value: '2' },
-                                { label: '音乐', value: '3' },
-                                { label: '游戏', value: '4' },
-                                { label: '三次元', value: '6' }
-                            ]}
-                            style={{ width: '100%' }}
-                            value={formData.subject.type?.toString() || ''}
-                            onChange={(value) => setFormData({...formData, subject: {...formData.subject, type: parseInt(value) || 0}})}
-                            disabled={!showSubjectDetails}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>网站评分</span>
-                        <Input 
-                          value={formData.subject.score || ''} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, score: parseFloat(e.target.value) || 0}})}
-                          disabled={!showSubjectDetails}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* 展开后的详细信息 */}
-                {showSubjectDetails && (
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid #e5e7eb' }}>
-                    <div>
-                      <span style={{ fontSize: 12, color: '#666' }}>条目简介</span>
-                      <TextArea 
-                        resize={false} 
-                        value={formData.subject.short_summary} 
-                        onChange={(e) => setFormData({...formData, subject: {...formData.subject, short_summary: e.target.value}})}
-                      />
-                    </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>原始名称</span>
-                        <Input 
-                          value={formData.subject.name} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, name: e.target.value}})}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>中文名称</span>
-                        <Input 
-                          value={formData.subject.name_cn} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, name_cn: e.target.value}})}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>发售/放送日期</span>
-                        <Input 
-                          value={formData.subject.date} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, date: e.target.value}})}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>集数</span>
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          value={formData.subject.eps} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, eps: parseInt(e.target.value) || 0}})}
-                        />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>卷数</span>
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          value={formData.subject.volumes} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, volumes: parseInt(e.target.value) || 0}})}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>来源</span>
-                        <Input 
-                          value={formData.subject.source} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, source: e.target.value}})}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ fontSize: 12, color: '#666' }}>源ID</span>
-                        <Input 
-                          type="number" 
-                          min="0" 
-                          value={formData.subject.id} 
-                          onChange={(e) => setFormData({...formData, subject: {...formData.subject, id: parseInt(e.target.value) || 0}})}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      <span style={{ fontSize: 12, color: '#666' }}>封面图 URL</span>
-                      <Input 
-                        value={formData.cover} 
-                        onChange={(e) => setFormData({...formData, cover: e.target.value})}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            
-            {/* Collection 信息栏 */}
-            <div style={{ 
-              border: '1px solid #e5e7eb', 
-              borderRadius: 8, 
-              padding: 12,
-              background: '#f9fafb'
-            }}>
-              <h4 style={{ marginBottom: 12, fontSize: 14, fontWeight: 'bold' }}>收藏信息</h4>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div>
-                    <span style={{ fontSize: 12, color: '#666' }}>收藏类型</span>
-                    <Select
-                        placeholder="请选择收藏类型"
-                        options={[
-                            { label: '想看', value: '1' },
-                            { label: '看过', value: '2' },
-                            { label: '在看', value: '3' },
-                            { label: '搁置', value: '4' },
-                            { label: '抛弃', value: '5' }
-                        ]}
-                        style={{ width: '100%' }}
-                        value={formData.collectionType?.toString() || ''}
-                        onChange={(value) => setFormData({...formData, collectionType: parseInt(value) || 0})}
-                    />
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 12, color: '#666' }}>用户评分 (0-10)</span>
-                    <Input 
-                        type="number" 
-                        min="0" 
-                        max="10" 
-                        placeholder="0-10" 
-                        value={formData.rate || ''}
-                        onChange={(e) => setFormData({...formData, rate: parseInt(e.target.value) || 0})}
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <span style={{ fontSize: 12, color: '#666' }}>评论</span>
-                  <TextArea 
-                      resize={false} 
-                      placeholder="请输入评论"
-                      value={formData.comment || ''}
-                      onChange={(e) => setFormData({...formData, comment: e.target.value})}
-                  />
-                </div>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  <div>
-                    <span style={{ fontSize: 12, color: '#666' }}>卷数状态</span>
-                    <Input 
-                        type="number" 
-                        min="0" 
-                        placeholder="0" 
-                        value={formData.volStatus || ''}
-                        onChange={(e) => setFormData({...formData, volStatus: parseInt(e.target.value) || 0})}
-                    />
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 12, color: '#666' }}>集数状态</span>
-                    <Input 
-                        type="number" 
-                        min="0" 
-                        placeholder="0" 
-                        value={formData.epStatus || ''}
-                        onChange={(e) => setFormData({...formData, epStatus: parseInt(e.target.value) || 0})}
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <span style={{ fontSize: 12, color: '#666' }}>标签</span>
-                  <Input 
-                      placeholder="请输入标签，用逗号分隔" 
-                      value={formData.tags || ''}
-                      onChange={(e) => setFormData({...formData, tags: e.target.value})}
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
+          <SubjectForm value={formData} onChange={setFormData} />
         </div>
       </Modal>
     </>

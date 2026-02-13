@@ -3,6 +3,7 @@ import { Modal, Input, Switch, Button, Badge, Space, Alert } from 'antd';
 import { Lock, Check, AlertCircle, RefreshCw, Trash2, ChevronRight, Server, Cloud, Globe } from 'lucide-react';
 import { useApiStore, ProviderConfig } from '@/store/useApiStore';
 import type { CheckboxChangeEvent } from 'antd';
+import { useAppTheme } from '@/components/providers/LobeProvider';
 
 interface ApiKeyModalProps {
   open: boolean;
@@ -104,6 +105,7 @@ const providerInfo = {
 };
 
 const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
+  const { isDarkMode } = useAppTheme();
   const { config, setProviderConfig, getProviderConfig } = useApiStore();
   const [selectedProvider, setSelectedProvider] = useState<keyof typeof config>('openai');
   const [checking, setChecking] = useState(false);
@@ -214,7 +216,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
     >
       <div className="flex h-full overflow-hidden">
         {/* 左侧服务商列表 */}
-        <div className="w-1/4 bg-gray-50 border-r border-gray-200 overflow-y-auto">
+        <div className={`w-1/4 ${isDarkMode ? 'dark:bg-gray-800 border-r border-gray-700' : 'bg-gray-50 border-r border-gray-200'} overflow-y-auto`}>
           {Object.keys(config).map((provider) => {
             const providerKey = provider as keyof typeof config;
             const isActive = providerKey === selectedProvider;
@@ -224,13 +226,15 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
               <div
                 key={provider}
                 className={`flex items-center justify-between px-4 py-3 cursor-pointer transition-colors ${
-                  isActive ? 'bg-gray-200' : 'hover:bg-gray-100'
+                  isActive 
+                    ? (isDarkMode ? 'dark:bg-gray-700' : 'bg-gray-200') 
+                    : (isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100')
                 }`}
                 onClick={() => handleProviderSelect(providerKey)}
               >
                 <div className="flex items-center space-x-2">
-                  <span className="text-gray-500">{providerInfo[providerKey]?.icon || <Server className="w-4 h-4" />}</span>
-                  <span className="text-sm font-medium">{providerInfo[providerKey]?.name || provider}</span>
+                  <span className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>{providerInfo[providerKey]?.icon || <Server className="w-4 h-4" />}</span>
+                  <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>{providerInfo[providerKey]?.name || provider}</span>
                 </div>
                 {isEnabled && (
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
@@ -241,14 +245,14 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
         </div>
 
         {/* 右侧详细配置表单 */}
-        <div className="w-3/4 p-6 overflow-y-auto">
+        <div className={`w-3/4 p-6 overflow-y-auto ${isDarkMode ? 'dark:bg-gray-900' : 'bg-white'}`}>
           {selectedProvider && providerInfo[selectedProvider] && (
             <>
               {/* 顶部：服务商名称、描述、全局 Switch 开关 */}
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className="text-lg font-semibold">{providerInfo[selectedProvider].name}</h3>
-                  <p className="text-sm text-gray-500 mt-1">{providerInfo[selectedProvider].description}</p>
+                  <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{providerInfo[selectedProvider].name}</h3>
+                  <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>{providerInfo[selectedProvider].description}</p>
                 </div>
                 <Switch
                   checked={isEnabled}
@@ -263,7 +267,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 {/* API Key */}
                 {providerInfo[selectedProvider].fields.includes('apiKey') && selectedProvider !== 'ollama' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>API Key</label>
                     <Input
                       type="password"
                       value={currentConfig.apiKey}
@@ -278,7 +282,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 {/* Endpoint */}
                 {providerInfo[selectedProvider].fields.includes('endpoint') && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Endpoint</label>
+                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Endpoint</label>
                     <Input
                       value={currentConfig.endpoint || ''}
                       onChange={(e) => handleConfigUpdate('endpoint', e.target.value)}
@@ -291,7 +295,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 {/* Proxy URL (仅 OpenAI) */}
                 {selectedProvider === 'openai' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Proxy URL (选填)</label>
+                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Proxy URL (选填)</label>
                     <Input
                       value={currentConfig.proxyUrl || ''}
                       onChange={(e) => handleConfigUpdate('proxyUrl', e.target.value)}
@@ -304,7 +308,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 {/* Deployment Name (仅 Azure) */}
                 {selectedProvider === 'azure' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Deployment Name</label>
+                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Deployment Name</label>
                     <Input
                       value={currentConfig.deploymentName || ''}
                       onChange={(e) => handleConfigUpdate('deploymentName', e.target.value)}
@@ -317,7 +321,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 {/* API Version (仅 Azure) */}
                 {selectedProvider === 'azure' && (
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">API Version</label>
+                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>API Version</label>
                     <Input
                       value={currentConfig.apiVersion || ''}
                       onChange={(e) => handleConfigUpdate('apiVersion', e.target.value)}

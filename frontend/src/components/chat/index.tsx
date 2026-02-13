@@ -3,10 +3,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 // 1. 引入图标并重命名，防止命名冲突
-import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare, Copy } from 'lucide-react';
 import { theme } from 'antd';
 import { ChatItem } from '@lobehub/ui/chat';
-import { ActionIcon, DraggablePanel } from '@lobehub/ui';
+import { ActionIcon, ActionIconGroup, DraggablePanel } from '@lobehub/ui';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ModelSelector } from './ModelSelector';
 import SearchTrigger, { SearchResultItem } from './SearchBar';
@@ -260,8 +260,32 @@ export default function ChatPage() {
         >
           <div className="max-w-3xl mx-auto space-y-6">
             
-              {currentMessages.map((msg: Message) => (
-                <>
+              {/* 显示空消息提示 */}
+              {currentMessages.length === 0 && (
+                <div style={{ textAlign: 'center', padding: 48, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
+                  <MessageSquare size={32} style={{ margin: '0 auto 16px' }} />
+                  <p style={{ fontSize: 16, marginBottom: 8 }}>没有消息</p>
+                  <p style={{ fontSize: 14 }}>开始与 OtakuNeko 聊天吧</p>
+                </div>
+              )}
+
+              {/* 显示消息列表 */}
+              {currentMessages.length > 0 && currentMessages.map((msg: Message) => {
+                // 复制功能处理
+                const handleCopy = () => {
+                  navigator.clipboard.writeText(msg.content);
+                };
+                
+                // 定义actions项目
+                const items = [
+                  {
+                    key: 'copy',
+                    icon: Copy,
+                    label: '复制',
+                  },
+                ];
+                
+                return (
                   <ChatItem
                     key={msg.id}
                     placement={msg.role === 'user' ? 'right' : 'left'}
@@ -291,29 +315,44 @@ export default function ChatPage() {
                       backgroundColor: msg.role === 'user' ? token.colorWarning : undefined,
                     }
                   }}
-                  />
                   
-                  {/* 添加引用胶囊，作为ChatItem的兄弟元素 */}
-                  {msg.role === 'user' && msg.extra?.contextItems?.length > 0 && (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8, justifyContent: 'flex-end' }}>
-                      {msg.extra.contextItems.map((ref: any) => (
-                        <div
-                          key={ref.id}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 4,
-                            fontSize: 12, padding: '4px 8px', borderRadius: 12,
-                            background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                            color: isDarkMode ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)',
-                          }}
-                        >
-                          <img src={ref.cover} alt={ref.title} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
-                          <span>{ref.title}</span>
+                  // 添加actions接口，包含引用胶囊和复制按钮
+                  actions={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* 引用胶囊 */}
+                      {msg.role === 'user' && msg.extra?.contextItems?.length > 0 && (
+                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                          {msg.extra.contextItems.map((ref: any) => (
+                            <div
+                              key={ref.id}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 4,
+                                fontSize: 12, padding: '4px 8px', borderRadius: 12,
+                                background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+                                color: isDarkMode ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)',
+                              }}
+                            >
+                              <img src={ref.cover} alt={ref.title} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
+                              <span>{ref.title}</span>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      )}
+                      
+                      {/* 操作按钮组 */}
+                      <ActionIconGroup
+                        items={items}
+                        onActionClick={(action) => {
+                          if (action.key === 'copy') {
+                            handleCopy();
+                          }
+                        }}
+                      />
                     </div>
-                  )}
-                </>
-              ))}
+                  }
+                  />
+                );
+              })}
 
               {/* 修复：只有当消息列表最后一条不是 assistant 角色时，才显示 Loading 气泡 */}
               {loading && currentMessages.length > 0 && currentMessages[currentMessages.length - 1].role !== 'assistant' && (
@@ -330,6 +369,13 @@ export default function ChatPage() {
                   avatarProps={{
                     size: 40,
                   }}
+                  
+                  // 添加actions接口
+                  actions={
+                    <ActionIconGroup
+                      items={[]}
+                    />
+                  }
                 />
               )}
 
