@@ -277,15 +277,23 @@ class CollectionRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
+            from fastapi_cache import FastAPICache
+            
             result = await CollectionRepo.get_by_user_and_subject(db, search_data)
             if not result:
                 return False
             
             # 解包元组，获取Collection对象
             collection, _ = result
+            user_id = collection.user_id
             
             await db.delete(collection)
             await db.commit()
+            
+            # 清除用户的统计数据缓存
+            await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+            logger.info(f"Cleared stats cache for user_id: {user_id}")
+            
             return True
         except SQLAlchemyError as e:
             logger.error(f"删除收藏记录失败: {e}")
@@ -419,6 +427,7 @@ class CollectionRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
+            from fastapi_cache import FastAPICache
             from ..core.config import settings
             if settings.DEPLOY_MODE == "local":
                 from sqlalchemy.dialects.sqlite import insert
@@ -433,6 +442,11 @@ class CollectionRepo:
             
             # 固定唯一键字段
             unique_fields = ['user_id', 'source', 'source_id']
+            
+            # 收集所有涉及的用户ID
+            user_ids = set()
+            for item in data_list.collections:
+                user_ids.add(item.user_id)
             
             # 准备数据列表
             items_data = [item.model_dump() for item in data_list.collections]
@@ -458,6 +472,11 @@ class CollectionRepo:
             
             await db.execute(stmt)
             await db.commit()
+            
+            # 清除所有涉及用户的统计数据缓存
+            for user_id in user_ids:
+                await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+                logger.info(f"Cleared stats cache for user_id: {user_id}")
             
             logger.info(f"批量 Upsert 收藏记录成功，处理了 {len(data_list.collections)} 条记录")
         except SQLAlchemyError as e:

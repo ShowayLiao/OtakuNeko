@@ -19,6 +19,12 @@ from app.schemas.agent import (
     Message,
     ChatRequest
 )
+from app.schemas.rss import (
+    AddRssFeedRequest,
+    RemoveRssItemRequest,
+    SetRssRuleRequest,
+    RemoveRssRuleRequest
+)
 
 __all__ = [
     "UserBase",
@@ -33,5 +39,9 @@ __all__ = [
     "CollectionRead",
     "CollectionList",
     "Message",
-    "ChatRequest"
+    "ChatRequest",
+    "AddRssFeedRequest",
+    "RemoveRssItemRequest",
+    "SetRssRuleRequest",
+    "RemoveRssRuleRequest"
 ]

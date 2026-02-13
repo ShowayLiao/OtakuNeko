@@ -9,7 +9,6 @@ from app.core.logging import get_logger
 # 缓存相关导入
 from fastapi_cache import FastAPICache
 from fastapi_cache.coder import PickleCoder
-from fastapi_cache.backends.redis import RedisBackend
 from fastapi_cache.backends.inmemory import InMemoryBackend  # <--- 必须导入这个
 from redis.asyncio import Redis
 import logging
@@ -53,18 +52,19 @@ async def lifespan(app: FastAPI):
             # 测试连接
             await redis.ping()
             
-            # 初始化FastAPICache
+            # 初始化FastAPICache (使用内存缓存作为备选方案)
+            # 注意：由于版本兼容性问题，暂时使用内存缓存
             FastAPICache.init(
-                RedisBackend(redis),
+                InMemoryBackend(),
                 expire=60,
                 prefix="fastapi-cache-v2",
                 coder=PickleCoder
             )
-            logger.info("✅ Redis cache initialized successfully")
+            logger.info("✅ Cache initialized successfully (using InMemoryBackend)")
             
         except Exception as e:
             # 生产环境如果 Redis 挂了，自动降级到内存，保证服务不崩
-            logger.error(f"❌ Failed to initialize Redis cache: {e}")
+            logger.error(f"❌ Failed to initialize Redis: {e}")
             logger.warning("⚠️ Falling back to InMemoryBackend")
             FastAPICache.init(
                 InMemoryBackend(),

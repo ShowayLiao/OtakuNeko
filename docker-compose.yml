@@ -69,14 +69,44 @@ services:
       
       # 4. 其他配置保持默认或按需覆盖
       - PROJECT_NAME=OtakuNeko
+      
+      # 5. QBittorrent 配置
+      - ENABLE_QB_PROXY=false
+      - QB_HOST=http://qbittorrent:8080
+      - QB_USERNAME=admin
+      - QB_PASSWORD=your_password
     depends_on:
       db:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qbittorrent:
+        condition: service_started
 
   # ----------------------------------------------------------------
-  # 4. 前端服务 (Frontend)
+  # 4. 下载器服务 (qBittorrent)
+  # ----------------------------------------------------------------
+  qbittorrent:
+    image: linuxserver/qbittorrent:latest
+    container_name: otakuneko-qbittorrent
+    restart: always
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Asia/Shanghai
+      - WEBUI_PORT=8080
+      - USER=admin
+      - PASS=your_password
+    volumes:
+      - ./data/qbittorrent_config:/config
+      - ./data/qbittorrent_downloads:/downloads
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+
+  # ----------------------------------------------------------------
+  # 5. 前端服务 (Frontend)
   # ----------------------------------------------------------------
   frontend:
     build: ./frontend

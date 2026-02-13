@@ -2,6 +2,8 @@ import { Empty, Tag ,ActionIcon} from '@lobehub/ui';
 import { SpotlightCard } from '@lobehub/ui/awesome';
 import { Search, Rss, Plus, Calendar, MonitorPlay } from 'lucide-react'; // 引入图标
 import { useAppTheme } from '@/components/providers/LobeProvider';
+import { useState } from 'react';
+import SmartSubscriptionModal from '@/components/Modal/SmartSubscriptionModal';
 
 const BilibiliIcon = (props: any) => {
   // 从 props 中分离出 style 和其他属性，以免冲突
@@ -41,6 +43,8 @@ interface CollectionContentProps {
 
 export default function CollectionContent({ items = [], onOpenDetail }: CollectionContentProps) {
   const { isDarkMode } = useAppTheme();
+  const [isSubscriptionModalOpen, setIsSubscriptionModalOpen] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
   
   if (!items || items.length === 0) {
     return <Empty description="暂无内容" image="simple" />;
@@ -97,7 +101,16 @@ export default function CollectionContent({ items = [], onOpenDetail }: Collecti
           const handleRSS = (e: React.MouseEvent) => {
             e.stopPropagation();
             console.log('触发 RSS 订阅逻辑', subject?.id);
-            // 这里调用你的后端 API
+            
+            // 获取中文名称
+            const name_cn = subject?.name_cn || subject?.name || item.title;
+            
+            // 构建 comicat 搜索 RSS URL（国内友好）
+            const rssUrlTemplate = process.env.NEXT_PUBLIC_RSS_URL_TEMPLATE || 'https://comicat.org/rss-%s.xml';
+            const rssUrl = rssUrlTemplate.replace('%s', encodeURIComponent(name_cn));
+            
+            setSelectedItem({ ...item, name_cn, rssUrl });
+            setIsSubscriptionModalOpen(true);
           };
 
           return (
@@ -196,6 +209,23 @@ export default function CollectionContent({ items = [], onOpenDetail }: Collecti
               </div>
             </div>
           );
+        }}
+      />
+
+      {/* 智能订阅模态框 */}
+      <SmartSubscriptionModal
+        open={isSubscriptionModalOpen}
+        onClose={() => {
+          setIsSubscriptionModalOpen(false);
+          setSelectedItem(null);
+        }}
+        onSubmit={(data) => {
+          console.log('订阅数据:', data);
+          // 这里可以添加保存订阅的逻辑
+        }}
+        initialValues={{
+          rssUrl: selectedItem?.rssUrl,
+          name: selectedItem?.name_cn
         }}
       />
     </div>

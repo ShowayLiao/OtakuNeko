@@ -8,6 +8,7 @@ from app.db.database import get_session
 from app.models.user import User
 from app.schemas.user import UserRead
 from app.core.security import decode_access_token
+from app.core.config import settings
 
 security = HTTPBearer()
 
@@ -67,3 +68,20 @@ async def get_current_user(
         raise credentials_exception
     
     return UserRead.model_validate(user)
+
+
+def check_qb_enabled():
+    """
+    检查 QBittorrent 代理是否启用
+    
+    Returns:
+        None
+        
+    Raises:
+        HTTPException: 当 ENABLE_QB_PROXY 为 false 时返回 403 错误
+    """
+    if not settings.ENABLE_QB_PROXY:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="QBittorrent proxy is disabled",
+        )

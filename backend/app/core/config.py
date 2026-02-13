@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "password"
     POSTGRES_DB: str = "otakuneko"
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
+    
+    # 4. QBittorrent 配置
+    ENABLE_QB_PROXY: bool = True
+    QB_HOST: str = "http://localhost:8080"
+    QB_USERNAME: str = "admin"
+    QB_PASSWORD: str = "123456"
 
     # 4. 【核心逻辑】自动生成 DATABASE_URL
     @computed_field

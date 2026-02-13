@@ -21,7 +21,7 @@ python-dotenv>=1.0.0
 httpx>=0.26.0
 
 # 缓存
-fastapi-cache2[redis]>=0.2.2
+fastapi-cache2[redis]
 
 # 认证和安全
 # python-jose 维护较慢，建议安装 cryptography 扩展以防报错
@@ -49,3 +49,6 @@ asyncpg>=0.31.0
 
 # Redis 缓存
 redis>=7.1.1
+
+# qBittorrent API
+qbittorrent-api>=2024.11.0
