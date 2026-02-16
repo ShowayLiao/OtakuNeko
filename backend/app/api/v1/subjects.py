@@ -5,7 +5,7 @@ from app.db.database import get_session
 from app.services.subject_service import (
     search_mixed, search_subject_by_name, search_subject_cloud,
     create_subject, delete_subject, update_subject as update_subject_service,
-    get_subject_by_source
+    get_subject_by_source, sync_subject_air_time
 )
 from app.services.bangumi_service import sync_subject_detail
 from app.schemas.adaptersV2 import bangumi_subject_to_subjectlist,UnifiedCollectionSubject
@@ -225,3 +225,35 @@ async def delete_subject_endpoint(
         return {"status": "success", "message": f"条目 {subject_id} 删除成功"}
     else:
         raise HTTPException(status_code=404, detail=f"条目 {subject_id} 不存在")
+
+
+@router.post("/{id}/sync", response_model=dict)
+async def sync_subject_air_time_endpoint(
+    id: str,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    手动触发番剧时间同步
+    
+    Args:
+        id: Bangumi 番剧ID
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        同步结果，包含成功状态和消息
+        
+    Raises:
+        HTTPException: 当同步失败时返回错误
+    """
+    try:
+        # 调用服务层的 sync_subject_air_time 函数
+        success = await sync_subject_air_time(db, id)
+        
+        if success:
+            return {"status": "success", "message": f"番剧 {id} 时间同步成功"}
+        else:
+            raise HTTPException(status_code=404, detail=f"番剧 {id} 不存在或同步失败")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"同步番剧时间失败: {str(e)}")

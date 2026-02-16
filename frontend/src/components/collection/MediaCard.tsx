@@ -1,16 +1,17 @@
-import { Tag, ActionIcon } from '@lobehub/ui';
-import { Rss, Plus } from 'lucide-react';
+import { Tag, ActionIcon, Tooltip } from '@lobehub/ui';
+import { Rss, Plus, Tv, Clock, Film, Book } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import BilibiliIcon from './BilibiliIcon';
 
 interface MediaCardProps {
   data: any;
-  variant?: 'compact' | 'standard' | 'large'; // 定义多种尺寸
+  variant?: 'compact' | 'standard' | 'large' | 'timeline'; // 定义多种尺寸
   onOpenDetail?: (data: any) => void;
   onRSS?: (data: any) => void;
+  currentHeight?: number; // 传入当前容器高度
 }
 
-export const MediaCard = ({ data, variant = 'standard', onOpenDetail, onRSS }: MediaCardProps) => {
+export const MediaCard = ({ data, variant = 'standard', onOpenDetail, onRSS, currentHeight }: MediaCardProps) => {
   const { isDarkMode } = useAppTheme();
   
   // --- 数据清洗 (逻辑封装在内部) ---
@@ -26,6 +27,7 @@ export const MediaCard = ({ data, variant = 'standard', onOpenDetail, onRSS }: M
     compact: { width: '100%', showTags: false, titleLines: 1 },
     standard: { width: '100%', showTags: true, titleLines: 2 },
     large: { width: '100%', showTags: true, titleLines: 2 },
+    timeline: { width: '100%', showTags: false, titleLines: 1 },
   };
 
   const handleSearch = (e: React.MouseEvent) => {
@@ -41,6 +43,140 @@ export const MediaCard = ({ data, variant = 'standard', onOpenDetail, onRSS }: M
     onRSS?.(data);
   };
 
+  if (variant === 'timeline') {
+    // 确定当前高度模式
+    const getHeightMode = () => {
+      if (!currentHeight) return 'medium'; // 默认中等高度
+      if (currentHeight < 40) return 'small';
+      if (currentHeight < 50) return 'medium';
+      return 'large';
+    };
+    
+    const heightMode = getHeightMode();
+    
+    // 选择图标
+    const getCategoryIcon = () => {
+      const category = data.category || 'New';
+      switch (category) {
+        case 'Meal': return <Tv size={heightMode === 'small' ? 12 : 16} />;
+        case 'Backlog': return <Film size={heightMode === 'small' ? 12 : 16} />;
+        case 'Reading': return <Book size={heightMode === 'small' ? 12 : 16} />;
+        default: return <Clock size={heightMode === 'small' ? 12 : 16} />;
+      }
+    };
+    
+    // 准备 Tooltip 内容
+    const tooltipContent = `${title}${data.time ? ` - ${data.time}` : ''}`;
+    
+    // 渲染不同高度模式的内容
+    const renderContent = () => {
+      switch (heightMode) {
+        case 'small':
+          return (
+            <div className="flex items-center gap-2 h-full pl-2">
+              <div className={`flex-shrink-0 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                {getCategoryIcon()}
+              </div>
+              <span className={`text-xs ${isDarkMode ? 'text-slate-200' : 'text-slate-800'} truncate`}>
+                {title || '无标题'}
+              </span>
+            </div>
+          );
+          
+        case 'medium':
+          return (
+            <div className="flex items-center gap-2 h-full pl-1">
+              <div className={`w-8 h-8 flex-shrink-0 relative overflow-hidden rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                {cover ? (
+                  <img 
+                    src={cover} 
+                    alt={title} 
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className={`w-full h-full flex items-center justify-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {getCategoryIcon()}
+                  </div>
+                )}
+              </div>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'} truncate`}>
+                {title || '无标题'}
+              </span>
+            </div>
+          );
+          
+        case 'large':
+          return (
+            <div className="flex flex-row h-full overflow-hidden">
+              {/* 左侧封面 - 3:4 比例 */}
+              <div className={`w-12 aspect-[3/4] flex-none relative overflow-hidden ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                {cover ? (
+                  <img 
+                    src={cover} 
+                    alt={title} 
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                  />
+                ) : (
+                  <div className={`w-full h-full flex items-center justify-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {getCategoryIcon()}
+                  </div>
+                )}
+              </div>
+
+              {/* 右侧内容 */}
+              <div className={`p-2 flex flex-col flex-1 gap-1 overflow-hidden`}>
+                <h3 className={`font-medium text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'} line-clamp-2 leading-tight`} title={title}>
+                  {title || '无标题'}
+                </h3>
+                <span className={`text-xs ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} truncate`}>
+                  {data.time || eps !== 'N/A' ? `${eps}集` : ''}
+                </span>
+              </div>
+            </div>
+          );
+          
+        default:
+          return (
+            <div className="flex items-center gap-2 h-full pl-2">
+              <div className={`w-8 h-8 flex-shrink-0 relative overflow-hidden rounded-full ${isDarkMode ? 'bg-slate-700' : 'bg-slate-100'}`}>
+                {cover ? (
+                  <img 
+                    src={cover} 
+                    alt={title} 
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className={`w-full h-full flex items-center justify-center ${isDarkMode ? 'text-slate-500' : 'text-slate-400'}`}>
+                    {getCategoryIcon()}
+                  </div>
+                )}
+              </div>
+              <span className={`text-sm ${isDarkMode ? 'text-slate-200' : 'text-slate-800'} truncate`}>
+                {title || '无标题'}
+              </span>
+            </div>
+          );
+      }
+    };
+    
+    return (
+      <Tooltip title={tooltipContent}>
+        <div 
+          className={`group flex flex-row h-full overflow-hidden cursor-pointer
+                    transition-all duration-300 group-hover:shadow-md z-10`}
+          style={{ width: sizeConfig[variant].width }}
+          onClick={() => onOpenDetail?.(data)}
+        >
+          {renderContent()}
+        </div>
+      </Tooltip>
+    );
+  }
+
+  // Default layout for other variants
   return (
     <div 
       className={`group flex flex-col h-full overflow-hidden cursor-pointer ${isDarkMode ? 'dark:bg-slate-800' : 'bg-white'}`}

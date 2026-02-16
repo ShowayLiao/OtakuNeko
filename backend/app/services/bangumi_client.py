@@ -208,6 +208,32 @@ class BangumiClient:
                 logger.error(f"网络请求错误: {e}")
                 raise
 
+    @cache(expire=86400, namespace="bangumi")
+    async def get_calendar(self) -> Dict:
+        """
+        从 Bangumi API 获取每日放送信息
+        
+        Returns:
+            包含每日放送信息的字典
+            
+        Raises:
+            httpx.HTTPStatusError: 请求失败时抛出
+            httpx.RequestError: 网络错误时抛出
+        """
+        url = f"https://api.bgm.tv/calendar"
+        
+        async with httpx.AsyncClient(headers=self.HEADERS) as client:
+            try:
+                response = await client.get(url, timeout=30.0)
+                response.raise_for_status()  # 检查请求状态
+                return response.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Bangumi API 请求失败: {e.response.status_code} - {e.response.text}")
+                raise
+            except httpx.RequestError as e:
+                logger.error(f"网络请求错误: {e}")
+                raise
+
 
 # 创建全局单例实例
 bangumi_client = BangumiClient()
@@ -217,3 +243,4 @@ fetch_user_collections = bangumi_client.get_user_collections
 fetch_subject_detail = bangumi_client.get_subject_detail
 search_subjects = bangumi_client.search_subjects
 fetch_user_info = bangumi_client.get_user_info
+fetch_calendar = bangumi_client.get_calendar

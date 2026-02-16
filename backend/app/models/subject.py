@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime, timezone, time
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 from sqlmodel import SQLModel, Field, Relationship
 from sqlalchemy import Column, Text, UniqueConstraint
@@ -52,6 +52,10 @@ class Subject(SQLModel, table=True):  # type: ignore[call-arg]
     locked: bool = Field(default=False, description="是否锁定")
     nsfw: bool = Field(default=False, description="是否不适合儿童")
     
+    # 放送时间相关字段
+    air_time: Optional[time] = Field(default=None, description="放送时间")
+    air_weekday: Optional[int] = Field(default=None, description="放送星期 (1-7)")
+    last_sync: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="最后同步时间")
     
     # 联合唯一索引：确保同一数据源的同一条目不重复
     __table_args__ = (

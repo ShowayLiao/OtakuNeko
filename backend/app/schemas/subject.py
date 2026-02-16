@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from datetime import datetime
+from datetime import datetime, time
 from app.models.enums import SubjectType, CollectionStatus
 from .shared import BaseList, SearchBase
 
@@ -34,6 +34,9 @@ class SubjectBase(BaseModel):
     series: Optional[bool] = Field(default=False, description="是否为系列")
     locked: Optional[bool] = Field(default=False, description="是否锁定")
     nsfw: Optional[bool] = Field(default=False, description="是否不适合儿童")
+    air_time: Optional[time] = Field(default=None, description="放送时间")
+    air_weekday: Optional[int] = Field(default=None, description="放送星期 (1-7)")
+    last_sync: Optional[datetime] = Field(default=None, description="最后同步时间")
 
     class Config:
         from_attributes = True
@@ -86,6 +89,9 @@ class SubjectUpdate(BaseModel):
     series: Optional[bool] = Field(None, description="是否为系列")
     locked: Optional[bool] = Field(None, description="是否锁定")
     nsfw: Optional[bool] = Field(None, description="是否不适合儿童")
+    air_time: Optional[time] = Field(None, description="放送时间")
+    air_weekday: Optional[int] = Field(None, description="放送星期 (1-7)")
+    last_sync: Optional[datetime] = Field(None, description="最后同步时间")
 
     class Config:
         from_attributes = True
@@ -121,6 +127,9 @@ class SubjectUpsert(BaseModel):
     series: Optional[bool] = Field(default=False, description="是否为系列")
     locked: Optional[bool] = Field(default=False, description="是否锁定")
     nsfw: Optional[bool] = Field(default=False, description="是否NSFW")
+    air_time: Optional[time] = Field(default=None, description="放送时间")
+    air_weekday: Optional[int] = Field(default=None, description="放送星期 (1-7)")
+    last_sync: Optional[datetime] = Field(default=None, description="最后同步时间")
 
     class Config:
         populate_by_name = True  # 兼容字段别名

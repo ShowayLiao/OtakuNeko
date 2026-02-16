@@ -473,6 +473,33 @@ class SubjectRepo:
             result = await db.execute(stmt)
             await db.commit()
             
+            # 清除可能受影响的用户统计缓存
+            try:
+                from fastapi_cache import FastAPICache
+                from sqlalchemy import select, and_
+                from app.models import Collection
+                
+                # 收集所有与这些 Subject 相关的用户 ID
+                affected_user_ids = set()
+                for item in data_list.items:
+                    # 查询与当前 Subject 相关的所有收藏记录
+                    subject_query = select(Collection.user_id).where(
+                        and_(
+                            Collection.source == item.source,
+                            Collection.source_id == item.source_id
+                        )
+                    )
+                    subject_result = await db.execute(subject_query)
+                    for user_id, in subject_result.all():
+                        affected_user_ids.add(user_id)
+                
+                # 清空每个受影响用户的统计缓存
+                for user_id in affected_user_ids:
+                    await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+                    logger.info(f"Cleared stats cache for user_id: {user_id} due to subject update")
+            except Exception as e:
+                logger.error(f"Failed to clear stats cache: {e}")
+            
             logger.info(f"批量 Upsert 完成: {len(subject_dicts)} 个 Subject 处理成功")
             return len(subject_dicts)
             

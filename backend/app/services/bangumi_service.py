@@ -11,7 +11,8 @@ from ..repositories import CollectionRepo, SubjectRepo
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
 from ..schemas.bangumi import StaffInfo, SubjectDetail
-from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info, bangumi_client
+from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info, bangumi_client, fetch_calendar
+from app.schemas.bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem, BangumiCalendarRating, BangumiCalendarCollection, BangumiCalendarImage
 from app.core.logging import get_logger
 from app.schemas.collection import CollectionList, CollectionSyncRequest
 
@@ -329,5 +330,91 @@ async def get_bangumi_user_info(username: str) -> Dict:
     except Exception as e:
         import traceback
         logger.error(f"获取 Bangumi 用户信息失败: {e}")
+        logger.error(f"错误详情: {traceback.format_exc()}")
+        raise
+
+
+async def get_bangumi_calendar() -> BangumiCalendar:
+    """
+    获取 Bangumi 每日放送信息
+    
+    Returns:
+        Bangumi 每日放送信息
+        
+    Raises:
+        Exception: 获取日历信息过程中发生错误时抛出
+    """
+    try:
+        logger.info("获取 Bangumi 每日放送信息")
+        
+        # 调用 bangumi_client.py 中的 fetch_calendar 函数获取日历信息
+        calendar_info = await fetch_calendar()
+        
+        logger.info("成功获取 Bangumi 每日放送信息")
+        
+        # 转换数据结构以匹配 schema
+        calendar_days = []
+        for day_data in calendar_info:
+            # 转换 items
+            items = []
+            for item in day_data.get('items', []):
+                # 转换 rating
+                rating_data = item.get('rating', {})
+                rating = BangumiCalendarRating(
+                    score=rating_data.get('score'),
+                    total=rating_data.get('total'),
+                    rank=item.get('rank'),
+                    count=rating_data.get('count')
+                )
+                
+                # 转换 collection
+                collection_data = item.get('collection', {})
+                collection = BangumiCalendarCollection(
+                    wish=collection_data.get('wish'),
+                    collect=collection_data.get('collect'),
+                    doing=collection_data.get('doing'),
+                    done=collection_data.get('done'),
+                    on_hold=collection_data.get('on_hold'),
+                    dropped=collection_data.get('dropped')
+                )
+                
+                # 转换 images
+                images_data = item.get('images', {})
+                images = BangumiCalendarImage(
+                    large=images_data.get('large'),
+                    common=images_data.get('common'),
+                    medium=images_data.get('medium'),
+                    small=images_data.get('small')
+                )
+                
+                # 创建 item
+                calendar_item = BangumiCalendarItem(
+                    id=item.get('id'),
+                    url=item.get('url'),
+                    type=item.get('type'),
+                    name=item.get('name'),
+                    name_cn=item.get('name_cn'),
+                    summary=item.get('summary', ''),
+                    air_date=item.get('air_date'),
+                    air_weekday=item.get('air_weekday'),
+                    images=images,
+                    rating=rating,
+                    collection=collection
+                )
+                items.append(calendar_item)
+            
+            # 创建 day
+            calendar_day = BangumiCalendarDay(
+                weekday=day_data.get('weekday', {}),
+                items=items
+            )
+            calendar_days.append(calendar_day)
+        
+        # 创建并返回 BangumiCalendar
+        return BangumiCalendar(root=calendar_days)
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"获取 Bangumi 每日放送信息失败: {e}")
         logger.error(f"错误详情: {traceback.format_exc()}")
         raise

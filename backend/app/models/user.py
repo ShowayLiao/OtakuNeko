@@ -1,6 +1,9 @@
 from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, List
 from sqlmodel import SQLModel, Field, Relationship
+
+if TYPE_CHECKING:
+    from .schedule import Schedule
 
 
 def utc_now():

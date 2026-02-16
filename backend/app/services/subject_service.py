@@ -1,4 +1,5 @@
 from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select, or_
@@ -7,9 +8,9 @@ from fastapi_cache import FastAPICache
 from app.core.logging import get_logger
 
 from app.models import Collection, Subject, SubjectType, User
-from app.schemas.collection import CollectionRead, CollectionList, CollectionWithSubjectList
+from app.schemas.collection import CollectionList, CollectionRead
 from app.schemas.subject import (
-    SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectList, SubjectUpsertList,
+    SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectUpsertList,
     SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName,
     SubjectWithCollection, SubjectWithCollectionList
 )
@@ -20,6 +21,8 @@ from app.schemas.adaptersV2 import (
     subject_with_collection_list_to_unified_list,
     UnifiedCollectionSubject
 )
+
+import httpx
 
 logger = get_logger(__name__)
 
@@ -396,7 +399,80 @@ async def search_mixed(
     )
     
     logger.info(f"合并后搜索结果: {len(merged_items)} 条记录")
-    
+
     return merged_result
+
+
+async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
+    """
+    同步番剧放送时间
+
+    Args:
+        db: 数据库会话
+        subject_id: Bangumi 番剧ID
+
+    Returns:
+        同步是否成功
+
+    Raises:
+        Exception: 同步过程中的异常
+    """
+    try:
+        # 构建搜索数据，查找对应的 Subject
+        search_data = SubjectSearchByID(source="bangumi", source_id=subject_id)
+        subject_result = await SubjectRepo.get_by_source(db, search_data)
+        
+        if not subject_result:
+            logger.error(f"Subject not found: bangumi/{subject_id}")
+            return False
+        
+        # 解包获取 Subject 对象
+        subject, _ = subject_result
+        
+        # 获取 bangumi-data JSON 数据
+        bangumi_data_url = "https://cdn.jsdelivr.net/npm/bangumi-data/dist/data.json"
+        async with httpx.AsyncClient() as client:
+            response = await client.get(bangumi_data_url)
+            response.raise_for_status()
+            data = response.json()
+        
+        # 在 items 中匹配对应的条目
+        matched_item = None
+        for item in data.get("items", []):
+            sites = item.get("sites", [])
+            for site in sites:
+                if site.get("site") == "bangumi" and site.get("id") == subject_id:
+                    matched_item = item
+                    break
+            if matched_item:
+                break
+        
+        # 更新字段
+        subject.last_sync = datetime.now(timezone.utc)
+        
+        if matched_item and "begin" in matched_item:
+            # 解析 begin 字段
+            begin_str = matched_item["begin"]
+            try:
+                begin_dt = datetime.fromisoformat(begin_str)
+                # 提取 time 和 weekday
+                subject.air_time = begin_dt.time()
+                # 注意：Python 的 weekday() 返回 0-6，而要求的是 1-7，所以需要 +1
+                subject.air_weekday = begin_dt.weekday() + 1
+                logger.info(f"Synced air time for subject {subject_id}: {subject.air_time}, weekday: {subject.air_weekday}")
+            except Exception as e:
+                logger.error(f"Failed to parse begin field: {e}")
+        else:
+            logger.info(f"No begin field found for subject {subject_id}, only updating last_sync")
+        
+        # 提交更新
+        await db.commit()
+        await db.refresh(subject)
+        
+        return True
+    except Exception as e:
+        logger.error(f"Failed to sync subject air time: {e}")
+        await db.rollback()
+        return False
 
 

@@ -25,7 +25,7 @@ export const APPLayout = ({
   const { token } = theme.useToken();
   
   // 判断是否为聊天页面，逻辑覆盖根路径和包含 /chat 的路径
-  const isFullScreenPage = pathname === '/' || pathname?.includes('/chat') || pathname === '/collections';
+  const isFullScreenPage = pathname === '/' || pathname?.includes('/chat') || pathname === '/collections' || pathname === '/Timetable';
 
   // 样式映射表
   const paddingMap: Record<string, string> = {
