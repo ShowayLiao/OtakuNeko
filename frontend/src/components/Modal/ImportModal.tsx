@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Modal, Button, Input, Icon, Tooltip, toast, Tag } from '@lobehub/ui';
 import { Search, FileJson, BookOpen, XCircle, CheckCircle2, Star } from 'lucide-react';
 import { searchService, SearchResult } from '../../services/search';
@@ -56,7 +56,7 @@ const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
       source: ''
     },
     cover: '',
-    collectionType: 0,
+    collectionType: 1, // 默认值为"想看"
     rate: 0,
     comment: '',
     volStatus: 0,
@@ -80,6 +80,46 @@ const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // 当模态框打开时重置状态
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        title: '',
+        subject: {
+          id: 0,
+          date: '',
+          images: {
+            small: '',
+            grid: '',
+            large: '',
+            medium: '',
+            common: ''
+          },
+          name: '',
+          name_cn: '',
+          short_summary: '',
+          tags: [],
+          score: 0,
+          type: 0,
+          eps: 0,
+          volumes: 0,
+          source: ''
+        },
+        cover: '',
+        collectionType: 0,
+        rate: 0,
+        comment: '',
+        volStatus: 0,
+        epStatus: 0,
+        tags: ''
+      });
+      setKeyword('');
+      setSearchResults([]);
+      setShowDropdown(false);
+      setJsonError('');
+    }
+  }, [isOpen]);
 
   // --- 逻辑处理 ---
 
@@ -249,13 +289,13 @@ const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
           short_summary: '',
           tags: [],
           score: 0,
-          type: 0,
+          type: 2,
           eps: 0,
           volumes: 0,
           source: ''
         },
         cover: '',
-        collectionType: 0,
+        collectionType: 1, // 默认值为"想看"
         rate: 0,
         comment: '',
         volStatus: 0,

@@ -179,8 +179,8 @@ def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") 
         if "image" in subject_data:
             subject_upsert_data["image"] = subject_data["image"]
         
-        if "summary" in subject_data:
-            subject_upsert_data["summary"] = subject_data["summary"]
+        if "summary" in subject_data or "short_summary" in subject_data:
+            subject_upsert_data["summary"] = subject_data.get("summary", "") or subject_data.get("short_summary", "")
         
         if "tags" in subject_data and isinstance(subject_data["tags"], list):
             subject_upsert_data["tags"] = subject_data["tags"]

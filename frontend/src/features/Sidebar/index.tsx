@@ -47,7 +47,6 @@ export const DesktopSidebar = () => {
             icon={CalendarDays}
             onClick={() => handleSelect('/Timetable')}
             size="large"
-            disabled={true}
           />
           <ActionIcon
             active={activeKey === '/role'}

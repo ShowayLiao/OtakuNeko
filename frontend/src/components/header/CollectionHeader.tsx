@@ -161,12 +161,24 @@ export default function CollectionHeader({
                 }} 
                 trigger={['click']}
               >
-                <ActionIcon 
-                  icon={Filter} 
-                  title="排序方式" 
-                  size="large" 
-                  className="border border-slate-200 dark:border-slate-700 rounded-lg"
-                />
+                <button 
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--lobe-color-border)',
+                    background: 'var(--lobe-color-bg-container)',
+                    color: 'var(--lobe-color-text-primary)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s'
+                  }}
+                  title="排序方式"
+                >
+                  <Filter size={18} />
+                </button>
               </Dropdown>
             </div>
             

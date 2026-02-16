@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Input, Select, TextArea, Button, Icon, Tag } from '@lobehub/ui';
+import { Rate } from 'antd';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { FormData } from '../types';
@@ -65,16 +66,16 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                             { label: '三次元', value: '6' }
                         ]}
                         style={{ width: '100%' }}
-                        value={value.subject.type?.toString() || ''}
-                        onChange={(value) => onChange({...value, subject: {...value.subject, type: parseInt(value) || 0}})}
+                        value={value.subject?.type?.toString() || ''}
+                        onChange={(value) => onChange({...value, subject: {...(value.subject || {}), type: parseInt(value) || 0}})}
                         disabled={!showSubjectDetails}
                     />
                   </div>
                   <div style={{ flex: 1 }}>
                     <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>评分</span>
                     <Input 
-                      value={value.subject.score || ''} 
-                      onChange={(e) => onChange({...value, subject: {...value.subject, score: parseFloat(e.target.value) || 0}})}
+                      value={value.subject?.score || ''} 
+                      onChange={(e) => onChange({...value, subject: {...(value.subject || {}), score: parseFloat(e.target.value) || 0}})}
                       disabled={!showSubjectDetails}
                     />
                   </div>
@@ -105,16 +106,16 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                           { label: '三次元', value: '6' }
                       ]}
                       style={{ width: '100%' }}
-                      value={value.subject.type?.toString() || ''}
-                      onChange={(value) => onChange({...value, subject: {...value.subject, type: parseInt(value) || 0}})}
+                      value={value.subject?.type?.toString() || ''}
+                      onChange={(value) => onChange({...value, subject: {...(value.subject || {}), type: parseInt(value) || 0}})}
                       disabled={!showSubjectDetails}
                   />
                 </div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>网站评分</span>
                   <Input 
-                    value={value.subject.score || ''} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, score: parseFloat(e.target.value) || 0}})}
+                    value={value.subject?.score || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), score: parseFloat(e.target.value) || 0}})}
                     disabled={!showSubjectDetails}
                   />
                 </div>
@@ -129,23 +130,23 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                 <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>条目简介</span>
                 <TextArea 
                   resize={false} 
-                  value={value.subject.short_summary} 
-                  onChange={(e) => onChange({...value, subject: {...value.subject, short_summary: e.target.value}})}
+                  value={value.subject?.short_summary || ''} 
+                  onChange={(e) => onChange({...value, subject: {...(value.subject || {}), short_summary: e.target.value}})}
                 />
               </div>
               <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>原始名称</span>
                   <Input 
-                    value={value.subject.name} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, name: e.target.value}})}
+                    value={value.subject?.name || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), name: e.target.value}})}
                   />
                 </div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>中文名称</span>
                   <Input 
-                    value={value.subject.name_cn} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, name_cn: e.target.value}})}
+                    value={value.subject?.name_cn || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), name_cn: e.target.value}})}
                   />
                 </div>
               </div>
@@ -153,8 +154,8 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>发售/放送日期</span>
                   <Input 
-                    value={value.subject.date} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, date: e.target.value}})}
+                    value={value.subject?.date || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), date: e.target.value}})}
                   />
                 </div>
                 <div style={{ flex: 1 }}>
@@ -162,8 +163,8 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                   <Input 
                     type="number" 
                     min="0" 
-                    value={value.subject.eps} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, eps: parseInt(e.target.value) || 0}})}
+                    value={value.subject?.eps || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), eps: parseInt(e.target.value) || 0}})}
                   />
                 </div>
                 <div style={{ flex: 1 }}>
@@ -171,8 +172,8 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                   <Input 
                     type="number" 
                     min="0" 
-                    value={value.subject.volumes} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, volumes: parseInt(e.target.value) || 0}})}
+                    value={value.subject?.volumes || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), volumes: parseInt(e.target.value) || 0}})}
                   />
                 </div>
               </div>
@@ -180,8 +181,8 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                 <div style={{ flex: 1 }}>
                   <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>来源</span>
                   <Input 
-                    value={value.subject.source} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, source: e.target.value}})}
+                    value={value.subject?.source || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), source: e.target.value}})}
                   />
                 </div>
               </div>
@@ -191,8 +192,8 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                   <Input 
                     type="number" 
                     min="0" 
-                    value={value.subject.id} 
-                    onChange={(e) => onChange({...value, subject: {...value.subject, id: parseInt(e.target.value) || 0}})}
+                    value={value.subject?.id || ''} 
+                    onChange={(e) => onChange({...value, subject: {...(value.subject || {}), id: parseInt(e.target.value) || 0}})}
                   />
                 </div>
               </div>
@@ -223,6 +224,7 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
               <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>收藏类型</span>
               <Select
                   placeholder="请选择收藏类型"
+                  defaultValue="1"
                   options={[
                       { label: '想看', value: '1' },
                       { label: '看过', value: '2' },
@@ -231,19 +233,19 @@ export const SubjectForm: React.FC<SubjectFormProps> = ({ value, onChange }) => 
                       { label: '抛弃', value: '5' }
                   ]}
                   style={{ width: '100%' }}
-                  value={value.collectionType?.toString() || ''}
+                  value={value.collectionType && value.collectionType > 0 ? value.collectionType.toString() : ''}
                   onChange={(value) => onChange({...value, collectionType: parseInt(value) || 0})}
               />
             </div>
             <div>
               <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>用户评分 (0-10)</span>
-              <Input 
-                  type="number" 
-                  min="0" 
-                  max="10" 
-                  placeholder="0-10" 
-                  value={value.rate || ''}
-                  onChange={(e) => onChange({...value, rate: parseInt(e.target.value) || 0})}
+              <Rate 
+                  count={10}
+                  value={value.rate || 0}
+                  onChange={(rateValue) => onChange({...value, rate: rateValue})}
+                  allowClear
+                  style={{ marginTop: 8 }}
+                  size="small"
               />
             </div>
           </div>

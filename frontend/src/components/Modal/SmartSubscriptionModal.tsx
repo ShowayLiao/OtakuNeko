@@ -98,8 +98,16 @@ const SmartSubscriptionModal = ({
         label: key,
       }));
       setRuleOptions(options);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to fetch rules', error);
+      // 显示错误信息给用户
+      toast.error({ 
+        title: '获取规则失败', 
+        description: error.message || '请检查 qBittorrent 是否启动并正常运行' 
+      });
+      // 清空现有规则数据，避免使用旧数据
+      setExistingRulesData({});
+      setRuleOptions([]);
     }
   };
 
@@ -227,7 +235,23 @@ const SmartSubscriptionModal = ({
 
     } catch (error: any) {
       console.error(error);
-      toast.error({ title: '失败', description: error.message });
+      // 增加 QB 未启动时的错误处理
+      let errorTitle = '操作失败';
+      let errorDesc = error.message;
+      
+      // 检测是否为 QB 未启动的错误
+      if (error.message.includes('无法连接到 qBittorrent') || error.message.includes('qBittorrent 登录失败')) {
+        errorTitle = 'qBittorrent 未启动或连接失败';
+        errorDesc = '请确保 qBittorrent 已启动且 Web UI 已启用，然后重试';
+      }
+      
+      // 检测是否为 QB 代理禁用的错误
+      if (error.message.includes('QBittorrent proxy is disabled')) {
+        errorTitle = 'qBittorrent 代理已禁用';
+        errorDesc = '请在设置中启用 qBittorrent 代理，然后重试';
+      }
+      
+      toast.error({ title: errorTitle, description: errorDesc });
     }
   };
 
@@ -239,8 +263,8 @@ const SmartSubscriptionModal = ({
         onCancel={onClose}
         onOk={handleOk}
         width={680}
-        destroyOnClose
-        maskClosable={false}
+        destroyOnHidden
+        mask={{ closable: false }}
       >
         <Form form={form} layout="vertical">
           
@@ -339,18 +363,22 @@ const SmartSubscriptionModal = ({
               </Form.Item>
             </div>
 
-            <Collapse ghost size="small">
-              <Panel header={<span className="text-xs text-gray-500">高级选项</span>} key="1">
-                <Space size="large" className="mt-2">
-                  <Form.Item name="useRegex" valuePropName="checked" label="正则模式" layout="horizontal" style={{marginBottom:0}}>
-                    <Switch size="small" />
-                  </Form.Item>
-                  <Form.Item name="smartFilter" valuePropName="checked" label="智能剧集过滤" layout="horizontal" style={{marginBottom:0}}>
-                    <Switch size="small" />
-                  </Form.Item>
-                </Space>
-              </Panel>
-            </Collapse>
+            <Collapse ghost size="small" items={[
+              {
+                key: '1',
+                label: <span className="text-xs text-gray-500">高级选项</span>,
+                children: (
+                  <Space size="large" className="mt-2">
+                    <Form.Item name="useRegex" valuePropName="checked" label="正则模式" layout="horizontal" style={{marginBottom:0}}>
+                      <Switch size="small" />
+                    </Form.Item>
+                    <Form.Item name="smartFilter" valuePropName="checked" label="智能剧集过滤" layout="horizontal" style={{marginBottom:0}}>
+                      <Switch size="small" />
+                    </Form.Item>
+                  </Space>
+                )
+              }
+            ]} />
           </div>
         </Form>
       </Modal>
