@@ -1,112 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { DraggablePanel, Flexbox, Segmented, ActionIcon, Icon } from '@lobehub/ui';
-import { Typography, Badge, Dropdown, Tooltip } from 'antd';
+import { Typography, Badge, Dropdown, Tooltip, Spin } from 'antd';
 import { Filter, LayoutGrid, Tv, Book, Gamepad2, Film } from 'lucide-react';
 import TimelineMediaCard from './TimelineMediaCard';
 import DraggableItemWrapper from './DraggableItemWrapper';
-import { BangumiItem, WatchType } from '@/services/bangumiService';
+import { BangumiItem } from '@/services/bangumiService';
+import { getCollections } from '@/services/scheduleService';
 
 const { Text } = Typography;
-
-// --- 1. 模拟数据结构 ---
-const MOCK_DATA: BangumiItem[] = [
-  { 
-    id: '1', 
-    title: '葬送的芙莉莲', 
-    source: 'local', 
-    source_id: '1', 
-    day_of_week: 0, 
-    start_time: '18:00', 
-    user_id: 1, 
-    images: { 
-      common: '...', 
-      large: '...', 
-      medium: '...', 
-      small: '...' 
-    },
-    watch_type: WatchType.NEW
-  },
-  { 
-    id: '2', 
-    title: '迷宫饭', 
-    source: 'local', 
-    source_id: '2', 
-    day_of_week: 1, 
-    start_time: '18:30', 
-    user_id: 1, 
-    images: { 
-      common: '...', 
-      large: '...', 
-      medium: '...', 
-      small: '...' 
-    },
-    watch_type: WatchType.NEW
-  },
-  { 
-    id: '3', 
-    title: '沙丘', 
-    source: 'local', 
-    source_id: '3', 
-    day_of_week: 2, 
-    start_time: '20:00', 
-    user_id: 1, 
-    images: { 
-      common: '...', 
-      large: '...', 
-      medium: '...', 
-      small: '...' 
-    },
-    watch_type: WatchType.LEISURE
-  },
-  { 
-    id: '4', 
-    title: '百年孤独', 
-    source: 'local', 
-    source_id: '4', 
-    day_of_week: 3, 
-    start_time: '19:00', 
-    user_id: 1, 
-    images: { 
-      common: '...', 
-      large: '...', 
-      medium: '...', 
-      small: '...' 
-    },
-    watch_type: WatchType.LEISURE
-  },
-  { 
-    id: '5', 
-    title: '塞尔达传说：王国之泪', 
-    source: 'local', 
-    source_id: '5', 
-    day_of_week: 4, 
-    start_time: '21:00', 
-    user_id: 1, 
-    images: { 
-      common: '...', 
-      large: '...', 
-      medium: '...', 
-      small: '...' 
-    },
-    watch_type: WatchType.LONG_GRASS
-  },
-  { 
-    id: '6', 
-    title: '星空', 
-    source: 'local', 
-    source_id: '6', 
-    day_of_week: 5, 
-    start_time: '22:00', 
-    user_id: 1, 
-    images: { 
-      common: '...', 
-      large: '...', 
-      medium: '...', 
-      small: '...' 
-    },
-    watch_type: WatchType.LONG_GRASS
-  },
-];
 
 // 分类映射
 const CATEGORY_MAP = {
@@ -117,12 +18,28 @@ const CATEGORY_MAP = {
   movie: '三次元',
 };
 
+// 分类到后端参数的映射
+const CATEGORY_TO_TYPE_MAP = {
+  anime: 2, // 动画
+  book: 1, // 书籍
+  game: 4, // 游戏
+  movie: 6, // 三次元
+};
+
 const STATUS_MAP: Record<string, string> = {
   all: '全部状态',
   wish: '想看',
   watching: '在看',
   watched: '看过',
   on_hold: '搁置',
+};
+
+// 状态到后端参数的映射
+const STATUS_TO_STATUS_MAP = {
+  wish: 1, // 想看
+  watching: 3, // 在看
+  watched: 2, // 看过
+  on_hold: 4, // 搁置
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -138,38 +55,53 @@ export const CollectionPanel = () => {
   // --- 2. 核心状态管理 ---
   const [activeType, setActiveType] = useState('all'); 
   const [activeStatus, setActiveStatus] = useState('all');
+  const [collections, setCollections] = useState<BangumiItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // --- 3. 过滤逻辑 ---
-  const filteredList = useMemo(() => {
-    return MOCK_DATA.filter(item => {
-      // 由于我们现在使用的是 BangumiItem 接口，需要根据 watch_type 来匹配类型
-      let matchType = true;
-      if (activeType !== 'all') {
-        switch (activeType) {
-          case 'anime':
-            matchType = item.watch_type === WatchType.NEW;
-            break;
-          case 'book':
-            matchType = item.watch_type === WatchType.LEISURE;
-            break;
-          case 'game':
-            matchType = item.watch_type === WatchType.LONG_GRASS;
-            break;
-          case 'movie':
-            matchType = item.watch_type === WatchType.LEISURE;
-            break;
-          default:
-            matchType = true;
+  // --- 3. 数据获取逻辑 ---
+  
+  useEffect(() => {
+    const fetchCollections = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // 构建请求参数
+        const params: any = {};
+        if (activeType !== 'all') {
+          params.subject_type = CATEGORY_TO_TYPE_MAP[activeType as keyof typeof CATEGORY_TO_TYPE_MAP];
         }
+        if (activeStatus !== 'all') {
+          params.status = STATUS_TO_STATUS_MAP[activeStatus as keyof typeof STATUS_TO_STATUS_MAP];
+        }
+        
+        console.log('DraggablePanel: 发送请求参数:', params);
+        
+        const items = await getCollections(params);
+        console.log('DraggablePanel: 收到响应数据:', items.length, '条');
+        setCollections(items || []);
+      } catch (err) {
+        setError('获取收藏数据失败');
+        console.error('Error fetching collections:', err);
+      } finally {
+        setLoading(false);
       }
-      // 暂时忽略状态过滤，因为我们的 BangumiItem 接口中没有 status 字段
-      const matchStatus = true;
-      return matchType && matchStatus;
-    }).sort((a, b) => {
-      // 按标题字母顺序排序
-      return a.title.localeCompare(b.title);
-    });
+    };
+
+    fetchCollections();
   }, [activeType, activeStatus]);
+
+  // --- 4. 数据过滤和排序逻辑 ---
+  const filteredList = useMemo(() => {
+    // 直接对返回的 BangumiItem 数据进行排序
+    return collections
+      .sort((a, b) => {
+        // 按标题字母顺序排序
+        const titleA = a.subject?.name || '';
+        const titleB = b.subject?.name || '';
+        return titleA.localeCompare(titleB);
+      });
+  }, [collections]);
 
 
 
@@ -314,10 +246,21 @@ export const CollectionPanel = () => {
 
         {/* 列表区 */}
         <Flexbox flex={1} padding="0 16px 20px" gap={8} style={{ overflowY: 'auto' }}>
-          {filteredList.length > 0 ? (
+          {loading ? (
+            // 加载状态
+            <Flexbox align="center" justify="center" flex={1}>
+              <Spin size="default" tip="加载中..." />
+            </Flexbox>
+          ) : error ? (
+            // 错误状态
+            <Flexbox align="center" justify="center" flex={1} style={{ color: 'var(--ant-color-danger)' }}>
+              {error}
+            </Flexbox>
+          ) : filteredList.length > 0 ? (
+            // 有数据状态
             filteredList.map(item => (
               <Flexbox 
-                key={item.id} 
+                key={`${item.subject.source}-${item.subject.source_id}`} 
                 style={{ 
                   cursor: 'pointer',
                   padding: '12px',
@@ -329,7 +272,7 @@ export const CollectionPanel = () => {
                 // hover 时增加轻微的背景和上浮效果
                 className="hover:bg-white/80 hover:shadow-sm hover:-translate-y-0.5"
               >
-                <DraggableItemWrapper id={item.id}>
+                <DraggableItemWrapper id={`${item.subject.source}-${item.subject.source_id}`} data={item}>
                   <TimelineMediaCard 
                     data={item} 
                     currentHeight={80} // 使用正常高度卡片，适合显示方形封面
@@ -338,8 +281,9 @@ export const CollectionPanel = () => {
               </Flexbox>
             ))
           ) : (
+            // 空数据状态
             <Flexbox align="center" justify="center" flex={1} style={{ color: 'var(--ant-color-text-tertiary)' }}>
-              暂无数据
+              暂无收藏数据
             </Flexbox>
           )}
         </Flexbox>

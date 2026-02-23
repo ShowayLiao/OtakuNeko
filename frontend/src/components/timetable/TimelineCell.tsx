@@ -49,8 +49,8 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
           items.length > 1 ? (
             <div className="h-full flex gap-1">
               {items.map((item) => (
-                <div key={item.id} className="flex-1 h-full">
-                  <DraggableItemWrapper id={item.id}>
+                <div key={`${item.subject.source}-${item.subject.source_id}`} className="flex-1 h-full">
+                  <DraggableItemWrapper id={`${item.subject.source}-${item.subject.source_id}`}>
                     <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
                       <SpotlightCard
                         items={[item]}
@@ -64,7 +64,7 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
                             <TimelineMediaCard
                               data={data}
                               currentHeight={slotHeight}
-                              onDelete={(data) => onDelete?.(data.id)}
+                              onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                             />
                           </div>
                         )}
@@ -76,7 +76,7 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
             </div>
           ) : (
             items.map((item) => (
-              <DraggableItemWrapper key={item.id} id={item.id}>
+              <DraggableItemWrapper key={`${item.subject.source}-${item.subject.source_id}`} id={`${item.subject.source}-${item.subject.source_id}`}>
                 <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
                   <SpotlightCard
                     items={[item]}
@@ -90,7 +90,7 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
                         <TimelineMediaCard
                               data={data}
                               currentHeight={slotHeight}
-                              onDelete={(data) => onDelete?.(data.id)}
+                              onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                             />
                       </div>
                     )}
@@ -116,7 +116,7 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
                   <TimelineMediaCard
                     data={data}
                     currentHeight={slotHeight}
-                    onDelete={(data) => onDelete?.(data.id)}
+                    onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                   />
                 </div>
               )}
@@ -138,7 +138,9 @@ const arePropsEqual = (prevProps: TimelineCellProps, nextProps: TimelineCellProp
       return false;
     }
     for (let i = 0; i < prevProps.items.length; i++) {
-      if (prevProps.items[i].id !== nextProps.items[i].id) {
+      const prevItem = prevProps.items[i];
+      const nextItem = nextProps.items[i];
+      if (prevItem.subject.source !== nextItem.subject.source || prevItem.subject.source_id !== nextItem.subject.source_id) {
         return false;
       }
     }
@@ -155,7 +157,13 @@ const arePropsEqual = (prevProps: TimelineCellProps, nextProps: TimelineCellProp
   } else {
     // 格子正在被悬停，或者 isOver 状态发生切换，需要比较更多属性
     const isOverEqual = prevProps.isOver === nextProps.isOver;
-    const activeDragItemIdEqual = prevProps.activeDragItem?.id === nextProps.activeDragItem?.id;
+    const prevDragItemKey = prevProps.activeDragItem?.subject?.source && prevProps.activeDragItem?.subject?.source_id
+      ? `${prevProps.activeDragItem.subject.source}-${prevProps.activeDragItem.subject.source_id}`
+      : null;
+    const nextDragItemKey = nextProps.activeDragItem?.subject?.source && nextProps.activeDragItem?.subject?.source_id
+      ? `${nextProps.activeDragItem.subject.source}-${nextProps.activeDragItem.subject.source_id}`
+      : null;
+    const activeDragItemIdEqual = prevDragItemKey === nextDragItemKey;
     return isOverEqual && itemsAreEqual() && activeDragItemIdEqual && slotHeightEqual;
   }
 };

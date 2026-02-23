@@ -32,7 +32,8 @@ import {
   Archive,
   BookOpen,
   Sparkles,
-  Calendar
+  Calendar,
+  Trash2
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 import { getBangumiCalendar, syncBangumiCalendar, BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
@@ -206,7 +207,23 @@ export default function WeeklyBoardPage() {
   
   // 根据分类和星期几获取项目
   const getItemsByCategoryAndDay = (category: string, day: number): ScheduleItem[] => {
-    return scheduleItems.filter(item => item.category === category && (item.watch_day ?? item.day_of_week) === day);
+    // 由于我们已经移除了 category 字段，这里需要根据 watch_type 来判断
+    let watchType: WatchType | undefined;
+    switch (category) {
+      case 'Meal':
+        watchType = WatchType.MEAL;
+        break;
+      case 'Backlog':
+        watchType = WatchType.LONG_GRASS;
+        break;
+      case 'Reading':
+        watchType = WatchType.LEISURE;
+        break;
+      case 'New':
+        watchType = WatchType.NEW;
+        break;
+    }
+    return scheduleItems.filter(item => item.watch_type === watchType && item.watch_day === day);
   };
   
   // 前三个分类 (Meal, Backlog, Reading)
@@ -218,8 +235,16 @@ export default function WeeklyBoardPage() {
   // 拖拽开始处理器
   const handleDragStart = (event: any) => {
     const { active } = event;
-    const draggedItem = scheduleItems.find(item => item.id === active.id);
-    setActiveDragItem(draggedItem || null);
+    
+    // 首先尝试从active.data中获取拖动的项目（适用于从CollectionPanel拖动的情况）
+    if (active.data && active.data.current) {
+      setActiveDragItem(active.data.current);
+    } else {
+      // 然后尝试从scheduleItems中查找（适用于从已有泳道拖动的情况）
+      const draggedItem = scheduleItems.find(item => `${item.subject.source}-${item.subject.source_id}` === active.id);
+      setActiveDragItem(draggedItem || null);
+    }
+    
     setOverSlotId(null);
   };
   
@@ -245,13 +270,29 @@ export default function WeeklyBoardPage() {
     const activeId = String(active.id);
     const overId = String(over.id);
 
+    // 在调用 setScheduleItems 之前，先将当前的 activeDragItem 状态提取到一个局部变量中
+    const currentActiveItem = activeDragItem;
+
     setScheduleItems((prevItems) => {
-      const activeItem = prevItems.find((item) => String(item.id) === activeId);
+      // 首先尝试从prevItems中找到activeItem（适用于从已有泳道拖动的情况）
+      let activeItem = prevItems.find((item) => `${item.subject.source}-${item.subject.source_id}` === activeId);
+      
+      // 如果找不到，优先将外层的 currentActiveItem 赋值给 activeItem
+      if (!activeItem) {
+        activeItem = currentActiveItem || undefined;
+      }
+      
+      // 如果还是找不到，尝试从active.data中获取（适用于从CollectionPanel拖动的情况）
+      if (!activeItem && active.data && active.data.current) {
+        activeItem = active.data.current;
+      }
+      
       if (!activeItem) return prevItems;
 
-      let newDay = activeItem.watch_day ?? activeItem.day_of_week;
-      let newTime = activeItem.watch_time || activeItem.start_time || '';
-      let newType = activeItem.watch_type;
+      let newDay = activeItem.watch_day ?? 0;
+      let newTime = activeItem.watch_time || '';
+      let newType = activeItem.watch_type || WatchType.NEW;
+      let newDuration = activeItem.duration || 1;
 
       if (overId.startsWith('lane-')) {
         // 情况 A: 拖入标准泳道
@@ -267,6 +308,7 @@ export default function WeeklyBoardPage() {
           else if (laneStr.includes('NEW') || laneStr === '4') newType = WatchType.NEW;
           
           newTime = ''; // 移入泳道后，清空具体时间
+          newDuration = 1; // 标准泳道中默认持续时间为1天
         }
       } else if (overId.includes('-')) {
         // 情况 B: 拖入时间网格
@@ -292,29 +334,48 @@ export default function WeeklyBoardPage() {
           const displayHour = hour >= 24 ? hour - 24 : hour;
           newTime = `${displayHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
           newType = WatchType.NEW;
+          newDuration = 1; // 时间网格中默认持续时间为1天
         }
       } else {
         return prevItems;
       }
 
-      // 强制使用 String(item.id) 保证精确修改不漏网
-      return prevItems.map((item) =>
-        String(item.id) === activeId
-          ? {
-              ...item,
-              watch_day: newDay,
-              watch_time: newTime,
-              watch_type: newType
-            }
-          : item
-      );
+      // 检查项目是否已存在于prevItems中
+      const itemExists = prevItems.some((item) => `${item.subject.source}-${item.subject.source_id}` === activeId);
+      
+      if (itemExists) {
+        // 如果项目已存在，更新它
+        return prevItems.map((item) =>
+          `${item.subject.source}-${item.subject.source_id}` === activeId
+            ? {
+                ...item,
+                watch_day: newDay,
+                watch_time: newTime,
+                watch_type: newType,
+                duration: newDuration
+              }
+            : item
+        );
+      } else {
+        // 如果项目不存在（从CollectionPanel拖动的新项），添加它
+        return [
+          ...prevItems,
+          {
+            ...activeItem,
+            watch_day: newDay,
+            watch_time: newTime,
+            watch_type: newType,
+            duration: newDuration
+          }
+        ];
+      }
     });
   };
 
   // 处理卡片拉伸事件
   const handleResize = useCallback((id: string, newDay: number, newDuration: number) => {
     setScheduleItems(prev => prev.map(item => {
-      if (item.id === id) {
+      if (`${item.subject.source}-${item.subject.source_id}` === id) {
         return {
           ...item,
           watch_day: newDay,
@@ -327,7 +388,7 @@ export default function WeeklyBoardPage() {
   
   // 处理卡片删除事件
   const handleDelete = useCallback((id: string) => {
-    setScheduleItems(prev => prev.filter(item => item.id !== id));
+    setScheduleItems(prev => prev.filter(item => `${item.subject.source}-${item.subject.source_id}` !== id));
   }, []);
   
   // 处理获取 Bangumi 日历数据
@@ -341,8 +402,8 @@ export default function WeeklyBoardPage() {
       // 调用 syncBangumiCalendar 函数获取数据
       const bangumiItems = await syncBangumiCalendar();
       
-      // 过滤掉 start_time 为空的卡片
-      const validItems = bangumiItems.filter(item => item.start_time !== '未知' && item.start_time !== null);
+      // 过滤掉 watch_time 为空的卡片
+      const validItems = bangumiItems.filter(item => item.watch_time !== '未知' && item.watch_time !== null);
       
       // 确保所有项目都有正确的 watch_type 和默认 duration
       const updatedItems = validItems.map(item => {
@@ -389,6 +450,11 @@ export default function WeeklyBoardPage() {
     console.log('导出至滴答清单');
   };
   
+  // 清空所有卡片
+  const handleClearAll = () => {
+    setScheduleItems([]);
+  };
+  
   // 同步菜单
   const syncMenu = (
     <div className="flex flex-col w-36 p-1">
@@ -430,14 +496,14 @@ export default function WeeklyBoardPage() {
         <div className="flex-none z-10">
           <TimetableHeader 
             schedules={scheduleItems.map(item => ({
-              id: typeof item.id === 'string' ? parseInt(item.id) : item.id,
-              title: item.title,
-              start_time: item.watch_time || item.start_time || '',
+              id: parseInt(`${item.subject.source_id}`),
+              title: item.subject?.name_cn || item.subject?.name || '未知标题',
+              start_time: item.watch_time || '',
               end_time: '', // 暂时使用空字符串，后续可以根据需要计算
-              day_of_week: item.watch_day ?? item.day_of_week,
+              day_of_week: item.watch_day ?? 0,
               status: 'active',
-              type: item.category,
-              description: item.description
+              type: '',
+              description: ''
             }))}
             onSaveSuccess={handleSaveSuccess}
           />
@@ -512,6 +578,14 @@ export default function WeeklyBoardPage() {
                 actions={
                   <PopoverGroup contentLayoutAnimation>
                     <Flexbox horizontal gap={4} justify="center" style={{ width: '100%' }}>
+                      {/* 清空所有卡片 */}
+                      <ActionIcon
+                        icon={<Trash2 size={16} />}
+                        title="清空所有卡片"
+                        onClick={handleClearAll}
+                        variant="borderless"
+                        size="small"
+                      />
                       {/* 导出菜单 */}
                       <ActionIcon
                         icon={isLanesCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}

@@ -1,13 +1,15 @@
 import React from 'react';
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
+import { BangumiItem } from '@/services/bangumiService';
 
 interface DraggableItemWrapperProps {
   id: string;
   children: React.ReactNode;
+  data?: BangumiItem;
 }
 
-const DraggableItemWrapper: React.FC<DraggableItemWrapperProps> = ({ id, children }) => {
+const DraggableItemWrapper: React.FC<DraggableItemWrapperProps> = ({ id, children, data }) => {
   const {
     attributes,
     listeners,
@@ -16,6 +18,7 @@ const DraggableItemWrapper: React.FC<DraggableItemWrapperProps> = ({ id, childre
     isDragging,
   } = useDraggable({
     id,
+    data,
   });
 
   const style = {

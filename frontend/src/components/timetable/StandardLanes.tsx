@@ -51,22 +51,24 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
     // grid[dayIndex][rowIndex] = Item | 'ghost' | null
     const grid: (ScheduleItem | { type: 'ghost'; item: ScheduleItem } | null)[][] = Array(7).fill(null).map(() => []);
     
-    // 2. 预先排序：按开始时间(day) -> 持续时间(duration desc) -> ID
+    // 2. 预先排序：按开始时间(day) -> 持续时间(duration desc) -> source-source_id
     // 这样长条卡片会优先占据稳定位置
     const sortedItems = [...laneItems].sort((a, b) => {
-      const dayA = a.watch_day ?? a.day_of_week;
-      const dayB = b.watch_day ?? b.day_of_week;
+      const dayA = a.watch_day ?? 0;
+      const dayB = b.watch_day ?? 0;
       if (dayA !== dayB) return dayA - dayB;
       const durationA = a.duration ?? 1;
       const durationB = b.duration ?? 1;
       if (durationA !== durationB) return durationB - durationA; // 长的优先
-      return a.id.localeCompare(b.id);
+      const keyA = `${a.subject.source}-${a.subject.source_id}`;
+      const keyB = `${b.subject.source}-${b.subject.source_id}`;
+      return keyA.localeCompare(keyB);
     });
 
     // 3. 贪心算法填坑 (Tetris)
     sortedItems.forEach(item => {
-      // 使用 watch_day 代替 day_of_week
-      const startDay = item.watch_day ?? item.day_of_week;
+      // 使用 watch_day 作为唯一来源
+      const startDay = item.watch_day ?? 0;
       const duration = item.duration ?? 1;
       const endDay = Math.min(startDay + duration, 7); // 防止溢出
 
@@ -187,7 +189,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                           if (typeof slot === 'object' && 'type' in slot && slot.type === 'ghost') {
                             return (
                               <div 
-                                key={`ghost-${slot.item.id}-${day}`} 
+                                key={`ghost-${slot.item.subject.source}-${slot.item.subject.source_id}-${day}`} 
                                 className="invisible pointer-events-none w-full shrink-0"
                                 style={{ height: `${CARD_HEIGHT}px` }}
                               >
@@ -205,7 +207,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                         <TimelineMediaCard
                                           data={item}
                                           currentHeight={CARD_HEIGHT}
-                                          onDelete={(data) => onDelete?.(data.id)}
+                                          onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                                         />
                                       </div>
                                     )}
@@ -217,15 +219,16 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
 
                           // --- 情况 C: 实体卡片 (Real Item) ---
                           const realItem = 'type' in slot ? slot.item : slot;
+                          const itemKey = `${realItem.subject.source}-${realItem.subject.source_id}`;
                           return (
                             <div 
-                              key={realItem.id}
+                              key={itemKey}
                               className="relative w-full shrink-0"
                               style={{ height: `${CARD_HEIGHT}px` }}
                             >
-                              <DraggableItemWrapper id={realItem.id}>
+                              <DraggableItemWrapper id={itemKey}>
                                 <ResizableCardWrapper
-                                  id={realItem.id}
+                                  id={itemKey}
                                   day={day}
                                   duration={realItem.duration ?? 1}
                                   gap={VISUAL_GAP}
@@ -244,7 +247,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                           <TimelineMediaCard
                                           data={item}
                                           currentHeight={CARD_HEIGHT}
-                                          onDelete={(data) => onDelete?.(data.id)}
+                                          onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                                         />
                                         </div>
                                       )}
@@ -274,7 +277,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                   <TimelineMediaCard
                                   data={data}
                                   currentHeight={CARD_HEIGHT}
-                                  onDelete={(data) => onDelete?.(data.id)}
+                                  onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                                 />
                                 </div>
                               )}

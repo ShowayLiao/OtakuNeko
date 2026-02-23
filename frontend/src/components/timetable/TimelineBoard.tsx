@@ -101,12 +101,12 @@ const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode
     // 2. 预处理阶段：标准化日期和时间，处理【0点-2点】跨天逻辑
     const normalizedItems = newItems.map(item => {
       // 确定基础日期
-      let baseDay = item.watch_day ?? item.day_of_week;
-      if (baseDay === undefined && item.air_weekday) {
-        baseDay = (item.air_weekday - 1) % 7;
+      let baseDay = item.watch_day ?? 0;
+      if (baseDay === 0 && item.subject?.air_weekday) {
+        baseDay = (item.subject.air_weekday - 1) % 7;
       }
       
-      let timeStr = item.watch_time || item.start_time || '';
+      let timeStr = item.watch_time || '';
       let effectiveDay = baseDay;
       let effectiveTimeStr = timeStr;
       let originalTotalMins = 0; // 用于后续排序的绝对分钟数
