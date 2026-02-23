@@ -25,6 +25,8 @@ const DraggableItemWrapper: React.FC<DraggableItemWrapperProps> = ({ id, childre
     opacity: isDragging ? 0.3 : 1, // 拖动时原件变淡
     touchAction: 'none' as const,
     width: '100%',
+    height: '100%',
+    minWidth: 0,
   };
 
   return (

@@ -40,21 +40,22 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
       }}
     >
       <div
-        className="h-full w-full p-[1px] relative"
+        className="h-full w-full p-[1px] relative overflow-hidden"
         style={{ boxSizing: 'border-box' }}
       >
         {/* 渲染番剧卡片 */}
         {items.length > 0 && (
           items.length > 1 ? (
-            <div className="h-full flex gap-1">
+            <div className="h-full w-full flex gap-1">
               {items.map((item) => (
-                <div key={`${item.subject.source}-${item.subject.source_id}`} className="flex-1 h-full">
+                <div key={`${item.subject.source}-${item.subject.source_id}`} className="flex-1 h-full min-w-0">
                   <DraggableItemWrapper id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
                     <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
                       <TimelineMediaCard
                         data={item}
                         currentHeight={slotHeight}
                         onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+                        width={items.length > 1 ? undefined : undefined}
                       />
                     </div>
                   </DraggableItemWrapper>

@@ -38,9 +38,10 @@ interface TimelineMediaCardProps {
   onDelete?: (data: any) => void;
   noBorder?: boolean;
   transparent?: boolean;
+  width?: number;
 }
 
-export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent }: TimelineMediaCardProps) => {
+export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent, width }: TimelineMediaCardProps) => {
   const { isDarkMode } = useAppTheme();
   const cardRef = React.useRef<HTMLDivElement>(null);
   const [cardWidth, setCardWidth] = React.useState<number | null>(null);
@@ -114,12 +115,14 @@ export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail,
   // ==========================================
   // 1. 响应式特征计算 (Feature Flags)
   // ==========================================
-  const w = cardWidth || 200; // 默认宽
+  // 优先使用传入的 width，然后使用测量的宽度，最后使用默认值
+  const w = width || cardWidth || 200; // 默认宽
   const h = currentHeight || 60; // 默认高
 
   // 尺寸边界判定
   const isUltraCompactWidth = w <= 50;    // 极限窄：窄到连 48px 的封面都放不下
   const isCompactWidth = w <= 140;        // 偏窄：1/2 或 1/3 网格宽度
+  const isVeryCompactWidth = w <= 80;     // 非常窄：1/3 或 1/4 宽度
   const isCompactHeight = h < 50;         // 偏矮：无法容纳大封面
   const isTinyHeight = h < 40;            // 极限矮：需要缩小图标
 
@@ -129,8 +132,8 @@ export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail,
 
   // 标题显示策略：
   // 1. 如果使用了大封面，但宽度不足 90px（比如 1/4 宽），文字会被挤没，此时纯享大图（隐藏标题）
-  // 2. 如果没用大封面，只要不是极限窄就显示标题
-  const showTitle = useRectCover ? w > 90 : !isUltraCompactWidth;
+  // 2. 如果没用大封面，宽度不足 70px 时不显示标题（1/3 或 1/4 宽度），宽度大于 70px 时显示并截断标题（1/2 宽度）
+  const showTitle = useRectCover ? w > 90 : w > 70;
   
   // 副标题（集数）策略：空间真正充裕时才显示
   const showSubtitle = useRectCover && !isCompactWidth;
