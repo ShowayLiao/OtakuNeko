@@ -1,62 +1,124 @@
 'use client';
 
-import React, { useState } from 'react';
-import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core';
+import React, { useState, useCallback } from 'react';
+import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay, pointerWithin } from '@dnd-kit/core';
 import { useAppTheme } from '@/components/providers/LobeProvider';
-import { Utensils, Archive, BookOpen, Sparkles, Calendar } from 'lucide-react';
+import {
+  ActionIcon,
+  Avatar,
+  Button,
+  Flexbox,
+  Header,
+  Popover,
+  PopoverGroup,
+  Tag,
+} from '@lobehub/ui';
+import { LobeHub } from '@lobehub/ui/brand';
+import {
+  ChevronDown,
+  ChevronUp,
+  CloudDownload,
+  HardDriveDownload,
+  Save,
+  CalendarArrowUp,
+  ListTodo,
+  CalendarPlus,
+  User,
+  Settings,
+  LogOut,
+  CloudSync,
+  Share,
+  Utensils,
+  Archive,
+  BookOpen,
+  Sparkles,
+  Calendar
+} from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
+import { getBangumiCalendar, syncBangumiCalendar, BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
+import { ScheduleBase } from '@/services/scheduleService';
 import TimetableHeader from '@/components/header/TimetableHeader';
 import TimelineBoard from '@/components/timetable/TimelineBoard';
 import StandardLanes from '@/components/timetable/StandardLanes';
-import MediaCard from '@/components/collection/MediaCard';
+import TimelineMediaCard from '@/components/timetable/TimelineMediaCard';
+import CollectionPanel from '@/components/timetable/DraggablePanel';
 import { SpotlightCard } from '@lobehub/ui/awesome';
 
-// 定义ScheduleItem类型
-export interface ScheduleItem {
-  id: string;
-  title: string;
-  category: 'Meal' | 'Backlog' | 'Reading' | 'New';
-  day: number; // 0-6, 0=周日, 1=周一, 2=周二, 3=周三, 4=周四, 5=周五, 6=周六
-  time?: string; // 可选，时间
-  description?: string; // 可选，描述
-}
 
-// Mock数据
-const mockScheduleItems: ScheduleItem[] = [
-  // Meal - 周一/周三/周五 -> "齐木楠雄的灾难"
-  { id: '1', title: '齐木楠雄的灾难', category: 'Meal', day: 1, description: '下饭番' },
-  { id: '2', title: '齐木楠雄的灾难', category: 'Meal', day: 3, description: '下饭番' },
-  { id: '3', title: '齐木楠雄的灾难', category: 'Meal', day: 5, description: '下饭番' },
-  
-  // Backlog - 周六/周日 -> "CLANNAD"
-  { id: '4', title: 'CLANNAD', category: 'Backlog', day: 6, description: '补旧番' },
-  { id: '5', title: 'CLANNAD', category: 'Backlog', day: 0, description: '补旧番' },
-  
-  // Reading - 每天 -> "迷宫饭 (漫画)"
-  { id: '6', title: '迷宫饭 (漫画)', category: 'Reading', day: 0, description: '漫画' },
-  { id: '7', title: '迷宫饭 (漫画)', category: 'Reading', day: 1, description: '漫画' },
-  { id: '8', title: '迷宫饭 (漫画)', category: 'Reading', day: 2, description: '漫画' },
-  { id: '9', title: '迷宫饭 (漫画)', category: 'Reading', day: 3, description: '漫画' },
-  { id: '10', title: '迷宫饭 (漫画)', category: 'Reading', day: 4, description: '漫画' },
-  { id: '11', title: '迷宫饭 (漫画)', category: 'Reading', day: 5, description: '漫画' },
-  { id: '12', title: '迷宫饭 (漫画)', category: 'Reading', day: 6, description: '漫画' },
-  
-  // New (Schedule)
-  { id: '13', title: '蔚蓝之海', category: 'New', day: 0, time: '20:00', description: '当季新番' },
-  { id: '14', title: 'Gnosia', category: 'New', day: 0, time: '21:30', description: '当季新番' },
-  { id: '15', title: '我推的孩子', category: 'New', day: 0, time: '22:00', description: '当季新番' },
-];
 
-// 获取当前星期几 (0-6, 0=周日, 1=周一, ..., 6=周六)
+// 获取当前星期几 (0-6, 0=周一, 1=周二, ..., 6=周日)
 const getCurrentDay = (): number => {
-  return new Date().getDay();
+  const day = new Date().getDay();
+  // 转换为 0=周一, 1=周二, ..., 6=周日
+  return day === 0 ? 6 : day - 1;
 };
 
 // 星期标题
-const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WEEK_DAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
 
 // Today高亮颜色常量
 const TODAY_HIGHLIGHT_CLASS = "bg-green-50/50 dark:bg-green-900/10";
+
+// 现代化导航项组件
+const NavItem = ({
+  children,
+  items,
+  icon: Icon,
+}: {
+  children: string;
+  icon?: React.ElementType;
+  items: { icon?: React.ElementType; label: string; tag?: string; onClick?: () => void }[];
+}) => (
+  <Popover
+    arrow={false}
+    placement="bottomLeft"
+    trigger="hover"
+    content={
+      <Flexbox gap={6} style={{ minWidth: 160, padding: '8px' }}>
+        <div
+          style={{
+            color: 'var(--lobe-color-text-3)',
+            fontSize: 11,
+            fontWeight: 600,
+            letterSpacing: '0.5px',
+            padding: '4px 8px',
+            textTransform: 'uppercase',
+          }}
+        >
+          {children}
+        </div>
+        {items.map((item) => (
+          <Flexbox
+            horizontal
+            align="center"
+            key={item.label}
+            onClick={item.onClick}
+            style={{
+              borderRadius: 8,
+              cursor: 'pointer',
+              padding: '8px 12px',
+              transition: 'all 0.2s',
+            }}
+            className="hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            {item.icon && <item.icon size={16} style={{ marginRight: 10 }} />}
+            <span style={{ flex: 1, fontSize: 14 }}>{item.label}</span>
+            {item.tag && (
+              <Tag color={item.tag === 'New' ? 'purple' : 'blue'} style={{ marginLeft: 8 }}>
+                {item.tag}
+              </Tag>
+            )}
+          </Flexbox>
+        ))}
+      </Flexbox>
+    }
+  >
+    <Button icon={Icon ? <Icon size={16} /> : undefined} style={{ gap: 6 }} type="text">
+      {children}
+      <ChevronDown size={14} style={{ opacity: 0.6 }} />
+    </Button>
+  </Popover>
+);
 
 // 泳道配置
 const SWIMLANES = [
@@ -64,33 +126,33 @@ const SWIMLANES = [
     id: 'Meal',
     title: '饭点动画',
     icon: Utensils,
-    color: 'text-orange-600 dark:text-orange-400',
-    bgColor: 'bg-orange-50/50 dark:bg-orange-900/20',
-    borderColor: 'border-orange-200/50 dark:border-orange-800/50'
+    color: 'text-orange-700 dark:text-orange-400',
+    bgColor: 'bg-orange-50 dark:bg-orange-900/20',
+    borderColor: 'border-orange-100 dark:border-orange-800/30'
   },
   {
     id: 'Backlog',
     title: '长草动画',
     icon: Archive,
-    color: 'text-blue-600 dark:text-blue-400',
-    bgColor: 'bg-blue-50/50 dark:bg-blue-900/20',
-    borderColor: 'border-blue-200/50 dark:border-blue-800/50'
+    color: 'text-blue-700 dark:text-blue-400',
+    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
+    borderColor: 'border-blue-100 dark:border-blue-800/30'
   },
   {
     id: 'Reading',
     title: '闲暇阅读',
     icon: BookOpen,
-    color: 'text-emerald-600 dark:text-emerald-400',
-    bgColor: 'bg-emerald-50/50 dark:bg-emerald-900/20',
-    borderColor: 'border-emerald-200/50 dark:border-emerald-800/50'
+    color: 'text-emerald-700 dark:text-emerald-400',
+    bgColor: 'bg-emerald-50 dark:bg-emerald-900/20',
+    borderColor: 'border-emerald-100 dark:border-emerald-800/30'
   },
   {
     id: 'New',
     title: '新番时间',
     icon: Sparkles,
-    color: 'text-purple-600 dark:text-purple-400',
-    bgColor: 'bg-purple-50/50 dark:bg-purple-900/20',
-    borderColor: 'border-purple-200/50 dark:border-purple-800/50'
+    color: 'text-purple-700 dark:text-purple-400',
+    bgColor: 'bg-purple-50 dark:bg-purple-900/20',
+    borderColor: 'border-purple-100 dark:border-purple-800/30'
   },
 ];
 
@@ -128,10 +190,12 @@ const CurrentDayIndicator: React.FC<{ day: number }> = ({ day }) => {
 export default function WeeklyBoardPage() {
   const { isDarkMode } = useAppTheme();
   const currentDay = getCurrentDay();
-  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>(mockScheduleItems);
+  const [scheduleItems, setScheduleItems] = useState<ScheduleItem[]>([]);
   const [activeDragItem, setActiveDragItem] = useState<ScheduleItem | null>(null);
   const [overSlotId, setOverSlotId] = useState<string | null>(null);
   const [isLanesCollapsed, setIsLanesCollapsed] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   // 配置传感器
   const sensors = useSensors(
@@ -142,7 +206,7 @@ export default function WeeklyBoardPage() {
   
   // 根据分类和星期几获取项目
   const getItemsByCategoryAndDay = (category: string, day: number): ScheduleItem[] => {
-    return scheduleItems.filter(item => item.category === category && item.day === day);
+    return scheduleItems.filter(item => item.category === category && (item.watch_day ?? item.day_of_week) === day);
   };
   
   // 前三个分类 (Meal, Backlog, Reading)
@@ -169,66 +233,189 @@ export default function WeeklyBoardPage() {
     }
   };
   
-  // 拖拽结束处理器
   const handleDragEnd = (event: any) => {
     const { active, over } = event;
     
-    if (!over) {
-      setOverSlotId(null);
-      return;
-    }
-    
-    const activeId = active.id;
-    const overId = over.id;
-    
-    // 查找被拖拽的项目
-    const draggedItem = scheduleItems.find(item => item.id === activeId);
-    if (!draggedItem) {
-      setOverSlotId(null);
-      return;
-    }
-    
-    // 深拷贝项目，避免直接修改状态
-    const updatedItems = [...scheduleItems];
-    const itemIndex = updatedItems.findIndex(item => item.id === activeId);
-    
-    if (overId.startsWith('lane-')) {
-      // 拖拽到标准泳道
-      const parts = overId.replace('lane-', '').split('-');
-      const category = parts[0];
-      const day = parts.length > 1 ? parseInt(parts[1], 10) : draggedItem.day;
-      
-      // 更新项目
-      updatedItems[itemIndex] = {
-        ...draggedItem,
-        category,
-        day,
-        time: undefined // 清空时间属性
-      };
-    } else if (overId.includes('-')) {
-      // 拖拽到时间轴坐标 (格式: day-slotIndex)
-      const [dayStr, slotIndexStr] = overId.split('-');
-      const day = parseInt(dayStr, 10);
-      const slotIndex = parseInt(slotIndexStr, 10);
-      
-      // 计算时间 (从 0 开始的 slotIndex 转换为时间)
-      const hours = Math.floor(slotIndex / 3) + 18;
-      const minutes = (slotIndex % 3) * 20;
-      const time = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-      
-      // 更新项目
-      updatedItems[itemIndex] = {
-        ...draggedItem,
-        category: 'New',
-        day,
-        time
-      };
-    }
-    
-    setScheduleItems(updatedItems);
-    setActiveDragItem(null);
-    setOverSlotId(null);
+    if (typeof setOverSlotId === 'function') setOverSlotId(null);
+    if (typeof setActiveDragItem === 'function') setActiveDragItem(null);
+
+    if (!over) return;
+
+    // 强制转换为字符串，防止因 Number 和 String 不一致导致匹配失败
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    setScheduleItems((prevItems) => {
+      const activeItem = prevItems.find((item) => String(item.id) === activeId);
+      if (!activeItem) return prevItems;
+
+      let newDay = activeItem.watch_day ?? activeItem.day_of_week;
+      let newTime = activeItem.watch_time || activeItem.start_time || '';
+      let newType = activeItem.watch_type;
+
+      if (overId.startsWith('lane-')) {
+        // 情况 A: 拖入标准泳道
+        const parts = overId.split('-');
+        if (parts.length >= 3) {
+          const laneStr = parts[1].toUpperCase();
+          newDay = parseInt(parts[2], 10);
+          
+          // 使用更宽松的匹配，防止 swimlane.id 格式不同导致匹配失败
+          if (laneStr.includes('MEAL') || laneStr === '1') newType = WatchType.MEAL;
+          else if (laneStr.includes('READING') || laneStr === '2' || laneStr.includes('LEISURE')) newType = WatchType.LEISURE;
+          else if (laneStr.includes('BACKLOG') || laneStr === '3' || laneStr.includes('LONG')) newType = WatchType.LONG_GRASS;
+          else if (laneStr.includes('NEW') || laneStr === '4') newType = WatchType.NEW;
+          
+          newTime = ''; // 移入泳道后，清空具体时间
+        }
+      } else if (overId.includes('-')) {
+        // 情况 B: 拖入时间网格
+        const parts = overId.split('-');
+        if (parts.length === 2) {
+          let visualDay = parseInt(parts[0], 10);
+          const slotIndex = parseInt(parts[1], 10);
+          
+          const START_HOUR = 18;
+          const hour = START_HOUR + Math.floor(slotIndex / 3);
+          const minute = (slotIndex % 3) * 20;
+          
+          let logicalDay = visualDay;
+          
+          // 🌟 核心跨天修正：如果落入的是深夜档(hour>=24)
+          // 视觉上它属于 visualDay 的深夜，但在真实逻辑中，它的物理时间是下一天的凌晨。
+          // 所以存储数据的 watch_day 必须是视觉天数 +1，才能被正确渲染在深夜档网格。
+          if (hour >= 24) {
+            logicalDay = (visualDay + 1) % 7;
+          }
+          
+          newDay = logicalDay;
+          const displayHour = hour >= 24 ? hour - 24 : hour;
+          newTime = `${displayHour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
+          newType = WatchType.NEW;
+        }
+      } else {
+        return prevItems;
+      }
+
+      // 强制使用 String(item.id) 保证精确修改不漏网
+      return prevItems.map((item) =>
+        String(item.id) === activeId
+          ? {
+              ...item,
+              watch_day: newDay,
+              watch_time: newTime,
+              watch_type: newType
+            }
+          : item
+      );
+    });
   };
+
+  // 处理卡片拉伸事件
+  const handleResize = useCallback((id: string, newDay: number, newDuration: number) => {
+    setScheduleItems(prev => prev.map(item => {
+      if (item.id === id) {
+        return {
+          ...item,
+          watch_day: newDay,
+          duration: newDuration
+        };
+      }
+      return item;
+    }));
+  }, []);
+  
+  // 处理卡片删除事件
+  const handleDelete = useCallback((id: string) => {
+    setScheduleItems(prev => prev.filter(item => item.id !== id));
+  }, []);
+  
+  // 处理获取 Bangumi 日历数据
+  const handleFetchBangumiCalendar = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      // 清空现有的卡片
+      setScheduleItems([]);
+      
+      // 调用 syncBangumiCalendar 函数获取数据
+      const bangumiItems = await syncBangumiCalendar();
+      
+      // 过滤掉 start_time 为空的卡片
+      const validItems = bangumiItems.filter(item => item.start_time !== '未知' && item.start_time !== null);
+      
+      // 确保所有项目都有正确的 watch_type 和默认 duration
+      const updatedItems = validItems.map(item => {
+        return {
+          ...item,
+          watch_type: item.watch_type || WatchType.NEW,
+          duration: item.duration ?? 1
+        };
+      });
+      
+      // 更新卡片数据
+      setScheduleItems(updatedItems);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '获取 Bangumi 日历数据失败');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  // 同步处理函数
+  const handleSyncCloud = () => {
+    console.log('同步云端');
+  };
+  
+  const handleSyncLocal = () => {
+    console.log('同步本地');
+  };
+  
+  // 导出与保存处理函数
+  const handleSaveSchedule = () => {
+    console.log('保存当前排期');
+  };
+
+  // 保存日程成功回调
+  const handleSaveSuccess = () => {
+    console.log('日程保存成功');
+  };
+  
+  const handleExportCalendar = () => {
+    console.log('导出为日历');
+  };
+  
+  const handleExportTickTick = () => {
+    console.log('导出至滴答清单');
+  };
+  
+  // 同步菜单
+  const syncMenu = (
+    <div className="flex flex-col w-36 p-1">
+      <div onClick={handleSyncCloud} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md cursor-pointer text-sm transition-colors">
+        <CloudDownload size={14} /> <span>同步云端</span>
+      </div>
+      <div onClick={handleSyncLocal} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md cursor-pointer text-sm transition-colors">
+        <HardDriveDownload size={14} /> <span>同步本地</span>
+      </div>
+    </div>
+  );
+  
+  // 导出与保存菜单
+  const exportMenu = (
+    <div className="flex flex-col w-40 p-1">
+      <div onClick={handleSaveSchedule} className="flex items-center gap-2 px-3 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-md cursor-pointer text-sm transition-colors">
+        <Save size={14} /> <span>保存当前排期</span>
+      </div>
+      <div className={`h-[1px] w-full my-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}></div>
+      <div onClick={handleExportCalendar} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md cursor-pointer text-sm transition-colors">
+        <CalendarArrowUp size={14} /> <span>导出为日历</span>
+      </div>
+      <div onClick={handleExportTickTick} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md cursor-pointer text-sm transition-colors">
+        <ListTodo size={14} /> <span>导出至滴答清单</span>
+      </div>
+    </div>
+  );
   
   return (
     <DndContext 
@@ -236,101 +423,139 @@ export default function WeeklyBoardPage() {
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
+      collisionDetection={pointerWithin}
     >
-      <div className={`h-full flex flex-col overflow-hidden ${isDarkMode ? 'dark:bg-[#18181B]' : 'bg-[#FBFBFD]'}`}>
+      <div className={`h-full flex flex-col overflow-hidden ${isDarkMode ? 'dark:bg-neutral-950' : 'bg-white'}`}>
         {/* 顶部 Header 区域 - 固定不滚动 */}
         <div className="flex-none z-10">
-          <TimetableHeader />
+          <TimetableHeader 
+            schedules={scheduleItems.map(item => ({
+              id: typeof item.id === 'string' ? parseInt(item.id) : item.id,
+              title: item.title,
+              start_time: item.watch_time || item.start_time || '',
+              end_time: '', // 暂时使用空字符串，后续可以根据需要计算
+              day_of_week: item.watch_day ?? item.day_of_week,
+              status: 'active',
+              type: item.category,
+              description: item.description
+            }))}
+            onSaveSuccess={handleSaveSuccess}
+          />
         </div>
 
-        {/* --- FIXED AREA --- */}
-        <div className={`flex-none ${isDarkMode ? 'bg-gray-900' : 'bg-white'} z-20 shadow-sm`}>
-          {/* 1. Global Week Header (Mon-Sun) */}
-          <div className={`flex w-full border-b ${isDarkMode ? 'border-gray-800 bg-gray-800' : 'border-gray-100 bg-white'}`}>
-            {/* 左侧空白占位符 */}
-            <div className="w-20"></div>
-            {/* 右侧星期表头 */}
-            <div className="flex-1 grid grid-cols-7">
-              {WEEK_DAYS.map((day, index) => {
-                const isToday = index === currentDay;
-                return (
-                  <div 
-                    key={index} 
-                    className={`text-center py-3 ${isToday ? 'bg-blue-50/30' : ''}`}
-                  >
-                    <div className={`text-xs font-semibold uppercase tracking-widest ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>
-                      {day}
-                    </div>
-                    {isToday && (
-                      <div className="mt-1 flex justify-center">
-                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+        {/* 主内容区域 - 包含左侧时间轴和右侧控制面板 */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* 左侧内容区域 */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* --- FIXED AREA --- */}
+            <div className={`flex-none ${isDarkMode ? 'bg-gray-900' : 'bg-white'} z-20 shadow-sm`}>
+              {/* 1. Global Week Header (Mon-Sun) */}
+              <div className={`flex w-full border-b ${isDarkMode ? 'border-gray-800 bg-gray-800' : 'border-gray-100 bg-white'}`}>
+                {/* 左侧空白占位符 */}
+                <div className="w-20"></div>
+                {/* 右侧星期表头 */}
+                <div className="flex-1 grid grid-cols-7">
+                  {WEEK_DAYS.map((day, index) => {
+                    const isToday = index === currentDay;
+                    return (
+                      <div 
+                        key={index} 
+                        className={`text-center py-3 ${isToday ? 'bg-blue-50/30' : ''}`}
+                      >
+                        <div className={`text-xs font-semibold uppercase tracking-widest ${isDarkMode ? 'text-gray-400' : 'text-gray-400'}`}>
+                          {day}
+                        </div>
+                        {isToday && (
+                          <div className="mt-1 flex justify-center">
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-          
-          {/* 2. Standard Lanes (Meal, Backlog, Reading) - Static content */}
-          {!isLanesCollapsed && (
-            <StandardLanes 
-              standardLanes={standardLanes}
-              scheduleItems={scheduleItems}
-              isDarkMode={isDarkMode}
-              overSlotId={overSlotId}
-              activeDragItem={activeDragItem}
-              currentDay={currentDay}
-            />
-          )}
-
-          {/* 3. Timeline Subheader (New!) - Moved OUT of scroll area */}
-          {timelineLane && (
-            <div className="flex items-center h-14 px-4">
-              {/* 左侧空白占位符 */}
-              <div className="w-20 flex items-center justify-center">
-                <button 
-                  onClick={() => setIsLanesCollapsed(!isLanesCollapsed)}
-                  className={`p-1 rounded-full ${isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-200'} transition-colors`}
-                  aria-label={isLanesCollapsed ? '展开泳道' : '折叠泳道'}
-                >
-                  <svg 
-                    xmlns="http://www.w3.org/2000/svg" 
-                    className={`h-4 w-4 ${isDarkMode ? 'text-gray-300' : 'text-gray-600'} transform transition-transform`} 
-                    fill="none" 
-                    viewBox="0 0 24 24" 
-                    stroke="currentColor"
-                    style={{ transform: isLanesCollapsed ? 'rotate(0deg)' : 'rotate(180deg)' }}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-              </div>
-              {/* 中间标题 - 胶囊样式 */}
-              <div className="flex-1 flex items-center justify-center">
-                <div className={`inline-flex items-center px-6 py-2 rounded-full backdrop-blur-md shadow-sm ${isDarkMode ? 'bg-gray-800/70' : 'bg-white/70'}`}>
-                  <timelineLane.icon className={`${timelineLane.color} h-4 w-4 mr-2`} />
-                  <span className="text-sm font-medium">新番妙妙屋</span>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
-          )}
-        </div>
+              
+              {/* 2. Standard Lanes (Meal, Backlog, Reading) - Static content */}
+              {!isLanesCollapsed && (
+                <StandardLanes 
+                  standardLanes={standardLanes}
+                  scheduleItems={scheduleItems}
+                  isDarkMode={isDarkMode}
+                  overSlotId={overSlotId}
+                  activeDragItem={activeDragItem}
+                  currentDay={currentDay}
+                  onResize={handleResize}
+                  onDelete={handleDelete}
+                />
+              )}
 
-        {/* --- SCROLLABLE AREA (Replaced with TimelineBoard component) --- */}
-        <TimelineBoard 
-          scheduleItems={scheduleItems} 
-          isDarkMode={isDarkMode} 
-          overSlotId={overSlotId || undefined}
-          activeDragItem={activeDragItem || undefined}
-        />
+              <Header
+                logo={
+                  <PopoverGroup contentLayoutAnimation>
+                    <Flexbox horizontal gap={4} justify="center" style={{ width: '100%' }}>
+                      {/* 核心强引导操作：一键导入 */}
+                      <Button
+                        type="text"
+                        onClick={handleFetchBangumiCalendar}
+                        disabled={isLoading}
+                        icon={<CalendarPlus size={16} style={{ color: '#9333ea' }} />}
+                        variant="text"
+                        style={{ height: '36px' }}
+                      >
+                        一键导入新番
+                      </Button>
+                      {/* 折叠/展开标准泳道 */}
+                    </Flexbox>
+                  </PopoverGroup>
+                }
+                actions={
+                  <PopoverGroup contentLayoutAnimation>
+                    <Flexbox horizontal gap={4} justify="center" style={{ width: '100%' }}>
+                      {/* 导出菜单 */}
+                      <ActionIcon
+                        icon={isLanesCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        title={isLanesCollapsed ? "展开标准泳道" : "折叠标准泳道"}
+                        onClick={() => setIsLanesCollapsed(!isLanesCollapsed)}
+                        variant="borderless"
+                        size="small"
+                      />
+                    </Flexbox>
+                  </PopoverGroup>
+                }
+                className="h-12"
+              />
+            </div>
+
+            {/* --- SCROLLABLE AREA (Replaced with TimelineBoard component) --- */}
+            <TimelineBoard 
+              scheduleItems={scheduleItems} 
+              isDarkMode={isDarkMode} 
+              currentDay={currentDay}
+              overSlotId={overSlotId || undefined}
+              activeDragItem={activeDragItem || undefined}
+              onDelete={handleDelete}
+              isLoading={isLoading}
+              error={error || undefined}
+            />
+          </div>
+          
+          {/* 右侧可拖拽面板 */}
+          <CollectionPanel />
+        </div>
       </div>
       
       {/* 全局悬浮残影 */}
-      <DragOverlay>
+      <DragOverlay dropAnimation={null}>
         {activeDragItem && (
-          <div style={{ width: '120px', zIndex: 9999 }} className="shadow-2xl opacity-90">
-            <MediaCard variant="timeline" data={activeDragItem} />
+          <div
+            style={{ width: '200px', height: '60px', zIndex: 9999 }}
+            className="shadow-2xl opacity-90 rounded-lg overflow-hidden bg-white dark:bg-gray-800"
+          >
+            <TimelineMediaCard
+              data={activeDragItem}
+              currentHeight={60}
+            />
           </div>
         )}
       </DragOverlay>

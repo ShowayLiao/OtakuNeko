@@ -429,47 +429,95 @@ class SubjectRepo:
             elif settings.DEPLOY_MODE == "cloud":
                 from sqlalchemy.dialects.postgresql import insert
             else:
-                logging.error("Deploy mode not supported")
+                logger.error("Deploy mode not supported")
                 return 0
 
             from app.models.subject import Subject
-            
+            from datetime import time, datetime
+
             if not data_list.items:
                 return 0
             
             # 固定的唯一键字段
             unique_fields = ['source', 'source_id']
             
-            # 1. 将 SubjectUpsert 对象转换为字典列表
+            # 1. 将 SubjectUpsert 对象转换为字典列表，并进行数据清洗
             subject_dicts = []
-            for subject_upsert in data_list.items:
+            logger.info(f"开始处理 {len(data_list.items)} 条数据")
+            
+            for i, subject_upsert in enumerate(data_list.items):
                 # 使用 model_dump 转换为字典，排除 unset 的字段
                 subject_dict = subject_upsert.model_dump(exclude_unset=True)
+                
+                # 记录每条数据的 air_time 值和类型
+                if "air_time" in subject_dict:
+                    val = subject_dict["air_time"]
+                    # logger.info(f"第 {i} 条数据 - air_time 类型: {type(val)}, 值: {val}")
+                
+                # 数据清洗：移除 SQLAlchemy 字段对象，防止 "boundparameter" 错误
+                # 强制清洗 air_time
+                if "air_time" in subject_dict:
+                    val = subject_dict["air_time"]
+                    # 如果不是 time、datetime 或 str 对象且不是 None，强制置空
+                    if val is not None and not isinstance(val, (time, datetime, str)):
+                        logger.warning(f"清洗非法 air_time 数据 (第 {i} 条): {val} (类型: {type(val)}) -> None")
+                        subject_dict["air_time"] = None
+                
+                # 强制清洗 date（对应 air_date）
+                if "date" in subject_dict:
+                    val = subject_dict["date"]
+                    # 确保 date 是字符串或 None
+                    if val is not None and not isinstance(val, str):
+                        logger.warning(f"清洗非法 date 数据 (第 {i} 条): {val} (类型: {type(val)}) -> None")
+                        subject_dict["date"] = None
+                
                 subject_dicts.append(subject_dict)
             
             if not subject_dicts:
                 return 0
+
+            # ================= [修复的核心代码] 开始 =================
+            # 2. 统一所有字典的结构
+            # SQLAlchemy 批量插入要求所有字典的 key 必须一致。
+            # 由于使用了 exclude_unset=True，不同对象的 key 可能不同，这会导致 explicitly rendered as a boundparameter 错误。
             
-            # 2. 构建 Insert 语句
+            # 获取所有字典中出现过的所有 key 的并集
+            all_keys = set().union(*(d.keys() for d in subject_dicts))
+            
+            # 回填缺失的 key 为 None
+            for d in subject_dicts:
+                for k in all_keys:
+                    if k not in d:
+                        d[k] = None
+            
+            logger.info(f"数据清洗与结构统一完成，共处理 {len(subject_dicts)} 条数据")
+            # ================= [修复的核心代码] 结束 =================
+            
+            # 3. 构建 Insert 语句
             stmt = insert(Subject).values(subject_dicts)
             
-            # 3. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
-            # 获取模型的所有列名
-            all_columns = {col.name for col in Subject.__table__.columns}
-            # 排除掉唯一键 (因为唯一键冲突时不用更新它自己)
-            update_cols = all_columns - set(unique_fields)
+            # 4. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
+            # 仅更新本次数据中包含的字段 (all_keys)，避免更新那些完全没有传的字段
+            # 同时排除 created_at 和 id 等不应更新的字段
+            non_updatable_fields = {'id', 'created_at'}
+            update_cols = all_keys - set(unique_fields) - non_updatable_fields
             
-            # 4. 构建 set_ 字典
-            # 这里的 getattr(stmt.excluded, col) 是核心
+            # 5. 构建 set_ 字典
             set_dict = {col: getattr(stmt.excluded, col) for col in update_cols}
             
-            # 5. 添加 On Conflict 子句
-            stmt = stmt.on_conflict_do_update(
-                index_elements=unique_fields,
-                set_=set_dict
-            )
+            # 6. 添加 On Conflict 子句
+            if set_dict:
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=unique_fields,
+                    set_=set_dict
+                )
+            else:
+                # 如果没有需要更新的字段，则 Do Nothing
+                stmt = stmt.on_conflict_do_nothing(
+                    index_elements=unique_fields
+                )
             
-            # 6. 执行语句
+            # 7. 执行语句
             result = await db.execute(stmt)
             await db.commit()
             
@@ -481,12 +529,19 @@ class SubjectRepo:
                 
                 # 收集所有与这些 Subject 相关的用户 ID
                 affected_user_ids = set()
-                for item in data_list.items:
+                # 优化：只需要遍历 unique_keys 即可查询
+                for item_dict in subject_dicts:
+                    source = item_dict.get('source')
+                    source_id = item_dict.get('source_id')
+                    
+                    if not source or not source_id:
+                        continue
+
                     # 查询与当前 Subject 相关的所有收藏记录
                     subject_query = select(Collection.user_id).where(
                         and_(
-                            Collection.source == item.source,
-                            Collection.source_id == item.source_id
+                            Collection.source == source,
+                            Collection.source_id == source_id
                         )
                     )
                     subject_result = await db.execute(subject_query)

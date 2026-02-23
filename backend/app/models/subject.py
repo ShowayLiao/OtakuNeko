@@ -53,7 +53,7 @@ class Subject(SQLModel, table=True):  # type: ignore[call-arg]
     nsfw: bool = Field(default=False, description="是否不适合儿童")
     
     # 放送时间相关字段
-    air_time: Optional[time] = Field(default=None, description="放送时间")
+    air_time: Optional[datetime] = Field(default=None, description="放送时间")
     air_weekday: Optional[int] = Field(default=None, description="放送星期 (1-7)")
     last_sync: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="最后同步时间")
     

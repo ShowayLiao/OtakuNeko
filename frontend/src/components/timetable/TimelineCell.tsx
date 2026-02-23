@@ -1,0 +1,163 @@
+import React from 'react';
+import DroppableCell from './DroppableCell';
+import DraggableItemWrapper from './DraggableItemWrapper';
+import TimelineMediaCard from './TimelineMediaCard';
+import { SpotlightCard } from '@lobehub/ui/awesome';
+import { BangumiItem as ScheduleItem } from '@/services/bangumiService';
+
+interface TimelineCellProps {
+  dayIndex: number;
+  slotIndex: number;
+  items: ScheduleItem[];
+  isOver: boolean;
+  activeDragItem?: any;
+  onDelete?: (id: string) => void;
+  slotHeight: number;
+}
+
+const TimelineCell: React.FC<TimelineCellProps> = ({
+  dayIndex,
+  slotIndex,
+  items,
+  isOver,
+  activeDragItem,
+  onDelete,
+  slotHeight
+}) => {
+  const slotId = `${dayIndex}-${slotIndex}`;
+  const topPosition = slotIndex * slotHeight;
+
+  return (
+    <DroppableCell
+      key={slotId}
+      id={slotId}
+      style={{
+        position: 'absolute',
+        top: `${topPosition}px`,
+        height: `${slotHeight}px`,
+        left: 0,
+        right: 0,
+        zIndex: 1
+      }}
+    >
+      <div
+        className="h-full w-full p-[1px] relative"
+        style={{ boxSizing: 'border-box' }}
+      >
+        {/* 渲染番剧卡片 */}
+        {items.length > 0 && (
+          items.length > 1 ? (
+            <div className="h-full flex gap-1">
+              {items.map((item) => (
+                <div key={item.id} className="flex-1 h-full">
+                  <DraggableItemWrapper id={item.id}>
+                    <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
+                      <SpotlightCard
+                        items={[item]}
+                        gap={0}
+                        maxItemWidth="100%"
+                        borderRadius={8}
+                        columns={1}
+                        style={{ height: '100%', minHeight: 0 }}
+                        renderItem={(data) => (
+                          <div style={{ height: '100%', overflow: 'hidden' }}>
+                            <TimelineMediaCard
+                              data={data}
+                              currentHeight={slotHeight}
+                              onDelete={(data) => onDelete?.(data.id)}
+                            />
+                          </div>
+                        )}
+                      />
+                    </div>
+                  </DraggableItemWrapper>
+                </div>
+              ))}
+            </div>
+          ) : (
+            items.map((item) => (
+              <DraggableItemWrapper key={item.id} id={item.id}>
+                <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
+                  <SpotlightCard
+                    items={[item]}
+                    gap={0}
+                    maxItemWidth="100%"
+                    borderRadius={8}
+                    columns={1}
+                    style={{ height: '100%', minHeight: 0 }}
+                    renderItem={(data) => (
+                      <div style={{ height: '100%', overflow: 'hidden' }}>
+                        <TimelineMediaCard
+                              data={data}
+                              currentHeight={slotHeight}
+                              onDelete={(data) => onDelete?.(data.id)}
+                            />
+                      </div>
+                    )}
+                  />
+                </div>
+              </DraggableItemWrapper>
+            ))
+          )
+        )}
+
+        {/* 磁吸虚影 (Placeholder) */}
+        {isOver && activeDragItem && (
+          <div className="absolute inset-0 flex items-center justify-center opacity-30 z-10">
+            <SpotlightCard
+              items={[activeDragItem]}
+              gap={0}
+              maxItemWidth="100%"
+              borderRadius={8}
+              columns={1}
+              style={{ height: '100%', width: '100%', minHeight: 0 }}
+              renderItem={(data) => (
+                <div style={{ height: '100%', overflow: 'hidden' }}>
+                  <TimelineMediaCard
+                    data={data}
+                    currentHeight={slotHeight}
+                    onDelete={(data) => onDelete?.(data.id)}
+                  />
+                </div>
+              )}
+            />
+          </div>
+        )}
+      </div>
+    </DroppableCell>
+  );
+};
+
+const arePropsEqual = (prevProps: TimelineCellProps, nextProps: TimelineCellProps): boolean => {
+  // 比较 items 引用和内容
+  const itemsAreEqual = () => {
+    if (prevProps.items === nextProps.items) {
+      return true;
+    }
+    if (prevProps.items.length !== nextProps.items.length) {
+      return false;
+    }
+    for (let i = 0; i < prevProps.items.length; i++) {
+      if (prevProps.items[i].id !== nextProps.items[i].id) {
+        return false;
+      }
+    }
+    return true;
+  };
+
+  // 比较 slotHeight
+  const slotHeightEqual = prevProps.slotHeight === nextProps.slotHeight;
+
+  // 隔离 activeDragItem 变化
+  if (!prevProps.isOver && !nextProps.isOver) {
+    // 该格子之前和现在都没有被拖拽悬停，渲染结果不受 activeDragItem 影响
+    return itemsAreEqual() && slotHeightEqual;
+  } else {
+    // 格子正在被悬停，或者 isOver 状态发生切换，需要比较更多属性
+    const isOverEqual = prevProps.isOver === nextProps.isOver;
+    const activeDragItemIdEqual = prevProps.activeDragItem?.id === nextProps.activeDragItem?.id;
+    return isOverEqual && itemsAreEqual() && activeDragItemIdEqual && slotHeightEqual;
+  }
+};
+
+export default React.memo(TimelineCell, arePropsEqual);

@@ -40,14 +40,14 @@ class ScheduleRepository:
             raise
     
     @staticmethod
-    async def create_for_user(db: AsyncSession, user_id: int, schedule_data: ScheduleCreate) -> Schedule:
+    async def create_for_user(db: AsyncSession, user_id: int, schedule_data: ScheduleCreate | dict) -> Schedule:
         """
         为指定用户创建排班记录
         
         Args:
             db: 数据库会话
             user_id: 用户ID
-            schedule_data: 排班数据，使用 ScheduleCreate schema
+            schedule_data: 排班数据，使用 ScheduleCreate schema 或字典
         
         Returns:
             创建的排班记录
@@ -56,18 +56,21 @@ class ScheduleRepository:
             SQLAlchemyError: 数据库操作异常
         """
         try:
+            # 提取数据
+            data = schedule_data.model_dump() if hasattr(schedule_data, 'model_dump') else schedule_data
+            
             # 检查是否存在相同的排班（同一用户、同一天、同一时间）
             existing_schedule = await ScheduleRepository._get_existing_schedule(
-                db, user_id, schedule_data.day_of_week, schedule_data.start_time
+                db, user_id, data['day_of_week'], data['start_time']
             )
             if existing_schedule:
-                logger.warning(f"用户 {user_id} 在 {schedule_data.day_of_week} {schedule_data.start_time} 已存在排班记录")
+                logger.warning(f"用户 {user_id} 在 {data['day_of_week']} {data['start_time']} 已存在排班记录")
                 return existing_schedule
             
             # 创建新的排班记录
             new_schedule = Schedule(
                 user_id=user_id,
-                **schedule_data.model_dump()
+                **data
             )
             db.add(new_schedule)
             await db.commit()
@@ -106,7 +109,7 @@ class ScheduleRepository:
             raise
     
     @staticmethod
-    async def update(db: AsyncSession, schedule_id: int, user_id: int, schedule_data: ScheduleUpdate) -> Optional[Schedule]:
+    async def update(db: AsyncSession, schedule_id: int, user_id: int, schedule_data: ScheduleUpdate | dict) -> Optional[Schedule]:
         """
         更新排班记录（需校验user_id）
         
@@ -114,7 +117,7 @@ class ScheduleRepository:
             db: 数据库会话
             schedule_id: 排班ID
             user_id: 用户ID（用于校验）
-            schedule_data: 更新的排班数据，使用 ScheduleUpdate schema
+            schedule_data: 更新的排班数据，使用 ScheduleUpdate schema 或字典
         
         Returns:
             更新后的排班记录或None（如果记录不存在或不属于该用户）
@@ -132,8 +135,10 @@ class ScheduleRepository:
             if schedule.user_id != user_id:
                 return None
             
+            # 提取更新数据
+            update_data = schedule_data.model_dump(exclude_unset=True) if hasattr(schedule_data, 'model_dump') else schedule_data
+            
             # 检查是否与其他排班冲突
-            update_data = schedule_data.model_dump(exclude_unset=True)
             if 'day_of_week' in update_data or 'start_time' in update_data:
                 new_day = update_data.get('day_of_week', schedule.day_of_week)
                 new_time = update_data.get('start_time', schedule.start_time)

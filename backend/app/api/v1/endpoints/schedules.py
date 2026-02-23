@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
 from app.api.deps import get_current_user
 from app.services.schedule_service import ScheduleService
-from app.schemas.schedule import ScheduleRead, ScheduleCreate, ScheduleUpdate
+from app.schemas.schedule import ScheduleRead, ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList
+from app.schemas.adaptersV2 import UnifiedList
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
@@ -154,3 +155,96 @@ async def delete_schedule(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"删除排班记录失败: {str(e)}")
+
+
+@router.post("/upsert", response_model=ScheduleRead)
+async def upsert_schedule(
+    schedule_data: ScheduleUpsert,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    Upsert 当前用户的排班记录（更新或插入）
+    
+    Args:
+        schedule_data: 排班数据，使用 ScheduleUpsert schema
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        处理后的排班记录
+        
+    Raises:
+        HTTPException: 当处理失败时返回错误
+    """
+    try:
+        result = await ScheduleService.upsert_schedule(db, current_user.id, schedule_data)
+        if not result:
+            raise HTTPException(status_code=404, detail="排班记录不存在或不属于当前用户")
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Upsert 排班记录失败: {str(e)}")
+
+
+@router.post("/bulk-upsert", response_model=ScheduleReadList)
+async def bulk_upsert_schedules(
+    upsert_list: ScheduleUpsertList,
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    批量 Upsert 当前用户的排班记录
+    
+    Args:
+        upsert_list: 待处理的排班记录列表
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        处理后的排班记录列表
+        
+    Raises:
+        HTTPException: 当处理失败时返回错误
+    """
+    try:
+        results = await ScheduleService.bulk_upsert_schedules(db, current_user.id, upsert_list)
+        return {
+            "items": results,
+            "total": len(results)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"批量 Upsert 排班记录失败: {str(e)}")
+
+
+@router.post("/sync-bangumi", response_model=UnifiedList)
+async def sync_bangumi_calendar(
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    同步 Bangumi 日历数据
+    
+    步骤：
+    1. 获取 Bangumi 日历数据
+    2. 转换为 SubjectUpsertList
+    3. 批量插入数据
+    4. 批量同步番剧放送时间
+    5. 转换为统一格式返回
+    
+    Args:
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        转换后的统一格式数据列表
+        
+    Raises:
+        HTTPException: 当同步失败时返回错误
+    """
+    try:
+        result = await ScheduleService.sync_bangumi_calendar(db, current_user.id)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"同步 Bangumi 日历数据失败: {str(e)}")

@@ -1,10 +1,12 @@
 from typing import Dict, Any, List, Optional
 import logging
-from datetime import datetime
+from datetime import datetime, time
 from .subject import SubjectUpsert, SubjectUpsertList, SubjectRead, SubjectReadList, SubjectWithCollection, SubjectWithCollectionList
 from .collection import CollectionUpsert, CollectionUpsertList, CollectionRead, CollectionReadList, CollectionWithSubject, CollectionWithSubjectList
+from .schedule import ScheduleUpsert, ScheduleUpsertList
+from .bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem
 from ..models import SubjectType
-from app.models.enums import CollectionStatus
+from app.models.enums import CollectionStatus, WatchType
 from pydantic import BaseModel, Field
 from .shared import BaseList
 
@@ -795,6 +797,123 @@ def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
     return UnifiedList(
         total=len(items),
         items=items
+    )
+
+
+def bangumi_calendar_to_schedule_upsert_list(
+    bangumi_calendar: BangumiCalendar, 
+    user_id: int
+) -> ScheduleUpsertList:
+    """
+    将 BangumiCalendar 转换为 ScheduleUpsertList
+    
+    Args:
+        bangumi_calendar: Bangumi 日历数据
+        user_id: 用户ID，用于设置 ScheduleUpsert 中的 user_id 字段
+    
+    Returns:
+        转换后的 ScheduleUpsertList 对象
+    """
+    schedules = []
+    
+    for day in bangumi_calendar.root:
+        # 遍历当天的所有番剧
+        for item in day.items:
+            # 解析星期几（后端返回的是 1-7，需要转换为 0-6，0=周日）
+            weekday_id = day.weekday.get('id', 1)
+            day_of_week = (weekday_id - 1) % 7
+            
+            # 解析时间
+            start_time_obj = time(0, 0)  # 默认时间
+            if item.air_date:
+                try:
+                    # 尝试从 air_date 中提取时间
+                    import re
+                    time_match = re.search(r'(\d{2}:\d{2})', item.air_date)
+                    if time_match:
+                        hour, minute = map(int, time_match.group(1).split(':'))
+                        start_time_obj = time(hour, minute)
+                except Exception as e:
+                    logger.warning(f"解析时间失败: {e}")
+            
+            # 构造 ScheduleUpsert 数据
+            schedule_upsert_data = {
+                "user_id": user_id,
+                "source": "bangumi",
+                "source_id": str(item.id),
+                "day_of_week": day_of_week,
+                "start_time": start_time_obj,
+                "watch_day": None,  # 默认不设置观看星期
+                "watch_time": None,  # 默认不设置观看时间
+                "duration": None,  # 默认不设置观看周期
+                "watch_type": WatchType.NEW  # 默认为新番
+            }
+            
+            # 使用 ScheduleUpsert 进行验证和转换
+            try:
+                schedule = ScheduleUpsert(**schedule_upsert_data)
+                schedules.append(schedule)
+            except Exception as e:
+                # 如果验证失败，跳过该条目
+                logger.warning(f"验证Schedule数据失败: {e}, 数据: {schedule_upsert_data}")
+                continue
+    
+    # 返回转换后的 ScheduleUpsertList 对象
+    return ScheduleUpsertList(
+        items=schedules
+    )
+
+
+def bangumi_calendar_to_subject_upsert_list(
+    bangumi_calendar: BangumiCalendar
+) -> SubjectUpsertList:
+    """
+    将 BangumiCalendar 转换为 SubjectUpsertList
+    
+    Args:
+        bangumi_calendar: Bangumi 日历数据
+    
+    Returns:
+        转换后的 SubjectUpsertList 对象
+    """
+    subjects = []
+    
+    for day in bangumi_calendar.root:
+        # 遍历当天的所有番剧
+        for item in day.items:
+            # 解析星期几（后端返回的是 1-7，需要转换为 1-7，1=周一）
+            weekday_id = day.weekday.get('id', 1)
+            logger.info(f"解析星期几: {weekday_id}")
+            
+            # 构造 SubjectUpsert 数据
+            subject_upsert_data = {
+                "source": "bangumi",
+                "source_id": str(item.id),
+                "name": item.name,
+                "name_cn": item.name_cn or "",
+                "summary": item.summary or "",
+                "images": item.images.model_dump() if item.images else {},
+                "image": item.images.common if item.images and item.images.common else "",
+                "rating": item.rating.model_dump() if item.rating else {},
+                "type": SubjectType.ANIME,  # 日历中的条目都是动画
+                "air_weekday": weekday_id  # 添加 air_weekday 字段
+            }
+            
+            logger.info(f"构造 SubjectUpsert 数据: {subject_upsert_data}")
+            
+            # 使用 SubjectUpsert 进行验证和转换
+            try:
+                subject = SubjectUpsert(**subject_upsert_data)
+                subjects.append(subject)
+            except Exception as e:
+                # 如果验证失败，跳过该条目
+                logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
+                continue
+    
+    # 返回转换后的 SubjectUpsertList 对象
+    return SubjectUpsertList(
+        total=len(subjects),
+        items=subjects
     )
 
 

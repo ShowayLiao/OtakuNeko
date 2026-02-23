@@ -25,3 +25,15 @@ class CollectionStatus(IntEnum):
     DO = 3  # 在看
     ON_HOLD = 4  # 搁置
     DROPPED = 5  # 抛弃
+
+
+class WatchType(IntEnum):
+    """
+    观看类型枚举
+    
+    用于表示用户的番剧观看类型
+    """
+    MEAL = 1  # 饭点
+    LEISURE = 2  # 闲暇
+    LONG_GRASS = 3  # 长草
+    NEW = 4  # 新番
