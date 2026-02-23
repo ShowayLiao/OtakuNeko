@@ -232,6 +232,9 @@ export default function WeeklyBoardPage() {
   // 新番时间分类
   const timelineLane = SWIMLANES.find(swimlane => swimlane.id === 'New');
   
+  // 辅助方法：去除ID前缀，获取真实ID
+  const getRealId = (id: string) => id.replace(/^(panel-|board-)/, '');
+  
   // 拖拽开始处理器
   const handleDragStart = (event: any) => {
     const { active } = event;
@@ -241,7 +244,8 @@ export default function WeeklyBoardPage() {
       setActiveDragItem(active.data.current);
     } else {
       // 然后尝试从scheduleItems中查找（适用于从已有泳道拖动的情况）
-      const draggedItem = scheduleItems.find(item => `${item.subject.source}-${item.subject.source_id}` === active.id);
+      const realId = getRealId(String(active.id));
+      const draggedItem = scheduleItems.find(item => `${item.subject.source}-${item.subject.source_id}` === realId);
       setActiveDragItem(draggedItem || null);
     }
     
@@ -267,7 +271,8 @@ export default function WeeklyBoardPage() {
     if (!over) return;
 
     // 强制转换为字符串，防止因 Number 和 String 不一致导致匹配失败
-    const activeId = String(active.id);
+    const activeIdWithPrefix = String(active.id);
+    const realActiveId = getRealId(activeIdWithPrefix);
     const overId = String(over.id);
 
     // 在调用 setScheduleItems 之前，先将当前的 activeDragItem 状态提取到一个局部变量中
@@ -275,7 +280,7 @@ export default function WeeklyBoardPage() {
 
     setScheduleItems((prevItems) => {
       // 首先尝试从prevItems中找到activeItem（适用于从已有泳道拖动的情况）
-      let activeItem = prevItems.find((item) => `${item.subject.source}-${item.subject.source_id}` === activeId);
+      let activeItem = prevItems.find((item) => `${item.subject.source}-${item.subject.source_id}` === realActiveId);
       
       // 如果找不到，优先将外层的 currentActiveItem 赋值给 activeItem
       if (!activeItem) {
@@ -341,12 +346,12 @@ export default function WeeklyBoardPage() {
       }
 
       // 检查项目是否已存在于prevItems中
-      const itemExists = prevItems.some((item) => `${item.subject.source}-${item.subject.source_id}` === activeId);
+      const itemExists = prevItems.some((item) => `${item.subject.source}-${item.subject.source_id}` === realActiveId);
       
       if (itemExists) {
         // 如果项目已存在，更新它
         return prevItems.map((item) =>
-          `${item.subject.source}-${item.subject.source_id}` === activeId
+          `${item.subject.source}-${item.subject.source_id}` === realActiveId
             ? {
                 ...item,
                 watch_day: newDay,

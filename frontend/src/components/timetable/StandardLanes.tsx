@@ -4,7 +4,6 @@ import DraggableItemWrapper from './DraggableItemWrapper';
 import DroppableCell from './DroppableCell';
 import TimelineMediaCard from './TimelineMediaCard';
 import ResizableCardWrapper from './ResizableCardWrapper';
-import { SpotlightCard } from '@lobehub/ui/awesome';
 import { BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
 
 // 卡片内容高度 (不含 gap)
@@ -195,22 +194,10 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                               >
                                 {/* 渲染一个不可见的 Card 撑开真实高度 */}
                                 <div style={{ height: `${CARD_HEIGHT}px`, minHeight: 0 }}>
-                                  <SpotlightCard
-                                    items={[slot.item]}
-                                    gap={0}
-                                    maxItemWidth="100%"
-                                    borderRadius={8}
-                                    columns={1}
-                                    style={{ height: '100%', minHeight: 0 }}
-                                    renderItem={(item) => (
-                                      <div style={{ height: '100%' }}>
-                                        <TimelineMediaCard
-                                          data={item}
-                                          currentHeight={CARD_HEIGHT}
-                                          onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                                        />
-                                      </div>
-                                    )}
+                                  <TimelineMediaCard
+                                    data={slot.item}
+                                    currentHeight={CARD_HEIGHT}
+                                    onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                                   />
                                 </div>
                               </div>
@@ -226,7 +213,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                               className="relative w-full shrink-0"
                               style={{ height: `${CARD_HEIGHT}px` }}
                             >
-                              <DraggableItemWrapper id={itemKey}>
+                              <DraggableItemWrapper id={`board-${itemKey}`}>
                                 <ResizableCardWrapper
                                   id={itemKey}
                                   day={day}
@@ -235,22 +222,10 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                   onResize={onResize}
                                 >
                                   <div style={{ height: `${CARD_HEIGHT}px`, minHeight: 0 }}>
-                                    <SpotlightCard
-                                      items={[realItem]}
-                                      gap={0}
-                                      maxItemWidth="100%"
-                                      borderRadius={8}
-                                      columns={1}
-                                      style={{ height: '100%', minHeight: 0 }}
-                                      renderItem={(item) => (
-                                        <div style={{ height: '100%' }}>
-                                          <TimelineMediaCard
-                                          data={item}
-                                          currentHeight={CARD_HEIGHT}
-                                          onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                                        />
-                                        </div>
-                                      )}
+                                    <TimelineMediaCard
+                                      data={realItem}
+                                      currentHeight={CARD_HEIGHT}
+                                      onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                                     />
                                   </div>
                                 </ResizableCardWrapper>
@@ -265,23 +240,13 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                             className="w-full opacity-30 z-10 shrink-0" // 修改样式：移除 absolute/center，添加 shrink-0
                             style={{ height: `${CARD_HEIGHT}px` }} // 确保高度一致
                           >
-                            <SpotlightCard
-                              items={[activeDragItem]}
-                              gap={0}
-                              maxItemWidth="100%"
-                              borderRadius={8}
-                              columns={1}
-                              style={{ height: '100%', minHeight: 0, width: '100%' }}
-                              renderItem={(data) => (
-                                <div style={{ height: '100%' }}>
-                                  <TimelineMediaCard
-                                  data={data}
-                                  currentHeight={CARD_HEIGHT}
-                                  onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                                />
-                                </div>
-                              )}
-                            />
+                            <div style={{ height: '100%' }}>
+                              <TimelineMediaCard
+                                data={activeDragItem}
+                                currentHeight={CARD_HEIGHT}
+                                onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+                              />
+                            </div>
                           </div>
                         )}
                       </div>

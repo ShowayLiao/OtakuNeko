@@ -272,10 +272,11 @@ export const CollectionPanel = () => {
                 // hover 时增加轻微的背景和上浮效果
                 className="hover:bg-white/80 hover:shadow-sm hover:-translate-y-0.5"
               >
-                <DraggableItemWrapper id={`${item.subject.source}-${item.subject.source_id}`} data={item}>
+                <DraggableItemWrapper id={`panel-${item.subject.source}-${item.subject.source_id}`} data={item}>
                   <TimelineMediaCard 
                     data={item} 
                     currentHeight={80} // 使用正常高度卡片，适合显示方形封面
+                    transparent={true} // 开启透明模式
                   />
                 </DraggableItemWrapper>
               </Flexbox>

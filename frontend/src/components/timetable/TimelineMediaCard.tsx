@@ -36,9 +36,11 @@ interface TimelineMediaCardProps {
   currentHeight?: number;
   onOpenDetail?: (data: any) => void;
   onDelete?: (data: any) => void;
+  noBorder?: boolean;
+  transparent?: boolean;
 }
 
-export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete }: TimelineMediaCardProps) => {
+export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent }: TimelineMediaCardProps) => {
   const { isDarkMode } = useAppTheme();
   const cardRef = React.useRef<HTMLDivElement>(null);
   const [cardWidth, setCardWidth] = React.useState<number | null>(null);
@@ -58,10 +60,10 @@ export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail,
   const activeStyle = isDarkMode ? styleConfig.dark : styleConfig.light;
   // 组合最终类名
   const themeClass = `
-    ${activeStyle}
+    ${transparent ? 'bg-transparent' : activeStyle}
     backdrop-blur-md
-    border
-    shadow-sm hover:shadow-md
+    ${noBorder || transparent ? 'border-none' : 'border'}
+    ${transparent ? 'shadow-none' : 'shadow-sm hover:shadow-md'}
     rounded-xl
     overflow-hidden
     transition-all duration-200

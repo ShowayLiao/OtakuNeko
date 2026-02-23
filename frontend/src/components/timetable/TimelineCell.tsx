@@ -2,7 +2,6 @@ import React from 'react';
 import DroppableCell from './DroppableCell';
 import DraggableItemWrapper from './DraggableItemWrapper';
 import TimelineMediaCard from './TimelineMediaCard';
-import { SpotlightCard } from '@lobehub/ui/awesome';
 import { BangumiItem as ScheduleItem } from '@/services/bangumiService';
 
 interface TimelineCellProps {
@@ -50,24 +49,12 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
             <div className="h-full flex gap-1">
               {items.map((item) => (
                 <div key={`${item.subject.source}-${item.subject.source_id}`} className="flex-1 h-full">
-                  <DraggableItemWrapper id={`${item.subject.source}-${item.subject.source_id}`}>
+                  <DraggableItemWrapper id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
                     <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
-                      <SpotlightCard
-                        items={[item]}
-                        gap={0}
-                        maxItemWidth="100%"
-                        borderRadius={8}
-                        columns={1}
-                        style={{ height: '100%', minHeight: 0 }}
-                        renderItem={(data) => (
-                          <div style={{ height: '100%', overflow: 'hidden' }}>
-                            <TimelineMediaCard
-                              data={data}
-                              currentHeight={slotHeight}
-                              onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                            />
-                          </div>
-                        )}
+                      <TimelineMediaCard
+                        data={item}
+                        currentHeight={slotHeight}
+                        onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                       />
                     </div>
                   </DraggableItemWrapper>
@@ -76,24 +63,12 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
             </div>
           ) : (
             items.map((item) => (
-              <DraggableItemWrapper key={`${item.subject.source}-${item.subject.source_id}`} id={`${item.subject.source}-${item.subject.source_id}`}>
+              <DraggableItemWrapper key={`${item.subject.source}-${item.subject.source_id}`} id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
                 <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
-                  <SpotlightCard
-                    items={[item]}
-                    gap={0}
-                    maxItemWidth="100%"
-                    borderRadius={8}
-                    columns={1}
-                    style={{ height: '100%', minHeight: 0 }}
-                    renderItem={(data) => (
-                      <div style={{ height: '100%', overflow: 'hidden' }}>
-                        <TimelineMediaCard
-                              data={data}
-                              currentHeight={slotHeight}
-                              onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                            />
-                      </div>
-                    )}
+                  <TimelineMediaCard
+                    data={item}
+                    currentHeight={slotHeight}
+                    onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
                   />
                 </div>
               </DraggableItemWrapper>
@@ -104,23 +79,13 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
         {/* 磁吸虚影 (Placeholder) */}
         {isOver && activeDragItem && (
           <div className="absolute inset-0 flex items-center justify-center opacity-30 z-10">
-            <SpotlightCard
-              items={[activeDragItem]}
-              gap={0}
-              maxItemWidth="100%"
-              borderRadius={8}
-              columns={1}
-              style={{ height: '100%', width: '100%', minHeight: 0 }}
-              renderItem={(data) => (
-                <div style={{ height: '100%', overflow: 'hidden' }}>
-                  <TimelineMediaCard
-                    data={data}
-                    currentHeight={slotHeight}
-                    onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                  />
-                </div>
-              )}
-            />
+            <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
+              <TimelineMediaCard
+                data={activeDragItem}
+                currentHeight={slotHeight}
+                onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+              />
+            </div>
           </div>
         )}
       </div>
