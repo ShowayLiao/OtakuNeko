@@ -1,9 +1,10 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
+import traceback
 
 from app.core.logging import get_logger
 from app.models import Schedule
-from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList
+from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList, UnifiedSchedule, UnifiedScheduleList
 from app.repositories.schedule_repo import ScheduleRepository
 
 # 导入 Bangumi 相关服务
@@ -43,6 +44,44 @@ class ScheduleService:
             return schedules
         except Exception as e:
             logger.error(f"获取用户排班记录失败: {e}")
+            raise
+    
+    @staticmethod
+    async def get_unified_user_schedules(db: AsyncSession, user_id: int) -> UnifiedScheduleList:
+        """
+        获取用户的所有排班记录，附带关联的条目和收藏信息
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+        
+        Returns:
+            包含排班记录及其关联信息的统一列表
+        """
+        try:
+            logger.info(f"获取用户 {user_id} 的统一排班记录")
+            # 调用 repository 方法获取带有关联数据的排班记录
+            unified_schedules = await ScheduleRepository.get_unified_schedules_by_user(db, user_id)
+            logger.info(f"成功获取用户 {user_id} 的统一排班记录，共 {len(unified_schedules)} 条")
+            
+            # 转换为 UnifiedSchedule 格式
+            items = []
+            for schedule, subject, collection in unified_schedules:
+                # 创建 UnifiedSchedule 对象
+                unified_item = UnifiedSchedule(
+                    schedule=schedule,
+                    subject=subject,
+                    collection=collection
+                )
+                items.append(unified_item)
+            
+            # 创建并返回 UnifiedScheduleList
+            return UnifiedScheduleList(
+                items=items,
+                total=len(items)
+            )
+        except Exception as e:
+            logger.error(f"获取用户统一排班记录失败: {e}")
             raise
     
     @staticmethod
@@ -368,4 +407,33 @@ class ScheduleService:
             return unified_list
         except Exception as e:
             logger.error(f"同步 Bangumi 日历数据失败: {e}")
+            raise
+    
+    @staticmethod
+    async def delete_all_schedules(db: AsyncSession, user_id: int) -> bool:
+        """
+        删除当前用户的所有排班记录
+
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+
+        Returns:
+            是否删除成功
+
+        Raises:
+            Exception: 删除过程中的异常
+        """
+        try:
+            logger.info(f"开始删除用户 {user_id} 的所有排班记录")
+            logger.debug(f"数据库会话: {db}")
+            
+            result = await ScheduleRepository.delete_all_by_user(db, user_id)
+            logger.info(f"删除用户 {user_id} 所有排班记录的结果: {result}")
+            logger.info(f"成功删除用户 {user_id} 的所有排班记录")
+            return result
+        except Exception as e:
+            logger.error(f"删除用户 {user_id} 所有排班记录失败: {e}")
+            logger.error(f"错误类型: {type(e).__name__}")
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
             raise

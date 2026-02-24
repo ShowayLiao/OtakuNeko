@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from datetime import time
 
 from ..models.enums import WatchType
@@ -87,3 +87,41 @@ class ScheduleReadList(BaseModel):
     """
     items: List[ScheduleRead] = Field(..., description="排班记录列表")
     total: int = Field(..., description="总记录数")
+
+
+class UnifiedSchedule(BaseModel):
+    """
+    统一排班信息Schema
+    
+    包含排班信息以及可选的关联条目和收藏信息
+    """
+    # 必需的排班信息
+    schedule: ScheduleRead = Field(..., description="排班信息")
+    # 可选的条目信息
+    subject: Optional['SubjectRead'] = Field(None, description="关联的条目信息")
+    # 可选的收藏信息
+    collection: Optional['CollectionRead'] = Field(None, description="关联的收藏信息")
+
+    class Config:
+        from_attributes = True
+
+
+class UnifiedScheduleList(BaseModel):
+    """
+    统一排班信息列表Schema
+    
+    用于返回批量统一排班记录
+    """
+    items: List[UnifiedSchedule] = Field(..., description="统一排班记录列表")
+    total: int = Field(..., description="总记录数")
+
+
+# 解决循环引用问题
+if TYPE_CHECKING:
+    from .subject import SubjectRead
+    from .collection import CollectionRead
+
+if not TYPE_CHECKING:
+    from .subject import SubjectRead
+    from .collection import CollectionRead
+    UnifiedSchedule.model_rebuild()

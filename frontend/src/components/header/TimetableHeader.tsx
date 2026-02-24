@@ -2,49 +2,75 @@
 
 import {Header} from './Header';
 import { useAppTheme } from '@/components/providers/LobeProvider';
-import { SearchBar, Button, Popover, Flexbox, Tag, Alert } from '@lobehub/ui';
+import { SearchBar, Button, Popover, Flexbox, Tag, Alert, toast } from '@lobehub/ui';
 import { Calendar, CloudSync, ChevronDown, CloudDownload, HardDriveDownload, Share, Save, CalendarArrowUp, ListTodo } from 'lucide-react';
 import { useState } from 'react';
-import { bulkUpsertSchedules, ScheduleBase } from '@/services/scheduleService';
+import { bulkUpsertSchedules, ScheduleBase, convertBangumiItemsToSchedules, getSchedules } from '@/services/scheduleService';
 
 interface TimetableHeaderProps {
   onSearch?: (value: string) => void;
   onViewModeChange?: (mode: 'grid' | 'list') => void;
-  schedules?: ScheduleBase[];
+  schedules?: any[];
   onSaveSuccess?: () => void;
+  onSyncData?: (data: any[]) => void;
 }
 
 export default function TimetableHeader({ 
   onSearch, 
   onViewModeChange,
   schedules = [],
-  onSaveSuccess
+  onSaveSuccess,
+  onSyncData
 }: TimetableHeaderProps) {
   const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSaveSchedules = async () => {
     if (schedules.length === 0) {
-      setSaveError('没有可保存的日程');
-      setTimeout(() => setSaveError(null), 3000);
+      toast.warning('没有可保存的日程');
       return;
     }
 
     setIsSaving(true);
-    setSaveError(null);
 
     try {
-      await bulkUpsertSchedules(schedules);
+      // 在传输给后端前进行数据转换
+      const convertedSchedules = convertBangumiItemsToSchedules(schedules);
+      
+      if (convertedSchedules.length === 0) {
+        toast.warning('没有有效的日程数据');
+        return;
+      }
+      
+      await bulkUpsertSchedules(convertedSchedules);
       onSaveSuccess?.();
       // 显示成功提示
-      setSaveError('保存成功');
-      setTimeout(() => setSaveError(null), 3000);
+      toast.success('保存成功');
     } catch (error) {
       console.error('保存日程失败:', error);
-      setSaveError('保存失败，请重试');
-      setTimeout(() => setSaveError(null), 3000);
+      toast.error('保存失败，请重试');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSyncData = async () => {
+    setIsSyncing(true);
+
+    try {
+      // 调用 getSchedules API 获取数据
+      const syncData = await getSchedules();
+      
+      // 调用回调函数，将数据传递给父组件
+      onSyncData?.(syncData);
+      
+      // 显示成功提示
+      toast.success('同步数据成功');
+    } catch (error) {
+      console.error('同步数据失败:', error);
+      toast.error('同步失败，请重试');
+    } finally {
+      setIsSyncing(false);
     }
   };
   const { primaryColor } = useAppTheme();
@@ -114,9 +140,10 @@ export default function TimetableHeader({
                       transition: 'all 0.2s',
                     }}
                     className="hover:bg-gray-100 dark:hover:bg-gray-800"
+                    onClick={handleSyncData}
                   >
                     <HardDriveDownload size={16} style={{ marginRight: 10 }} />
-                    <span style={{ flex: 1, fontSize: 14 }}>同步云端</span>
+                    <span style={{ flex: 1, fontSize: 14 }}>{isSyncing ? '同步中...' : '同步云端'}</span>
                   </Flexbox>
                 </Flexbox>
               }

@@ -12,6 +12,7 @@ import {
   Popover,
   PopoverGroup,
   Tag,
+  toast,
 } from '@lobehub/ui';
 import { LobeHub } from '@lobehub/ui/brand';
 import {
@@ -37,7 +38,7 @@ import {
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 import { getBangumiCalendar, syncBangumiCalendar, BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
-import { ScheduleBase } from '@/services/scheduleService';
+import { ScheduleBase, deleteAllSchedules } from '@/services/scheduleService';
 import TimetableHeader from '@/components/header/TimetableHeader';
 import TimelineBoard from '@/components/timetable/TimelineBoard';
 import StandardLanes from '@/components/timetable/StandardLanes';
@@ -233,7 +234,7 @@ export default function WeeklyBoardPage() {
   const timelineLane = SWIMLANES.find(swimlane => swimlane.id === 'New');
   
   // 辅助方法：去除ID前缀，获取真实ID
-  const getRealId = (id: string) => id.replace(/^(panel-|board-)/, '');
+  const getRealId = (id: string) => id.replace(/^(panel-|board-|timeline-|lane-)/, '');
   
   // 拖拽开始处理器
   const handleDragStart = (event: any) => {
@@ -315,8 +316,8 @@ export default function WeeklyBoardPage() {
           newTime = ''; // 移入泳道后，清空具体时间
           newDuration = 1; // 标准泳道中默认持续时间为1天
         }
-      } else if (overId.includes('-')) {
-        // 情况 B: 拖入时间网格
+      } else if (overId.includes('-') && !overId.startsWith('board-')) {
+        // 情况 B: 拖入时间网格，排除拖到其他卡片上的情况
         const parts = overId.split('-');
         if (parts.length === 2) {
           let visualDay = parseInt(parts[0], 10);
@@ -341,6 +342,9 @@ export default function WeeklyBoardPage() {
           newType = WatchType.NEW;
           newDuration = 1; // 时间网格中默认持续时间为1天
         }
+      } else if (overId.startsWith('board-')) {
+        // 情况 C: 拖到其他卡片上，忽略此操作
+        return prevItems;
       } else {
         return prevItems;
       }
@@ -447,6 +451,13 @@ export default function WeeklyBoardPage() {
     console.log('日程保存成功');
   };
   
+  // 同步数据回调
+  const handleSyncData = (data: any[]) => {
+    console.log('同步数据成功，接收到的数据:', data);
+    // 更新 scheduleItems 状态，渲染到页面上
+    setScheduleItems(data);
+  };
+  
   const handleExportCalendar = () => {
     console.log('导出为日历');
   };
@@ -456,8 +467,18 @@ export default function WeeklyBoardPage() {
   };
   
   // 清空所有卡片
-  const handleClearAll = () => {
-    setScheduleItems([]);
+  const handleClearAll = async () => {
+    try {
+      // 调用后端 API 删除所有排班记录
+      await deleteAllSchedules();
+      // 清空页面上的排班记录
+      setScheduleItems([]);
+      // 显示成功提示
+      toast.success('所有日程已清空');
+    } catch (error) {
+      console.error('清空所有日程失败:', error);
+      toast.error('清空所有日程失败，请重试');
+    }
   };
   
   // 同步菜单
@@ -500,17 +521,9 @@ export default function WeeklyBoardPage() {
         {/* 顶部 Header 区域 - 固定不滚动 */}
         <div className="flex-none z-10">
           <TimetableHeader 
-            schedules={scheduleItems.map(item => ({
-              id: parseInt(`${item.subject.source_id}`),
-              title: item.subject?.name_cn || item.subject?.name || '未知标题',
-              start_time: item.watch_time || '',
-              end_time: '', // 暂时使用空字符串，后续可以根据需要计算
-              day_of_week: item.watch_day ?? 0,
-              status: 'active',
-              type: '',
-              description: ''
-            }))}
+            schedules={scheduleItems}
             onSaveSuccess={handleSaveSuccess}
+            onSyncData={handleSyncData}
           />
         </div>
 

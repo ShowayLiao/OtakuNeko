@@ -1,35 +1,40 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
+import traceback
 from app.db.database import get_session
 from app.api.deps import get_current_user
 from app.services.schedule_service import ScheduleService
-from app.schemas.schedule import ScheduleRead, ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList
+from app.schemas.schedule import ScheduleRead, ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList, UnifiedScheduleList
 from app.schemas.adaptersV2 import UnifiedList
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
 
-@router.get("/", response_model=List[ScheduleRead])
+from app.core.logging import get_logger
+logger = get_logger(__name__)   
+
+
+@router.get("/", response_model=UnifiedScheduleList)
 async def get_user_schedules(
     current_user = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
 ):
     """
-    获取当前用户的所有排班记录
+    获取当前用户的所有排班记录，附带关联的条目和收藏信息
     
     Args:
         current_user: 当前认证用户
         db: 数据库会话
         
     Returns:
-        当前用户的所有排班记录列表
+        当前用户的所有排班记录列表，包含关联的条目和收藏信息
         
     Raises:
         HTTPException: 当获取失败时返回错误
     """
     try:
-        schedules = await ScheduleService.get_user_schedules(db, current_user.id)
+        schedules = await ScheduleService.get_unified_user_schedules(db, current_user.id)
         return schedules
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"获取排班记录失败: {str(e)}")
@@ -124,6 +129,44 @@ async def update_schedule(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"更新排班记录失败: {str(e)}")
+
+
+@router.delete("/all", response_model=dict, status_code=200)
+async def delete_all_schedules(
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session)
+):
+    """
+    删除当前用户的所有排班记录
+    
+    Args:
+        current_user: 当前认证用户
+        db: 数据库会话
+        
+    Returns:
+        删除结果，包含成功状态和消息
+        
+    Raises:
+        HTTPException: 当删除失败时返回错误
+    """
+    try:
+        logger.info(f"开始处理删除用户 {current_user.id} 所有排班记录的请求")
+        logger.info(f"当前用户信息: {current_user}")
+        
+        result = await ScheduleService.delete_all_schedules(db, current_user.id)
+        logger.info(f"删除所有排班记录的结果: {result}")
+        
+        if result:
+            logger.info(f"成功删除用户 {current_user.id} 的所有排班记录")
+            return {"status": "success", "message": "所有排班记录删除成功"}
+        else:
+            logger.info(f"用户 {current_user.id} 没有排班记录需要删除")
+            return {"status": "success", "message": "没有排班记录需要删除"}
+    except Exception as e:
+        logger.error(f"删除所有排班记录失败: {str(e)}")
+        logger.error(f"错误类型: {type(e).__name__}")
+        logger.error(f"错误堆栈: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"删除所有排班记录失败: {str(e)}")
 
 
 @router.delete("/{id}", response_model=dict, status_code=200)

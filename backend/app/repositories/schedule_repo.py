@@ -2,9 +2,10 @@ from typing import List, Optional
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
+import traceback
 
 from app.core.logging import get_logger
-from ..models import Schedule
+from ..models import Schedule, Subject, Collection
 from ..schemas.schedule import ScheduleCreate, ScheduleUpdate
 
 logger = get_logger(__name__)
@@ -40,6 +41,36 @@ class ScheduleRepository:
             raise
     
     @staticmethod
+    async def get_unified_schedules_by_user(db: AsyncSession, user_id: int) -> List[tuple[Schedule, Optional[Subject], Optional[Collection]]]:
+        """
+        获取指定用户的所有排班记录，附带左外连接的条目和收藏信息
+        
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+        
+        Returns:
+            用户的所有排班记录列表，每个元素是 (Schedule, Subject, Collection) 的元组
+        
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            # 构建查询，使用左外连接
+            query = (
+                select(Schedule, Subject, Collection)
+                .where(Schedule.user_id == user_id)
+                .outerjoin(Subject, (Schedule.source == Subject.source) & (Schedule.source_id == Subject.source_id))
+                .outerjoin(Collection, (Schedule.source == Collection.source) & (Schedule.source_id == Collection.source_id) & (Collection.user_id == user_id))
+                .order_by(Schedule.day_of_week, Schedule.start_time)
+            )
+            result = await db.execute(query)
+            return result.all()
+        except SQLAlchemyError as e:
+            logger.error(f"获取用户统一排班记录失败: {e}")
+            raise
+    
+    @staticmethod
     async def create_for_user(db: AsyncSession, user_id: int, schedule_data: ScheduleCreate | dict) -> Schedule:
         """
         为指定用户创建排班记录
@@ -58,6 +89,9 @@ class ScheduleRepository:
         try:
             # 提取数据
             data = schedule_data.model_dump() if hasattr(schedule_data, 'model_dump') else schedule_data
+            
+            # 移除 data 中的 user_id，避免重复传递
+            data.pop('user_id', None)
             
             # 检查是否存在相同的排班（同一用户、同一天、同一时间）
             existing_schedule = await ScheduleRepository._get_existing_schedule(
@@ -237,14 +271,14 @@ class ScheduleRepository:
     ) -> Optional[Schedule]:
         """
         检查是否存在相同的排班记录
-        
+
         Args:
             db: 数据库会话
             user_id: 用户ID
             day_of_week: 星期几
             start_time: 开始时间
             exclude_id: 排除的排班ID（用于更新操作）
-        
+
         Returns:
             存在的排班记录或None
         """
@@ -261,3 +295,45 @@ class ScheduleRepository:
         except SQLAlchemyError as e:
             logger.error(f"检查重复排班记录失败: {e}")
             return None
+    
+    @staticmethod
+    async def delete_all_by_user(db: AsyncSession, user_id: int) -> bool:
+        """
+        删除指定用户的所有排班记录
+
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+
+        Returns:
+            是否删除成功
+
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            logger.info(f"开始删除用户 {user_id} 的所有排班记录")
+            logger.debug(f"数据库会话: {db}")
+            
+            # 构建删除查询
+            delete_query = Schedule.__table__.delete().where(Schedule.user_id == user_id)
+            logger.debug(f"删除查询: {delete_query}")
+            
+            # 执行删除操作
+            result = await db.execute(delete_query)
+            logger.info(f"删除操作结果: {result}")
+            logger.info(f"删除的记录数: {result.rowcount}")
+            
+            # 提交事务
+            await db.commit()
+            logger.info(f"事务提交成功")
+            
+            logger.info(f"成功删除用户 {user_id} 的所有排班记录，共删除 {result.rowcount} 条")
+            return True
+        except SQLAlchemyError as e:
+            logger.error(f"删除用户 {user_id} 所有排班记录失败: {e}")
+            logger.error(f"错误类型: {type(e).__name__}")
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
+            await db.rollback()
+            logger.info(f"事务回滚成功")
+            raise

@@ -39,9 +39,10 @@ interface TimelineMediaCardProps {
   noBorder?: boolean;
   transparent?: boolean;
   width?: number;
+  isPanel?: boolean;
 }
 
-export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent, width }: TimelineMediaCardProps) => {
+export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent, width, isPanel }: TimelineMediaCardProps) => {
   const { isDarkMode } = useAppTheme();
   const cardRef = React.useRef<HTMLDivElement>(null);
   const [cardWidth, setCardWidth] = React.useState<number | null>(null);
@@ -162,60 +163,115 @@ export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail,
   // 2. 统一的 DOM 渲染结构
   // ==========================================
   const renderContent = () => {
-    return (
-      <div className={`flex flex-row items-center h-full w-full overflow-hidden ${showTitle ? (useRectCover ? '' : 'px-1.5') : 'justify-center'}`}>
-        
-        {/* 统一的封面容器 */}
-        <div className={`flex-shrink-0 relative overflow-hidden flex items-center justify-center ${coverClass} ${isDarkMode ? 'bg-gray-700' : 'bg-gray-100'}`}>
+    // 核心判断：如果是在 DraggablePanel 中渲染，使用宽宽度模式；否则使用窄宽度模式
+    const isNarrowMode = !isPanel;
+
+    // --- 模式 B：竖排文字模式 (在非 DraggablePanel 中渲染) ---
+    if (isNarrowMode) {
+      return (
+        <div className="relative w-full h-full overflow-hidden group/spine">
+          {/* A. 封面作为全量背景，撑满不留白 */}
           {cover ? (
             <img
               src={cover}
               alt={title}
               referrerPolicy="no-referrer"
-              className={`w-full h-full object-cover ${useRectCover ? 'transition-transform duration-500 group-hover:scale-105' : ''}`}
+              className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover/spine:scale-110"
             />
           ) : (
-            <div className={`flex items-center justify-center ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+            <div className={`absolute inset-0 flex items-center justify-center ${isDarkMode ? 'bg-gray-800' : 'bg-gray-200'}`}>
               {getCategoryIcon()}
             </div>
           )}
-          
-          {/* 统一的删除按钮 */}
+
+          {/* B. 压黑背景遮罩，确保无论什么封面，白色文字都能看清 */}
+          <div className="absolute inset-0 bg-black/40 group-hover/spine:bg-black/50 transition-colors" />
+
+          {/* C. 居中的横排文字，根据高度自动调整行数 */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center px-1 py-0.5 pointer-events-none">
+            {/* 根据高度决定文字行数 */}
+            {h > 70 ? (
+              // 高度足够，显示三行文字
+              <span
+                className="text-white text-[10px] md:text-xs font-bold leading-tight tracking-widest opacity-95 overflow-hidden text-center line-clamp-3"
+                style={{
+                  textShadow: '0 1px 3px rgba(0,0,0,0.8)', // 强阴影增加可读性
+                  maxWidth: '90%', // 防止文字过长溢出格子
+                }}
+              >
+                {title}
+              </span>
+            ) : h > 50 ? (
+              // 高度适中，显示两行文字
+              <span
+                className="text-white text-[10px] md:text-xs font-bold leading-tight tracking-widest opacity-95 overflow-hidden text-center line-clamp-2"
+                style={{
+                  textShadow: '0 1px 3px rgba(0,0,0,0.8)', // 强阴影增加可读性
+                  maxWidth: '90%', // 防止文字过长溢出格子
+                }}
+              >
+                {title}
+              </span>
+            ) : (
+              // 高度不足，显示单行文字
+              <span
+                className="text-white text-[10px] md:text-xs font-bold leading-none tracking-widest opacity-95 overflow-hidden truncate text-center"
+                style={{
+                  textShadow: '0 1px 3px rgba(0,0,0,0.8)', // 强阴影增加可读性
+                  maxWidth: '90%', // 防止文字过长溢出格子
+                }}
+              >
+                {title}
+              </span>
+            )}
+          </div>
+
+          {/* D. 悬浮删除按钮 (位于右侧居中) */}
           {onDelete && (
-            <div className={`absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-black/40`}>
+            <div className="absolute right-0 top-1/2 transform -translate-y-1/2 p-0.5 opacity-0 group-hover/spine:opacity-100 transition-opacity z-10">
               <ActionIcon
                 icon={X}
-                title="删除"
                 size="small"
                 onClick={handleDelete}
-                variant="borderless"
-                className="text-white hover:bg-black/60"
+                className="bg-black/60 text-white w-4 h-4 min-w-[16px]"
                 style={{ border: 'none', color: 'white' }}
               />
             </div>
           )}
         </div>
+      );
+    }
 
-        {/* 统一的文本容器 (min-w-0 是 Flex 截断生效的关键) */}
-        {showTitle && (
-          <div className={`flex flex-col flex-1 min-w-0 justify-center ${useRectCover ? 'p-2' : 'ml-2'}`}>
-            <h3
-              className={`font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}
-                ${useRectCover ? 'text-sm line-clamp-2 leading-tight whitespace-normal' : 'text-sm truncate'}
-              `}
-              title={title}
-            >
-              {title || '无标题'}
-            </h3>
-            
-            {showSubtitle && (
-              <span className={`text-xs mt-0.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} truncate`}>
-                {time || (eps !== 'N/A' ? `${eps}集` : '')}
-              </span>
-            )}
-          </div>
-        )}
+    // --- 模式 A：横向图文模式 (在 DraggablePanel 中渲染) ---
+    return (
+      <div className="flex flex-row items-center h-full w-full overflow-hidden">
+        {/* 封面：固定为 3:4 比例，靠左显示 */}
+        <div className="h-full aspect-[3/4] flex-shrink-0 relative">
+          {cover ? (
+            <img
+              src={cover}
+              alt={title}
+              referrerPolicy="no-referrer"
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className={`w-full h-full flex items-center justify-center ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
+              {getCategoryIcon()}
+            </div>
+          )}
+        </div>
 
+        {/* 文字区域：横向正常显示，内部自动截断 */}
+        <div className="flex flex-col flex-1 min-w-0 justify-center px-2 py-1">
+          <h3 className={`font-medium text-xs truncate ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`} title={title}>
+            {title}
+          </h3>
+          {h > 40 && (
+             <span className="text-[10px] opacity-60 truncate mt-0.5">
+               {time || (eps !== 'N/A' ? `${eps}集` : '')}
+             </span>
+          )}
+        </div>
       </div>
     );
   };

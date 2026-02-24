@@ -277,6 +277,7 @@ export const CollectionPanel = () => {
                     data={item} 
                     currentHeight={80} // 使用正常高度卡片，适合显示方形封面
                     transparent={true} // 开启透明模式
+                    isPanel={true} // 标识在 DraggablePanel 中渲染
                   />
                 </DraggableItemWrapper>
               </Flexbox>
