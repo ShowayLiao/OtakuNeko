@@ -39,7 +39,7 @@ export const getCollections = async (params?: {
     console.log('scheduleService.getCollections: API 响应:', response);
     
     // 转换数据格式为 BangumiItem[]
-    const items: BangumiItem[] = (response?.items || []).map((collectionItem: any) => {
+    let items: BangumiItem[] = (response?.items || []).map((collectionItem: any) => {
       return {
         collection: collectionItem.collection || null,
         subject: collectionItem.subject || null,
@@ -49,6 +49,39 @@ export const getCollections = async (params?: {
         duration: null
       };
     });
+    
+    // 如果收藏搜索结果为空，且有关键词或类型过滤，则调用 subjects 接口
+    if (items.length === 0 && (params?.keyword || params?.subject_type !== undefined)) {
+      console.log('scheduleService.getCollections: 收藏搜索结果为空，尝试调用 subjects 接口');
+      
+      // 构建 subjects 接口的查询参数（只传递它支持的参数）
+      const subjectsParams = new URLSearchParams();
+      if (params?.keyword !== undefined) subjectsParams.append('q', params.keyword);
+      if (params?.subject_type !== undefined) subjectsParams.append('type', params.subject_type.toString());
+      
+      const subjectsQueryString = subjectsParams.toString();
+      const subjectsEndpoint = `/subjects${subjectsQueryString ? `?${subjectsQueryString}` : ''}`;
+      
+      // 调用 subjects 接口
+      const subjectsResponse = await request<any>(subjectsEndpoint, {
+        method: 'GET'
+      });
+      console.log('scheduleService.getCollections: subjects API 响应:', subjectsResponse);
+      
+      // 转换 subjects 接口的响应格式为 BangumiItem[]
+      const subjectsItems: BangumiItem[] = (subjectsResponse?.items || []).map((subjectItem: any) => {
+        return {
+          collection: subjectItem.collection || null,
+          subject: subjectItem.subject || null,
+          watch_day: null,
+          watch_time: null,
+          watch_type: null,
+          duration: null
+        };
+      });
+      
+      items = subjectsItems;
+    }
     
     return items;
   } catch (error) {

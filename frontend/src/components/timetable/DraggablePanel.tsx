@@ -100,14 +100,8 @@ export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
 
   // --- 4. 数据过滤和排序逻辑 ---
   const filteredList = useMemo(() => {
-    let result = collections;
-    
-    // 按标题字母顺序排序
-    return result.sort((a, b) => {
-      const titleA = a.subject?.name || '';
-      const titleB = b.subject?.name || '';
-      return titleA.localeCompare(titleB);
-    });
+    // 直接使用后端返回的数据顺序，不进行前端排序
+    return collections;
   }, [collections]);
 
 

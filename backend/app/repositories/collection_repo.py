@@ -375,7 +375,7 @@ class CollectionRepo:
             
             # 应用状态过滤
             if getattr(search_data, 'status', None) is not None:
-                query = query.where(Collection.status == search_data.status)
+                query = query.where(Collection.type == search_data.status)
             
             # 应用排序
             sort_by = getattr(search_data, 'sort_by', 'updated_at')
