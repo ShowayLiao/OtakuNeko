@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import DroppableCell from './DroppableCell';
 import DraggableItemWrapper from './DraggableItemWrapper';
 import TimelineMediaCard from './TimelineMediaCard';
+import SubjectModal from '../Modal/SubjectModal';
 import { BangumiItem as ScheduleItem } from '@/services/bangumiService';
 
 interface TimelineCellProps {
@@ -25,72 +26,101 @@ const TimelineCell: React.FC<TimelineCellProps> = ({
 }) => {
   const slotId = `${dayIndex}-${slotIndex}`;
   const topPosition = slotIndex * slotHeight;
+  const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState<any>(null);
+
+  const handleOpenDetail = (item: any) => {
+    // 确保 item 数据格式正确
+    const formattedItem = {
+      ...item,
+      // 确保 subject 字段存在
+      subject: item.subject || item,
+      // 确保 collection 字段存在
+      collection: item.collection || {}
+    };
+    setSelectedSubject(formattedItem);
+    setIsSubjectModalOpen(true);
+  };
 
   return (
-    <DroppableCell
-      key={slotId}
-      id={slotId}
-      style={{
-        position: 'absolute',
-        top: `${topPosition}px`,
-        height: `${slotHeight}px`,
-        left: 0,
-        right: 0,
-        zIndex: 1
-      }}
-    >
-      <div
-        className="h-full w-full p-[1px] relative overflow-hidden"
-        style={{ boxSizing: 'border-box' }}
+    <>
+      <DroppableCell
+        key={slotId}
+        id={slotId}
+        style={{
+          position: 'absolute',
+          top: `${topPosition}px`,
+          height: `${slotHeight}px`,
+          left: 0,
+          right: 0,
+          zIndex: 1
+        }}
       >
-        {/* 渲染番剧卡片 */}
-        {items.length > 0 && (
-          items.length > 1 ? (
-            <div className="h-full w-full flex gap-1">
-              {items.map((item) => (
-                <div key={`${item.subject.source}-${item.subject.source_id}`} className="flex-1 h-full min-w-0">
-                  <DraggableItemWrapper id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
-                    <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
-                      <TimelineMediaCard
-                        data={item}
-                        currentHeight={slotHeight}
-                        onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                        width={items.length > 1 ? undefined : undefined}
-                      />
-                    </div>
-                  </DraggableItemWrapper>
-                </div>
-              ))}
-            </div>
-          ) : (
-            items.map((item) => (
-              <DraggableItemWrapper key={`${item.subject.source}-${item.subject.source_id}`} id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
-                <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
-                  <TimelineMediaCard
-                    data={item}
-                    currentHeight={slotHeight}
-                    onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                  />
-                </div>
-              </DraggableItemWrapper>
-            ))
-          )
-        )}
+        <div
+          className="h-full w-full p-[1px] relative overflow-hidden"
+          style={{ boxSizing: 'border-box' }}
+        >
+          {/* 渲染番剧卡片 */}
+          {items.length > 0 && (
+            items.length > 1 ? (
+              <div className="h-full w-full flex gap-1">
+                {items.map((item) => (
+                  <div key={`${item.subject.source}-${item.subject.source_id}`} className="flex-1 h-full min-w-0">
+                    <DraggableItemWrapper id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
+                      <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
+                        <TimelineMediaCard
+                          data={item}
+                          currentHeight={slotHeight}
+                          onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+                          onOpenDetail={handleOpenDetail}
+                          width={items.length > 1 ? undefined : undefined}
+                        />
+                      </div>
+                    </DraggableItemWrapper>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              items.map((item) => (
+                <DraggableItemWrapper key={`${item.subject.source}-${item.subject.source_id}`} id={`board-${item.subject.source}-${item.subject.source_id}`} data={item}>
+                  <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
+                    <TimelineMediaCard
+                      data={item}
+                      currentHeight={slotHeight}
+                      onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+                      onOpenDetail={handleOpenDetail}
+                    />
+                  </div>
+                </DraggableItemWrapper>
+              ))
+            )
+          )}
 
-        {/* 磁吸虚影 (Placeholder) */}
-        {isOver && activeDragItem && (
-          <div className="absolute inset-0 flex items-center justify-center opacity-30 z-10">
-            <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
-              <TimelineMediaCard
-                data={activeDragItem}
-                currentHeight={slotHeight}
-                onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-              />
+          {/* 磁吸虚影 (Placeholder) */}
+          {isOver && activeDragItem && (
+            <div className="absolute inset-0 flex items-center justify-center opacity-30 z-10">
+              <div style={{ height: '100%', width: '100%', minHeight: 0 }}>
+                <TimelineMediaCard
+                  data={activeDragItem}
+                  currentHeight={slotHeight}
+                  onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+                />
+              </div>
             </div>
-          </div>
-        )}
-      </div>
-    </DroppableCell>
+          )}
+        </div>
+      </DroppableCell>
+
+      {/* 条目详情模态框 */}
+      <SubjectModal
+        isOpen={isSubjectModalOpen}
+        onClose={() => {
+          setIsSubjectModalOpen(false);
+          setSelectedSubject(null);
+        }}
+        initialValues={selectedSubject}
+      />
+    </>
   );
 };
 
