@@ -94,8 +94,8 @@ export const getBangumiCalendar = async (): Promise<BangumiItem[]> => {
     response.forEach(day => {
       // 遍历当天的所有番剧
       day.items.forEach((item, index) => {
-        // 计算星期几（后端返回的是 1-7，需要转换为 0-6，0=周日，1=周一，...，6=周六）
-        const day_of_week = day.weekday.id === 7 ? 0 : day.weekday.id;
+        // 计算星期几（后端返回的是 1-7，转换为 0-6，0=周一，1=周二，...，6=周日）
+        const day_of_week = (day.weekday.id - 1) % 7;
         
         // 提取时间信息
         let watch_time = '';
@@ -212,10 +212,15 @@ export const syncBangumiCalendar = async (): Promise<BangumiItem[]> => {
       
       const subject = item.subject;
       
+      // 当 air_time 或 air_weekday 为 null 时跳过该 item
+      if (subject.air_time === null || subject.air_weekday === null) {
+        return;
+      }
+      
       // 提取时间信息并转换为客户端时区
       let watch_time = '';
-      // 默认先用后端给的 air_weekday 兜底 (如果是7转成0)
-      let watch_day = subject.air_weekday ? (subject.air_weekday === 7 ? 0 : subject.air_weekday) : 0;
+      // 默认先用后端给的 air_weekday 兜底 (转换为 0-6，0=周一，1=周二，...，6=周日)
+      let watch_day = subject.air_weekday ? (subject.air_weekday - 1) % 7 : 0;
 
       if (subject.air_time) {
         try {
@@ -234,8 +239,8 @@ export const syncBangumiCalendar = async (): Promise<BangumiItem[]> => {
             watch_time = `${localHour}:${localMinute}`;
             
             // ✨ 核心修改：利用本地化后的 Date 对象直接获取星期几，覆盖后端的 weekday
-            // utcDate.getDay() 返回的就是 0-6（0代表周日），完美契合你的设定
-            watch_day = utcDate.getDay();
+          // 将 getDay() 的结果（0=周日，1=周一，...，6=周六）转换为 0=周一，1=周二，...，6=周日的格式
+          watch_day = (utcDate.getDay() + 6) % 7;
           }
         } catch (error) {
           console.error('时间解析失败:', subject.air_time, error);

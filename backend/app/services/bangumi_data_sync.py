@@ -57,7 +57,7 @@ class BangumiDataSyncService:
                     
                     # 使用 httpx 异步下载数据
                     async with httpx.AsyncClient() as client:
-                        response = await client.get(data_url, timeout=30.0)
+                        response = await client.get(data_url, timeout=30.0, follow_redirects=True)
                         
                         # 计算响应时间
                         response_time = (datetime.now() - start_time).total_seconds()

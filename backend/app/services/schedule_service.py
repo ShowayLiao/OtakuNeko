@@ -215,22 +215,13 @@ class ScheduleService:
                 logger.warning(f"Upsert 排班记录失败: 用户ID不匹配")
                 return None
             
-            # 根据是否提供id决定执行更新还是插入
-            if schedule_data.id:
-                # 执行更新操作
-                update_data = schedule_data.model_dump(exclude_unset=True, exclude={"id", "user_id"})
-                updated_schedule = await ScheduleRepository.update(db, schedule_data.id, user_id, update_data)
-                if updated_schedule:
-                    logger.info(f"成功更新用户 {user_id} 的排班记录: {schedule_data.id}")
-                else:
-                    logger.warning(f"更新排班记录失败: 记录不存在或不属于用户 {user_id}")
-                return updated_schedule
+            # 直接调用 repository 的 upsert 方法
+            result = await ScheduleRepository.upsert(db, user_id, schedule_data)
+            if result:
+                logger.info(f"成功 Upsert 用户 {user_id} 的排班记录")
             else:
-                # 执行插入操作
-                create_data = schedule_data.model_dump(exclude={"id"})
-                new_schedule = await ScheduleRepository.create_for_user(db, user_id, create_data)
-                logger.info(f"成功为用户 {user_id} 创建排班记录: {new_schedule.id}")
-                return new_schedule
+                logger.warning(f"Upsert 排班记录失败")
+            return result
         except Exception as e:
             logger.error(f"Upsert 排班记录失败: {e}")
             raise
@@ -254,14 +245,16 @@ class ScheduleService:
         try:
             logger.info(f"批量 Upsert 用户 {user_id} 的排班记录，共 {len(upsert_list.items)} 条")
             
-            results = []
-            for schedule_data in upsert_list.items:
-                result = await ScheduleService.upsert_schedule(db, user_id, schedule_data)
-                if result:
-                    results.append(result)
+            # 直接调用 repository 的 batch_upsert 方法
+            processed_count = await ScheduleRepository.batch_upsert(db, user_id, upsert_list)
+            logger.info(f"批量 Upsert 完成，成功处理 {processed_count} 条记录")
             
-            logger.info(f"批量 Upsert 完成，成功处理 {len(results)} 条记录")
-            return results
+            # 由于 batch_upsert 返回的是处理的条目数量，而不是处理后的记录列表
+            # 我们需要重新获取用户的所有排班记录
+            updated_schedules = await ScheduleRepository.get_by_user(db, user_id)
+            logger.info(f"成功获取用户 {user_id} 的所有排班记录，共 {len(updated_schedules)} 条")
+            
+            return updated_schedules
         except Exception as e:
             logger.error(f"批量 Upsert 排班记录失败: {e}")
             raise

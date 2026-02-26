@@ -78,7 +78,7 @@ export interface ScheduleReadList {
 export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
   const userId = 1; // 暂时硬编码，后续应该从认证系统获取
   
-  return items.map(item => {
+  const convertedItems = items.map(item => {
     // 确保必要字段存在且格式正确
     const source = item.subject?.source || 'bangumi';
     const sourceId = item.subject?.source_id || '';
@@ -88,7 +88,7 @@ export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
     // 打印转换前的原始item，方便调试
     console.log("转换前的原始item:", item);
     
-    return {
+    const convertedItem = {
       source,
       source_id: sourceId,
       day_of_week: watchDay,
@@ -99,7 +99,17 @@ export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
       watch_type: item.watch_type != null ? item.watch_type : 4, // 4 = NEW
       user_id: userId
     };
+    
+    // 打印转换后的item，方便调试
+    console.log("转换后的item:", convertedItem);
+    
+    return convertedItem;
   }).filter(item => item.source_id); // 过滤掉没有 source_id 的项
+  
+  // 打印转换后的完整数组
+  console.log("转换后的完整数组:", convertedItems);
+  
+  return convertedItems;
 };
 
 // 批量 upsert 排班记录
@@ -124,7 +134,17 @@ export const convertSchedulesToBangumiItems = (schedulesData: any): BangumiItem[
     return [];
   }
   
-  return schedulesData.items.map((item: any) => {
+  return schedulesData.items.filter((item: any) => {
+    // 检查 subject 是否存在，以及 air_time 和 air_weekday 是否不为 null
+    if (!item.subject) {
+      return false;
+    }
+    // 当 air_time 或 air_weekday 为 null 时跳过该 item
+    if (item.subject.air_time === null || item.subject.air_weekday === null) {
+      return false;
+    }
+    return true;
+  }).map((item: any) => {
     // 构建 BangumiItem 对象
     const bangumiItem: BangumiItem = {
       collection: item.collection || null,

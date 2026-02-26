@@ -43,7 +43,11 @@ export const MediaCard = ({ data, category, variant = 'standard', onOpenDetail, 
   // --- 数据清洗 (逻辑封装在内部) ---
   const subject = data.subject || data;
   const title = subject?.name_cn || subject?.name || data.title;
-  const cover = subject?.images?.large || data.cover;
+  const rawCover = subject?.images?.large || data.cover;
+  // 遇到豆瓣图片，使用本地代理接口
+  const cover = rawCover?.includes('doubanio.com')
+    ? `/api/proxy-image?url=${encodeURIComponent(rawCover)}`
+    : rawCover;
   const score = subject?.rating?.score || data.score;
   const eps = subject?.eps || 'N/A';
   const tags = (subject?.tags || []).slice(0, variant === 'compact' ? 1 : 3).map((t: any) => t.name);

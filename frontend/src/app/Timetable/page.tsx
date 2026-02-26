@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay, pointerWithin } from '@dnd-kit/core';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import {
@@ -38,12 +38,13 @@ import {
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
 import { getBangumiCalendar, syncBangumiCalendar, BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
-import { ScheduleBase, deleteAllSchedules } from '@/services/scheduleService';
+import { ScheduleBase, deleteAllSchedules, getSchedules } from '@/services/scheduleService';
 import TimetableHeader from '@/components/header/TimetableHeader';
 import TimelineBoard from '@/components/timetable/TimelineBoard';
 import StandardLanes from '@/components/timetable/StandardLanes';
 import TimelineMediaCard from '@/components/timetable/TimelineMediaCard';
 import CollectionPanel from '@/components/timetable/DraggablePanel';
+import { ExportTickTickModal } from '@/components/Modal/ExportTickTickModal';
 import { SpotlightCard } from '@lobehub/ui/awesome';
 
 
@@ -198,6 +199,30 @@ export default function WeeklyBoardPage() {
   const [isLanesCollapsed, setIsLanesCollapsed] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isTickTickModalOpen, setIsTickTickModalOpen] = useState(false);
+  
+  // 组件加载时自动获取日程数据
+  useEffect(() => {
+    const loadSchedules = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // 调用 getSchedules API 获取数据
+        const schedules = await getSchedules();
+        // 更新 scheduleItems 状态
+        setScheduleItems(schedules);
+        console.log('自动加载日程数据成功，共', schedules.length, '条记录');
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : '获取日程数据失败';
+        setError(errorMessage);
+        console.error('自动加载日程数据失败:', errorMessage);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadSchedules();
+  }, []); // 空依赖数组，只在组件挂载时执行一次
   
   // 配置传感器
   const sensors = useSensors(
@@ -458,14 +483,6 @@ export default function WeeklyBoardPage() {
     setScheduleItems(data);
   };
   
-  const handleExportCalendar = () => {
-    console.log('导出为日历');
-  };
-  
-  const handleExportTickTick = () => {
-    console.log('导出至滴答清单');
-  };
-  
   // 清空所有卡片
   const handleClearAll = async () => {
     try {
@@ -493,22 +510,6 @@ export default function WeeklyBoardPage() {
     </div>
   );
   
-  // 导出与保存菜单
-  const exportMenu = (
-    <div className="flex flex-col w-40 p-1">
-      <div onClick={handleSaveSchedule} className="flex items-center gap-2 px-3 py-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 rounded-md cursor-pointer text-sm transition-colors">
-        <Save size={14} /> <span>保存当前排期</span>
-      </div>
-      <div className={`h-[1px] w-full my-1 ${isDarkMode ? 'bg-gray-800' : 'bg-gray-100'}`}></div>
-      <div onClick={handleExportCalendar} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md cursor-pointer text-sm transition-colors">
-        <CalendarArrowUp size={14} /> <span>导出为日历</span>
-      </div>
-      <div onClick={handleExportTickTick} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md cursor-pointer text-sm transition-colors">
-        <ListTodo size={14} /> <span>导出至滴答清单</span>
-      </div>
-    </div>
-  );
-  
   return (
     <DndContext 
       sensors={sensors}
@@ -524,6 +525,7 @@ export default function WeeklyBoardPage() {
             schedules={scheduleItems}
             onSaveSuccess={handleSaveSuccess}
             onSyncData={handleSyncData}
+            onExportTickTick={() => setIsTickTickModalOpen(true)}
           />
         </div>
 
@@ -651,6 +653,13 @@ export default function WeeklyBoardPage() {
           </div>
         )}
       </DragOverlay>
+      
+      {/* 批量导出到滴答清单 Modal */}
+      <ExportTickTickModal
+        open={isTickTickModalOpen}
+        onCancel={() => setIsTickTickModalOpen(false)}
+        items={scheduleItems}
+      />
     </DndContext>
   );
 }

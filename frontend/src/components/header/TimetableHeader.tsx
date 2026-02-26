@@ -4,8 +4,12 @@ import {Header} from './Header';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { SearchBar, Button, Popover, Flexbox, Tag, Alert, toast } from '@lobehub/ui';
 import { Calendar, CloudSync, ChevronDown, CloudDownload, HardDriveDownload, Share, Save, CalendarArrowUp, ListTodo } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { bulkUpsertSchedules, ScheduleBase, convertBangumiItemsToSchedules, getSchedules } from '@/services/scheduleService';
+import { ExportCalendarModal } from '../Modal/ExportCalendarModal';
+import { ExportTickTickModal } from '../Modal/ExportTickTickModal';
+import { generateCalendarEvents, generateCSVString, generateVoiceCommand } from '@/services/CalendarService';
+import { BangumiItem } from '@/services/bangumiService';
 
 interface TimetableHeaderProps {
   onSearch?: (value: string) => void;
@@ -13,6 +17,7 @@ interface TimetableHeaderProps {
   schedules?: any[];
   onSaveSuccess?: () => void;
   onSyncData?: (data: any[]) => void;
+  onExportTickTick?: () => void;
 }
 
 export default function TimetableHeader({ 
@@ -20,12 +25,27 @@ export default function TimetableHeader({
   onViewModeChange,
   schedules = [],
   onSaveSuccess,
-  onSyncData
+  onSyncData,
+  onExportTickTick
 }: TimetableHeaderProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [isTickTickModalOpen, setIsTickTickModalOpen] = useState(false);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [exportData, setExportData] = useState({
+    subjectName: '',
+    csvString: '',
+    voiceCommand: ''
+  });
+  
+  // 添加 ref 用于控制 Popover
+  const syncPopoverRef = useRef<any>(null);
 
   const handleSaveSchedules = async () => {
+    // 关闭 Popover
+    syncPopoverRef.current?.hide();
+    
     if (schedules.length === 0) {
       toast.warning('没有可保存的日程');
       return;
@@ -55,6 +75,9 @@ export default function TimetableHeader({
   };
 
   const handleSyncData = async () => {
+    // 关闭 Popover
+    syncPopoverRef.current?.hide();
+    
     setIsSyncing(true);
 
     try {
@@ -72,6 +95,51 @@ export default function TimetableHeader({
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  const handleExportCalendar = () => {
+    if (schedules.length === 0) {
+      toast.warning('没有可导出的日程');
+      return;
+    }
+
+    // 关闭菜单
+    setIsExportMenuOpen(false);
+
+    // 使用所有日程项
+    const bangumiItems = schedules as BangumiItem[];
+    const subjectName = `动画日程 (共${bangumiItems.length}项)`;
+
+    // 生成日历事件
+    const events = generateCalendarEvents(bangumiItems);
+    const csvString = generateCSVString(events);
+    
+    // 为所有项目生成语音指令
+    const voiceCommands = bangumiItems.map(item => generateVoiceCommand(item));
+    const voiceCommand = voiceCommands.length > 0 ? voiceCommands.join('\n\n') : '提醒我看动画';
+
+    // 设置导出数据
+    setExportData({
+      subjectName,
+      csvString,
+      voiceCommand
+    });
+
+    // 打开Modal
+    setIsExportModalOpen(true);
+  };
+
+  const handleExportTickTick = () => {
+    if (schedules.length === 0) {
+      toast.warning('没有可导出的日程');
+      return;
+    }
+
+    // 关闭菜单
+    setIsExportMenuOpen(false);
+
+    // 调用父组件传递的回调函数
+    onExportTickTick?.();
   };
   const { primaryColor } = useAppTheme();
   // 搜索框通常保留本地状态，用于处理输入时的即时显示，回车或防抖后再通知父组件
@@ -98,9 +166,10 @@ export default function TimetableHeader({
           <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '16px' }}>
             {/* 数据同步菜单 */}
             <Popover
+              ref={syncPopoverRef}
               arrow={false}
               placement="bottomLeft"
-              trigger="hover"
+              trigger="click"
               content={
                 <Flexbox gap={6} style={{ minWidth: 160, padding: '8px' }}>
                   <div
@@ -158,7 +227,9 @@ export default function TimetableHeader({
             <Popover
               arrow={false}
               placement="bottomLeft"
-              trigger="hover"
+              trigger="click"
+              open={isExportMenuOpen}
+              onOpenChange={setIsExportMenuOpen}
               content={
                 <Flexbox gap={6} style={{ minWidth: 160, padding: '8px' }}>
                   <div
@@ -183,9 +254,10 @@ export default function TimetableHeader({
                       transition: 'all 0.2s',
                     }}
                     className="hover:bg-gray-100 dark:hover:bg-gray-800"
+                    onClick={handleExportCalendar}
                   >
                     <CalendarArrowUp size={16} style={{ marginRight: 10 }} />
-                    <span style={{ flex: 1, fontSize: 14 }}>导出为日历 (ICS)</span>
+                    <span style={{ flex: 1, fontSize: 14 }}>导出到日历</span>
                   </Flexbox>
                   <Flexbox
                     horizontal
@@ -197,6 +269,7 @@ export default function TimetableHeader({
                       transition: 'all 0.2s',
                     }}
                     className="hover:bg-gray-100 dark:hover:bg-gray-800"
+                    onClick={handleExportTickTick}
                   >
                     <ListTodo size={16} style={{ marginRight: 10 }} />
                     <span style={{ flex: 1, fontSize: 14 }}>导出至滴答清单</span>
@@ -224,6 +297,20 @@ export default function TimetableHeader({
             </div>
           </div>
         }
+      />
+      
+      <ExportCalendarModal
+        open={isExportModalOpen}
+        onCancel={() => setIsExportModalOpen(false)}
+        subjectName={exportData.subjectName}
+        csvString={exportData.csvString}
+        voiceCommand={exportData.voiceCommand}
+      />
+      
+      <ExportTickTickModal
+        open={isTickTickModalOpen}
+        onCancel={() => setIsTickTickModalOpen(false)}
+        items={schedules as BangumiItem[]}
       />
     </div>
   );

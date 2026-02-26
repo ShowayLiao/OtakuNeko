@@ -114,10 +114,10 @@ export const CollectionPanel = () => {
         display: 'flex',
         flexDirection: 'column',
         width: 350,
-        // 增强毛玻璃质感
-        backgroundColor: 'rgba(255, 255, 255, 0.65)',
+        // 增强毛玻璃质感，使用 CSS 变量适配暗黑模式
+        backgroundColor: 'var(--lobe-color-bg-container)',
         backdropFilter: 'blur(16px)',
-        borderLeft: '1px solid rgba(255, 255, 255, 0.4)', // 微妙的边缘高光
+        borderLeft: '1px solid var(--lobe-color-border)',
         boxShadow: '-4px 0 24px rgba(0, 0, 0, 0.04)',
       }}
       onExpandChange={setExpand}
@@ -144,7 +144,7 @@ export const CollectionPanel = () => {
               label: (
                 <Tooltip title={CATEGORY_MAP.all}>
                   <div style={{ 
-                    color: activeType === 'all' ? 'var(--ant-color-primary)' : 'var(--ant-color-text-tertiary)',
+                    color: activeType === 'all' ? 'var(--ant-color-primary)' : 'var(--lobe-color-text-tertiary)',
                     transition: 'color 0.3s'
                   }}>
                     <Icon icon={LayoutGrid} />
@@ -157,7 +157,7 @@ export const CollectionPanel = () => {
               label: (
                 <Tooltip title={CATEGORY_MAP.anime}>
                   <div style={{ 
-                    color: activeType === 'anime' ? 'var(--ant-color-primary)' : 'var(--ant-color-text-tertiary)',
+                    color: activeType === 'anime' ? 'var(--ant-color-primary)' : 'var(--lobe-color-text-tertiary)',
                     transition: 'color 0.3s'
                   }}>
                     <Icon icon={Tv} />
@@ -170,7 +170,7 @@ export const CollectionPanel = () => {
               label: (
                 <Tooltip title={CATEGORY_MAP.book}>
                   <div style={{ 
-                    color: activeType === 'book' ? 'var(--ant-color-primary)' : 'var(--ant-color-text-tertiary)',
+                    color: activeType === 'book' ? 'var(--ant-color-primary)' : 'var(--lobe-color-text-tertiary)',
                     transition: 'color 0.3s'
                   }}>
                     <Icon icon={Book} />
@@ -183,7 +183,7 @@ export const CollectionPanel = () => {
               label: (
                 <Tooltip title={CATEGORY_MAP.game}>
                   <div style={{ 
-                    color: activeType === 'game' ? 'var(--ant-color-primary)' : 'var(--ant-color-text-tertiary)',
+                    color: activeType === 'game' ? 'var(--ant-color-primary)' : 'var(--lobe-color-text-tertiary)',
                     transition: 'color 0.3s'
                   }}>
                     <Icon icon={Gamepad2} />
@@ -196,7 +196,7 @@ export const CollectionPanel = () => {
               label: (
                 <Tooltip title={CATEGORY_MAP.movie}>
                   <div style={{ 
-                    color: activeType === 'movie' ? 'var(--ant-color-primary)' : 'var(--ant-color-text-tertiary)',
+                    color: activeType === 'movie' ? 'var(--ant-color-primary)' : 'var(--lobe-color-text-tertiary)',
                     transition: 'color 0.3s'
                   }}>
                     <Icon icon={Film} />
@@ -270,7 +270,13 @@ export const CollectionPanel = () => {
                   height: '104px', // 固定高度，包含 padding
                 }}
                 // hover 时增加轻微的背景和上浮效果
-                className="hover:bg-white/80 hover:shadow-sm hover:-translate-y-0.5"
+                className="hover:shadow-sm hover:-translate-y-0.5"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'var(--lobe-color-bg-overlay)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'transparent';
+                }}
               >
                 <DraggableItemWrapper id={`panel-${item.subject.source}-${item.subject.source_id}`} data={item}>
                   <TimelineMediaCard 
@@ -284,7 +290,7 @@ export const CollectionPanel = () => {
             ))
           ) : (
             // 空数据状态
-            <Flexbox align="center" justify="center" flex={1} style={{ color: 'var(--ant-color-text-tertiary)' }}>
+            <Flexbox align="center" justify="center" flex={1} style={{ color: 'var(--lobe-color-text-tertiary)' }}>
               暂无收藏数据
             </Flexbox>
           )}
