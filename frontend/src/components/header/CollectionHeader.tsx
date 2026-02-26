@@ -2,7 +2,8 @@
 
 import {Header} from './Header';
 import { useAppTheme } from '@/components/providers/LobeProvider';
-import { Segmented, SearchBar, ActionIcon, Icon } from '@lobehub/ui';
+import { Segmented, ActionIcon, Icon } from '@lobehub/ui';
+import SearchBar from './SearchBar';
 import { Bookmark, Film, Book, Gamepad2, Users, Filter, LayoutGrid } from 'lucide-react';
 import { useState } from 'react';
 import { Dropdown } from 'antd';
@@ -35,14 +36,7 @@ export default function CollectionHeader({
   onSortChange
 }: CollectionHeaderProps) {
   const { primaryColor } = useAppTheme();
-  // 搜索框通常保留本地状态，用于处理输入时的即时显示，回车或防抖后再通知父组件
-  const [searchKw, setSearchKw] = useState('');
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setSearchKw(value);
-    onSearch?.(value);
-  };
+  // 搜索框使用SearchBar组件内部的状态管理和防抖功能
 
   // 排序选项配置
   const sortOptions = [
@@ -187,8 +181,8 @@ export default function CollectionHeader({
                 placeholder="搜索 ACG 作品..." 
                 enableShortKey 
                 shortKey="k"
-                value={searchKw}
-                onChange={handleSearchChange}
+                onSearch={onSearch}
+                debounceDelay={500}
                 // 建议加上 allowClear 方便用户一键清除
                 allowClear 
                 style={{ width: 240 }}

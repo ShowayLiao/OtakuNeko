@@ -200,6 +200,7 @@ export default function WeeklyBoardPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isTickTickModalOpen, setIsTickTickModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
   // 组件加载时自动获取日程数据
   useEffect(() => {
@@ -483,6 +484,11 @@ export default function WeeklyBoardPage() {
     setScheduleItems(data);
   };
   
+  // 搜索处理函数
+  const handleSearch = (value: string) => {
+    setSearchQuery(value);
+  };
+  
   // 清空所有卡片
   const handleClearAll = async () => {
     try {
@@ -526,6 +532,7 @@ export default function WeeklyBoardPage() {
             onSaveSuccess={handleSaveSuccess}
             onSyncData={handleSyncData}
             onExportTickTick={() => setIsTickTickModalOpen(true)}
+            onSearch={handleSearch}
           />
         </div>
 
@@ -635,7 +642,7 @@ export default function WeeklyBoardPage() {
           </div>
           
           {/* 右侧可拖拽面板 */}
-          <CollectionPanel />
+          <CollectionPanel searchQuery={searchQuery} />
         </div>
       </div>
       

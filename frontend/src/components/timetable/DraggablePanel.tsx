@@ -49,7 +49,11 @@ const STATUS_COLORS: Record<string, string> = {
   on_hold: 'orange',
 };
 
-export const CollectionPanel = () => {
+interface CollectionPanelProps {
+  searchQuery?: string;
+}
+
+export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
   const [expand, setExpand] = useState(true);
   
   // --- 2. 核心状态管理 ---
@@ -74,6 +78,9 @@ export const CollectionPanel = () => {
         if (activeStatus !== 'all') {
           params.status = STATUS_TO_STATUS_MAP[activeStatus as keyof typeof STATUS_TO_STATUS_MAP];
         }
+        if (searchQuery) {
+          params.keyword = searchQuery;
+        }
         
         console.log('DraggablePanel: 发送请求参数:', params);
         
@@ -89,18 +96,18 @@ export const CollectionPanel = () => {
     };
 
     fetchCollections();
-  }, [activeType, activeStatus]);
+  }, [activeType, activeStatus, searchQuery]);
 
   // --- 4. 数据过滤和排序逻辑 ---
   const filteredList = useMemo(() => {
-    // 直接对返回的 BangumiItem 数据进行排序
-    return collections
-      .sort((a, b) => {
-        // 按标题字母顺序排序
-        const titleA = a.subject?.name || '';
-        const titleB = b.subject?.name || '';
-        return titleA.localeCompare(titleB);
-      });
+    let result = collections;
+    
+    // 按标题字母顺序排序
+    return result.sort((a, b) => {
+      const titleA = a.subject?.name || '';
+      const titleB = b.subject?.name || '';
+      return titleA.localeCompare(titleB);
+    });
   }, [collections]);
 
 

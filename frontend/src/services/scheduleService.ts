@@ -18,6 +18,7 @@ export interface ScheduleBase {
 export const getCollections = async (params?: {
   subject_type?: number;
   status?: number;
+  keyword?: string;
 }): Promise<BangumiItem[]> => {
   try {
     console.log('scheduleService.getCollections: 调用 API，参数:', params);
@@ -26,6 +27,7 @@ export const getCollections = async (params?: {
     const urlParams = new URLSearchParams();
     if (params?.subject_type !== undefined) urlParams.append('subject_type', params.subject_type.toString());
     if (params?.status !== undefined) urlParams.append('status', params.status.toString());
+    if (params?.keyword !== undefined) urlParams.append('keyword', params.keyword);
 
     const queryString = urlParams.toString();
     const endpoint = `/collections${queryString ? `?${queryString}` : ''}`;
