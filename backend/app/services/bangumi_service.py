@@ -1,5 +1,6 @@
 import asyncio
 from typing import Any, Dict, Optional, List
+from bs4 import BeautifulSoup
 
 from fastapi_cache import FastAPICache
 from sqlalchemy.exc import SQLAlchemyError
@@ -10,8 +11,9 @@ from ..models import Subject, SubjectType, User
 from ..repositories import CollectionRepo, SubjectRepo
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
-from ..schemas.bangumi import StaffInfo, SubjectDetail
+from ..schemas.bangumi import StaffInfo, SubjectDetail, CastInfo, ShortComment, LongReview, AudienceFeedback
 from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_user_info, bangumi_client, fetch_calendar
+from app.clients.bangumi_client import BangumiClient
 from app.schemas.bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem, BangumiCalendarRating, BangumiCalendarCollection, BangumiCalendarImage
 from app.core.logging import get_logger
 from app.schemas.collection import CollectionList, CollectionSyncRequest
@@ -34,15 +36,21 @@ ROLE_MAPPING = {
     "总作画监督": "Chief Animation Director (总作监)"
 }
 
-async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
+# 定义角色重要度的白名单
+# 坚决不要 "闲角" (路人甲乙丙)
+CAST_ROLE_WHITELIST = {"主角", "配角"}
+
+async def get_staff_info(subject_id: int) -> List[StaffInfo]:
     """
-    获取条目详情，并自动清洗 Staff 数据。
+    获取并清洗条目的 Staff 信息
+    
+    Args:
+        subject_id: Bangumi 条目 ID
+        
+    Returns:
+        清洗后的 Staff 信息列表
     """
     try:
-        # 并行请求：同时获取"详情"和"角色/制作人员"
-        # 获取条目详情
-        subject_data = await fetch_subject_detail(subject_id)
-        
         # 获取人员信息
         persons_data = await bangumi_client.get_persons_raw(subject_id)
         
@@ -51,14 +59,72 @@ async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
         
         # 从 persons_data 中提取 staff 信息
         for person in persons_data:
-            for relation in person.get('relations', []):
+            relation_name = person.get('relation', '')
+            # 提取 staff 信息
+            if relation_name in ROLE_MAPPING:
                 raw_staff.append({
                     "name": person.get('name', ''),
-                    "relation": relation.get('name', '')
+                    "relation": relation_name
                 })
         
         # 清洗 staff 数据
         cleaned_staff = _clean_staff_data(raw_staff)
+        
+        return cleaned_staff
+    except Exception as e:
+        logger.error(f"获取 Staff 信息失败: {e}")
+        raise
+
+async def get_cast_info(subject_id: int) -> List[CastInfo]:
+    """
+    获取并清洗条目的 Cast 信息
+    
+    Args:
+        subject_id: Bangumi 条目 ID
+        
+    Returns:
+        清洗后的 Cast 信息列表
+    """
+    try:
+        # 获取角色信息
+        characters_data = await bangumi_client.get_characters_raw(subject_id)
+        
+        # 处理 Cast 数据
+        raw_characters = []
+        
+        # 从 characters_data 中提取角色信息
+        for char_data in characters_data:
+            relation = char_data.get("relation", "")
+            # 核心过滤：只保留主角和重要配角
+            if relation in CAST_ROLE_WHITELIST:
+                char_name = char_data.get("name", "")
+                if char_name:
+                    raw_characters.append({
+                        "name": char_name,
+                        "relation": relation,
+                        "actors": char_data.get("actors", [])
+                    })
+        
+        # 清洗 cast 数据
+        cleaned_cast = _clean_cast_data(raw_characters)
+        
+        return cleaned_cast
+    except Exception as e:
+        logger.error(f"获取 Cast 信息失败: {e}")
+        raise
+
+async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
+    """
+    获取条目详情，并自动清洗 Staff 和 Cast 数据。
+    """
+    try:
+        # 并行请求：同时获取"详情"、"角色/制作人员"和"角色列表"
+        # 获取条目详情
+        subject_data = await fetch_subject_detail(subject_id)
+        
+        # 获取 Staff 和 Cast 信息
+        cleaned_staff = await get_staff_info(subject_id)
+        cleaned_cast = await get_cast_info(subject_id)
         
         return SubjectDetail(
             id=subject_data.get("id", subject_id),
@@ -67,7 +133,8 @@ async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
             summary=subject_data.get("summary", ""),
             score=subject_data.get("rating", {}).get("score", 0.0),
             rank=subject_data.get("rating", {}).get("rank", 0),
-            core_staff=cleaned_staff
+            core_staff=cleaned_staff,
+            main_cast=cleaned_cast
         )
     except Exception as e:
         logger.error(f"获取条目详情失败: {e}")
@@ -96,6 +163,45 @@ def _clean_staff_data(raw_staff_list: List[Dict[str, Any]]) -> List[StaffInfo]:
                 seen.add(identifier)
     
     return cleaned
+
+def _clean_cast_data(raw_characters: list) -> list[CastInfo]:
+    """
+    清洗 Cast 数据：
+    1. 过滤掉不重要的角色 (路人)
+    2. 剥离冗余的 summary 和 images
+    3. 提取配音演员的名字
+    """
+    cleaned_cast = []
+    
+    for char_data in raw_characters:
+        relation = char_data.get("relation", "")
+        
+        # 1. 核心过滤：只保留主角和重要配角
+        if relation not in CAST_ROLE_WHITELIST:
+            continue
+            
+        char_name = char_data.get("name", "")
+        if not char_name:
+            continue
+
+        # 2. 提取声优名字 (注意：有些角色可能有多个声优，比如日配和英配)
+        actors_data = char_data.get("actors" , [])
+        cv_list = []
+        
+        for actor in actors_data:
+            actor_name = actor.get("name" )
+            if actor_name:
+                cv_list.append(actor_name)
+        
+        # 3. 只有当该角色有配音演员时，才加到最终列表里
+        if cv_list:
+            cleaned_cast.append(CastInfo(
+                character_name=char_name,
+                role=relation,
+                cv_names=cv_list
+            ))
+            
+    return cleaned_cast
 
 async def sync_user_collections(
     user: UserRead, 
@@ -418,3 +524,112 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         logger.error(f"获取 Bangumi 每日放送信息失败: {e}")
         logger.error(f"错误详情: {traceback.format_exc()}")
         raise
+
+async def get_audience_feedback(subject_id: int, comment_limit=10, review_limit=3) -> AudienceFeedback:
+    """
+    获取 Bangumi 条目的观众评价（短评和长评）
+    
+    Args:
+        subject_id: Bangumi 条目 ID
+        comment_limit: 短评数量限制
+        review_limit: 长评数量限制
+        
+    Returns:
+        包含短评和长评的 AudienceFeedback 对象
+    """
+    try:
+        # 创建 BangumiClient 实例
+        client = BangumiClient()
+        
+        # 并行获取短评和长评的 HTML
+        comments_html, reviews_html = await asyncio.gather(
+            client.get_comments_html(subject_id),
+            client.get_reviews_html(subject_id)
+        )
+        
+        # 解析短评和长评
+        comments = _parse_comments(comments_html, comment_limit)
+        reviews = _parse_reviews(reviews_html, review_limit)
+        
+        # 组装结果
+        return AudienceFeedback(
+            subject_id=subject_id,
+            comments=comments,
+            reviews=reviews
+        )
+    except Exception as e:
+        logger.error(f"获取观众评价失败: {e}")
+        raise
+
+def _parse_comments(html: str, limit: int = 10) -> List[ShortComment]:
+    """
+    使用 BS4 解析短评，加入垃圾信息过滤
+    
+    Args:
+        html: 短评页面的 HTML 文本
+        limit: 解析数量限制
+        
+    Returns:
+        短评列表
+    """
+    soup = BeautifulSoup(html, "lxml")
+    parsed_comments = []
+    
+    for item in soup.select("#comment_box .item"):
+        text_div = item.select_one(".text")
+        if not text_div:
+            continue
+            
+        user_link = text_div.select_one("a")
+        if user_link:
+            user_name = user_link.text
+            content = text_div.text.replace(user_name, "", 1).strip()
+        else:
+            content = text_div.text.strip()
+            
+        # 核心筛选逻辑：过滤太短的废话
+        if len(content) < 15:
+            continue
+            
+        parsed_comments.append(ShortComment(content=content))
+        
+        # 达到有效数量才停止
+        if len(parsed_comments) >= limit:
+            break
+            
+    return parsed_comments
+
+def _parse_reviews(html: str, limit: int = 3) -> List[LongReview]:
+    """
+    使用 BS4 解析长评，加入长度截断
+    
+    Args:
+        html: 长评页面的 HTML 文本
+        limit: 解析数量限制
+        
+    Returns:
+        长评列表
+    """
+    soup = BeautifulSoup(html, "lxml")
+    parsed_reviews = []
+    
+    for item in soup.select("#entry_list .item"):
+        title_tag = item.select_one(".title a")
+        content_tag = item.select_one(".content")
+        
+        if title_tag and content_tag:
+            title = title_tag.text.strip()
+            summary = content_tag.text.strip()
+            
+            # 核心筛选逻辑：防止单篇长评过长霸占 Token
+            max_summary_length = 300
+            if len(summary) > max_summary_length:
+                summary = summary[:max_summary_length] + "..."
+                
+            parsed_reviews.append(LongReview(title=title, summary=summary))
+            
+        # 达到有效数量才停止
+        if len(parsed_reviews) >= limit:
+            break
+            
+    return parsed_reviews

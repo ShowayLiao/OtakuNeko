@@ -3,23 +3,27 @@
 import { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 // 1. 引入图标并重命名，防止命名冲突
-import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare, Copy } from 'lucide-react';
+import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare, Copy, Loader2 } from 'lucide-react';
 import { theme } from 'antd';
 import { ChatItem } from '@lobehub/ui/chat';
-import { ActionIcon, ActionIconGroup, DraggablePanel } from '@lobehub/ui';
+import { ActionIcon, ActionIconGroup, DraggablePanel, Avatar } from '@lobehub/ui';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ModelSelector } from './ModelSelector';
 import SearchTrigger, { SearchResultItem } from './SearchBar';
 import ChatInput from './ChatInput';
 import ApiKeyModal from '../Modal/ApiKeyModal';
 import { chatWithBackend } from '@/lib/fetcher';
-import useChatStore, { Message } from '../../stores/useChatStore';
+import useChatStore, { Message, ToolCall } from '../../stores/useChatStore';
+import { useRoleStore } from '@/store/useRoleStore';
+import presetRoles from '@/store/presetRoles';
 
 export default function ChatPage() {
   const [loading, setLoading] = useState(false);
   // 模型选择相关状态
   const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
   const [selectedProvider, setSelectedProvider] = useState('openai');
+  // 角色选择相关状态
+  const [selectedRole, setSelectedRole] = useState('preset-1'); // 默认选择第一个预设角色
   // API 管理模态框状态
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
 
@@ -61,6 +65,22 @@ export default function ChatPage() {
   const handleModelChange = (modelId: string, provider: string) => {
     setSelectedModel(modelId);
     setSelectedProvider(provider);
+  };
+
+  // 从 Store 获取所有自定义角色
+  const customRoles = useRoleStore((s) => s.customRoles);
+
+  // 处理角色选择变化
+  const handleRoleChange = (roleId: string) => {
+    setSelectedRole(roleId);
+  };
+
+  // 获取当前选中角色的详细信息
+  const getSelectedRole = () => {
+    // 合并预设角色和自定义角色
+    const allRoles = [...presetRoles, ...customRoles];
+    // 查找选中的角色
+    return allRoles.find(role => role.id === selectedRole);
   };
 
   // 打开 API 管理模态框
@@ -127,44 +147,75 @@ export default function ChatPage() {
       };
       sendMessage(activeSessionId, aiMessage);
 
+      // Get the selected role's prompt config
+      const selectedRoleObj = getSelectedRole();
+      const prompt_config = selectedRoleObj ? selectedRoleObj.promptConfig : undefined;
+
+      // 工具调用 ID 映射，用于跟踪正在运行的工具调用
+      const toolCallMap = new Map<string, string>();
+      
+      // 🌟 核心修复 1：在内存中创建一个变量，用来不断累加后端传来的碎片文本
+      let accumulatedContent = '';
+
       // Call the backend API
-      const response = await chatWithBackend({
+      await chatWithBackend({
         messages: formattedMessages,
         provider: selectedProvider,
         model: selectedModel,
-        temperature: 0.7
+        temperature: selectedRoleObj?.temperature || 0.7,
+        prompt_config,
+        onMessageChunk: (chunk) => {
+          // 🌟 每次收到新字，拼接到完整字符串上
+          accumulatedContent += chunk;
+          // 把拼接好的【完整文本】交给 Store 去渲染
+          updateMessage(activeSessionId, accumulatedContent, aiMessageId);
+        },
+        onToolStart: (name, inputs) => {
+          // 生成工具调用 ID
+          const toolCallId = `${name}-${Date.now()}`;
+          toolCallMap.set(name, toolCallId);
+          
+          // 创建工具调用对象
+          const toolCall: ToolCall = {
+            id: toolCallId,
+            name,
+            inputs,
+            status: 'running'
+          };
+          
+          // 🌟 核心修复 2：传入 accumulatedContent 而不是 ''，防止工具调用时清空已有正文
+          updateMessage(activeSessionId, accumulatedContent, aiMessageId, toolCall);
+        },
+        onToolEnd: (name, output) => {
+          // 获取工具调用 ID
+          const toolCallId = toolCallMap.get(name);
+          if (toolCallId) {
+            // 更新工具调用状态
+            const toolCall: ToolCall = {
+              id: toolCallId,
+              name,
+              status: 'success',
+              output
+            };
+            
+            // 🌟 核心修复 3：同样传入 accumulatedContent
+            updateMessage(activeSessionId, accumulatedContent, aiMessageId, toolCall);
+          }
+        },
+        onError: (error) => {
+          // 更新 AI 消息的错误内容
+          updateMessage(activeSessionId, `Error: ${error}`);
+        },
+        onComplete: () => {
+          // 完成加载状态
+          setLoading(false);
+        }
       });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status}`);
-      }
-
-      // Handle streaming response
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body');
-      }
-
-      const decoder = new TextDecoder();
-      let accumulatedContent = '';
-
-      // Stream the response
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        accumulatedContent += chunk;
-
-        // Update the AI message with the accumulated content
-        updateMessage(activeSessionId, accumulatedContent, aiMessageId);
-      }
     } catch (error) {
       console.error('Error sending message:', error);
       
       // Update the AI message with the error content
       updateMessage(activeSessionId, `Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    } finally {
       setLoading(false);
     }
   };
@@ -289,57 +340,143 @@ export default function ChatPage() {
                   <ChatItem
                     key={msg.id}
                     placement={msg.role === 'user' ? 'right' : 'left'}
-                    message={msg.content}
+                    
+                    // 1. 核心修复：这里必须老老实实传纯字符串，为空时传个空格占位，防止 LobeHub 报错
+                    message={msg.content || ' '}
+                    
+                    // 2. 魔法在这里：使用 renderMessage 劫持内部渲染逻辑
+                    // 这里的 defaultMessageNode 已经是 LobeHub 帮你用 Markdown 渲染好的 React 节点了
+                    renderMessage={(defaultMessageNode) => (
+                      <div className="flex flex-col gap-2">
+                        
+                        {/* === A. 在上方渲染大模型的“工具调用/思考过程” === */}
+                        {msg.toolCalls && msg.toolCalls.length > 0 && (
+                          <div className="flex flex-col gap-2 mb-2">
+                            {msg.toolCalls.map((tool: ToolCall) => (
+                              <details
+                                key={tool.id}
+                                className="bg-black/5 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-gray-800 text-sm overflow-hidden"
+                              >
+                                <summary className="cursor-pointer select-none p-2 font-medium text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2">
+                                  {tool.status === 'running' && <span className="animate-spin">⚙️</span>}
+                                  {tool.status === 'success' && <span>✅</span>}
+                                  {tool.status === 'error' && <span>❌</span>}
+                                  {tool.status === 'running' ? `正在调用工具: ${tool.name}...` : `调用完毕: ${tool.name}`}
+                                </summary>
+                                
+                                <div className="p-3 bg-black/5 dark:bg-white/5 border-t border-gray-200 dark:border-gray-800">
+                                  <div className="text-xs text-gray-500 mb-1">输入参数:</div>
+                                  <pre className="text-xs overflow-x-auto bg-white dark:bg-black/50 p-2 rounded mt-2 font-mono whitespace-pre-wrap">
+                                    {/* 修复可能出现的参数二次 stringify 问题 */}
+                                    {typeof tool.inputs === 'string'
+                                      ? tool.inputs
+                                      : JSON.stringify(tool.inputs, null, 2)}
+                                  </pre>
+                                  {tool.output && (
+                                    <>
+                                      <div className="text-xs text-gray-500 mb-1 mt-3">返回结果:</div>
+                                      <pre className="text-xs overflow-x-auto bg-white dark:bg-black/50 p-2 rounded mt-2 font-mono whitespace-pre-wrap">
+                                        {typeof tool.output === 'string'
+                                          ? tool.output
+                                          : JSON.stringify(tool.output, null, 2)}
+                                      </pre>
+                                    </>
+                                  )}
+                                </div>
+                              </details>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* === B. 在下方渲染正常的正文 === */}
+                        {/* 只有当正文有内容时才渲染，避免出现一个空的气泡块 */}
+                        {msg.content && (
+                          <div className="w-full">
+                            {defaultMessageNode}
+                          </div>
+                        )}
+                        
+                      </div>
+                    )}
+                    
                     time={msg.createdAt instanceof Date ? msg.createdAt.getTime() : Number(msg.createdAt)}
                     
-                    // 使用图标作为头像，避免 Image 组件警告
-                    avatar={{ 
+                    // 使用图标作为头像
+                    avatar={{
                       title: msg.role === 'user' ? '用户' : 'OtakuNeko',
                       avatar: '/Icon.png',
                     }}
                     
                     avatarProps={{
-                    size: 40,
-                    style: {
-                      // 🛑 绝对不要写 'pixelated' 或 'crisp-edges' (那是给像素画用的)
-                      // ✅ 强制浏览器使用平滑算法 (Bilinear/Bicubic)
-                      imageRendering: 'auto', 
-                      
-                      // ✅ 某些浏览器 (如 Chrome) 在极度缩小图片时需要这个属性来开启抗锯齿
-                      WebkitFontSmoothing: 'antialiased', 
-                      
-                      // ✅ 确保图片填满圆形且不变形
-                      objectFit: 'cover',
-                      
-                      // 保持之前的背景色逻辑
-                      backgroundColor: msg.role === 'user' ? token.colorWarning : undefined,
-                    }
-                  }}
-                  
-                  // 添加actions接口，包含引用胶囊和复制按钮
-                  actions={
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {/* 引用胶囊 */}
-                      {msg.role === 'user' && msg.extra?.contextItems?.length > 0 && (
-                        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      size: 40,
+                      style: {
+                        imageRendering: 'auto',
+                        WebkitFontSmoothing: 'antialiased',
+                        objectFit: 'cover',
+                        backgroundColor: msg.role === 'user' ? token.colorWarning : undefined,
+                      }
+                    }}
+                    
+                    // 🌟 优化点 1: 将引用胶囊移到 messageExtra，作为消息的附件显示
+                    messageExtra={
+                      msg.role === 'user' && msg.extra?.contextItems?.length > 0 && (
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
                           {msg.extra.contextItems.map((ref: any) => (
                             <div
                               key={ref.id}
+                              title={ref.title}
                               style={{
-                                display: 'flex', alignItems: 'center', gap: 4,
-                                fontSize: 12, padding: '4px 8px', borderRadius: 12,
-                                background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
-                                color: isDarkMode ? 'rgba(255,255,255,0.8)' : 'rgba(0,0,0,0.6)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6,
+                                padding: '6px 12px',
+                                borderRadius: 16,
+                                // 使用与输入框一致的毛玻璃与半透明质感
+                                backgroundColor: isDarkMode ? 'rgba(75, 85, 99, 0.4)' : 'rgba(229, 231, 235, 0.6)',
+                                border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'}`,
+                                backdropFilter: 'saturate(180%) blur(12px)',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s ease',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = isDarkMode ? 'rgba(75, 85, 99, 0.6)' : 'rgba(229, 231, 235, 0.9)';
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = isDarkMode ? 'rgba(75, 85, 99, 0.4)' : 'rgba(229, 231, 235, 0.6)';
+                                e.currentTarget.style.transform = 'translateY(0)';
+                              }}
+                              onClick={() => {
+                                // 如果胶囊有链接，可以在这里处理跳转逻辑
+                                // if (ref.url) window.open(ref.url, '_blank');
                               }}
                             >
-                              <img src={ref.cover} alt={ref.title} style={{ width: 16, height: 16, borderRadius: '50%', objectFit: 'cover' }} />
-                              <span>{ref.title}</span>
+                              {/* 🌟 优化点 2: 使用 Avatar 组件替代原生 img，自带 fallback 和统一尺寸管理 */}
+                              <Avatar
+                                size={18}
+                                avatar={ref.cover || '/Icon.png'}
+                                style={{ borderRadius: 4, objectFit: 'cover' }}
+                              />
+                              {/* 🌟 优化点 3: 添加文本截断，防止超长标题撑爆气泡 */}
+                              <span style={{
+                                fontSize: 12,
+                                fontWeight: 500,
+                                color: isDarkMode ? '#e5e7eb' : '#374151',
+                                maxWidth: 180,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap'
+                              }}>
+                                {ref.title}
+                              </span>
                             </div>
                           ))}
                         </div>
-                      )}
-                      
-                      {/* 操作按钮组 */}
+                      )
+                    }
+                    
+                    // 🌟 优化点 4: 让 actions 纯粹只保留复制等操作按钮
+                    actions={
                       <ActionIconGroup
                         items={items}
                         onActionClick={(action) => {
@@ -348,8 +485,7 @@ export default function ChatPage() {
                           }
                         }}
                       />
-                    </div>
-                  }
+                    }
                   />
                 );
               })}
@@ -390,6 +526,8 @@ export default function ChatPage() {
             selectedProvider={selectedProvider}
             onModelChange={handleModelChange}
             onOpenSettings={handleOpenSettings}
+            selectedRole={selectedRole}
+            onRoleChange={handleRoleChange}
           />
 
           {/* API Key 管理模态框 */}

@@ -208,6 +208,22 @@ class BangumiClient:
                 logger.error(f"网络请求错误: {e}")
                 raise
 
+    async def get_characters_raw(self, subject_id: int) -> list:
+        """获取原始的角色列表"""
+        url = f"{self.BASE_URL}/subjects/{subject_id}/characters"
+        async with httpx.AsyncClient(headers=self.HEADERS) as client:
+            try:
+                resp = await client.get(url)
+                # 如果是 404 或 500，这里直接抛错
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Bangumi API 请求失败: {e.response.status_code} - {e.response.text}")
+                raise
+            except httpx.RequestError as e:
+                logger.error(f"网络请求错误: {e}")
+                raise
+
     @cache(expire=86400, namespace="bangumi")
     async def get_calendar(self) -> Dict:
         """

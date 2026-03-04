@@ -2,6 +2,15 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 
+// 定义工具调用类型
+export interface ToolCall {
+  id: string; // 工具调用的唯一标识 (可以是工具名+时间戳)
+  name: string; // 工具名称
+  inputs?: any; // 传入的参数
+  status: 'running' | 'success' | 'error';
+  output?: any; // 工具的返回结果
+}
+
 // 定义消息类型
 interface Message {
   id: string;
@@ -9,6 +18,7 @@ interface Message {
   content: string;
   createdAt: Date;
   extra?: any;
+  toolCalls?: ToolCall[];
 }
 
 // 定义会话元数据类型
@@ -114,7 +124,7 @@ const useChatStore = create<ChatStore>()(
       },
 
       // 更新消息（用于流式输出）
-      updateMessage: (sessionId, content, messageId) => {
+      updateMessage: (sessionId: string, content: string, messageId?: string, toolCallUpdate?: Partial<ToolCall>) => {
         set((state) => {
           // 获取当前会话的消息
           const currentMessages = state.chatMessages && typeof state.chatMessages.get === 'function'
@@ -127,17 +137,44 @@ const useChatStore = create<ChatStore>()(
             // 如果提供了 messageId，更新指定的消息
             const messageIndex = updatedMessages.findIndex(msg => msg.id === messageId);
             if (messageIndex !== -1) {
-              updatedMessages[messageIndex] = {
-                ...updatedMessages[messageIndex],
-                content,
-              };
+              if (toolCallUpdate) {
+                // 更新工具调用
+                const currentMessage = updatedMessages[messageIndex];
+                const currentToolCalls = currentMessage.toolCalls || [];
+                const toolCallIndex = currentToolCalls.findIndex(tc => tc.id === toolCallUpdate.id);
+                
+                let updatedToolCalls;
+                if (toolCallIndex !== -1) {
+                  // 更新现有工具调用
+                  updatedToolCalls = [...currentToolCalls];
+                  updatedToolCalls[toolCallIndex] = {
+                    ...updatedToolCalls[toolCallIndex],
+                    ...toolCallUpdate,
+                  };
+                } else {
+                  // 添加新工具调用
+                  updatedToolCalls = [...currentToolCalls, toolCallUpdate];
+                }
+                
+                updatedMessages[messageIndex] = {
+                  ...currentMessage,
+                  toolCalls: updatedToolCalls as ToolCall[],
+                };
+              } else {
+                // 更新消息内容
+                updatedMessages[messageIndex] = {
+                  ...updatedMessages[messageIndex],
+                  content,
+                };
+              }
             } else {
               // 如果找不到指定的消息，添加一个新的助手消息
               const assistantMessage: Message = {
                 id: uuidv4(),
                 role: 'assistant',
-                content,
+                content: content || '',
                 createdAt: new Date(),
+                toolCalls: toolCallUpdate ? [toolCallUpdate as ToolCall] : undefined,
               };
               updatedMessages.push(assistantMessage);
             }
@@ -149,17 +186,43 @@ const useChatStore = create<ChatStore>()(
               const assistantMessage: Message = {
                 id: uuidv4(),
                 role: 'assistant',
-                content: '',
+                content: content || '',
                 createdAt: new Date(),
+                toolCalls: toolCallUpdate ? [toolCallUpdate as ToolCall] : undefined,
               };
               updatedMessages.push(assistantMessage);
+            } else {
+              // 更新最后一条消息
+              if (toolCallUpdate) {
+                // 更新工具调用
+                const currentToolCalls = lastMessage.toolCalls || [];
+                const toolCallIndex = currentToolCalls.findIndex(tc => tc.id === toolCallUpdate.id);
+                
+                let updatedToolCalls;
+                if (toolCallIndex !== -1) {
+                  // 更新现有工具调用
+                  updatedToolCalls = [...currentToolCalls];
+                  updatedToolCalls[toolCallIndex] = {
+                    ...updatedToolCalls[toolCallIndex],
+                    ...toolCallUpdate,
+                  };
+                } else {
+                  // 添加新工具调用
+                  updatedToolCalls = [...currentToolCalls, toolCallUpdate];
+                }
+                
+                updatedMessages[updatedMessages.length - 1] = {
+                  ...lastMessage,
+                  toolCalls: updatedToolCalls as ToolCall[],
+                };
+              } else {
+                // 更新消息内容
+                updatedMessages[updatedMessages.length - 1] = {
+                  ...lastMessage,
+                  content,
+                };
+              }
             }
-
-            // 更新最后一条消息（现在一定是助手消息）
-            updatedMessages[updatedMessages.length - 1] = {
-              ...updatedMessages[updatedMessages.length - 1],
-              content,
-            };
           }
 
           // 创建新的聊天消息 Map

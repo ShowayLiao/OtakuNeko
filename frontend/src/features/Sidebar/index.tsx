@@ -49,12 +49,11 @@ export const DesktopSidebar = () => {
             size="large"
           />
           <ActionIcon
-            active={activeKey === '/role'}
-            color={activeKey === '/role' ? token.colorPrimary : undefined}
+            active={activeKey === '/Personal'}
+            color={activeKey === '/Personal' ? token.colorPrimary : undefined}
             icon={UserCircle}
-            onClick={() => handleSelect('/role')}
+            onClick={() => handleSelect('/Personal')}
             size="large"
-            disabled={true}
           />
         </>
       }

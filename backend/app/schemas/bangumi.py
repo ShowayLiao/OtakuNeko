@@ -6,7 +6,13 @@ class StaffInfo(BaseModel):
     name: str = Field(..., description="人名或公司名")
     role: str = Field(..., description="标准化后的职位 (e.g., Director, Studio)")
 
-# 2. 整个条目的结构
+# 2. 单个角色的配音信息
+class CastInfo(BaseModel):
+    character_name: str = Field(..., description="角色名")
+    role: str = Field(..., description="角色重要度 (如: 主角, 配角)")
+    cv_names: List[str] = Field(default_factory=list, description="配音演员(声优)姓名列表")
+
+# 3. 整个条目的结构
 class SubjectDetail(BaseModel):
     id: int
     name: str = Field(..., description="作品原名")
@@ -17,6 +23,9 @@ class SubjectDetail(BaseModel):
     
     # 我们把核心 Staff 直接放在这里，作为分析的关键依据
     core_staff: List[StaffInfo] = Field(default_factory=list, description="核心制作阵容：监督、脚本、制作公司等")
+    
+    # 核心声优阵容
+    main_cast: List[CastInfo] = Field(default_factory=list, description="核心角色的配音阵容")
 
 # 3. 日历相关的结构
 class BangumiCalendarImage(BaseModel):
@@ -61,3 +70,16 @@ class BangumiCalendar(RootModel):
     Bangumi 每日放送信息
     """
     root: List[BangumiCalendarDay]
+
+# 观众评价相关结构
+class ShortComment(BaseModel):
+    content: str = Field(..., description="吐槽内容")
+
+class LongReview(BaseModel):
+    title: str = Field(..., description="标题")
+    summary: str = Field(..., description="摘要")
+
+class AudienceFeedback(BaseModel):
+    subject_id: int = Field(..., description="条目 ID")
+    comments: List[ShortComment] = Field(default_factory=list, description="短评列表")
+    reviews: List[LongReview] = Field(default_factory=list, description="长评列表")

@@ -8,6 +8,7 @@ import { ActionIcon } from '@lobehub/ui';
 import { Avatar } from '@lobehub/ui';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ModelSelector } from './ModelSelector';
+import { RoleSelector } from './RoleSelector';
 import SearchTrigger, { SearchResultItem } from './SearchBar';
 
 interface ChatInputProps {
@@ -17,6 +18,8 @@ interface ChatInputProps {
   selectedProvider: string;
   onModelChange: (modelId: string, provider: string) => void;
   onOpenSettings: () => void;
+  selectedRole: string;
+  onRoleChange: (roleId: string) => void;
 }
 
 export const ChatInput = ({
@@ -26,6 +29,8 @@ export const ChatInput = ({
   selectedProvider,
   onModelChange,
   onOpenSettings,
+  selectedRole,
+  onRoleChange,
 }: ChatInputProps) => {
   const [isExpand, setIsExpand] = useState(false);
   const [text, setText] = useState('');
@@ -62,6 +67,12 @@ export const ChatInput = ({
     
     onSend(text, contextItems);
     // 清空文本和胶囊
+    setText('');
+    setContextItems([]);
+  };
+
+  // 处理清除
+  const handleClear = () => {
     setText('');
     setContextItems([]);
   };
@@ -151,9 +162,12 @@ export const ChatInput = ({
                     onChange={onModelChange} 
                     onOpenSettings={onOpenSettings} 
                   />
+                  <RoleSelector 
+                    value={selectedRole} 
+                    onChange={onRoleChange} 
+                  />
                   <SearchTrigger onSelect={handleSearchSelect} />
-                  <ActionIcon icon={Languages} title="翻译" />
-                  <ActionIcon icon={Eraser} title="清除" />
+                  <ActionIcon icon={Eraser} title="清除" onClick={handleClear} style={{ cursor: 'pointer' }} />
                   <TokenTag maxValue={5000} value={1000} />
                 </div>
               }
