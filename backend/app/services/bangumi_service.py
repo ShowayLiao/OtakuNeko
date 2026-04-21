@@ -460,12 +460,20 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         
         # 转换数据结构以匹配 schema
         calendar_days = []
-        for day_data in calendar_info:
+        for day_index, day_data in enumerate(calendar_info):
+            weekday = day_data.get('weekday', {}).get('id', 'unknown')
             # 转换 items
             items = []
-            for item in day_data.get('items', []):
+            for item_index, item in enumerate(day_data.get('items', [])):
+                item_id = item.get('id', 'unknown')
+                item_name = item.get('name_cn') or item.get('name', 'unknown')
                 # 转换 rating
                 rating_data = item.get('rating', {})
+                # 检查 rating_data 是否为 None，防止 AttributeError
+                if rating_data is None:
+                    logger.warning(f"Bangumi日历数据中item的rating字段为None: ID={item_id}, 名称={item_name}")
+                    rating_data = {}
+                
                 rating = BangumiCalendarRating(
                     score=rating_data.get('score'),
                     total=rating_data.get('total'),
@@ -475,6 +483,11 @@ async def get_bangumi_calendar() -> BangumiCalendar:
                 
                 # 转换 collection
                 collection_data = item.get('collection', {})
+                # 检查 collection_data 是否为 None，防止 AttributeError
+                if collection_data is None:
+                    logger.warning(f"Bangumi日历数据中item的collection字段为None: ID={item_id}, 名称={item_name}")
+                    collection_data = {}
+                
                 collection = BangumiCalendarCollection(
                     wish=collection_data.get('wish'),
                     collect=collection_data.get('collect'),
@@ -486,6 +499,12 @@ async def get_bangumi_calendar() -> BangumiCalendar:
                 
                 # 转换 images
                 images_data = item.get('images', {})
+                # 检查 images_data 是否为 None，防止 AttributeError
+                if images_data is None:
+                    logger.warning(f"Bangumi日历数据中item的images字段为None: ID={item_id}, 名称={item_name}")
+                    # 将 None 转换为空字典
+                    images_data = {}
+                
                 images = BangumiCalendarImage(
                     large=images_data.get('large'),
                     common=images_data.get('common'),

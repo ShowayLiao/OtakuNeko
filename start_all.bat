@@ -25,7 +25,7 @@ echo [1/4] 正在检查后端依赖 (uv sync)...
 if exist "%BACKEND_DIR%\pyproject.toml" (
     cd /d "%BACKEND_DIR%"
     :: 使用 call 调用以防脚本提前退出
-    call "%RUNTIME_DIR%\uv.exe" sync
+    call uv sync
 ) else (
     echo [警告] 未发现 backend 目录，跳过后端同步。
 )
@@ -34,6 +34,7 @@ if exist "%BACKEND_DIR%\pyproject.toml" (
 echo [2/4] 正在检查前端依赖 (pnpm install)...
 if exist "%FRONTEND_DIR%\package.json" (
     cd /d "%FRONTEND_DIR%"
+    call npm install -g pnpm
     call pnpm install
 ) else (
     echo [警告] 未发现 frontend 目录，跳过前端同步。
@@ -42,10 +43,9 @@ if exist "%FRONTEND_DIR%\package.json" (
 :: --- 5. 启动后端服务 (新窗口) ---
 echo [3/4] 正在启动后端服务 (新窗口)...
 if exist "%BACKEND_DIR%" (
-    :: 使用 start 命令新开一个窗口运行 uvicorn
-    start "OtakuNeko Backend (FastAPI)" cmd /k "cd /d "%BACKEND_DIR%" && "%RUNTIME_DIR%\uv.exe" run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    :: 使用 /D 指定目录，直接使用 uv 命令
+    start "OtakuNeko Backend (FastAPI)" /D "%BACKEND_DIR%" cmd /k "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
 )
-
 :: --- 6. 启动前端服务 (当前窗口) ---
 echo [4/4] 正在启动前端服务 (Next.js)...
 echo --------------------------------------------------------

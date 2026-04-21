@@ -34,6 +34,7 @@ export default function TimetableHeader({
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isTickTickModalOpen, setIsTickTickModalOpen] = useState(false);
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const [isSyncMenuOpen, setIsSyncMenuOpen] = useState(false);
   const [exportData, setExportData] = useState({
     subjectName: '',
     csvString: '',
@@ -45,7 +46,7 @@ export default function TimetableHeader({
 
   const handleSaveSchedules = async () => {
     // 关闭 Popover
-    syncPopoverRef.current?.hide();
+    setIsSyncMenuOpen(false);
     
     if (schedules.length === 0) {
       toast.warning('没有可保存的日程');
@@ -77,7 +78,7 @@ export default function TimetableHeader({
 
   const handleSyncData = async () => {
     // 关闭 Popover
-    syncPopoverRef.current?.hide();
+    setIsSyncMenuOpen(false);
     
     setIsSyncing(true);
 
@@ -163,7 +164,8 @@ export default function TimetableHeader({
               ref={syncPopoverRef}
               arrow={false}
               placement="bottomLeft"
-              trigger="click"
+              open={isSyncMenuOpen}
+              onOpenChange={setIsSyncMenuOpen}
               content={
                 <Flexbox gap={6} style={{ minWidth: 160, padding: '8px' }}>
                   <div
@@ -221,7 +223,6 @@ export default function TimetableHeader({
             <Popover
               arrow={false}
               placement="bottomLeft"
-              trigger="click"
               open={isExportMenuOpen}
               onOpenChange={setIsExportMenuOpen}
               content={

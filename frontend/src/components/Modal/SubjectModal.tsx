@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Icon, toast } from '@lobehub/ui';
-import { Rss, ExternalLink, CheckCircle2, XCircle } from 'lucide-react';
+import { Rss, ExternalLink, CheckCircle2, XCircle, Globe } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import SubjectForm from './form/SubjectForm';
 import SmartSubscriptionModal from './SmartSubscriptionModal';
@@ -191,6 +191,25 @@ const SubjectModal = ({ isOpen, onClose, initialValues }: SubjectModalProps) => 
     window.open(bilibiliUrl, '_blank');
   };
 
+  const handleBangumiRedirect = () => {
+    const subjectId = formData.subject?.id;
+    if (!subjectId || subjectId === 0) {
+      toast.error({
+        title: '错误',
+        description: '条目ID无效，无法跳转到Bangumi',
+        icon: XCircle,
+        duration: 3000,
+      });
+      return;
+    }
+    
+    // 构建 Bangumi 网站链接
+    const bangumiUrl = `https://bangumi.tv/subject/${subjectId}`;
+    
+    // 打开新窗口
+    window.open(bangumiUrl, '_blank');
+  };
+
   return (
     <>
       <Modal
@@ -226,6 +245,14 @@ const SubjectModal = ({ isOpen, onClose, initialValues }: SubjectModalProps) => 
               style={{ flex: 1 }}
             >
               B 站跳转
+            </Button>
+            <Button 
+              type="default" 
+              icon={<Icon icon={Globe} />}
+              onClick={handleBangumiRedirect}
+              style={{ flex: 1 }}
+            >
+              Bangumi
             </Button>
           </div>
         </div>

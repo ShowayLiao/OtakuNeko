@@ -3,7 +3,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import AIMessageChunk
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
-from app.agents.tools import get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast
+from app.agents.tools import get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool
 
 class ChatWorkflow:
     """
@@ -31,7 +31,7 @@ class ChatWorkflow:
         )
 
         # 2. 定义工具列表
-        tools = [get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast]
+        tools = [get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool]
 
         # 3. 绑定工具到大模型
         llm_with_tools = llm.bind_tools(tools)

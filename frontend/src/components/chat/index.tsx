@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 // 1. 引入图标并重命名，防止命名冲突
-import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare, Copy, Loader2 } from 'lucide-react';
+import { User as UserIcon, Bot as BotIcon, Plus, Trash2, MessageSquare, Copy, Loader2, CheckCircle2, XCircle } from 'lucide-react';
 import { theme } from 'antd';
 import { ChatItem } from '@lobehub/ui/chat';
 import { ActionIcon, ActionIconGroup, DraggablePanel, Avatar } from '@lobehub/ui';
@@ -358,9 +358,9 @@ export default function ChatPage() {
                                 className="bg-black/5 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-gray-800 text-sm overflow-hidden"
                               >
                                 <summary className="cursor-pointer select-none p-2 font-medium text-gray-600 dark:text-gray-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-2">
-                                  {tool.status === 'running' && <span className="animate-spin">⚙️</span>}
-                                  {tool.status === 'success' && <span>✅</span>}
-                                  {tool.status === 'error' && <span>❌</span>}
+                                  {tool.status === 'running' && <Loader2 className="animate-spin" size={16} />}
+                                  {tool.status === 'success' && <CheckCircle2 size={16} />}
+                                  {tool.status === 'error' && <XCircle size={16} />}
                                   {tool.status === 'running' ? `正在调用工具: ${tool.name}...` : `调用完毕: ${tool.name}`}
                                 </summary>
                                 

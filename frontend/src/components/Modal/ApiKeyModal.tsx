@@ -213,6 +213,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
       }
       width={900}
       height={600}
+      footer={null}
     >
       <div className="flex h-full overflow-hidden">
         {/* 左侧服务商列表 */}
