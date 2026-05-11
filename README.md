@@ -56,6 +56,8 @@
 
 > **2026 年，OtakuNeko 从零重写，彻底进化。**
 
+> ⚠️ **Beta 警示**：当前版本处于开发早期，功能迭代频繁，Bug 较多。建议具备一定开发能力的小伙伴先行体验，暂不保证完整体验。如遇问题欢迎提 Issue！
+
 如果你来自 V1 时代（Streamlit 单页应用），这里是你需要知道的一切：
 
 | 维度 | V1 (Streamlit) | V2 (FastAPI + Next.js) |
@@ -119,6 +121,8 @@
             <li>网格/列表双视图切换，类型/状态/排序多维筛选</li>
             <li>智能搜索，快速定位你的任何一部番剧</li>
             <li>多数据源支持：Bangumi + 豆瓣双平台导入</li>
+            <li>一键 qBittorrent + RSS 智能订阅，自动匹配字幕组追番下载</li>
+            <li>B 站跳转检索，快速定位番剧资源与社区讨论</li>
         </ul>
     </td>
 </tr>
@@ -170,19 +174,32 @@
 
 <div align="center">
 
-<!-- TODO: 添加截图 -->
-| AI 聊天界面 | 收藏管理 | 放送排班表 | AI 角色工厂 |
-|:---:|:---:|:---:|:---:|
-| ![Chat Preview]() | ![Collection Preview]() | ![Timetable Preview]() | ![Personal Preview]() |
-| *AI 多轮对话 + Tool Calling* | *网格/列表双视图* | *拖拽式新番排班* | *自定义角色人格* |
-
-<!-- TODO: 添加截图 -->
-| 用户画像 | 年度报告 | 移动端适配 |
-|:---:|:---:|:---:|
-| ![Profile Preview]() | ![Year Report Preview]() | ![Mobile Preview]() |
-| *成分鉴定 + 雷达图* | *4×3 年度总结海报* | *响应式设计* |
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/image/chat.png" alt="AI 聊天界面" /><br/>
+      <em>AI 多轮对话 + Tool Calling</em>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/image/collection.png" alt="收藏管理" /><br/>
+      <em>网格/列表双视图</em>
+    </td>
+  </tr>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/image/timetable.png" alt="放送排班表" /><br/>
+      <em>拖拽式新番排班</em>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/image/role.png" alt="AI 角色工厂" /><br/>
+      <em>自定义角色人格</em>
+    </td>
+  </tr>
+</table>
 
 </div>
+
+
 
 ---
 

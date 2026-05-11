@@ -231,7 +231,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                 className="relative w-full shrink-0"
                                 style={{ height: `${CARD_HEIGHT}px` }}
                               >
-                                <DraggableItemWrapper id={`board-${itemKey}`}>
+                                <DraggableItemWrapper id={`board-${itemKey}`} data={realItem}>
                                   <ResizableCardWrapper
                                     id={itemKey}
                                     day={day}
