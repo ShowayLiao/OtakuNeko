@@ -23,6 +23,10 @@ class CollectionRepo:
     """
     
     @staticmethod
+    def _is_valid_subject(subject):
+        return subject is not None and subject.name and subject.name.strip()
+    
+    @staticmethod
     async def create(db: AsyncSession, collection_data: CollectionCreate) -> Collection:
         """
         创建新的 Collection 记录
@@ -85,6 +89,8 @@ class CollectionRepo:
             
             if row:
                 collection, subject = row
+                if not CollectionRepo._is_valid_subject(subject):
+                    return None
                 return CollectionWithSubject(collection=collection, subject=subject)
             else:
                 return None
@@ -159,7 +165,7 @@ class CollectionRepo:
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
-                items.append(CollectionWithSubject(collection=collection, subject=subject))
+                items.append(CollectionWithSubject(collection=collection, subject=CollectionRepo._sanitize_subject(subject)))
             
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
@@ -203,7 +209,7 @@ class CollectionRepo:
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
-                items.append(CollectionWithSubject(collection=collection, subject=subject))
+                items.append(CollectionWithSubject(collection=collection, subject=CollectionRepo._sanitize_subject(subject)))
             
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
@@ -402,7 +408,7 @@ class CollectionRepo:
             for collection, subject in rows:
                 items.append(CollectionWithSubject(
                     collection=collection,
-                    subject=subject
+                    subject=CollectionRepo._sanitize_subject(subject)
                 ))
             
             # 创建并返回CollectionWithSubjectList对象

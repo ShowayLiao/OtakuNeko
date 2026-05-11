@@ -17,6 +17,10 @@ class SubjectRepo:
     """
     
     @staticmethod
+    def _is_valid_subject(subject):
+        return subject is not None and subject.name and subject.name.strip()
+    
+    @staticmethod
     async def create(db: AsyncSession, subject_data: SubjectCreate) -> Subject:
         """
         创建新的 Subject 记录或更新现有记录（upsert 操作）
@@ -107,6 +111,8 @@ class SubjectRepo:
             
             if row:
                 subject, collection = row
+                if not SubjectRepo._is_valid_subject(subject):
+                    return None
                 return SubjectWithCollection(subject=subject, collection=collection)
             else:
                 return None
@@ -196,6 +202,8 @@ class SubjectRepo:
             # 转换为SubjectWithCollection对象列表
             items = []
             for subject, collection in rows:
+                if not SubjectRepo._is_valid_subject(subject):
+                    continue
                 items.append(SubjectWithCollection(subject=subject, collection=collection))
             
             # 创建并返回SubjectWithCollectionList对象
@@ -243,6 +251,8 @@ class SubjectRepo:
             # 转换为SubjectWithCollection对象列表
             items = []
             for subject, collection in rows:
+                if not SubjectRepo._is_valid_subject(subject):
+                    continue
                 items.append(SubjectWithCollection(subject=subject, collection=collection))
             
             # 创建并返回SubjectWithCollectionList对象
