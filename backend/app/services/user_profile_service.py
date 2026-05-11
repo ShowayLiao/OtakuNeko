@@ -4,9 +4,12 @@
 生成高质量的用户画像，用于动画推荐和个性化分析。
 """
 
-from typing import List, Dict, Any, Optional, Tuple, TypedDict
+from typing import List, Dict, Any, TYPE_CHECKING, Tuple, TypedDict
 from collections import defaultdict
 from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from app.schemas.collection import CollectionSubject
 
 logger = get_logger(__name__)
 
@@ -45,24 +48,24 @@ class UserProfile(TypedDict):
     watched_ids: List[int]
 
 
-def generate_user_profile(collections: List[Dict[str, Any]]) -> UserProfile:
+def generate_user_profile(collections: List['CollectionSubject']) -> UserProfile:
     """
     生成用户画像的核心函数
-    
-    输入：用户收藏列表，每个收藏包含collection信息和关联的subject信息
+
+    输入：用户收藏列表，每个元素是一个 CollectionSubject Schema
     输出：包含三部分数据的用户画像字典
-    
+
     Args:
-        collections: 用户收藏列表，每个元素应包含：
-            - collection: 收藏信息，包含rate(评分)等字段
-            - subject: 动画条目信息，包含tags(标签列表)等字段
-    
+        collections: 用户收藏列表，类型为 List[CollectionSubject]，每个元素包含：
+            - 继承自 CollectionBase 的收藏字段（rate, type, comment, tags 等）
+            - subject: 关联的 SubjectRead 条目信息（id, name, tags 等）
+
     Returns:
         包含三部分数据的用户画像：
         1. llm_summary: 供给大模型使用的全景字典
         2. chart_data: 供给前端画图使用的数据结构
         3. watched_ids: 已观看动画的ID列表（去重）
-    
+
     Raises:
         不会抛出异常，所有错误都会被捕获并返回错误画像
     """
@@ -118,65 +121,64 @@ def generate_user_profile(collections: List[Dict[str, Any]]) -> UserProfile:
         return _create_error_profile(str(e))
 
 
-def _clean_and_extract_data(collections: List[Dict[str, Any]]) -> Tuple[List[int], List[Dict[str, Any]]]:
+def _clean_and_extract_data(collections: List['CollectionSubject']) -> Tuple[List[int], List[Dict[str, Any]]]:
     """
     数据清洗：提取有效数据
-    
-    1. 提取所有subject_id（去重）
+
+    1. 提取所有 subject_id（去重）
     2. 跳过没有评分（rate为0或None）的记录
     3. 提取有效条目的标签和评分
-    
+
     Args:
-        collections: 用户收藏列表
-    
+        collections: CollectionSubject 列表
+
     Returns:
         Tuple[watched_ids, valid_entries]
         - watched_ids: 所有观看过的动画ID列表（去重）
         - valid_entries: 有效条目的列表，每个元素包含tags和score
-    
+
     Note:
         会跳过格式异常或数据不完整的条目
     """
     watched_ids = []
     valid_entries = []
-    
+
     for item in collections:
         try:
-            # 提取collection和subject信息
-            collection = item.get("collection", {})
-            subject = item.get("subject", {})
-            
+            subject = item.subject
+            if not subject:
+                continue
+
             # 提取subject_id
-            subject_id = subject.get("id") or subject.get("source_id")
+            subject_id = subject.id or subject.source_id
             if subject_id:
-                # 转换为整数（如果是字符串）
                 try:
                     subject_id_int = int(subject_id)
                     if subject_id_int not in watched_ids:
                         watched_ids.append(subject_id_int)
                 except (ValueError, TypeError):
                     pass
-            
+
             # 检查是否有有效评分
-            score = collection.get("rate")
+            score = item.rate
             if score is None or score == 0:
-                continue  # 跳过没有评分的记录
-            
+                continue
+
             # 提取标签
-            tags = subject.get("tags", [])
+            tags = subject.tags or []
             if not tags:
-                continue  # 跳过没有标签的记录
-            
+                continue
+
             # 存储有效条目
             valid_entries.append({
                 "tags": tags,
                 "score": float(score)
             })
-            
+
         except Exception as e:
             logger.debug(f"处理收藏条目时跳过（可能数据格式异常）: {e}")
             continue
-    
+
     return watched_ids, valid_entries
 
 

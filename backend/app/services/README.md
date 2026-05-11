@@ -20,6 +20,7 @@
 8. [其他服务](#其他服务)
    - [DoubanService](#doubanservice)
    - [QBService](#qbservice)
+   - [UserProfileService](#userprofileservice)
 9. [使用示例](#使用示例)
 10. [最佳实践](#最佳实践)
 
@@ -37,6 +38,7 @@
 - `schedule_service.py` - 排班相关业务逻辑服务
 - `stats_service.py` - 统计相关业务逻辑服务
 - `subject_service.py` - 条目相关业务逻辑服务
+- `user_profile_service.py` - 用户画像生成服务
 - `user_service.py` - 用户相关业务逻辑服务
 
 ## Bangumi 相关服务
@@ -370,6 +372,31 @@ rule = RssRule(
     save_path="/downloads"
 )
 qb_service.set_rss_rule("测试规则", rule)
+```
+
+### UserProfileService
+
+**功能**：基于「频次 + 平均分」的二维加权算法，从用户收藏数据生成用户画像。
+
+**主要方法**：
+- `generate_user_profile(collections)` — 输入 `List[CollectionSubject]`，输出三部分画像数据
+
+**算法流程**：
+1. 数据清洗 — 提取有效评分（跳过 rate=0/None）
+2. 基础统计 — 每个 tag 的 count 和 total_score
+3. 统计学修正 — 过滤 count<2 的小样本，计算平均分
+4. 全景字典 — `{tag_name: [count, avg_score]}`，供大模型使用
+5. 偏好指数 — 0-100 的 Affinity Score（雷达图用）
+6. 图表数据 — radar/bar_count/bar_score 三种图表数据
+
+**使用示例**：
+
+```python
+from app.services.user_profile_service import generate_user_profile
+
+# collections: List[CollectionSubject]
+profile = generate_user_profile(collections)
+# → { llm_summary, chart_data, watched_ids }
 ```
 
 ## 使用示例
