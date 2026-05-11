@@ -48,7 +48,10 @@ const arePropsEqual = (prev: DraggableItemWrapperProps, next: DraggableItemWrapp
   if (!prevData && !nextData) return true;
   if (!prevData || !nextData) return false;
   return prevData.subject?.source === nextData.subject?.source
-      && prevData.subject?.source_id === nextData.subject?.source_id;
+      && prevData.subject?.source_id === nextData.subject?.source_id
+      && prevData.watch_day === nextData.watch_day
+      && prevData.duration === nextData.duration
+      && prevData.watch_type === nextData.watch_type;
 };
 
 const DraggableItemWrapper = React.memo(DraggableItemWrapperInner, arePropsEqual);

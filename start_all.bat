@@ -90,6 +90,14 @@ echo.
 echo [2/4] 同步前端依赖 (pnpm install)...
 if exist "%OTK_FRONTEND%\package.json" (
     cd /d "%OTK_FRONTEND%"
+
+    :: 自动创建 .npmrc（修复旧淘宝镜像 CERT_HAS_EXPIRED 问题）
+    if not exist "%OTK_FRONTEND%\.npmrc" (
+        echo   [INFO] 未检测到 .npmrc，正在写入新镜像源...
+        echo registry=https://registry.npmmirror.com/> "%OTK_FRONTEND%\.npmrc"
+        echo   [OK] 已配置 npmmirror 镜像源
+    )
+
     call pnpm install
     if %errorlevel% neq 0 (
         echo   [ERROR] 前端依赖安装失败，请检查网络或手动运行 pnpm install
