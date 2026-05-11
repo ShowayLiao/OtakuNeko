@@ -8,7 +8,13 @@ from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # JWT 配置
-SECRET_KEY = settings.OPENAI_API_KEY or "your-secret-key-change-this-in-production"
+SECRET_KEY = settings.JWT_SECRET_KEY
+if not SECRET_KEY:
+    raise ValueError(
+        "JWT_SECRET_KEY is not set. "
+        "Set it via environment variable or .env file. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7  # 7天
 
@@ -50,13 +56,13 @@ def decode_access_token(token: str) -> Optional[dict]:
         解码后的数据字典，如果令牌无效则返回 None
     """
     try:
-        logging.info(f"[DEBUG] Attempting to decode token: {token[:20]}...")
-        logging.info(f"[DEBUG] SECRET_KEY: {SECRET_KEY}, type: {type(SECRET_KEY)}")
+        logging.debug(f"Attempting to decode token: {token[:20]}...")
+        logging.debug(f"SECRET_KEY: {SECRET_KEY}, type: {type(SECRET_KEY)}")
         payload = jwt.decode(token, str(SECRET_KEY), algorithms=[ALGORITHM])
-        logging.info(f"[DEBUG] Token decoded successfully: {payload}")
+        logging.debug(f"Token decoded successfully: {payload}")
         return payload
     except JWTError as e:
-        logging.error(f"[DEBUG] JWT Error: {type(e).__name__}: {e}")
+        logging.error(f"JWT Error: {type(e).__name__}: {e}")
         return None
 
 

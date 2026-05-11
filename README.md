@@ -1,226 +1,559 @@
-# OtakuNeko 项目配置指南
 
-## 快速启动指南
+<div align="center">
 
-### 一键启动（推荐）
-直接运行项目根目录下的 `start_all.bat` 文件，即可自动完成依赖安装和服务启动：
+<img src="frontend/public/Icon.png" width="160" height="auto" alt="OtakuNeko Logo">
+
+# 🐱 OtakuNeko | 御宅猫
+
+### *你的二次元赛博哈基米 —— 基于 LLM 的智能化私人番剧管理与分析助手*
+
+<br>
+
+<p>
+    <a href="https://www.python.org/">
+        <img src="https://img.shields.io/badge/Python-3.11%2B-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
+    </a>
+    <a href="https://fastapi.tiangolo.com/">
+        <img src="https://img.shields.io/badge/FastAPI-0.109%2B-009688?style=flat-square&logo=fastapi&logoColor=white" alt="FastAPI">
+    </a>
+    <a href="https://nextjs.org/">
+        <img src="https://img.shields.io/badge/Next.js-16.1-000000?style=flat-square&logo=next.js&logoColor=white" alt="Next.js">
+    </a>
+    <a href="https://react.dev/">
+        <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React">
+    </a>
+    <a href="https://langchain.com/">
+        <img src="https://img.shields.io/badge/LangGraph-1.0-1C3C3C?style=flat-square&logo=chainlink&logoColor=white" alt="LangGraph">
+    </a>
+    <a href="https://www.sqlite.org/">
+        <img src="https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
+    </a>
+    <a href="https://www.postgresql.org/">
+        <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=flat-square&logo=postgresql&logoColor=white" alt="PostgreSQL">
+    </a>
+    <a href="./LICENSE">
+        <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" alt="License">
+    </a>
+</p>
+
+<p>
+    <b>OtakuNeko</b> 不仅仅是一个个人助手，它是你的赛博看番搭子 🐱<br>
+    它能同步 <b>Bangumi (bgm.tv)</b> 收藏，通过 AI 深度分析你的二次元成分，<br>
+    提供智能推荐、排班管理，以及真正懂你的番剧聊天助手。
+</p>
+
+<br>
+
+*如果该项目对你也有用，欢迎 ⭐ star & 🍴 fork*
+
+<br>
+
+</div>
+
+---
+
+## 📋 目录
+
+- [✨ 核心功能](#-核心功能)
+- [📸 界面预览](#-界面预览)
+- [🚀 快速开始](#-快速开始)
+- [⚙️ 配置说明](#️-配置说明)
+- [🏗️ 架构概览](#️-架构概览)
+- [🛠️ 技术栈](#️-技术栈)
+- [📂 项目结构](#-项目结构)
+- [📖 使用指南](#-使用指南)
+- [🧩 开发路线](#-开发路线)
+- [📜 License](#-license)
+
+---
+
+## ✨ 核心功能
+
+<table>
+<tr>
+    <td width="50%">
+        <h3>🧠 AI 智能聊天</h3>
+        <ul>
+            <li>基于 LangGraph ReAct 工作流的动漫领域 AI 助手</li>
+            <li>多轮对话 + Tool Calling 可视化（查条目、搜声优、看评价）</li>
+            <li>支持多模型切换（DeepSeek / OpenAI / 兼容 API）</li>
+            <li>自定义 AI 角色人格预设（毒舌猫娘、柔情猫娘、圆头耄耋）</li>
+        </ul>
+    </td>
+    <td width="50%">
+        <h3>📚 收藏管理</h3>
+        <ul>
+            <li>一键同步 Bangumi 全量收藏（想看/在看/看过/搁置/抛弃）</li>
+            <li>网格/列表双视图切换，类型/状态/排序多维筛选</li>
+            <li>智能搜索，快速定位你的任何一部番剧</li>
+            <li>多数据源支持：Bangumi + 豆瓣双平台导入</li>
+        </ul>
+    </td>
+</tr>
+<tr>
+    <td width="50%">
+        <h3>📅 放送排班表</h3>
+        <ul>
+            <li>可视化新番时间网格，本周/下周一目了然</li>
+            <li>拖拽式排班管理（<code>@dnd-kit</code> 驱动）</li>
+            <li>标准通道视图（巴哈/B站/Netflix/Disney+ 等）</li>
+            <li>日历导出：CSV / iCal / TickTick 智能订阅</li>
+        </ul>
+    </td>
+    <td width="50%">
+        <h3>🎭 AI 深度画像</h3>
+        <ul>
+            <li>基于收藏数据的二次元成分鉴定（雷达图 + 饼图）</li>
+            <li>AI 生成年度动画报告（4×3 精美海报）</li>
+            <li>四象限口味分析（大众 vs 冷门、新作 vs 经典）</li>
+            <li>一键导出格子图，便于朋友圈分享</li>
+        </ul>
+    </td>
+</tr>
+<tr>
+    <td width="50%">
+        <h3>🔗 外部数据同步</h3>
+        <ul>
+            <li>Bangumi API 官方数据源（条目/收藏/角色/Staff）</li>
+            <li>Bangumi HTML Scraper（短评/长评抓取）</li>
+            <li>bangumi-data CDN 放送时间自动同步（±90 天）</li>
+            <li>qBittorrent RSS 订阅集成</li>
+        </ul>
+    </td>
+    <td width="50%">
+        <h3>🔌 双模式部署</h3>
+        <ul>
+            <li><b>本地模式</b>：SQLite + 内存缓存，零依赖，即开即用</li>
+            <li><b>云模式</b>：PostgreSQL + Redis + Docker Compose，生产就绪</li>
+            <li>Docker 容器化一键部署</li>
+            <li>Next.js API Routes 代理 + JWT 鉴权</li>
+        </ul>
+    </td>
+</tr>
+</table>
+
+---
+
+## 📸 界面预览
+
+<div align="center">
+
+<!-- TODO: 添加截图 -->
+| AI 聊天界面 | 收藏管理 | 放送排班表 | AI 角色工厂 |
+|:---:|:---:|:---:|:---:|
+| ![Chat Preview]() | ![Collection Preview]() | ![Timetable Preview]() | ![Personal Preview]() |
+| *AI 多轮对话 + Tool Calling* | *网格/列表双视图* | *拖拽式新番排班* | *自定义角色人格* |
+
+<!-- TODO: 添加截图 -->
+| 用户画像 | 年度报告 | 移动端适配 |
+|:---:|:---:|:---:|
+| ![Profile Preview]() | ![Year Report Preview]() | ![Mobile Preview]() |
+| *成分鉴定 + 雷达图* | *4×3 年度总结海报* | *响应式设计* |
+
+</div>
+
+---
+
+## 🚀 快速开始
+
+OtakuNeko 提供多种启动方式，无论你是普通用户还是开发者，都能找到适合自己的方案。
+
+### 方式一：Docker 一键部署（推荐）
+
+适合想要快速体验完整功能的用户。
+
+**前置条件：** 安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
 
 ```bash
-# 运行一键启动脚本
+# Windows
+start_docker.bat
+
+# macOS / Linux
+./start_docker.sh
+```
+
+启动后访问：
+- **前端页面**：`http://localhost:3000`
+- **后端文档**：`http://localhost:8000/docs`
+- **数据库**：localhost:5432（用户 `otaku` / 密码 `password`）
+
+> Docker Compose 将自动启动 5 个服务：`db` (PostgreSQL)、`redis` (Redis)、`backend` (FastAPI)、`frontend` (Next.js)、`qbittorrent` (BT 下载器)。
+
+### 方式二：本地开发模式
+
+适合开发者进行二次开发或调试。
+
+**前置条件：**
+- Python 3.11+
+- Node.js 20+
+- pnpm（`corepack enable && corepack prepare pnpm@latest --activate`）
+- uv（`powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`）
+
+```bash
+# Windows（一键启动前后端）
 start_all.bat
+
+# macOS / Linux（一键启动前后端）
+./start_all.sh
+
+# 或手动启动：
+# 1. 仅启动基础设施（数据库 + Redis）
+dev_infra.bat
+
+# 2. 分别启动前后端（新窗口）
+# 后端：cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+# 前端：cd frontend && pnpm dev
 ```
 
-该脚本会自动：
-1. 检查并同步后端依赖（使用 uv）
-2. 检查并同步前端依赖（使用 pnpm）
-3. 在新窗口启动后端服务
-4. 在当前窗口启动前端服务
+> 本地开发模式下，后端默认使用 SQLite 数据库，无需安装 PostgreSQL。前端运行在 `http://localhost:3000`，后端运行在 `http://localhost:8000`。
 
-### 本地模式快速启动
-1. 在 `backend` 目录创建 `.env` 文件，设置 `DEPLOY_MODE=local`
-2. 安装后端依赖：`uv sync`
-3. 启动后端服务：`uv run uvicorn app.main:app --reload`
-4. 安装前端依赖：`pnpm install`
-5. 启动前端服务：`pnpm dev`
-6. 访问前端：http://localhost:3000
+### 方式三：仅启动基础设施
 
-### 云模式快速启动
-1. 在 `backend` 目录创建 `.env` 文件，设置 `DEPLOY_MODE=cloud`
-2. 安装后端依赖：`uv sync`
-3. 启动 PostgreSQL 和 Redis 服务（可使用 Docker Compose）
-4. 启动后端服务：`uv run uvicorn app.main:app --reload`
-5. 安装前端依赖：`pnpm install`
-6. 启动前端服务：`pnpm dev`
-7. 访问前端：http://localhost:3000
+如果你已经配置好前后端环境，只需要数据库和缓存：
 
-## 项目简介
-
-OtakuNeko 是一个动漫爱好者的收藏管理系统，包含后端 API 和前端界面，支持动漫收藏的管理、同步和统计分析。
-
-## 技术栈
-
-- **后端**: FastAPI (Python)
-- **前端**: Next.js (React)
-- **数据库**: SQLite (本地模式) / PostgreSQL (云模式)
-- **缓存**: 内存缓存 (本地模式) / Redis (云模式)
-
-## 一、后端配置
-
-### 1. 环境要求
-- Python 3.9+
-- PostgreSQL 13+ (可选，云模式需要)
-- Redis 6+ (可选，云模式需要)
-
-### 2. 配置步骤
-
-#### 步骤1：进入后端目录
 ```bash
-cd backend
+dev_infra.bat
 ```
 
-#### 步骤2：创建虚拟环境
-```bash
-# 创建虚拟环境
-python -m venv venv
+这条命令会启动 PostgreSQL (`localhost:5432`) 和 Redis (`localhost:6379`)。
 
-# 激活虚拟环境 (Windows)
-venv\Scripts\activate
+---
 
-# 激活虚拟环境 (macOS/Linux)
-# . venv/bin/activate
-```
+## ⚙️ 配置说明
 
-#### 步骤3：安装依赖
-```bash
-# 使用 uv 安装依赖
-uv sync
-```
+### 环境变量配置
 
-#### 步骤4：配置环境变量
-在 `backend` 目录下创建 `.env` 文件，根据部署模式选择配置：
+复制根目录的 `.env.example` 为 `.env`，根据需要修改配置：
 
-**本地模式配置（推荐开发测试）**：
-```env
-# 模式开关
-DEPLOY_MODE=local
+```ini
+# === 部署模式 ===
+DEPLOY_MODE=local              # local | cloud
 
-# 基础配置
-PROJECT_NAME=OtakuNeko
-API_V1_STR=/api/v1
-DEBUG=true
-OPENAI_API_KEY=test-secret-key-for-jwt-debugging
+# === LLM 配置 ===
+OPENAI_API_KEY=your-api-key   # DeepSeek / OpenAI / 兼容 API
+OPENAI_API_BASE=https://api.deepseek.com  # API 端点
 
-# 本地模式配置
+# === 本地模式 (SQLite) ===
 SQLITE_FILE=./test.db
-```
 
-**云模式配置（推荐生产环境）**：
-```env
-# 模式开关
-DEPLOY_MODE=cloud
-
-# 基础配置
-PROJECT_NAME=OtakuNeko
-API_V1_STR=/api/v1
-DEBUG=false
-OPENAI_API_KEY=your-real-openai-api-key
-
-# 云模式配置
-POSTGRES_SERVER=localhost
+# === 云模式 (PostgreSQL) ===
+POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-POSTGRES_USER=otaku
-POSTGRES_PASSWORD=password
-POSTGRES_DB=otakuneko
-
-# Redis配置
+POSTGRES_USER=otakuneko
+POSTGRES_PASSWORD=password123
+POSTGRES_DB=otakuneko_db
 REDIS_URL=redis://localhost:6379/0
+
+# === JWT 安全 ===
+JWT_SECRET_KEY=your-strong-secret-key
+
+# === Bangumi API ===
+BANGUMI_TOKEN=your-bangumi-token  # 可选，不填则使用公开数据
+
+# === qBittorrent ===
+QB_URL=http://localhost:8080
+QB_USERNAME=admin
+QB_PASSWORD=adminadmin
 ```
 
-#### 步骤5：启动服务
-```bash
-# 开发模式
-uvicorn app.main:app --reload
+### 双模式说明
 
-# 生产模式
-# gunicorn app.main:app --workers 2 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000
+| 模式 | 数据库 | 缓存 | 适用场景 |
+|------|--------|------|----------|
+| **local** | SQLite | 内存缓存 | 个人使用、开发调试、零依赖 |
+| **cloud** | PostgreSQL | Redis | 生产部署、多用户、高可用 |
+
+---
+
+## 🏗️ 架构概览
+
+### 分层架构拓扑
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     Frontend (Next.js 16)                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────────┐  │
+│  │   Chat   │  │Collection│  │Timetable │  │  Personal  │  │
+│  │   Page   │  │   Page   │  │   Page   │  │    Page    │  │
+│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └─────┬──────┘  │
+│       │             │             │               │         │
+│  ┌────▼─────────────▼─────────────▼───────────────▼──────┐  │
+│  │              Services Layer (API Client)                │  │
+│  │   auth / collections / schedule / bangumi / search     │  │
+│  └─────────────────────┬──────────────────────────────────┘  │
+└────────────────────────┼─────────────────────────────────────┘
+                         │ HTTP / SSE
+┌────────────────────────┼─────────────────────────────────────┐
+│                 FastAPI Backend (Python)                      │
+│  ┌──────────┐  ┌──────▼──────┐  ┌────────────────────────┐  │
+│  │  Agent   │  │  API Layer  │  │  Auth (JWT + bcrypt)    │  │
+│  │ LangGraph │  │  9 Routers  │  │  Security Layer        │  │
+│  │ ReAct + 7 │  │  ~30 APIs   │  └────────────────────────┘  │
+│  │  Tools   │  └──────┬──────┘                               │
+│  └──────────┘         │                                       │
+│  ┌────────────────────▼────────────────────────────────────┐  │
+│  │              Service Layer (11 Services)                  │  │
+│  │  Bangumi / Collection / Subject / Schedule / Stats       │  │
+│  │  UserProfile / Douban / QB / DataSync / User            │  │
+│  └────────────────────┬────────────────────────────────────┘  │
+│                       │                                       │
+│  ┌────────────────────▼────────────────────────────────────┐  │
+│  │         Repository Layer (4 Repos) + SQLModel ORM        │  │
+│  │  SubjectRepo / CollectionRepo / UserRepo / ScheduleRepo  │  │
+│  └────────────────────┬────────────────────────────────────┘  │
+│                       │                                       │
+│           ┌───────────┴───────────┐                           │
+│           │     SQLite / PgSQL    │                           │
+│           └───────────────────────┘                           │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-#### 步骤6：访问服务
-- 应用主页：http://localhost:8000
-- API文档：http://localhost:8000/docs (Swagger UI)
-- 健康检查：http://localhost:8000/health
+### 数据流全景
 
-## 二、前端配置
+```
+用户 → Next.js Page  →  Services  →  HTTP/SSE  →  FastAPI Router
+                                                    ↓
+                                            JWT Auth (deps.py)
+                                                    ↓
+                                            Service Layer (编排)
+                                                    ↓
+                                            Repository (CRUD)
+                                                    ↓
+                                            SQLite / PostgreSQL
 
-### 1. 环境要求
-- Node.js 18+
-- npm, yarn, pnpm 或 bun
-
-### 2. 配置步骤
-
-#### 步骤1：进入前端目录
-```bash
-cd frontend
+AI 聊天特殊链路：
+用户 → ChatPage  →  SSE Stream  →  LangGraph ReAct Agent
+                                      ↓
+                                Tool Calls (7 tools)
+                                      ├── Bangumi API / Scraper
+                                      ├── User Profile Service
+                                      └── Local Time
 ```
 
-#### 步骤2：安装依赖
-```bash
-# 使用 pnpm 安装依赖
-pnpm install
+### Agent 工作流
+
+```
+用户消息 → LangGraph ReAct Agent
+    → Agent Node: LLM 推理
+        → 决定调用 Tool?
+            ├── YES → Tool Node 执行
+            │          → 调用 Service 层实际逻辑
+            │          → 结果返回 Agent 继续推理
+            └── NO  → END → 流式返回最终回复
 ```
 
-#### 步骤3：启动开发服务器
-```bash
-# 使用 pnpm 启动开发服务器
-pnpm dev
+**7 个内置工具：**
+
+| Tool | 功能 | 数据来源 |
+|------|------|----------|
+| `get_anime_info` | 查询动画条目信息 | Bangumi API |
+| `fetch_audience_reviews` | 获取观众短评/长评 | Bangumi HTML Scraper |
+| `get_anime_staff` | 查询动画制作人员 | Bangumi API |
+| `get_anime_cast` | 查询动画声优阵容 | Bangumi API |
+| `search_anime_advanced` | 高级搜索动画条目 | Bangumi API |
+| `get_current_time` | 获取当前时间 | 本地系统时钟 |
+| `generate_user_profile_tool` | 生成用户画像分析 | 数据库 + LLM |
+
+### 外部集成全景
+
 ```
-
-#### 步骤4：访问前端
-- 前端地址：http://localhost:3000
-
-## 三、部署模式说明
-
-### 本地模式 (local)
-- 使用 SQLite 数据库（无需额外安装）
-- 使用内存缓存（无需 Redis）
-- 适合开发测试和个人使用
-- 配置简单，一键启动
-
-### 云模式 (cloud)
-- 使用 PostgreSQL 数据库
-- 使用 Redis 缓存
-- 适合生产环境和团队协作
-- 性能更好，支持更多功能
-
-## 四、常见问题解决方案
-
-1. **本地模式数据库错误**：确保应用有写入权限，检查 `.env` 文件中的 `SQLITE_FILE` 路径
-2. **云模式数据库连接错误**：确保 PostgreSQL 服务正在运行，检查配置是否正确
-3. **Redis 连接错误**：确保 Redis 服务正在运行，检查 `REDIS_URL` 配置
-4. **端口被占用**：尝试使用其他端口启动服务，例如 `uvicorn app.main:app --reload --port 8001`
-5. **依赖安装错误**：确保 Python 版本符合要求，尝试更新 pip 后重新安装
-
-## 五、项目结构说明
-
-- **backend/**: 后端代码（FastAPI）
-  - **app/**: 应用代码
-  - **requirements.txt**: 依赖文件
-  - **.env.example**: 环境变量示例
-  - **QUICK_START.md**: 详细配置指南
-
-- **frontend/**: 前端代码（Next.js）
-  - **src/**: 源代码
-  - **package.json**: 依赖配置
-  - **README.md**: 前端说明文档
-
-- **tests/**: 测试代码
-
-## 六、API 测试
-
-### 获取 JWT 令牌
-```bash
-curl -X POST http://localhost:8000/api/v1/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "testuser"}'
-```
-
-### 使用令牌访问受保护的 API
-```bash
-# 替换 <token> 为上一步获取的 JWT 令牌
-curl -X GET http://localhost:8000/api/v1/users/me \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json"
-```
-
-### 获取用户统计数据
-```bash
-curl -X GET http://localhost:8000/api/v1/dashboard/stats \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json"
+OtakuNeko
+    │
+    ├── Bangumi API (api.bgm.tv)          ─ 条目/收藏/角色/Staff
+    ├── Bangumi Web (bgm.tv HTML)         ─ 短评/长评抓取
+    ├── bangumi-data CDN                  ─ 放送时间同步
+    ├── 豆瓣 API                           ─ 收藏导入
+    ├── qBittorrent                       ─ RSS 订阅下载
+    └── OpenAI / 兼容 API                  ─ LLM 推理
 ```
 
 ---
 
-**文档版本**: v1.0.0  
-**最后更新**: 2026-03-04  
-**维护者**: OtakuNeko Team
+## 🛠️ 技术栈
+
+### 后端 (Backend)
+
+| 类别 | 技术 | 用途 |
+|------|------|------|
+| 框架 | **FastAPI** 0.109+ | RESTful API + SSE 流式响应 |
+| ORM | **SQLModel** + **SQLAlchemy** | 异步 ORM，6 张业务表 |
+| AI Agent | **LangGraph** 1.0+ | ReAct 工作流编排 |
+| LLM SDK | **LangChain-OpenAI** | 统一 LLM 调用接口 |
+| 数据库 | **SQLite** (本地) / **PostgreSQL** (生产) | 双模式自动切换 |
+| 缓存 | **fastapi-cache2** (内存/Redis) | API 响应缓存 |
+| 迁移 | **Alembic** | 数据库版本管理 |
+| 认证 | **python-jose** + **passlib(bcrypt)** | JWT + 密码哈希 |
+| 爬虫 | **httpx** + **BeautifulSoup4** | Bangumi HTML Scraper |
+| 包管理 | **uv** | 新一代 Python 包管理器 |
+| 任务队列 | **Celery** (计划中) | 定时同步/离线计算 |
+
+### 前端 (Frontend)
+
+| 类别 | 技术 | 用途 |
+|------|------|------|
+| 框架 | **Next.js** 16.1 (App Router) | React SSR + API Routes 代理 |
+| UI 库 | **React** 19 + **@lobehub/ui** + **antd** | 高质量 UI 组件 + 聊天专用组件 |
+| 状态管理 | **Zustand** 5.0 | 轻量级状态管理 |
+| 样式方案 | **Tailwind CSS** + **antd-style** | 原子化 CSS + 主题系统 |
+| 拖拽 | **@dnd-kit** 6.3 | 排班表拖拽交互 |
+| HTTP | **fetch** + **axios** | API 请求 + SSE 流式聊天 |
+| 构建 | **Turbopack** + **React Compiler** | 极速构建与编译优化 |
+| 包管理 | **pnpm** | 高性能包管理器 |
+
+### 数据层 (Database)
+
+| 表 | 说明 |
+|----|------|
+| **Subject** | 动画条目（涵盖 Bangumi 全类型） |
+| **Collection** | 用户收藏（想看/在看/看过/搁置/抛弃） |
+| **User** | 用户账户与认证信息 |
+| **Schedule** | 用户自定义排班 |
+| **AnimeBroadcastMetadata** | 放送时间元数据（多平台） |
+
+---
+
+## 📂 项目结构
+
+<details>
+<summary><b>点击展开完整项目结构</b></summary>
+
+```
+OtakuNeko/
+│
+├── frontend/                    # 🎨 前端 (Next.js 16 + React 19)
+│   └── src/
+│       ├── app/                 # App Router 页面
+│       │   ├── page.tsx         # 首页 → 聊天
+│       │   ├── collections/     # 收藏管理页
+│       │   ├── Timetable/       # 排班表页
+│       │   ├── Personal/        # AI 角色工厂页
+│       │   └── api/             # Next API Routes 代理
+│       ├── components/          # 业务 UI 组件
+│       │   ├── chat/            # 聊天界面组件
+│       │   ├── collection/      # 收藏展示组件
+│       │   ├── header/          # 各页面 Header
+│       │   ├── timetable/       # 排班表拖拽系统
+│       │   ├── Modal/           # 全局弹窗
+│       │   ├── providers/       # 主题上下文
+│       │   └── sidebar/         # 角色侧栏
+│       ├── features/            # 功能模块
+│       │   ├── Sidebar/         # 主导航侧栏
+│       │   └── Theme/           # 主题切换器
+│       ├── services/            # API 服务层 (9 文件)
+│       ├── lib/                 # 工具库
+│       │   ├── fetcher.ts       # SSE 流式聊天
+│       │   └── utils.ts         # cn() 类名合并
+│       ├── store/               # Zustand 状态管理
+│       └── stores/              # 聊天 Store
+│
+├── backend/                     # ⚙️ 后端 (FastAPI + Python)
+│   └── app/
+│       ├── api/v1/              # API 路由层 (9 路由, ~30 端点)
+│       ├── agents/              # LangGraph Agent + 7 Tools
+│       ├── services/            # 业务服务层 (11 服务)
+│       ├── repositories/        # 数据仓库层 (4 Repos)
+│       ├── models/              # SQLModel ORM (6 表)
+│       ├── schemas/             # Pydantic Schema (11 文件)
+│       ├── clients/             # 外部客户端 (Bangumi Scraper)
+│       ├── core/                # 基础设施 (配置/日志/安全)
+│       ├── db/                  # 数据库引擎 (双模式)
+│       ├── worker/              # Celery 任务队列 (计划中)
+│       └── main.py              # FastAPI 入口
+│
+├── docker-compose.yml           # 🐳 Docker 编排 (5 服务)
+├── .env.example                 # 🔑 环境变量模板
+│
+├── start_docker.bat / .sh       # Docker 一键启动
+├── start_all.bat / .sh          # 本地开发一键启动
+├── dev_infra.bat                # 基础设施启动 (DB + Redis)
+│
+└── docs/                        # 📄 架构文档
+    ├── backend-architecture-whitepaper.md
+    └── frontend-src-research-report.md
+```
+
+</details>
+
+---
+
+## 📖 使用指南
+
+### 🧠 AI 聊天
+
+进入首页即可与 AI 助手对话。支持：
+
+- **自然语言查询**：`"查一下《命运石之门》的制作人员"`、`"推荐几部类似《进击的巨人》的番"`
+- **角色人格切换**：在侧栏选择毒舌猫娘、柔情猫娘或圆头耄耋
+- **多模型切换**：在输入框上方选择不同的 LLM 模型
+- **Tool Calling 可视化**：AI 调用工具时实时展示调用过程和结果
+
+### 📚 收藏管理
+
+1. 首次使用点击"同步 Bangumi 收藏"
+2. 输入你的 Bangumi 用户名（可选填 API Token 获取更多数据）
+3. 同步完成后即可在网格/列表视图中浏览你的全部收藏
+4. 使用筛选器按类型、状态、排序快速定位
+
+### 📅 放送排班表
+
+- 自动同步当季新番放送时间
+- 支持拖拽调整追番计划
+- 一键导出为 CSV / iCal / TickTick 订阅
+- 多平台视图（巴哈姆特/B站/Netflix/Disney+ 等）
+
+### 🎭 AI 深度画像
+
+1. 在聊天中输入 `"生成我的用户画像"` 或类似指令
+2. AI 将分析你的收藏数据，生成：
+   - **成分鉴定雷达图**：多维度口味可视化
+   - **四象限分析**：大众 vs 冷门、新作 vs 经典
+   - **年度动画报告**：4×3 精美海报（支持一键下载分享）
+
+---
+
+## 🧩 开发路线
+
+### 短期（1-2 周）
+- [ ] 补充用户画像独立 API 端点
+- [ ] Agent 工具自动拉取收藏数据（无需前端传入）
+- [ ] 四象限结果集成到画像返回值
+- [ ] 用户画像添加 TTL 缓存
+
+### 中期（2-4 周）
+- [ ] 实现 Celery 定时任务（收藏增量同步、日历定时拉取、放送时间周期更新）
+- [ ] 清理 DEBUG 日志与完善模块导出
+- [ ] CORS 配置化 + API 速率限制
+
+### 长期（1 月+）
+- [ ] Agent 架构升级：ReAct → Plan-and-Execute + 意图路由
+- [ ] 引入 RAG（向量数据库 + Embedding）+ Agent Memory（Checkpoint 持久化）
+- [ ] 添加单元测试、集成测试、CI/CD Pipeline
+- [ ] 前端测试覆盖
+
+---
+
+## 📜 License
+
+本项目采用 [MIT License](./LICENSE) 协议进行开源。
+
+```
+MIT License
+
+Copyright (c) 2025-2026 OtakuNeko
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files...
+```
+
+---
+
+<div align="center">
+    <br>
+    <p>
+        <b>OtakuNeko</b> — 让你的二次元生活更加精彩 🐱
+    </p>
+    <p>
+        <sub>Built with ❤️ by otakus, for otakus</sub>
+    </p>
+    <br>
+</div>

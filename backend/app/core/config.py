@@ -6,6 +6,8 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "OtakuNeko"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = True
+    JWT_SECRET_KEY: str = ""
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003"
     OPENAI_API_KEY: Optional[str] = None
     
     # 1. 读取模式开关

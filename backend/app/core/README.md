@@ -31,7 +31,7 @@ core/
     - `local` → SQLite (`sqlite+aiosqlite:///./local.db`)
     - `cloud` → PostgreSQL (`postgresql+asyncpg://...`)
   - `DATABASE_URL` 为 `@computed_field`，运行时动态计算
-  - 包含 OPENAI_API_KEY、REDIS_URL、qBittorrent 配置等
+  - 包含 JWT_SECRET_KEY（强制校验，无默认值）、CORS_ORIGINS（逗号分隔多域名）、OPENAI_API_KEY、REDIS_URL、qBittorrent 配置等
 
 ### logging.py — 日志系统 ([源码](logging.py))
 
@@ -45,7 +45,7 @@ core/
 ### security.py — 安全模块 ([源码](security.py))
 
 - JWT 令牌管理：`create_access_token` / `decode_access_token`
-  - 使用 HS256 算法，SECRET_KEY 来自 OPENAI_API_KEY 或默认值
+  - 使用 HS256 算法，SECRET_KEY 来自 JWT_SECRET_KEY 环境变量（空值时抛 ValueError 阻断启动）
   - Token 有效期 7 天
 - 密码管理：`get_password_hash` / `verify_password`
   - 使用 bcrypt 算法
