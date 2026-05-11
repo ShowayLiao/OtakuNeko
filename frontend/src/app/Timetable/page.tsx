@@ -43,9 +43,13 @@ import TimetableHeader from '@/components/header/TimetableHeader';
 import TimelineBoard from '@/components/timetable/TimelineBoard';
 import StandardLanes from '@/components/timetable/StandardLanes';
 import TimelineMediaCard from '@/components/timetable/TimelineMediaCard';
-import CollectionPanel from '@/components/timetable/DraggablePanel';
 import { ExportTickTickModal } from '@/components/Modal/ExportTickTickModal';
 import { SpotlightCard } from '@lobehub/ui/awesome';
+import dynamic from 'next/dynamic';
+
+const CollectionPanel = dynamic(() => import('@/components/timetable/DraggablePanel'), {
+  ssr: false,
+});
 
 
 
@@ -427,7 +431,7 @@ export default function WeeklyBoardPage() {
   }, []);
   
   // 处理获取 Bangumi 日历数据
-  const handleFetchBangumiCalendar = async () => {
+  const handleFetchBangumiCalendar = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -456,41 +460,37 @@ export default function WeeklyBoardPage() {
     } finally {
       setIsLoading(false);
     }
-  };
-  
-  // 同步处理函数
-  const handleSyncCloud = () => {
+  }, []);
+  const handleSyncCloud = useCallback(() => {
     console.log('同步云端');
-  };
+  }, []);
   
-  const handleSyncLocal = () => {
+  const handleSyncLocal = useCallback(() => {
     console.log('同步本地');
-  };
+  }, []);
   
-  // 导出与保存处理函数
-  const handleSaveSchedule = () => {
+  const handleSaveSchedule = useCallback(() => {
     console.log('保存当前排期');
-  };
+  }, []);
 
   // 保存日程成功回调
-  const handleSaveSuccess = () => {
+  const handleSaveSuccess = useCallback(() => {
     console.log('日程保存成功');
-  };
+  }, []);
   
   // 同步数据回调
-  const handleSyncData = (data: any[]) => {
+  const handleSyncData = useCallback((data: any[]) => {
     console.log('同步数据成功，接收到的数据:', data);
-    // 更新 scheduleItems 状态，渲染到页面上
     setScheduleItems(data);
-  };
+  }, []);
   
   // 搜索处理函数
-  const handleSearch = (value: string) => {
+  const handleSearch = useCallback((value: string) => {
     setSearchQuery(value);
-  };
+  }, []);
   
   // 清空所有卡片
-  const handleClearAll = async () => {
+  const handleClearAll = useCallback(async () => {
     try {
       // 调用后端 API 删除所有排班记录
       await deleteAllSchedules();
@@ -502,8 +502,12 @@ export default function WeeklyBoardPage() {
       console.error('清空所有日程失败:', error);
       toast.error('清空所有日程失败，请重试');
     }
-  };
-  
+  }, []);
+
+  const openTickTickModal = useCallback(() => setIsTickTickModalOpen(true), []);
+  const closeTickTickModal = useCallback(() => setIsTickTickModalOpen(false), []);
+  const toggleLanesCollapse = useCallback(() => setIsLanesCollapsed(v => !v), []);
+
   // 同步菜单
   const syncMenu = (
     <div className="flex flex-col w-36 p-1">
@@ -531,7 +535,7 @@ export default function WeeklyBoardPage() {
             schedules={scheduleItems}
             onSaveSuccess={handleSaveSuccess}
             onSyncData={handleSyncData}
-            onExportTickTick={() => setIsTickTickModalOpen(true)}
+            onExportTickTick={openTickTickModal}
             onSearch={handleSearch}
           />
         </div>
@@ -617,7 +621,7 @@ export default function WeeklyBoardPage() {
                       <ActionIcon
                         icon={isLanesCollapsed ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         title={isLanesCollapsed ? "展开标准泳道" : "折叠标准泳道"}
-                        onClick={() => setIsLanesCollapsed(!isLanesCollapsed)}
+                        onClick={toggleLanesCollapse}
                         variant="borderless"
                         size="small"
                       />
@@ -664,7 +668,7 @@ export default function WeeklyBoardPage() {
       {/* 批量导出到滴答清单 Modal */}
       <ExportTickTickModal
         open={isTickTickModalOpen}
-        onCancel={() => setIsTickTickModalOpen(false)}
+        onCancel={closeTickTickModal}
         items={scheduleItems}
       />
     </DndContext>

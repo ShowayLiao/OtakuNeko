@@ -98,10 +98,7 @@ export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
           params.keyword = searchQuery;
         }
         
-        console.log('DraggablePanel: 发送请求参数:', params);
-        
         const items = await getCollections(params);
-        console.log('DraggablePanel: 收到响应数据:', items.length, '条');
         setCollections(items || []);
       } catch (err) {
         setError('获取收藏数据失败');

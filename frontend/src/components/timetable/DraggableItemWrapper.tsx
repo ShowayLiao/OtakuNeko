@@ -9,7 +9,7 @@ interface DraggableItemWrapperProps {
   data?: BangumiItem;
 }
 
-const DraggableItemWrapper: React.FC<DraggableItemWrapperProps> = ({ id, children, data }) => {
+const DraggableItemWrapperInner: React.FC<DraggableItemWrapperProps> = ({ id, children, data }) => {
   const {
     attributes,
     listeners,
@@ -41,4 +41,15 @@ const DraggableItemWrapper: React.FC<DraggableItemWrapperProps> = ({ id, childre
   );
 };
 
+const arePropsEqual = (prev: DraggableItemWrapperProps, next: DraggableItemWrapperProps) => {
+  if (prev.id !== next.id) return false;
+  const prevData = prev.data;
+  const nextData = next.data;
+  if (!prevData && !nextData) return true;
+  if (!prevData || !nextData) return false;
+  return prevData.subject?.source === nextData.subject?.source
+      && prevData.subject?.source_id === nextData.subject?.source_id;
+};
+
+const DraggableItemWrapper = React.memo(DraggableItemWrapperInner, arePropsEqual);
 export default DraggableItemWrapper;

@@ -47,6 +47,12 @@ if %errorlevel% neq 0 (
     echo [INFO] 未检测到 pnpm，正在通过 corepack 安装...
     call corepack enable
     call corepack prepare pnpm@10.15.1 --activate
+    where pnpm >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [ERROR] pnpm 安装失败，请检查 Node.js 安装或手动执行 corepack enable
+        pause
+        exit /b 1
+    )
 )
 echo   [OK] pnpm
 
@@ -85,6 +91,11 @@ echo [2/4] 同步前端依赖 (pnpm install)...
 if exist "%OTK_FRONTEND%\package.json" (
     cd /d "%OTK_FRONTEND%"
     call pnpm install
+    if %errorlevel% neq 0 (
+        echo   [ERROR] 前端依赖安装失败，请检查网络或手动运行 pnpm install
+        pause
+        exit /b 1
+    )
     echo   [OK] 前端依赖已就绪
 ) else (
     echo   [WARN] 未找到 frontend 目录，跳过

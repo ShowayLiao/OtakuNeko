@@ -21,9 +21,6 @@ export const getCollections = async (params?: {
   keyword?: string;
 }): Promise<BangumiItem[]> => {
   try {
-    console.log('scheduleService.getCollections: 调用 API，参数:', params);
-    
-    // 构建查询参数
     const urlParams = new URLSearchParams();
     if (params?.subject_type !== undefined) urlParams.append('subject_type', params.subject_type.toString());
     if (params?.status !== undefined) urlParams.append('status', params.status.toString());
@@ -36,9 +33,7 @@ export const getCollections = async (params?: {
     const response = await request<any>(endpoint, {
       method: 'GET'
     });
-    console.log('scheduleService.getCollections: API 响应:', response);
     
-    // 转换数据格式为 BangumiItem[]
     let items: BangumiItem[] = (response?.items || []).map((collectionItem: any) => {
       return {
         collection: collectionItem.collection || null,
@@ -52,9 +47,6 @@ export const getCollections = async (params?: {
     
     // 如果收藏搜索结果为空，且有关键词或类型过滤，则调用 subjects 接口
     if (items.length === 0 && (params?.keyword || params?.subject_type !== undefined)) {
-      console.log('scheduleService.getCollections: 收藏搜索结果为空，尝试调用 subjects 接口');
-      
-      // 构建 subjects 接口的查询参数（只传递它支持的参数）
       const subjectsParams = new URLSearchParams();
       if (params?.keyword !== undefined) subjectsParams.append('q', params.keyword);
       if (params?.subject_type !== undefined) subjectsParams.append('type', params.subject_type.toString());
@@ -66,9 +58,7 @@ export const getCollections = async (params?: {
       const subjectsResponse = await request<any>(subjectsEndpoint, {
         method: 'GET'
       });
-      console.log('scheduleService.getCollections: subjects API 响应:', subjectsResponse);
       
-      // 转换 subjects 接口的响应格式为 BangumiItem[]
       const subjectsItems: BangumiItem[] = (subjectsResponse?.items || []).map((subjectItem: any) => {
         return {
           collection: subjectItem.collection || null,
@@ -120,9 +110,6 @@ export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
     const watchDay = item.watch_day ?? 0;
     const watchTime = item.watch_time || '00:00';
     
-    // 打印转换前的原始item，方便调试
-    console.log("转换前的原始item:", item);
-    
     const convertedItem = {
       source,
       source_id: sourceId,
@@ -135,14 +122,8 @@ export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
       user_id: userId
     };
     
-    // 打印转换后的item，方便调试
-    console.log("转换后的item:", convertedItem);
-    
     return convertedItem;
-  }).filter(item => item.source_id); // 过滤掉没有 source_id 的项
-  
-  // 打印转换后的完整数组
-  console.log("转换后的完整数组:", convertedItems);
+  }).filter(item => item.source_id);
   
   return convertedItems;
 };
@@ -150,8 +131,6 @@ export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
 // 批量 upsert 排班记录
 export const bulkUpsertSchedules = async (schedules: any[]): Promise<ScheduleReadList> => {
   try {
-    console.log('发送到后端的数据:', { items: schedules });
-    
     const response = await request<ScheduleReadList>('/schedules/bulk-upsert', {
       method: 'POST',
       body: JSON.stringify({ items: schedules })
@@ -206,17 +185,11 @@ export const convertSchedulesToBangumiItems = (schedulesData: any): BangumiItem[
 // 获取排班记录列表并转换为 BangumiItem[]
 export const getSchedules = async (): Promise<BangumiItem[]> => {
   try {
-    console.log('调用 getSchedules API');
-    
     const response = await request<any>('/schedules', {
       method: 'GET'
     });
     
-    console.log('getSchedules API 响应:', response);
-    
-    // 转换数据格式
     const bangumiItems = convertSchedulesToBangumiItems(response);
-    console.log('转换后的 BangumiItems:', bangumiItems);
     
     return bangumiItems;
   } catch (error) {
@@ -228,13 +201,10 @@ export const getSchedules = async (): Promise<BangumiItem[]> => {
 // 删除所有排班记录
 export const deleteAllSchedules = async (): Promise<{ status: string; message: string }> => {
   try {
-    console.log('调用 deleteAllSchedules API');
-    
     const response = await request<{ status: string; message: string }>('/schedules/all', {
       method: 'DELETE'
     });
     
-    console.log('deleteAllSchedules API 响应:', response);
     return response;
   } catch (error) {
     console.error('删除所有排班记录失败:', error);

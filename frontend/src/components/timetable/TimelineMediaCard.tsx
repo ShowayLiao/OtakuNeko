@@ -42,7 +42,7 @@ interface TimelineMediaCardProps {
   isPanel?: boolean;
 }
 
-export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent, width, isPanel }: TimelineMediaCardProps) => {
+const TimelineMediaCardInner = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent, width, isPanel }: TimelineMediaCardProps) => {
   const { isDarkMode } = useAppTheme();
   const cardRef = React.useRef<HTMLDivElement>(null);
   const [cardWidth, setCardWidth] = React.useState<number | null>(null);
@@ -296,4 +296,32 @@ export const TimelineMediaCard = ({ data, category, currentHeight, onOpenDetail,
   );
 };
 
+const arePropsEqual = (prev: TimelineMediaCardProps, next: TimelineMediaCardProps) => {
+  if (prev.category !== next.category) return false;
+  if (prev.currentHeight !== next.currentHeight) return false;
+  if (prev.noBorder !== next.noBorder) return false;
+  if (prev.transparent !== next.transparent) return false;
+  if (prev.width !== next.width) return false;
+  if (prev.isPanel !== next.isPanel) return false;
+
+  const prevSubject = prev.data?.subject || prev.data;
+  const nextSubject = next.data?.subject || next.data;
+  if (prevSubject?.source !== nextSubject?.source) return false;
+  if (prevSubject?.source_id !== nextSubject?.source_id) return false;
+  if (prevSubject?.name_cn !== nextSubject?.name_cn) return false;
+  if (prevSubject?.name !== nextSubject?.name) return false;
+  if (prev.data?.watch_time !== next.data?.watch_time) return false;
+  if (prev.data?.watch_day !== next.data?.watch_day) return false;
+  if (prev.data?.title !== next.data?.title) return false;
+  if (prev.data?.cover !== next.data?.cover) return false;
+  if (prev.data?.category !== next.data?.category) return false;
+
+  const prevImage = prevSubject?.images?.large;
+  const nextImage = nextSubject?.images?.large;
+  if (prevImage !== nextImage) return false;
+
+  return true;
+};
+
+export const TimelineMediaCard = React.memo(TimelineMediaCardInner, arePropsEqual);
 export default TimelineMediaCard;
