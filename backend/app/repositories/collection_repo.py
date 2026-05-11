@@ -165,7 +165,9 @@ class CollectionRepo:
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
-                items.append(CollectionWithSubject(collection=collection, subject=CollectionRepo._sanitize_subject(subject)))
+                if not CollectionRepo._is_valid_subject(subject):
+                    continue
+                items.append(CollectionWithSubject(collection=collection, subject=subject))
             
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
@@ -209,7 +211,9 @@ class CollectionRepo:
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
-                items.append(CollectionWithSubject(collection=collection, subject=CollectionRepo._sanitize_subject(subject)))
+                if not CollectionRepo._is_valid_subject(subject):
+                    continue
+                items.append(CollectionWithSubject(collection=collection, subject=subject))
             
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
@@ -406,9 +410,11 @@ class CollectionRepo:
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
+                if not CollectionRepo._is_valid_subject(subject):
+                    continue
                 items.append(CollectionWithSubject(
                     collection=collection,
-                    subject=CollectionRepo._sanitize_subject(subject)
+                    subject=subject
                 ))
             
             # 创建并返回CollectionWithSubjectList对象

@@ -52,8 +52,40 @@
 
 ---
 
+## 🔥 V2 全新重构
+
+> **2026 年，OtakuNeko 从零重写，彻底进化。**
+
+如果你来自 V1 时代（Streamlit 单页应用），这里是你需要知道的一切：
+
+| 维度 | V1 (Streamlit) | V2 (FastAPI + Next.js) |
+|------|:---:|:---:|
+| **前端框架** | Streamlit 单页 | Next.js 16 App Router + React 19 |
+| **后端框架** | Streamlit 内嵌 | FastAPI 独立服务 (~30 API) |
+| **AI 引擎** | LangChain 简单链 | LangGraph ReAct Agent + 7 Tools |
+| **数据库** | JSON 文件存储 | SQLite / PostgreSQL 双模式 |
+| **部署方式** | 双击 .bat 本地运行 | Docker 一键编排 + 双模式 |
+| **UI 体验** | Streamlit 默认组件 | @lobehub/ui + antd + Tailwind |
+| **状态管理** | Session State | Zustand 持久化 |
+| **特色功能** | 画像 + 报告 | + 实时聊天 + 排班拖拽 + 收藏管理 |
+| **平台支持** | Windows 优先 | Windows / macOS / Linux / Docker |
+
+### 🎯 核心升级亮点
+
+- **🏗️ 前后端分离架构** — FastAPI 提供 RESTful + SSE 流式 API，Next.js 承载现代化 UI，各司其职
+- **🧠 LangGraph ReAct Agent** — 从简单 LLM 链升级为具备 7 个 Tool 的思考-行动循环智能体
+- **💬 实时 AI 聊天** — 基于 SSE 流式传输，Tool Calling 过程可视化，支持多模型/多角色切换
+- **📅 可视化排班表** — @dnd-kit 拖拽交互，CSV/iCal/TickTick 日历导出
+- **📚 收藏管理系统** — 网格/列表双视图，Bangumi + 豆瓣双平台同步，智能搜索筛选
+- **🐳 生产级部署** — Docker Compose 一键编排 5 个服务（DB / Redis / Backend / Frontend / QB）
+- **🔐 JWT 认证体系** — bcrypt 密码哈希 + JWT Token + BYOK（自带 API Key）
+- **⚡ 双模式数据库** — 开发用 SQLite 零依赖即开即用，生产用 PostgreSQL + Redis 高可用
+
+---
+
 ## 📋 目录
 
+- [🔥 V2 全新重构](#-v2-全新重构)
 - [✨ 核心功能](#-核心功能)
 - [📸 界面预览](#-界面预览)
 - [🚀 快速开始](#-快速开始)

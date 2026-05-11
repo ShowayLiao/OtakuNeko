@@ -1,71 +1,109 @@
 @echo off
-:: 1. 环境初始化：强制 UTF-8 编码，防止乱码报错
+:: 强制 UTF-8 编码，防止中文乱码
 @chcp 65001 >nul
 setlocal enabledelayedexpansion
 title OtakuNeko 一键启动终端 (Pro)
 
-:: --- 全局配置 ---
-set "ROOT_DIR=%~dp0"
-set "RUNTIME_DIR=%ROOT_DIR%.runtime"
-set "BACKEND_DIR=%ROOT_DIR%backend"
-set "FRONTEND_DIR=%ROOT_DIR%frontend"
-set "NODE_VERSION=v20.11.1"
-
-:: --- 2. 注入运行环境环境变量 ---
-:: 确保本地下载的 Node, npm, pnpm 和 uv 优先被系统找到
-set "NODE_PATH=%RUNTIME_DIR%\node-%NODE_VERSION%-win-x64"
-set "PATH=%NODE_PATH%;%NODE_PATH%\node_modules\.bin;%RUNTIME_DIR%;%PATH%"
+:: --- 全局路径配置 ---
+set "OTK_ROOT=%~dp0"
+set "OTK_BACKEND=%OTK_ROOT%backend"
+set "OTK_FRONTEND=%OTK_ROOT%frontend"
 
 echo ========================================================
 echo               OtakuNeko 开发环境一键启动
 echo ========================================================
+echo.
 
-:: --- 3. 检查并同步后端依赖 ---
-echo [1/4] 正在检查后端依赖 (uv sync)...
-if exist "%BACKEND_DIR%\pyproject.toml" (
-    cd /d "%BACKEND_DIR%"
-    :: 使用 call 调用以防脚本提前退出
-    call uv sync
+:: ============================================================
+:: Step 0: 检测前置工具 (uv / Node.js / pnpm)
+:: ============================================================
+echo [0/4] 检测前置工具...
+
+:: --- uv ---
+where uv >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [INFO] 未检测到 uv，正在安装...
+    powershell -Command "irm https://astral.sh/uv/install.ps1 | iex"
+    :: 安装后刷新 PATH（cargo bin 目录）
+    for /f "tokens=*" %%i in ('powershell -Command "echo $env:USERPROFILE"') do set "USERPROFILE_PATH=%%i"
+    set "PATH=%USERPROFILE_PATH%\.cargo\bin;%PATH%"
 ) else (
-    echo [警告] 未发现 backend 目录，跳过后端同步。
+    echo   [OK] uv
 )
 
-:: --- 4. 检查并同步前端依赖 ---
-echo [2/4] 正在检查前端依赖 (pnpm install)...
-if exist "%FRONTEND_DIR%\package.json" (
-    cd /d "%FRONTEND_DIR%"
+:: --- Node.js ---
+where node >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] 未检测到 Node.js 20+，请先安装:
+    echo          https://nodejs.org/
+    pause
+    exit /b 1
+)
+echo   [OK] Node.js
+
+:: --- pnpm ---
+where pnpm >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [INFO] 未检测到 pnpm，正在安装...
     call npm install -g pnpm
+)
+echo   [OK] pnpm
+
+echo.
+:: ============================================================
+:: Step 1: 同步后端依赖
+:: ============================================================
+echo [1/4] 同步后端依赖 (uv sync)...
+if exist "%OTK_BACKEND%\pyproject.toml" (
+    cd /d "%OTK_BACKEND%"
+    call uv sync
+    echo   [OK] 后端依赖已就绪
+) else (
+    echo   [WARN] 未找到 backend 目录，跳过
+)
+
+echo.
+:: ============================================================
+:: Step 2: 同步前端依赖
+:: ============================================================
+echo [2/4] 同步前端依赖 (pnpm install)...
+if exist "%OTK_FRONTEND%\package.json" (
+    cd /d "%OTK_FRONTEND%"
     call pnpm install
+    echo   [OK] 前端依赖已就绪
 ) else (
-    echo [警告] 未发现 frontend 目录，跳过前端同步。
+    echo   [WARN] 未找到 frontend 目录，跳过
 )
 
-:: --- 5. 启动后端服务 (新窗口) ---
-echo [3/4] 正在启动后端服务 (新窗口)...
-if exist "%BACKEND_DIR%" (
-    :: 使用 /D 指定目录，直接使用 uv 命令
-    start "OtakuNeko Backend (FastAPI)" /D "%BACKEND_DIR%" cmd /k "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
-)
-:: --- 6. 启动前端服务 (当前窗口) ---
-echo [4/4] 正在启动前端服务 (Next.js)...
-echo --------------------------------------------------------
-echo 后端预览: http://localhost:8000/docs
-echo 前端预览: http://localhost:3000
-echo --------------------------------------------------------
-
-if exist "%FRONTEND_DIR%" (
-    cd /d "%FRONTEND_DIR%"
-    :: 再次校验防止误操作
-    if exist "package.json" (
-        call pnpm dev
-    ) else (
-        echo [错误] 无法在前端目录找到 package.json！
-        pause
-    )
+echo.
+:: ============================================================
+:: Step 3: 启动后端 (新窗口)
+:: ============================================================
+echo [3/4] 启动后端服务 http://localhost:8000 ...
+if exist "%OTK_BACKEND%" (
+    start "OtakuNeko Backend" /D "%OTK_BACKEND%" cmd /k "uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000"
+    echo   [OK] 后端已在独立窗口中启动
 ) else (
-    echo [错误] 找不到前端目录: %FRONTEND_DIR%
+    echo   [WARN] 未找到 backend 目录
+)
+
+echo.
+:: ============================================================
+:: Step 4: 启动前端 (当前窗口)
+:: ============================================================
+echo [4/4] 启动前端服务 http://localhost:3000 ...
+echo --------------------------------------------------------
+echo   后端 API 文档 : http://localhost:8000/docs
+echo   前端页面      : http://localhost:3000
+echo --------------------------------------------------------
+echo.
+
+if exist "%OTK_FRONTEND%\package.json" (
+    cd /d "%OTK_FRONTEND%"
+    call pnpm dev
+) else (
+    echo [ERROR] 未找到前端目录: %OTK_FRONTEND%
     pause
 )
 
-:: 防止窗口意外关闭
 pause
