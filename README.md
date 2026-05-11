@@ -221,6 +221,8 @@ start_docker.bat
 - pnpm（`corepack enable && corepack prepare pnpm@latest --activate`）
 - uv（`powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`）
 
+> **💡 提示：** `start_all.bat` 会自动检测并安装 pnpm。如果遇到 npm 权限错误（如无法写入 `node_cache`），请先手动运行上方 corepack 命令安装 pnpm，或右键 **以管理员身份运行** `start_all.bat`。
+
 ```bash
 # Windows（一键启动前后端）
 start_all.bat

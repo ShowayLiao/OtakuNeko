@@ -58,6 +58,20 @@ if exist "%OTK_BACKEND%\pyproject.toml" (
     cd /d "%OTK_BACKEND%"
     call uv sync
     echo   [OK] 后端依赖已就绪
+
+    :: 自动初始化 .env 配置（新机器首次运行必备）
+    if not exist "%OTK_BACKEND%\.env" (
+        if exist "%OTK_BACKEND%\.env.example" (
+            echo   [INFO] 未检测到 .env 配置，正在从 .env.example 创建...
+            copy "%OTK_BACKEND%\.env.example" "%OTK_BACKEND%\.env" >nul
+            echo   [OK] 已创建 .env（默认开发配置，含 JWT_SECRET_KEY）
+        ) else (
+            echo   [WARN] 未找到 .env.example，请手动创建 %OTK_BACKEND%\.env
+            echo          JWT_SECRET_KEY 缺失会导致后端启动失败
+        )
+    ) else (
+        echo   [OK] .env 配置文件已存在
+    )
 ) else (
     echo   [WARN] 未找到 backend 目录，跳过
 )
