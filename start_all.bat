@@ -44,8 +44,9 @@ echo   [OK] Node.js
 :: --- pnpm ---
 where pnpm >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [INFO] 未检测到 pnpm，正在安装...
-    call npm install -g pnpm
+    echo [INFO] 未检测到 pnpm，正在通过 corepack 安装...
+    call corepack enable
+    call corepack prepare pnpm@10.15.1 --activate
 )
 echo   [OK] pnpm
 
