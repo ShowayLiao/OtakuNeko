@@ -43,14 +43,15 @@ async def chat_endpoint(
     # 定义流式生成器
     async def stream_generator():
         try:
-            # 实例化 ChatWorkflow
             workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
-            
-            # 调用 stream_chat 生成流
+
+            thread_id = request.thread_id or "default"
+
             async for chunk_data in workflow.stream_chat(
                 model=request.model,
                 messages=formatted_messages,
-                temperature=request.temperature
+                temperature=request.temperature,
+                thread_id=thread_id
             ):
                 event_type = chunk_data.get("type", "message")
                 yield format_sse(event=event_type, data=chunk_data)

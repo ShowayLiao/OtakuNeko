@@ -160,7 +160,7 @@ logger = get_logger(__name__)
 
 ---
 
-## 任务 P1-03：Graph 编译复用
+## 任务 P1-03：Graph 编译复用 ✅ 已完成 (2026-05-12)
 
 **关联评估项**：T1-#2（Graph 复用）
 **优先级**：🔴 P0
@@ -194,7 +194,7 @@ logger = get_logger(__name__)
 
 ---
 
-## 任务 P1-04：Agent Memory — Checkpoint 持久化
+## 任务 P1-04：Agent Memory — Checkpoint 持久化 ✅ 已完成 (2026-05-12)
 
 **关联评估项**：T1-#1（Agent Memory）
 **优先级**：🔴 P0

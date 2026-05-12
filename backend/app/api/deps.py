@@ -9,6 +9,9 @@ from app.models.user import User
 from app.schemas.user import UserRead
 from app.core.security import decode_access_token
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 security = HTTPBearer()
 
@@ -39,24 +42,23 @@ async def get_current_user(
     
     payload = decode_access_token(token)
     if payload is None:
-        print("[DEBUG] decode_access_token returned None")
+        logger.debug("decode_access_token returned None")
         raise credentials_exception
     
-    print(f"[DEBUG] JWT payload: {payload}")
+    logger.debug(f"JWT payload: {payload}")
     
     user_id_str: Optional[str] = payload.get("sub")
     if user_id_str is None:
-        print("[DEBUG] payload.get('sub') returned None")
+        logger.debug("payload.get('sub') returned None")
         raise credentials_exception
     
-    print(f"[DEBUG] user_id_str: {user_id_str}, type: {type(user_id_str)}")
+    logger.debug(f"user_id_str: {user_id_str}")
     
-    # 将字符串类型的 user_id 转换为整数类型
     try:
         user_id = int(user_id_str)
-        print(f"[DEBUG] user_id after conversion: {user_id}, type: {type(user_id)}")
+        logger.debug(f"user_id after conversion: {user_id}")
     except ValueError as e:
-        print(f"[DEBUG] ValueError when converting user_id_str to int: {e}")
+        logger.debug(f"ValueError converting user_id_str: {e}")
         raise credentials_exception
     
     result = await db.execute(

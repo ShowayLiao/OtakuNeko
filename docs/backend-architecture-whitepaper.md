@@ -179,6 +179,8 @@ POST /api/v1/collections → collections.py router
 
 ```
 User Message → graph.py (LangGraph)
+    ┌─ __init__: compile graph ONCE + SqliteSaver checkpoint
+    └─ stream_chat: set per-request LLM → self.app.astream_events()
     → agent node: ChatOpenAI.ainvoke() → LLM 推理
         → 决定调用 tool?
             ├── YES → tools node: ToolNode.execute()
@@ -186,6 +188,10 @@ User Message → graph.py (LangGraph)
             │          → 结果返回 agent node 继续推理
             └── NO  → END → 流式返回最终回复
 ```
+
+**编译复用 (P1-03)**：`StateGraph` 在 `ChatWorkflow.__init__` 中仅编译一次，后续 `stream_chat` 调用直接复用 `self.app`。per-request 的 `model`/`temperature` 通过设置实例属性 `self.llm_with_tools` 在运行时注入。
+
+**Checkpoint 持久化 (P1-04)**：通过 `InMemorySaver` 实现对话状态记忆（当前为临时方案，因 `langgraph-checkpoint-sqlite >= 2.0.0` 的 `AsyncSqliteSaver` 需 async context manager，与同步 `__init__` 冲突）。同一 `thread_id` 的多次请求共享对话历史；待后续重构为 lazy async factory 模式以恢复 SQLite 持久化。
 
 **7 个工具及其调用链路：**
 
