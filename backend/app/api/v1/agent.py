@@ -1,5 +1,6 @@
 import os
 import json
+import asyncio
 from typing import Optional
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -7,8 +8,18 @@ import httpx
 from openai import AsyncOpenAI
 from app.schemas.agent import ChatRequest
 from app.agents.graph import ChatWorkflow
+from app.memory.manager import MemoryManager
 
 router = APIRouter()
+
+_memory_managers: dict[tuple, MemoryManager] = {}
+
+
+def _get_or_create_memory(api_key: str, base_url: str) -> MemoryManager:
+    key = (hash(api_key), base_url)
+    if key not in _memory_managers:
+        _memory_managers[key] = MemoryManager(api_key=api_key, base_url=base_url)
+    return _memory_managers[key]
 
 def format_sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -43,9 +54,14 @@ async def chat_endpoint(
     # 定义流式生成器
     async def stream_generator():
         try:
-            workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
+            memory = _get_or_create_memory(api_key, base_url)
+            workflow = ChatWorkflow(
+                api_key=api_key, base_url=base_url, memory_manager=memory)
 
             thread_id = request.thread_id or "default"
+
+            user_msg = ""
+            assistant_msg = ""
 
             async for chunk_data in workflow.stream_chat(
                 model=request.model,
@@ -55,6 +71,20 @@ async def chat_endpoint(
             ):
                 event_type = chunk_data.get("type", "message")
                 yield format_sse(event=event_type, data=chunk_data)
+
+                if event_type == "message_chunk":
+                    assistant_msg += chunk_data.get("content", "")
+
+            if thread_id:
+                last_user = next((m for m in reversed(formatted_messages)
+                                if m.get("role") == "user"), None)
+                if last_user:
+                    user_msg = last_user.get("content", "")
+                if user_msg and assistant_msg:
+                    await memory.save_turn(thread_id, user_msg, assistant_msg)
+
+                    if thread_id != "default":
+                        asyncio.create_task(memory.extract_and_store_facts(thread_id))
 
         except Exception as e:
             yield format_sse(event="error", data={"detail": str(e)})

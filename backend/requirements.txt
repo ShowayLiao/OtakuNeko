@@ -52,3 +52,7 @@ redis>=7.1.1
 
 # qBittorrent API
 qbittorrent-api>=2024.11.0
+
+# Agent 记忆系统
+rank-bm25>=0.2.2
+aiofiles>=25.1.0
