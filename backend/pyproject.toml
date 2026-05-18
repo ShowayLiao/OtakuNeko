@@ -19,6 +19,7 @@ dependencies = [
     "langchain-core>=1.2.11",
     "langchain-openai>=1.1.9",
     "langgraph>=1.0.10",
+    "langgraph-checkpoint-sqlite>=2.0.0",
     "lxml>=6.0.2",
     "openai>=2.20.0",
     "passlib[bcrypt]>=1.7.4",

@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import aiosqlite
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from app.db.database import init_db
 from app.api import api_router
 from app.core.config import settings
@@ -26,6 +28,10 @@ async def lifespan(app: FastAPI):
     logger.info(f"Initializing database with URL: {settings.DATABASE_URL}")
     await init_db()
     logger.info("Database initialized successfully")
+
+    conn = await aiosqlite.connect("checkpoints.db")
+    app.state.checkpointer = AsyncSqliteSaver(conn)
+    logger.info("Checkpoint saver initialized (SQLite)")
     
     # 2. 缓存初始化 (智能切换逻辑)
     redis = None
@@ -75,6 +81,10 @@ async def lifespan(app: FastAPI):
     
     yield
     
+    if hasattr(app.state, "checkpointer"):
+        await conn.close()
+        logger.info("Checkpoint saver closed")
+
     # 3. 关闭资源
     if redis:
         try:

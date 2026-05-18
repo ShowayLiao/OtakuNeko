@@ -1,18 +1,19 @@
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from app.agents.tools import get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool
 
 TOOLS = [get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool]
 
 
 class ChatWorkflow:
-    def __init__(self, api_key: str, base_url: str):
+    def __init__(self, api_key: str, base_url: str, checkpointer: Optional[BaseCheckpointSaver] = None):
         self.api_key = api_key
         self.base_url = base_url
-        self.checkpointer = InMemorySaver()
+        self.checkpointer = checkpointer or InMemorySaver()
         self.app = self._compile_graph()
 
     def _compile_graph(self):

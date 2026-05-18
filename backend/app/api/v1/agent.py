@@ -1,7 +1,7 @@
 import os
 import json
 from typing import Optional
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 import httpx
 from openai import AsyncOpenAI
@@ -16,7 +16,7 @@ def format_sse(event: str, data: dict) -> str:
 @router.post("/chat")
 async def chat_endpoint(
     request: ChatRequest,
-    # 核心：从 Header 获取前端传来的配置 (BYOK)
+    fastapi_request: Request,
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
 ):
@@ -43,7 +43,8 @@ async def chat_endpoint(
     # 定义流式生成器
     async def stream_generator():
         try:
-            workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
+            checkpointer = getattr(fastapi_request.app.state, "checkpointer", None)
+            workflow = ChatWorkflow(api_key=api_key, base_url=base_url, checkpointer=checkpointer)
 
             thread_id = request.thread_id or "default"
 
@@ -61,6 +62,36 @@ async def chat_endpoint(
 
     # 返回流式响应
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
+
+
+@router.get("/chat/history")
+async def get_chat_history(
+    thread_id: str,
+    fastapi_request: Request,
+):
+    checkpointer = getattr(fastapi_request.app.state, "checkpointer", None)
+    if not checkpointer:
+        return {"messages": []}
+
+    config = {"configurable": {"thread_id": thread_id}}
+    checkpoint_tuple = await checkpointer.aget_tuple(config)
+
+    if not checkpoint_tuple:
+        return {"messages": []}
+
+    raw_messages = checkpoint_tuple.checkpoint.get("channel_values", {}).get("messages", [])
+
+    role_map = {"Human": "user", "AI": "assistant", "Tool": "tool", "System": "system"}
+    serialized = []
+    for msg in raw_messages:
+        class_name = type(msg).__name__.replace("Message", "").replace("Chunk", "")
+        role = role_map.get(class_name, class_name.lower())
+        serialized.append({
+            "role": role,
+            "content": msg.content if hasattr(msg, "content") else str(msg),
+        })
+
+    return {"messages": serialized}
 
 
 @router.get("/models/check")

@@ -297,16 +297,17 @@ const useChatStore = create<ChatStore>()(
       name: 'chat-storage',
       partialize: (state) => ({
         sessions: state.sessions,
-        // 将 Map 转换为对象进行存储
         chatMessages: Object.fromEntries(state.chatMessages),
         activeSessionId: state.activeSessionId,
       }),
-      // 从存储中恢复时，将对象转换回 Map
-        onRehydrateStorage: (state) => {
-          if (state && typeof state.chatMessages === 'object') {
-            state.chatMessages = new Map(Object.entries(state.chatMessages));
-          }
-        },
+      merge: (persisted: any, current: any) => ({
+        ...current,
+        sessions: persisted.sessions || [],
+        chatMessages: persisted.chatMessages
+          ? new Map(Object.entries(persisted.chatMessages))
+          : new Map(),
+        activeSessionId: persisted.activeSessionId || null,
+      }),
     }
   )
 );
