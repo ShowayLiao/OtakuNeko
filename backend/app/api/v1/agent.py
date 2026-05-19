@@ -93,6 +93,19 @@ async def chat_endpoint(
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
 
+@router.get("/chat/history")
+async def get_chat_history(
+    thread_id: str,
+    x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
+    x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
+):
+    api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
+    base_url = x_base_url or "https://api.openai.com/v1"
+    memory = _get_or_create_memory(api_key, base_url)
+    raw = await memory.short_term.get(thread_id)
+    return {"messages": raw}
+
+
 @router.get("/models/check")
 async def check_connection(
     provider: str,

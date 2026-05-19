@@ -179,19 +179,35 @@ POST /api/v1/collections → collections.py router
 
 ```
 User Message → graph.py (LangGraph)
-    ┌─ __init__: compile graph ONCE + SqliteSaver checkpoint
-    └─ stream_chat: set per-request LLM → self.app.astream_events()
+    ┌─ __init__: compile graph ONCE + InMemorySaver checkpoint
+    └─ stream_chat: MemoryManager.load_context() 注入上下文 → self.app.astream_events()
     → agent node: ChatOpenAI.ainvoke() → LLM 推理
         → 决定调用 tool?
             ├── YES → tools node: ToolNode.execute()
             │          → 调用 services/ 执行实际逻辑
             │          → 结果返回 agent node 继续推理
             └── NO  → END → 流式返回最终回复
+    → 流结束后: MemoryManager.save_turn() + asyncio.create_task(extract_and_store_facts)
 ```
 
 **编译复用 (P1-03)**：`StateGraph` 在 `ChatWorkflow.__init__` 中仅编译一次，后续 `stream_chat` 调用直接复用 `self.app`。per-request 的 `model`/`temperature` 通过设置实例属性 `self.llm_with_tools` 在运行时注入。
 
-**Checkpoint 持久化 (P1-04)**：通过 `InMemorySaver` 实现对话状态记忆（当前为临时方案，因 `langgraph-checkpoint-sqlite >= 2.0.0` 的 `AsyncSqliteSaver` 需 async context manager，与同步 `__init__` 冲突）。同一 `thread_id` 的多次请求共享对话历史；待后续重构为 lazy async factory 模式以恢复 SQLite 持久化。
+**Agent Memory 系统 (P1-04, 合并自 pr-test-branch)**：三层记忆架构 — `InMemorySaver` 管理 LangGraph 内部状态流转；`ShortTermMemory` 存最近 N 条对话（JSON 文件持久化）；`LongTermMemory` 用 LLM 提炼用户偏好事实 + BM25/Vector 混合检索语义匹配。对话结束时异步提取长期事实，请求时注入上下文摘要到 system prompt。
+
+#### Memory 模块架构
+
+```
+MemoryManager
+├── ShortTermMemory ("data/memory/short_term/{thread_id}.json")
+│   └── 最近 N 条对话原文（默认 10 条）
+├── LongTermMemory ("data/memory/long_term/{thread_id}.json")
+│   └── LLM 提炼的事实: [{content, importance, embedding, timestamp}]
+│       ├── HybridRetriever
+│       │   ├── BM25Retriever (rank-bm25 关键词)
+│       │   └── VectorRetriever (OpenAI text-embedding-3-small)
+└── load_context(thread_id, query) → MemoryContext
+    └── summary 注入 system prompt (不占用 messages 列表 token)
+```
 
 **7 个工具及其调用链路：**
 
