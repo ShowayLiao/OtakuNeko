@@ -12,6 +12,7 @@ interface ChatWithBackendOptions {
   model?: string;
   temperature?: number;
   prompt_config?: PromptConfig;
+  thread_id?: string;
   onMessageChunk?: (chunk: string) => void;
   onToolStart?: (name: string, inputs: any) => void;
   onToolEnd?: (name: string, output: any) => void;
@@ -52,6 +53,7 @@ export const chatWithBackend = async ({
   model = 'gpt-3.5-turbo',
   temperature = 0.7,
   prompt_config,
+  thread_id,
   onMessageChunk,
   onToolStart,
   onToolEnd,
@@ -80,6 +82,7 @@ export const chatWithBackend = async ({
       model,
       temperature,
       prompt_config,
+      thread_id,
     }),
   });
 
@@ -143,4 +146,13 @@ export const chatWithBackend = async ({
   if (onComplete) {
     onComplete();
   }
+};
+
+export const fetchChatHistory = async (threadId: string): Promise<any[]> => {
+  const response = await fetch(
+    `http://localhost:8000/api/v1/chat/history?thread_id=${encodeURIComponent(threadId)}`
+  );
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.messages || [];
 };

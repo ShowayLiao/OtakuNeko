@@ -164,6 +164,7 @@ export default function ChatPage() {
         model: selectedModel,
         temperature: selectedRoleObj?.temperature || 0.7,
         prompt_config,
+        thread_id: activeSessionId,
         onMessageChunk: (chunk) => {
           // 🌟 每次收到新字，拼接到完整字符串上
           accumulatedContent += chunk;
