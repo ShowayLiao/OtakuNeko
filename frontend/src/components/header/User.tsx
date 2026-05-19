@@ -25,6 +25,9 @@ import ImportModal from '../Modal/ImportModal';
 import ApiKeyModal from '../Modal/ApiKeyModal';
 import { dashboardService, type DashboardStats } from '@/services/dashboard';
 import { collectionService } from '@/services/collections';
+import { fetchChatHistory } from '@/lib/fetcher';
+import useChatStore from '@/stores/useChatStore';
+import { v4 as uuidv4 } from 'uuid';
 
 // 定义用户信息类型
 interface UserInfo {
@@ -161,8 +164,24 @@ const User: React.FC = () => {
 
   // 登录成功后的处理函数
   const handleLoginSuccess = () => {
-    // 登录成功后重新获取用户信息
     fetchUserInfo();
+    const { sessions, activeSessionId } = useChatStore.getState();
+    if (sessions.length === 0) return;
+    sessions.forEach(async (s) => {
+      if (s.id === activeSessionId) {
+        const msgs = await fetchChatHistory(s.id);
+        if (msgs.length > 0) {
+          msgs.forEach((m: any) => {
+            useChatStore.getState().sendMessage(s.id, {
+              id: uuidv4(),
+              role: m.role,
+              content: m.content,
+              createdAt: new Date(),
+            });
+          });
+        }
+      }
+    });
   };
 
   // 退出登录函数

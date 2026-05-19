@@ -2,13 +2,15 @@ import os
 import json
 import asyncio
 from typing import Optional
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
 import httpx
 from openai import AsyncOpenAI
 from app.schemas.agent import ChatRequest
+from app.schemas.user import UserRead
 from app.agents.graph import ChatWorkflow
 from app.memory.manager import MemoryManager
+from app.api.deps import get_current_user, get_optional_user
 
 router = APIRouter()
 
@@ -27,9 +29,9 @@ def format_sse(event: str, data: dict) -> str:
 @router.post("/chat")
 async def chat_endpoint(
     request: ChatRequest,
-    # 核心：从 Header 获取前端传来的配置 (BYOK)
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
+    user: Optional[UserRead] = Depends(get_optional_user),
 ):
     # 本地调试时的 fallback (可选)
     api_key = x_api_key or os.getenv("OPENAI_API_KEY")
@@ -75,7 +77,7 @@ async def chat_endpoint(
                 if event_type == "message_chunk":
                     assistant_msg += chunk_data.get("content", "")
 
-            if thread_id:
+            if thread_id and user is not None:
                 last_user = next((m for m in reversed(formatted_messages)
                                 if m.get("role") == "user"), None)
                 if last_user:
@@ -98,6 +100,7 @@ async def get_chat_history(
     thread_id: str,
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
+    user: UserRead = Depends(get_current_user),
 ):
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
     base_url = x_base_url or "https://api.openai.com/v1"

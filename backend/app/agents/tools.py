@@ -94,70 +94,21 @@ async def search_anime_advanced(
     limit: int = 10
 ) -> dict:
     """
-    高级动画搜索和推荐工具，支持多种过滤条件搜索Bangumi动画。
+    Bangumi 动画搜索。按关键词、标签、评分、时间段筛选。当用户想找动画时使用。
     
-    使用此工具根据关键词、标签、评分、日期等条件搜索或推荐动画。
-    支持精确到年、月、日的日期范围搜索，可以处理以下类型的查询：
-
-    【时间相关查询】
-    - "搜索2026年4月播出的动画" → min_year=2026, max_year=2026, min_month=4, max_month=4
-    - "推荐点4月新番" → min_year=当前年份, max_year=当前年份, min_month=4, max_month=4
-    - "2020年7月到9月播出的动画" → min_year=2020, max_year=2020, min_month=7, max_month=9
-    - "最近有什么好看的动画" → min_year=当前年份-1, max_year=当前年份 (最近一年的动画)
+    ⚠️ keyword 规则（最重要）：
+    - keyword 只填用户想搜的动画名称/类型词，如 "进击的巨人"、"魔法少女"
+    - 用户问"有什么好看的"、"4月播了什么" → keyword=""（空字符串）
+    - 日期（2026年4月）、季节（4月新番）绝对不放进 keyword
     
-    【评分相关查询】
-    - "2018年评分8分以上的动画" → min_year=2018, max_year=2018, min_rating=8.0
-    - "推荐高分动画" → min_rating=7.5 (默认高分阈值)
-    - "评分9分以上的神作" → min_rating=9.0
-    
-    【类型/标签相关查询】
-    - "童年治愈系动画" → keyword="", tags="童年,治愈"
-    - "校园恋爱动画" → keyword="校园", tags="恋爱"
-    - "热血战斗番" → keyword="", tags="热血,战斗"
-    
-    【综合查询】
-    - "推荐2020年评分8分以上的治愈系动画" → min_year=2020, max_year=2020, min_rating=8.0, tags="治愈"
-    - "4月新番中有哪些值得看的" → min_year=当前年份, max_year=当前年份, min_month=4, max_month=4, min_rating=7.0
-    
-    当用户询问特定时间播出的动画、新番推荐或动画搜索时，应该使用此工具。
-    
-    【使用指南】
-    1. 时间处理：
-       - 如果用户只提到月份（如"4月新番"），默认使用当前年份
-       - "最近"通常指最近一年（当前年份-1到当前年份）
-       - "新番"指当前季度或月份新播出的动画
-    
-    2. 评分处理：
-       - "高分动画"通常指评分7.5分以上
-       - "神作"通常指评分9.0分以上
-       - 可以根据用户语气调整评分阈值（强烈推荐→更高阈值）
-    
-    3. 标签处理：
-       - 中文标签可以直接使用（如"治愈"、"热血"）
-       - 类型关键词可以转换为标签（如"校园动画"→tags="校园"）
-       - 多个标签用逗号分隔
-    
-    4. 关键词提取：
-       - 从用户查询中提取具体的关键词
-       - 通用词汇（如"推荐"、"好看"）不作为关键词
-       - 具体类型词汇（如"魔法"、"科幻"）作为关键词
-    
-    Args:
-        keyword: 搜索关键词，如"魔法少女"、"校园"
-        subject_type: 条目类型，2=动画（默认），1=书籍，3=音乐，4=游戏，6=三次元
-        tags: 标签列表，逗号分隔，如"童年,原创,治愈"
-        min_rating: 最低评分（0-10），如7.5
-        max_rating: 最高评分（0-10），如9.0
-        min_year: 最早年份，如2010
-        max_year: 最晚年份，如2020
-        min_month: 最早月份（1-12），如4表示4月
-        max_month: 最晚月份（1-12），如6表示6月
-        min_day: 最早日期（1-31），如15表示15号
-        max_day: 最晚日期（1-31），如30表示30号
-        limit: 返回结果数量，默认10
-        
-    Returns:
-        包含搜索结果列表的字典，每个结果包含id、名称、评分、简介等信息
+    参数速查：
+    - keyword: 动画名称/题材词，纯问"有什么"时留空 ""
+    - tags: 标签，逗号分隔，如 "治愈,热血,原创"
+    - min_rating / max_rating: 评分范围 (0-10)
+    - min_year / max_year: 年份范围。只提月份不提年份时默认当前年
+    - min_month / max_month: 月份范围 (1-12)
+    - min_day / max_day: 日期范围 (1-31)
+    - limit: 返回条数，默认 10
     """
     try:
         # 准备搜索参数
@@ -263,9 +214,40 @@ async def search_anime_advanced(
                 "air_date": item.get("air_date"),
                 "images": item.get("images", {})
             })
-        
+
+        total = result.get("total", 0)
+        if total <= 3 and air_date_ranges:
+            fallback = await search_subjects_advanced(
+                keyword=keyword,
+                subject_types=subject_types,
+                tags=tag_list,
+                rating_ranges=rating_ranges,
+                air_date_ranges=None,
+                limit=limit,
+                offset=0
+            )
+            fallback_results = []
+            for item in fallback.get("data", []):
+                fallback_results.append({
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "name_cn": item.get("name_cn"),
+                    "summary": item.get("summary", "")[:200] + "..." if item.get("summary") else "",
+                    "score": item.get("rating", {}).get("score", 0),
+                    "rank": item.get("rating", {}).get("rank", 0),
+                    "type": item.get("type"),
+                    "air_date": item.get("air_date"),
+                    "images": item.get("images", {})
+                })
+            return {
+                "total": fallback.get("total", 0),
+                "limit": limit,
+                "results": fallback_results,
+                "note": "Bangumi 中该时间段准确 air_date 条目较少，已展示相关结果"
+            }
+
         return {
-            "total": result.get("total", 0),
+            "total": total,
             "limit": limit,
             "results": simplified_results
         }

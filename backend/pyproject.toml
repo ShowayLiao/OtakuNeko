@@ -41,3 +41,6 @@ dependencies = [
 dev = [
     "ruff>=0.15.12",
 ]
+
+[tool.uv]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"

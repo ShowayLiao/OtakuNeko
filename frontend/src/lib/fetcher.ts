@@ -149,8 +149,12 @@ export const chatWithBackend = async ({
 };
 
 export const fetchChatHistory = async (threadId: string): Promise<any[]> => {
+  const token = localStorage.getItem("token");
   const response = await fetch(
-    `http://localhost:8000/api/v1/chat/history?thread_id=${encodeURIComponent(threadId)}`
+    `http://localhost:8000/api/v1/chat/history?thread_id=${encodeURIComponent(threadId)}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }
   );
   if (!response.ok) return [];
   const data = await response.json();

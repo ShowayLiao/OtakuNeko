@@ -62,6 +62,11 @@ echo [1/4] Syncing backend deps (uv sync)...
 if exist "%OTK_BACKEND%\pyproject.toml" (
     cd /d "%OTK_BACKEND%"
     call uv sync
+    if !errorlevel! neq 0 (
+        echo   [ERROR] Backend deps install failed. Check network or run: cd backend ^&^& uv sync
+        pause
+        exit /b 1
+    )
     echo   [OK] Backend deps ready
 
     :: Auto-init .env config (required for first run)
@@ -97,7 +102,7 @@ if exist "%OTK_FRONTEND%\package.json" (
     )
 
     call pnpm install
-    if %errorlevel% neq 0 (
+    if !errorlevel! neq 0 (
         echo   [ERROR] Frontend deps install failed. Check network or run: pnpm install
         pause
         exit /b 1
