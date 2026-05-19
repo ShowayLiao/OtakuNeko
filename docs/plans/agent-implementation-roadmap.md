@@ -242,6 +242,8 @@ cd backend && uv add langgraph-checkpoint-sqlite
 2. 重启服务后，同一 thread_id 的对话状态不丢失（checkpoint.db 文件持久化）
 3. `backend/checkpoints.db` 文件存在且不为空
 
+> **📌 2026-05-18 更新**：P1-04 已通过合并 `pr-test-branch` 的 `memory/` 模块完成最终方案。改为三层架构：`InMemorySaver`（LangGraph 状态流转）+ `ShortTermMemory`（JSON 持久化）+ `LongTermMemory`（LLM 提炼 + BM25/Vector 检索）。详见 [logs/2026-05-18-log.md](file:///e:/HACCI/Documents/tools/OtakuNeko/logs/2026-05-18-log.md)。
+
 ---
 
 ## 任务 P1-05：向量数据库 + RAG 基础

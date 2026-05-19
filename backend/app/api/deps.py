@@ -14,6 +14,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 async def get_current_user(
@@ -87,3 +88,27 @@ def check_qb_enabled():
             status_code=status.HTTP_403_FORBIDDEN,
             detail="QBittorrent proxy is disabled",
         )
+
+
+async def get_optional_user(
+    token_auth: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
+    db: AsyncSession = Depends(get_session)
+) -> Optional[UserRead]:
+    if token_auth is None:
+        return None
+    token = token_auth.credentials
+    payload = decode_access_token(token)
+    if payload is None:
+        return None
+    user_id_str = payload.get("sub")
+    if user_id_str is None:
+        return None
+    try:
+        user_id = int(user_id_str)
+    except ValueError:
+        return None
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalars().first()
+    if user is None:
+        return None
+    return UserRead.model_validate(user)

@@ -127,3 +127,5 @@ Thumbs.db
 # 9. 文档
 # ==========================
 docs/goal/
+
+backend/spec/

@@ -1,17 +1,22 @@
-from typing import AsyncGenerator, Dict, Any, List
+from typing import AsyncGenerator, Dict, Any, List, Optional, TYPE_CHECKING
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, START, END, MessagesState
+from langgraph.graph import StateGraph, START, MessagesState
 from langgraph.prebuilt import ToolNode, tools_condition
 from langgraph.checkpoint.memory import InMemorySaver
 from app.agents.tools import get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool
+
+if TYPE_CHECKING:
+    from app.memory.manager import MemoryManager
 
 TOOLS = [get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool]
 
 
 class ChatWorkflow:
-    def __init__(self, api_key: str, base_url: str):
+    def __init__(self, api_key: str, base_url: str,
+                 memory_manager: Optional["MemoryManager"] = None):
         self.api_key = api_key
         self.base_url = base_url
+        self.memory = memory_manager
         self.checkpointer = InMemorySaver()
         self.app = self._compile_graph()
 
@@ -44,10 +49,24 @@ class ChatWorkflow:
         )
         self.llm_with_tools = self.llm.bind_tools(TOOLS)
 
+        enriched_messages = list(messages)
+        if self.memory and thread_id:
+            user_query = next((m["content"] for m in reversed(messages)
+                              if m.get("role") == "user"), "")
+            if user_query:
+                ctx = await self.memory.load_context(thread_id, user_query)
+                if ctx.summary:
+                    sys_idx = next((i for i, m in enumerate(enriched_messages)
+                                   if m.get("role") == "system"), None)
+                    if sys_idx is not None:
+                        enriched_messages[sys_idx]["content"] += f"\n\n{ctx.summary}"
+                    else:
+                        enriched_messages.insert(0, {"role": "system", "content": ctx.summary})
+
         config = {"configurable": {"thread_id": thread_id}}
 
         try:
-            async for event in self.app.astream_events({"messages": messages}, config=config, version="v2"):
+            async for event in self.app.astream_events({"messages": enriched_messages}, config=config, version="v2"):
                 event_type = event["event"]
 
                 if event_type == "on_chat_model_stream":
