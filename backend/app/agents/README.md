@@ -33,13 +33,20 @@ agents/
 ### graph.py — 工作流引擎 ([源码](graph.py))
 
 - **类 `ChatWorkflow`**：封装整个 ReAct 循环
-  - 接收前端传来的 API key / base_url / model / messages / temperature
+  - 接收前端传来的 API key / base_url / model / messages / temperature / db_path
   - 初始化 `ChatOpenAI` 模型，绑定 7 个工具
   - 构建 LangGraph 图：`START → agent → [tools_condition] → tools → agent → END`
   - 通过 `astream_events` 流式输出三种事件：
     - `message_chunk` — 打字机效果的文本
     - `tool_start` — 工具调用开始（含参数）
     - `tool_end` — 工具调用结束（含结果）
+- **`CodingAgentState`**（M1 Phase A 引入）：五字段状态定义
+  - `messages` — 对话消息列表（LangGraph 原生 `add_messages` reducer）
+  - `current_dir` — 当前工作目录（bash 执行后更新）
+  - `plan` — Planner 产出的执行计划
+  - `completed_steps` — 已完成步骤列表（`operator.add` reducer，自动累积）
+  - `last_terminal_output` — 最近一次终端执行输出
+- **持久化**：使用 `AsyncSqliteSaver`（`langgraph-checkpoint-sqlite`）替代 `InMemorySaver`，重启不丢失对话状态
 
 ### tools.py — 工具集 ([源码](tools.py))
 
@@ -106,7 +113,14 @@ START → agent ──[工具调用?]──→ tools → agent → END
 | ReAct 工作流 | ✅ 完成 |
 | SSE 流式事件 | ✅ 完成 |
 | ToolMessage 序列化 | ✅ 完成 |
+| AsyncSqliteSaver checkpoint 持久化 (M1) | ✅ 完成 |
+| CodingAgentState 五字段状态 (M1) | ✅ 完成 |
 | `__init__.py` 包入口 | ❌ 空 TODO |
 | `nodes/basic_node.py` 自定义节点 | ❌ 空 TODO |
 | `nodes/__init__.py` | ❌ 空 TODO |
 | 用户画像工具数据自动获取 | ❌ 需手动传入收藏数据（缺口） |
+| ToolRegistry 统一注册中心 | 🔧 [计划中](../docs/plans/tool-registry-mcp-integration.md) |
+| MCP 协议接入预留 | 🔧 [计划中](../docs/plans/tool-registry-mcp-integration.md) |
+| 工具拆分 tools.py → tools/ 目录 | 🔧 [计划中](../docs/plans/tool-registry-mcp-integration.md) |
+| 工具级结构化日志 | 🔧 [计划中](../docs/plans/tool-registry-mcp-integration.md) |
+| 统一 ToolResult schema | 🔧 [计划中](../docs/plans/tool-registry-mcp-integration.md) |

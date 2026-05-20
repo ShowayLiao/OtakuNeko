@@ -52,6 +52,28 @@
 
 ---
 
+### v2.0.0-beta.1 — 2026-05-20 <span style="font-size:0.85em;background:#6366f1;color:#fff;padding:2px 8px;border-radius:10px;">Latest</span>
+
+> **🏗️ V2 全新重构：** FastAPI + Next.js 16 前后端分离架构，LangGraph ReAct Agent 流式聊天，收藏管理 + 可视化排班，Docker 一键部署，JWT 认证，SQLite / PostgreSQL 双模式数据库。
+
+<details>
+<summary><b>📋 展开查看完整亮点</b></summary>
+<br>
+
+- **🏗️ V2 全新重构**：从 Streamlit 单页进化为 FastAPI + Next.js 16 前后端分离架构
+- **🧠 LangGraph ReAct Agent**：7 个内置 Tool 的思考-行动循环智能体，SSE 流式聊天
+- **💬 AI 实时聊天**：Tool Calling 过程可视化，多模型/多角色人格切换
+- **📚 收藏管理系统**：Bangumi + 豆瓣双平台同步，网格/列表双视图，智能搜索筛选
+- **📅 可视化排班表**：@dnd-kit 拖拽交互，CSV/iCal/TickTick 日历导出
+- **🔗 外部集成**：qBittorrent RSS 订阅、B 站跳转检索、bangumi-data 放送同步
+- **🐳 生产级部署**：Docker Compose 一键编排（PostgreSQL + Redis + Backend + Frontend + QB）
+- **🔐 JWT 认证体系**：bcrypt 密码哈希 + JWT Token + BYOK
+- **⚡ 双模式数据库**：SQLite（本地零依赖）/ PostgreSQL + Redis（生产高可用）
+
+</details>
+
+---
+
 ## 🔥 V2 全新重构
 
 > **2026 年，OtakuNeko 从零重写，彻底进化。**
@@ -97,6 +119,7 @@
 - [📂 项目结构](#-项目结构)
 - [📖 使用指南](#-使用指南)
 - [🧩 开发路线](#-开发路线)
+- [📝 更新日志](#-更新日志)
 - [📜 License](#-license)
 
 ---
@@ -588,6 +611,53 @@ OtakuNeko/
 - [ ] 引入 RAG（向量数据库 + Embedding）+ Agent Memory（Checkpoint 持久化）
 - [ ] 添加单元测试、集成测试、CI/CD Pipeline
 - [ ] 前端测试覆盖
+
+---
+
+## 📝 更新日志
+
+<details>
+<summary><b>📦 查看更多历史更新（3 条）</b></summary>
+<br>
+
+### v2.0.0-alpha.3 — 2026-05-10
+
+- ✨ 前端 @lobehub/ui 集成，聊天 UI 大幅升级
+- ✨ 多角色人格预设系统（毒舌猫娘/柔情猫娘/圆头耄耋）
+- ✨ 排班表拖拽交互（@dnd-kit 驱动）
+- 🐛 修复 SSE 流式中断后无法恢复的问题
+- 🐛 修复收藏同步时 Bangumi 分页数据丢失
+- 🔧 JWT 认证体系从硬编码迁移至环境变量配置
+
+### v2.0.0-alpha.2 — 2026-04-25
+
+- ✨ LangGraph ReAct Agent 骨架搭建，Tool 注册机制
+- ✨ 4 个核心 Tool：`get_anime_info` / `search_anime_advanced` / `get_anime_staff` / `get_anime_cast`
+- ✨ 收藏管理页网格/列表双视图切换
+- ✨ SQLite → SQLModel ORM 迁移完成
+- 🐛 修复 Bangumi HTML Scraper 解析偶发崩溃
+- 🔧 TypeScript strict mode 启用
+
+### v2.0.0-alpha.1 — 2026-04-10
+
+- ✨ FastAPI 项目骨架，~30 API 端点规划
+- ✨ Next.js 16 App Router 项目初始化
+- ✨ Zustand 状态管理 + Tailwind CSS 样式方案
+- ✨ SQLModel ORM 定义 6 张业务表
+- ✨ Docker Compose 编排 5 个服务
+- 🔧 确立双模式数据库策略（SQLite / PostgreSQL）
+
+### v0.4.0 — 2026-03-05
+
+- ✨ V1 最终版（Streamlit 架构）
+- ✨ 补全 Bangumi 5 种收藏状态同步
+- ✨ 豆瓣收藏导入支持
+- ✨ 简易角色/声优信息查询
+- 📝 确定 V2 全栈重写方案
+
+</details>
+
+> 📦 更早的版本更新已归档至 [docs/changelog/archive.md](docs/changelog/archive.md)
 
 ---
 

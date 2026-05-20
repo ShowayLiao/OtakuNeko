@@ -1,8 +1,11 @@
-from typing import AsyncGenerator, Dict, Any, List, Optional, TYPE_CHECKING
+import operator
+from typing import AsyncGenerator, Dict, Any, List, Optional, Annotated, TypedDict, TYPE_CHECKING
+from langchain_core.messages import BaseMessage
 from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, START, MessagesState
+from langgraph.graph import StateGraph, START
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from app.agents.tools import get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool
 
 if TYPE_CHECKING:
@@ -11,17 +14,34 @@ if TYPE_CHECKING:
 TOOLS = [get_anime_info, fetch_audience_reviews, get_anime_staff, get_anime_cast, search_anime_advanced, get_current_time, generate_user_profile_tool]
 
 
+class CodingAgentState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    current_dir: str
+    plan: str
+    completed_steps: Annotated[List[str], operator.add]
+    last_terminal_output: str
+
+
 class ChatWorkflow:
     def __init__(self, api_key: str, base_url: str,
-                 memory_manager: Optional["MemoryManager"] = None):
+                 memory_manager: Optional["MemoryManager"] = None,
+                 db_path: str = "data/checkpoints.db"):
         self.api_key = api_key
         self.base_url = base_url
         self.memory = memory_manager
-        self.checkpointer = InMemorySaver()
-        self.app = self._compile_graph()
+        self._db_path = db_path
+        self.checkpointer = None
+        self.app = None
+
+    async def _ensure_checkpointer(self):
+        if self.checkpointer is None:
+            import aiosqlite
+            conn = await aiosqlite.connect(self._db_path)
+            self.checkpointer = AsyncSqliteSaver(conn)
+            self.app = self._compile_graph()
 
     def _compile_graph(self):
-        workflow = StateGraph(MessagesState)
+        workflow = StateGraph(CodingAgentState)
         workflow.add_node("agent", self._call_model)
         workflow.add_node("tools", ToolNode(TOOLS))
         workflow.add_edge(START, "agent")
@@ -29,7 +49,7 @@ class ChatWorkflow:
         workflow.add_edge("tools", "agent")
         return workflow.compile(checkpointer=self.checkpointer)
 
-    async def _call_model(self, state: MessagesState):
+    async def _call_model(self, state: CodingAgentState):
         response = await self.llm_with_tools.ainvoke(state["messages"])
         return {"messages": [response]}
 
@@ -40,6 +60,7 @@ class ChatWorkflow:
         temperature: float,
         thread_id: str = "default"
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        await self._ensure_checkpointer()
         self.llm = ChatOpenAI(
             model=model,
             api_key=self.api_key,
