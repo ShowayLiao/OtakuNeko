@@ -207,30 +207,9 @@
 
 OtakuNeko 提供多种启动方式，无论你是普通用户还是开发者，都能找到适合自己的方案。
 
-### 方式一：Docker 一键部署
+### 方式一：本地开发模式 ⭐ 推荐
 
-适合想要快速体验完整功能的用户。
-
-**前置条件：** 安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-
-```bash
-# Windows
-start_docker.bat
-
-# macOS / Linux
-./start_docker.sh
-```
-
-启动后访问：
-- **前端页面**：`http://localhost:3000`
-- **后端文档**：`http://localhost:8000/docs`
-- **数据库**：localhost:5432（用户 `otaku` / 密码 `password`）
-
-> Docker Compose 将自动启动 5 个服务：`db` (PostgreSQL)、`redis` (Redis)、`backend` (FastAPI)、`frontend` (Next.js)、`qbittorrent` (BT 下载器)。
-
-### 方式二：本地开发模式
-
-适合开发者进行二次开发或调试。
+适合所有用户进行开发、调试或日常使用。
 
 **前置条件：**
 - Python 3.11+
@@ -256,9 +235,38 @@ dev_infra.bat
 # 前端：cd frontend && pnpm dev
 ```
 
-> 本地开发模式下，后端默认使用 SQLite 数据库，无需安装 PostgreSQL。前端运行在 `http://localhost:3000`，后端运行在 `http://localhost:8000`。
+启动后访问：
+- **前端页面**：`http://localhost:3000`
+- **后端文档**：`http://localhost:8000/docs`
+
+> 本地开发模式下，后端默认使用 SQLite 数据库，无需安装 PostgreSQL。
+
+### 方式二：Docker 一键部署
+
+> ⚠️ **注意：** 由于项目版本变动频繁，Docker 镜像及相关配置可能无法保证随时可用。如遇启动失败，请优先使用 **方式一（本地开发模式）**。
+
+适合想要快速体验完整容器化功能的用户。
+
+**前置条件：** 安装 [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+
+```bash
+# Windows
+start_docker.bat
+
+# macOS / Linux
+./start_docker.sh
+```
+
+启动后访问：
+- **前端页面**：`http://localhost:3000`
+- **后端文档**：`http://localhost:8000/docs`
+- **数据库**：localhost:5432（用户 `otaku` / 密码 `password`）
+
+> Docker Compose 将自动启动 5 个服务：`db` (PostgreSQL)、`redis` (Redis)、`backend` (FastAPI)、`frontend` (Next.js)、`qbittorrent` (BT 下载器)。
 
 ### 方式三：仅启动基础设施
+
+> ⚠️ **注意：** 由于项目版本变动频繁，基础设施独立启动可能无法保证兼容性。如遇问题，请优先使用 **方式一（本地开发模式）**。
 
 如果你已经配置好前后端环境，只需要数据库和缓存：
 
