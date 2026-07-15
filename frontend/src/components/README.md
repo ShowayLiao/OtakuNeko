@@ -6,7 +6,7 @@
 
 | 目录 | 功能 | 核心依赖 |
 |------|------|----------|
-| `chat/` | AI 聊天界面（ChatPage 主组件、ChatInput、ModelSelector、RoleSelector、SearchBar） | `@lobehub/ui/chat`, `zustand` |
+| `chat/` | AI 聊天界面（ChatPage 主组件、AgentMessageRenderer 流式渲染器含 Thinking/ToolCallCard/ProgressPanel、ChatInput、ModelSelector、RoleSelector、SearchBar、MessageList、SessionPanel、TypingIndicator 等） | `@lobehub/ui/chat`, `zustand` |
 | `collection/` | 收藏展示（CollectionContent 列表/网格、MediaCard 卡片、BilibiliIcon） | `antd` |
 | `header/` | 各页面顶部工具栏（ChatHeader、CollectionHeader、TimetableHeader、PersonaHeader、User、SearchBar） | `@lobehub/ui`, `lucide-react` |
 | `timetable/` | 排班表拖拽系统（TimelineBoard、DraggablePanel、DraggableItemWrapper、DroppableCell、StandardLanes 等） | `@dnd-kit/core`, `@dnd-kit/sortable` |

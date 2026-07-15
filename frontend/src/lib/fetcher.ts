@@ -13,9 +13,19 @@ interface ChatWithBackendOptions {
   temperature?: number;
   prompt_config?: PromptConfig;
   thread_id?: string;
+  abortSignal?: AbortSignal;
   onMessageChunk?: (chunk: string) => void;
-  onToolStart?: (name: string, inputs: any) => void;
-  onToolEnd?: (name: string, output: any) => void;
+  onMessageStart?: () => void;
+  onMessageEnd?: () => void;
+  onToolCallStart?: (name: string, inputs: any) => void;
+  onToolCallEnd?: (name: string, output: any, durationMs?: number, status?: string) => void;
+  onToolCallDelta?: (id: string, name: string, delta: string) => void;
+  onPlanUpdate?: (plan: string) => void;
+  onProgress?: (data: { tool_name: string; tool_count: number; duration_ms: number }) => void;
+  onConnectionStatus?: (status: 'connected' | 'connecting' | 'disconnected') => void;
+  onThinkingStart?: () => void;
+  onThinkingChunk?: (chunk: string) => void;
+  onThinkingEnd?: () => void;
   onError?: (error: string) => void;
   onComplete?: () => void;
 }
@@ -54,109 +64,231 @@ export const chatWithBackend = async ({
   temperature = 0.7,
   prompt_config,
   thread_id,
+  abortSignal,
   onMessageChunk,
-  onToolStart,
-  onToolEnd,
+  onMessageStart,
+  onMessageEnd,
+  onToolCallStart,
+  onToolCallEnd,
+  onToolCallDelta,
+  onPlanUpdate,
+  onProgress,
+  onConnectionStatus,
+  onThinkingStart,
+  onThinkingChunk,
+  onThinkingEnd,
   onError,
   onComplete
 }: ChatWithBackendOptions) => {
-  // 1. 【关键】在发起请求的瞬间，从 Store 拿出 Key
-  // 注意：这里使用 getState() 可以避免在组件外读取 Store
   const config = (useApiStore.getState().config as any)[provider];
 
   if (!config || !config.apiKey) {
     throw new Error(`请先在设置中填写 ${provider} 的 API Key`);
   }
 
-  // 2. 将 Key 放入 Header 发送给你的 Python 后端
-  const response = await fetch('http://localhost:8000/api/v1/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      // 这里是核心！把 Key 透传过去
-      'X-Api-Key': config.apiKey,
-      'X-Provider-Endpoint': config.endpoint || '', // 如果需要动态换地址
-    },
-    body: JSON.stringify({
-      messages,
-      model,
-      temperature,
-      prompt_config,
-      thread_id,
-    }),
-  });
+  const controller = new AbortController();
+  const signalSource = abortSignal || controller.signal;
+  const timeoutMs = 120_000;
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  if (!response.ok) {
-    throw new Error(`API request failed: ${response.status}`);
-  }
+  if (onConnectionStatus) onConnectionStatus('connecting');
 
-  if (!response.body) {
-    throw new Error('No response body');
-  }
+  try {
+    const response = await fetch('/api/v1/chat', {
+      method: 'POST',
+      signal: signalSource,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Key': config.apiKey,
+        'X-Provider-Endpoint': config.endpoint || '',
+      },
+      body: JSON.stringify({
+        messages,
+        model,
+        temperature,
+        prompt_config,
+        thread_id,
+      }),
+    });
 
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    if (!response.body) {
+      throw new Error('No response body');
+    }
 
-    buffer += decoder.decode(value, { stream: true });
-    
-    // 只要 buffer 中包含完整的 SSE 事件（以双换行符结尾）
-    let eventEndIndex;
-    while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
-      // 1. 截取出一个完整的事件文本进行解析
-      const chunkToParse = buffer.slice(0, eventEndIndex + 2);
-      
-      // 2. 核心修复：从 buffer 中删掉已经截取走的部分！
-      buffer = buffer.slice(eventEndIndex + 2);
-      
-      // 3. 解析这单个完整事件
-      const events = parseSSE(chunkToParse);
-      
-      for (const event of events) {
-        switch (event.type) {
-          case 'message_chunk':
-            if (event.data.content && onMessageChunk) {
-              onMessageChunk(event.data.content);
-            }
-            break;
-          case 'tool_start':
-            if (event.data.name && onToolStart) {
-              onToolStart(event.data.name, event.data.inputs);
-            }
-            break;
-          case 'tool_end':
-            if (event.data.name && onToolEnd) {
-              onToolEnd(event.data.name, event.data.output);
-            }
-            break;
-          case 'error':
-            if (event.data.detail && onError) {
-              onError(event.data.detail);
-            }
-            break;
+    if (onConnectionStatus) onConnectionStatus('connected');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    const resetTimeout = () => {
+      if (timeoutId) clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => {
+        reader.cancel().catch(() => {});
+        if (onError) onError('请求超时');
+        if (onComplete) onComplete();
+      }, timeoutMs);
+    };
+
+    resetTimeout();
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      resetTimeout();
+      buffer += decoder.decode(value, { stream: true });
+
+      let eventEndIndex;
+      while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+        const chunkToParse = buffer.slice(0, eventEndIndex + 2);
+        buffer = buffer.slice(eventEndIndex + 2);
+        const events = parseSSE(chunkToParse);
+
+        for (const event of events) {
+          switch (event.type) {
+            case 'message_chunk':
+              if (event.data.content && onMessageChunk) {
+                onMessageChunk(event.data.content);
+              }
+              break;
+            case 'message_start':
+              if (onMessageStart) onMessageStart();
+              break;
+            case 'message_end':
+              if (onMessageEnd) onMessageEnd();
+              break;
+            case 'thinking_start':
+              if (onThinkingStart) onThinkingStart();
+              break;
+            case 'thinking_chunk':
+              if (event.data.content && onThinkingChunk) {
+                onThinkingChunk(event.data.content);
+              }
+              break;
+            case 'thinking_end':
+              if (onThinkingEnd) onThinkingEnd();
+              break;
+            case 'tool_call_delta':
+              if (onToolCallDelta && event.data.id) {
+                onToolCallDelta(event.data.id, event.data.name, event.data.delta);
+              }
+              break;
+            case 'tool_call_start':
+              if (event.data.name && onToolCallStart) {
+                onToolCallStart(event.data.name, event.data.inputs);
+              }
+              break;
+            case 'tool_call_end':
+              if (event.data.name && onToolCallEnd) {
+                onToolCallEnd(
+                  event.data.name,
+                  event.data.output,
+                  event.data.duration_ms,
+                  event.data.status
+                );
+              }
+              break;
+            case 'plan_update':
+              if (event.data.content && onPlanUpdate) {
+                onPlanUpdate(event.data.content);
+              }
+              break;
+            case 'progress':
+              if (onProgress && event.data.tool_name) {
+                onProgress({
+                  tool_name: event.data.tool_name,
+                  tool_count: event.data.tool_count || 1,
+                  duration_ms: event.data.duration_ms || 0,
+                });
+              }
+              break;
+            case 'reasoning_chunk':
+              if (event.data.content && onThinkingChunk) {
+                onThinkingChunk(event.data.content);
+              }
+              break;
+            case 'tool_start':
+              if (event.data.name && onToolCallStart) {
+                onToolCallStart(event.data.name, event.data.inputs);
+              }
+              break;
+            case 'tool_end':
+              if (event.data.name && onToolCallEnd) {
+                onToolCallEnd(
+                  event.data.name,
+                  event.data.output,
+                  event.data.duration_ms,
+                  event.data.status || 'success'
+                );
+              }
+              break;
+            case 'error':
+              if (event.data.detail && onError) {
+                onError(event.data.detail);
+              }
+              break;
+          }
         }
       }
     }
-  }
 
-  if (onComplete) {
-    onComplete();
+    if (onComplete) {
+      onComplete();
+    }
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      if (onError) onError('生成已停止');
+    } else if (onError) {
+      onError(err?.message || String(err));
+    }
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    if (onConnectionStatus) onConnectionStatus('disconnected');
   }
 };
 
-export const fetchChatHistory = async (threadId: string): Promise<any[]> => {
+export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): Promise<any[]> => {
   const token = localStorage.getItem("token");
   const response = await fetch(
-    `http://localhost:8000/api/v1/chat/history?thread_id=${encodeURIComponent(threadId)}`,
+    `/api/v1/chat/history?thread_id=${encodeURIComponent(threadId)}`,
     {
+      signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }
   );
   if (!response.ok) return [];
   const data = await response.json();
   return data.messages || [];
+};
+
+export const deleteChatHistory = async (threadId: string): Promise<void> => {
+  const token = localStorage.getItem("token");
+  await fetch(
+    `/api/v1/chat/history/${encodeURIComponent(threadId)}`,
+    {
+      method: 'DELETE',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }
+  );
+};
+
+export const listThreads = async (xApiKey?: string, xBaseUrl?: string): Promise<string[]> => {
+  const token = localStorage.getItem("token");
+  const params = new URLSearchParams();
+  if (xApiKey) params.set('x_api_key', xApiKey);
+  if (xBaseUrl) params.set('x_base_url', xBaseUrl);
+  const response = await fetch(
+    `/api/v1/chat/threads?${params.toString()}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    }
+  );
+  if (!response.ok) return [];
+  const data = await response.json();
+  return data.threads || [];
 };

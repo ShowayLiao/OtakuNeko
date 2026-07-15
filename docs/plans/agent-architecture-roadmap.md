@@ -238,23 +238,142 @@ tests/
 
 ## 7. 版本锁
 
-| 依赖 | 当前版本 | 说明 |
-|------|---------|------|
-| `langgraph` | `>=1.0.10` | 两个计划共享 |
-| `langgraph-checkpoint-sqlite` | `>=2.0.0` | Memory Plan 引入 |
-| `langchain-core` | `>=1.2.11` | `trim_messages` / `filter_messages` 来源 |
-| `mcp` | `>=1.0.0` | Tool Plan Step 2 引入 |
+| 依赖 | 版本（计划） | 实际安装 | 说明 |
+|------|-------------|---------|------|
+| `langgraph` | `>=1.0.10` | — | 两个计划共享 |
+| `langgraph-checkpoint-sqlite` | `>=2.0.0` | `3.1.0` | Memory Plan 引入；`AsyncSqliteSaver` 在 `aio` 子模块 |
+| `langchain-core` | `>=1.2.11` | — | `trim_messages` / `filter_messages` 来源 |
+| `mcp` | `>=1.0.0` | — | Tool Plan Step 2 引入 |
 
 ---
 
 ## 8. 交付检查清单
 
-- [ ] M1: `AsyncSqliteSaver` 可跨连接持久化（6 tests pass）
-- [ ] M1: `CodingAgentState` 五字段（含 `operator.add` reducer）Graph 编译通过
-- [ ] M2a: `ShortTermMemory` + `JsonStore` + `LongTermMemory` 已删除；history CRUD 通过 `graph.aget_state()`
-- [ ] M2b: `tools.py` 已拆分；`ToolRegistry.get_runtime_tools()` 本地+MCP 统一返回
-- [ ] M3: `trim_messages` 在 `_call_model` 中生效；`graph.compile(store=store)` 长记忆迁入 Store
-- [ ] M3: 动态 `ToolNode` wrapper 可正常执行 MCP 工具（mock MCP server 测试通过）
-- [ ] M3: `MCPToolAdapter` schema 转换正确
-- [ ] M4: `graph.get_state()` / `graph.get_state_history()` API 端点正常
-- [ ] 全量回归: `uv run pytest tests/ -v` 全部通过
+- [x] M1: `AsyncSqliteSaver` 可跨连接持久化（6 tests pass）— 2026-05-20
+- [x] M1: `CodingAgentState` 五字段（含 `operator.add` reducer）Graph 编译通过 — 2026-05-20
+- [x] M2a: `ShortTermMemory` + `JsonStore` + `LongTermMemory` 已删除；history CRUD 通过 `graph.aget_state()` — 2026-05-20
+- [x] M2b: `tools.py` 已拆分；`ToolRegistry` 统一注册中心就绪 — 2026-05-20
+- [x] `graph.compile(store=store)` 长记忆迁入 Store（提前至 M2a-C 完成） — 2026-05-20
+- [x] `DELETE /chat/history/{thread_id}` API 端点正常 — 2026-05-20
+- [x] 全量回归: `uv run pytest tests/ -v` 12/12 全部通过 — 2026-05-20
+- [x] M3: `trim_messages` 在 `_call_model` 中生效 — 2026-05-20
+- [x] M3: `filter_messages` 裁剪旧 ToolMessage（集成至 `_call_model`）— 2026-05-20
+- [x] M3: 全局日志补全（manager.py + graph.py）— 2026-05-20
+- [x] M3: `fact_model` 参数化替代硬编码 — 2026-05-20
+- [x] `MCPTransport` 抽象 + `MCPToolAdapter` schema 转换 — 2026-05-20
+- [x] `ToolRegistry.get_runtime_tools()` / `get_all_schemas()` MCP 本地统一 — 2026-05-20
+- [x] `load_context()` 注入 `completed_steps` + `terminal_context` — 2026-05-20
+- [x] M4: `StdioTransport` + `SSETransport` 真实接入 — 2026-05-20
+- [x] M4: `MCPConnectionPool` 连接池 + 断线重连 + 超时熔断 — 2026-05-20
+- [x] M4: `MCPHeartbeat` 心跳检测 + 审计日志 — 2026-05-20
+- [x] 全量回归: 38/38 passed — 2026-05-20
+- [ ] M4: interrupt() 安全关卡 + 高危命令拦截
+- [ ] M4: 原子工具集 (Glob/Grep/patch_file/Bash)
+- [x] M5: `reasoning_chunk` SSE 推理文本事件 — 2026-05-21
+
+---
+
+## 9. M5 — Reasoning Chunk 思考过程流式推送（2026-05-21）
+
+> 需求来源：[frontend-chat-improvement.md](./frontend-chat-improvement.md) Round 4.1
+> 前端已预埋 `reasoning_chunk` SSE 处理链路，后端只需新增事件推送即可启用 ThinkingPanel 推理节点。
+
+### 9.1 背景
+
+前端 ThinkingPanel 支持将 AI 的"思考推理文本"与"工具调用"分别渲染：
+- 🔴 致命差距：后端当前将所有 LLM 流式文本统一以 `message_chunk` 事件推送，前端无法区分"推理独白"和"最终回答"
+- 需求：模型在调用工具**之前**的思考文本以 `reasoning_chunk` 事件独立推送
+
+### 9.2 SSE 事件契约
+
+```
+event: reasoning_chunk
+data: {"content": "我需要先搜索与用户描述匹配的动画作品，然后获取详细信息..."}
+
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `content` | `string` | 模型推理独白的流式文本片段（与 `message_chunk` 相同的打字机模式） |
+
+### 9.3 注入点
+
+**文件**：`app/agents/graph.py` → `ChatWorkflow.stream_chat()`
+
+**逻辑**：ReAct 循环中，在首次工具调用执行之前，LLM 输出的文本为"推理阶段"；首次工具执行完毕后，后续文本为"回答阶段"。
+
+```
+Agent 第 1 次迭代
+  on_chat_model_stream → reasoning_chunk  ← 新增
+  on_chat_model_end    → plan_update
+  on_tool_start        → tool_start       ← 首次工具调用
+  on_tool_end          → tool_end / progress
+  ↓ 设置 has_executed_tools = True
+
+Agent 第 2 次迭代
+  on_chat_model_stream → message_chunk    ← 恢复原有
+  ...
+```
+
+### 9.4 实现（1 行新增 + 2 行修改）
+
+```python
+# graph.py → stream_chat() — 新增标志
+has_executed_tools = False
+
+# on_chat_model_stream 分支 — 条件分派
+if not has_executed_tools:
+    yield {"type": "reasoning_chunk", "content": chunk.content}
+else:
+    yield {"type": "message_chunk", "content": chunk.content}
+
+# on_tool_start 分支 — 首次工具调用后切换
+if not has_executed_tools:
+    has_executed_tools = True
+```
+
+### 9.5 前后端 SSE 事件对照表（终态）
+
+| SSE 事件 | 触发时机 | 前端处理 | 状态 |
+|---------|---------|---------|------|
+| `reasoning_chunk` | 模型在首次工具调用前的推理文本 | ThinkingPanel 🟣推理节点流式追加 | ✅ 新增 |
+| `tool_start` | 工具开始调用 | ToolCall `status: 'running'` | ✅ 已有 |
+| `tool_end` | 工具调用结束 | ToolCall `status: 'success'` + 结果渲染 | ✅ 已有 |
+| `message_chunk` | 首次工具执行后的 LLM 回答 | ChatItem Markdown 渲染 | ✅ 已有 |
+| `plan_update` | 模型完成当前轮推理 | ThinkingPanel plan 摘要 | ✅ 已有 |
+| `progress` | 工具执行完成 | ProgressPanel 步骤更新 | ✅ 已有 |
+| `error` | 任何错误 | Error fallback | ✅ 已有 |
+
+### 9.6 交付检查清单
+
+- [x] M5: `stream_chat()` 新增 `reasoning_chunk` SSE 事件 — 2026-05-21
+
+---
+
+## 10. Round 5 — 流式渲染断裂根因（2026-05-21）
+
+> 事实：后端的 `reasoning_chunk` / `tool_start` / `tool_end` / `message_chunk` SSE 事件**均正确逐条推送**。
+> 断裂点全在前端 `MessageList` + `ThinkingPanel` 的三个布尔状态计算。
+
+### 10.1 后端侧验证结论
+
+| 检查点 | 结果 |
+|--------|------|
+| `astream_events(version="v2")` 是否逐 token 推送 | ✅ 每次 `on_chat_model_stream` 携带 1 个 token |
+| `reasoning_chunk` 是否在首次 tool 前推送 | ✅ `has_executed_tools=False` 期内全部走 reasoning |
+| `tool_start` / `tool_end` 是否携带完整信息 | ✅ name/inputs/output/duration_ms 完整 |
+| `message_chunk` 是否在首次 tool 后推送 | ✅ `has_executed_tools=True` 后走 message |
+| `format_sse()` 格式是否与前端 `parseSSE()` 兼容 | ✅ `event: xxx\ndata: {...}\n\n` |
+
+**结论**：后端无 Bug，无需修改。
+
+### 10.2 前端 Bug 汇总
+
+详见 [frontend-chat-improvement.md §12](./frontend-chat-improvement.md#12-round-5--流式渲染断裂根因分析2026-05-21)
+
+| Bug | 文件 | 一句话 |
+|-----|------|--------|
+| A | `MessageList.tsx:L56` | `isStreaming` 要求 `!!msg.content` → reasoning 阶段 false |
+| B | `ThinkingPanel.tsx:L77` | `isDone` 在纯 reasoning 阶段误报完成 |
+| C | `ThinkingPanel.tsx:L72` | `isThinking` 在工具执行阶段因 isStreaming=false 而 false |
+| D | `ThinkingPanel.tsx:L44` | auto-collapse 抢占用户手动展开 |

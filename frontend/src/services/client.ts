@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8000/api/v1';
+const BASE_URL = '/api/v1';
 
 // 简单的 fetch 封装
 export const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {

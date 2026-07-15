@@ -1,7 +1,17 @@
+import uuid
+from datetime import datetime
 from dataclasses import dataclass, field
+from typing import List, Optional, TYPE_CHECKING
 
-from app.memory.short_term import ShortTermMemory
-from app.memory.long_term import LongTermMemory
+from app.memory.retrievers.bm25_retriever import BM25Retriever
+from app.memory.retrievers.vector_retriever import VectorRetriever
+from app.memory.retrievers.hybrid_retriever import HybridRetriever
+from app.core.logging import get_logger
+
+if TYPE_CHECKING:
+    from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+logger = get_logger(__name__)
 
 
 @dataclass
@@ -13,26 +23,120 @@ class MemoryContext:
 
 class MemoryManager:
     def __init__(self, api_key: str, base_url: str,
-                 short_term_max: int = 10, long_term_max: int = 500):
-        self.short_term = ShortTermMemory(max_messages=short_term_max)
-        self.long_term = LongTermMemory(api_key=api_key, base_url=base_url,
-                                        max_facts=long_term_max)
+                 checkpointer: Optional["AsyncSqliteSaver"] = None,
+                 store=None,
+                 max_facts: int = 500,
+                 fact_model: str = "gpt-3.5-turbo"):
+        self.checkpointer = checkpointer
+        self._store = store
+        self.max_facts = max_facts
+        self.fact_model = fact_model
+        self.bm25 = BM25Retriever()
+        self.vector = VectorRetriever(api_key, base_url)
+        self.hybrid = HybridRetriever(self.bm25, self.vector)
+
+    def _messages_from_checkpoint(self, checkpoint) -> List[dict]:
+        messages = []
+        channel_values = checkpoint.get("channel_values", {})
+        raw = channel_values.get("messages", [])
+        for m in raw:
+            if hasattr(m, "type") and hasattr(m, "content"):
+                messages.append({"role": m.type, "content": str(m.content)})
+        return messages
+
+    async def _get_facts(self, thread_id: str) -> list[dict]:
+        if not self._store:
+            return []
+        items = await self._store.asearch(("facts", thread_id))
+        facts = []
+        for item in items:
+            val = item.value
+            facts.append({
+                "id": item.key,
+                "content": val.get("content", ""),
+                "importance": val.get("importance", 0.5),
+                "timestamp": val.get("timestamp", ""),
+                "source": val.get("source", "conversation"),
+                "embedding": val.get("embedding", []),
+            })
+        return facts
+
+    async def _add_fact(self, thread_id: str, content: str,
+                        importance: float = 0.5, source: str = "conversation") -> Optional[str]:
+        if not self._store:
+            return None
+
+        existing = await self._get_facts(thread_id)
+        if existing:
+            all_contents = [f["content"] for f in existing] + [content]
+            vecs = await self.vector.embed(all_contents)
+            new_vec = vecs[-1]
+            for i, existing_vec in enumerate(vecs[:-1]):
+                if VectorRetriever.cosine_similarity(new_vec, existing_vec) > 0.9:
+                    return None
+        else:
+            new_vec = (await self.vector.embed([content]))[0]
+
+        fact_id = str(uuid.uuid4())
+        await self._store.aput(
+            ("facts", thread_id), fact_id,
+            {
+                "content": content,
+                "importance": importance,
+                "source": source,
+                "timestamp": datetime.utcnow().isoformat(),
+                "embedding": new_vec,
+            }
+        )
+
+        if len(existing) > self.max_facts:
+            facts_sorted = sorted(existing, key=lambda f: (f.get("importance", 0), f.get("timestamp", "")))
+            for old in facts_sorted[:-(self.max_facts)]:
+                await self._store.adelete(("facts", thread_id), old["id"])
+
+        return fact_id
 
     async def load_context(self, thread_id: str, current_query: str,
                            top_k: int = 5) -> MemoryContext:
-        short = await self.short_term.get_last_n(thread_id, n=10)
-        long_facts = await self.long_term.retrieve(thread_id, current_query, top_k=top_k)
+        short = []
+        completed_steps = []
+        terminal_output = ""
+        if self.checkpointer:
+            config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+            cp = await self.checkpointer.aget_tuple(config)
+            if cp:
+                short = self._messages_from_checkpoint(cp.checkpoint)
+                channel_values = cp.checkpoint.get("channel_values", {})
+                completed_steps = channel_values.get("completed_steps", [])
+                terminal_output = channel_values.get("last_terminal_output", "")
+
+        long_facts = []
+        all_facts = await self._get_facts(thread_id)
+        if all_facts and self._store:
+            long_facts = await self.hybrid.retrieve(current_query, all_facts, top_k=top_k)
 
         parts = []
         if long_facts:
             parts.append("[长期记忆] 相关历史信息：")
             for f in long_facts:
                 parts.append(f"- {f['content']}")
+        if completed_steps:
+            parts.append(f"[执行进度] 已完成步骤: {', '.join(completed_steps)}")
+        if terminal_output:
+            parts.append(f"[终端输出] {terminal_output[:500]}")
         if short:
             parts.append("[近期对话]")
             for m in short[-6:]:
-                role_label = "用户" if m["role"] == "user" else "AI"
+                role_label = "用户" if m["role"] in ("human", "user") else "AI"
                 parts.append(f"- [{role_label}] {m['content'][:200]}")
+
+        logger.info("context_loaded", extra={
+            "thread_id": thread_id,
+            "short_msg_count": len(short),
+            "fact_count": len(long_facts),
+            "completed_steps": completed_steps,
+            "has_terminal": bool(terminal_output),
+        })
 
         return MemoryContext(
             short_term_messages=short,
@@ -40,17 +144,22 @@ class MemoryManager:
             summary="\n".join(parts) if parts else "",
         )
 
-    async def save_turn(self, thread_id: str, user_msg: str,
-                        assistant_msg: str) -> None:
-        await self.short_term.add_pair(thread_id, user_msg, assistant_msg)
-
     async def extract_and_store_facts(self, thread_id: str) -> int:
-        messages = await self.short_term.get_last_n(thread_id, n=20)
+        if not self._store:
+            return 0
+
+        messages = []
+        if self.checkpointer:
+            config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+            cp = await self.checkpointer.aget_tuple(config)
+            if cp:
+                messages = self._messages_from_checkpoint(cp.checkpoint)[-20:]
+
         if len(messages) < 4:
             return 0
 
         conv_text = "\n".join(
-            f"{'用户' if m['role'] == 'user' else 'AI'}: {m['content']}"
+            f"{'用户' if m['role'] in ('human', 'user') else 'AI'}: {m['content']}"
             for m in messages
         )
         system_prompt = (
@@ -60,8 +169,8 @@ class MemoryManager:
         )
 
         try:
-            response = await self.long_term.vector.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+            response = await self.vector.client.chat.completions.create(
+                model=self.fact_model,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": conv_text},
@@ -78,9 +187,7 @@ class MemoryManager:
                 content = fact.get("content", "")
                 importance = float(fact.get("importance", 0.5))
                 if content:
-                    fact_id = await self.long_term.add_fact(
-                        thread_id, content, importance=importance
-                    )
+                    fact_id = await self._add_fact(thread_id, content, importance=importance)
                     if fact_id:
                         count += 1
             return count
