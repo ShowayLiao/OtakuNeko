@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 vi.mock('@/components/providers/LobeProvider', () => ({
   useAppTheme: () => ({ isDarkMode: false }),
@@ -113,13 +112,23 @@ describe('AgentMessageRenderer', () => {
     expect(screen.queryByTestId('markdown-content')).toBeNull();
   });
 
-  it('expands to show process details on click', async () => {
-    const user = userEvent.setup();
+  it('keeps the latest completed process details visible before the answer starts', () => {
     render(
       <AgentMessageRenderer {...defaultProps} processes={[thoughtDone]} />
     );
-    await user.click(screen.getByText('思考完毕'));
     expect(screen.getByText('Let me think about this...')).toBeDefined();
+  });
+
+  it('collapses the latest normal process once the answer starts', () => {
+    render(
+      <AgentMessageRenderer
+        {...defaultProps}
+        processes={[thoughtDone]}
+        isStreaming
+        hasContent
+      />
+    );
+    expect(screen.queryByText('Let me think about this...')).toBeNull();
   });
 
   it('renders tool duration in process node', () => {

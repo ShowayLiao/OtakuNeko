@@ -6,12 +6,13 @@ import {
   BrainCircuit, RotateCcw, Clock,
 } from 'lucide-react';
 import type { ProcessNode } from '@/stores/useChatStore';
+import { resolveStepExpanded } from '@/lib/processDisplayState';
 
 interface ProcessStepItemProps {
   node: ProcessNode;
   stepNumber: number;
   isDarkMode: boolean;
-  isStreaming: boolean;
+  autoExpanded: boolean;
   onRetry?: (node: ProcessNode) => void;
 }
 
@@ -24,11 +25,9 @@ export default function ProcessStepItem({
   node,
   stepNumber,
   isDarkMode,
-  isStreaming,
+  autoExpanded,
   onRetry,
 }: ProcessStepItemProps) {
-  const [expanded, setExpanded] = useState(false);
-
   const isPending = node.status === 'pending';
   const isError = node.status === 'error';
   const isSuccess = node.status === 'success';
@@ -38,6 +37,19 @@ export default function ProcessStepItem({
     (node.details != null) ||
     (node.output != null) ||
     (isThought && node.details != null);
+
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
+  const expanded = resolveStepExpanded({
+    hasBody,
+    isAutoActive: autoExpanded,
+    isError,
+    userExpanded,
+  });
+
+  const toggleExpanded = () => {
+    if (!hasBody) return;
+    setUserExpanded((value) => !(value ?? expanded));
+  };
 
   return (
     <div style={{ display: 'flex', gap: 8 }}>
@@ -90,13 +102,24 @@ export default function ProcessStepItem({
           }}
         >
           <div
-            onClick={() => !isPending && hasBody && setExpanded(!expanded)}
+            onClick={toggleExpanded}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggleExpanded();
+              }
+            }}
+            role={hasBody ? 'button' : undefined}
+            tabIndex={hasBody ? 0 : undefined}
+            aria-expanded={hasBody ? expanded : undefined}
+            aria-controls={hasBody ? `process-step-${node.id}` : undefined}
+            aria-label={hasBody ? `${node.title}详情` : undefined}
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: 8,
               padding: '8px 10px',
-              cursor: isPending || !hasBody ? 'default' : 'pointer',
+              cursor: hasBody ? 'pointer' : 'default',
               userSelect: 'none',
             }}
           >
@@ -159,7 +182,7 @@ export default function ProcessStepItem({
               </button>
             )}
 
-            {hasBody && !isPending && (
+            {hasBody && (
               <ChevronRight
                 size={14}
                 style={{
@@ -172,7 +195,7 @@ export default function ProcessStepItem({
           </div>
 
           {expanded && (
-            <div style={{
+            <div id={`process-step-${node.id}`} style={{
               borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
               padding: '8px 10px',
             }}>

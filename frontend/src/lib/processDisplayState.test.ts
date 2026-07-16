@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-// @ts-expect-error Node's built-in TypeScript runner requires the explicit extension.
+// @ts-ignore Node's built-in TypeScript runner requires the explicit extension.
 import {
   resolveProcessExpanded,
   resolveStepExpanded,
