@@ -13,6 +13,7 @@ interface AgentMessageRendererProps {
   hasContent: boolean;
   isDarkMode: boolean;
   children: React.ReactNode;
+  actions?: React.ReactNode;
   onRetryTool?: (node: ProcessNode) => void;
 }
 
@@ -43,14 +44,19 @@ export default function AgentMessageRenderer({
   hasContent,
   isDarkMode,
   children,
+  actions,
   onRetryTool,
 }: AgentMessageRendererProps) {
+  const status = deriveStatus(hasContent, processes, isStreaming);
+
   return (
     <div className="flex flex-col gap-2">
       <ProcessContainer
         processes={processes}
         plan={plan}
         isStreaming={isStreaming}
+        hasContent={hasContent}
+        status={status}
         isDarkMode={isDarkMode}
         onRetryTool={onRetryTool}
       />
@@ -58,6 +64,7 @@ export default function AgentMessageRenderer({
       <FinalAnswerBlock isStreaming={isStreaming} hasContent={hasContent}>
         {children}
       </FinalAnswerBlock>
+      {actions}
     </div>
   );
 }

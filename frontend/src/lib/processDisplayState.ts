@@ -9,19 +9,17 @@ export function resolveProcessExpanded(
 export interface StepExpansionInput {
   hasBody: boolean;
   isAutoActive: boolean;
-  isError: boolean;
   userExpanded: boolean | null;
 }
 
 export function resolveStepExpanded({
   hasBody,
   isAutoActive,
-  isError,
   userExpanded,
 }: StepExpansionInput) {
   if (!hasBody) return false;
   if (userExpanded != null) return userExpanded;
-  return isError || isAutoActive;
+  return isAutoActive;
 }
 
 interface PendingToolCandidate {

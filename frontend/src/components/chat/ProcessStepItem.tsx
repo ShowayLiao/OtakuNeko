@@ -42,7 +42,6 @@ export default function ProcessStepItem({
   const expanded = resolveStepExpanded({
     hasBody,
     isAutoActive: autoExpanded,
-    isError,
     userExpanded,
   });
 

@@ -12,13 +12,11 @@ test('keeps the latest completed step open until a successor starts', () => {
   assert.equal(resolveStepExpanded({
     hasBody: true,
     isAutoActive: true,
-    isError: false,
     userExpanded: null,
   }), true);
   assert.equal(resolveStepExpanded({
     hasBody: true,
     isAutoActive: false,
-    isError: false,
     userExpanded: null,
   }), false);
 });
@@ -27,28 +25,24 @@ test('manual step visibility overrides automatic state', () => {
   assert.equal(resolveStepExpanded({
     hasBody: true,
     isAutoActive: true,
-    isError: false,
     userExpanded: false,
   }), false);
   assert.equal(resolveStepExpanded({
     hasBody: true,
     isAutoActive: false,
-    isError: false,
     userExpanded: true,
   }), true);
 });
 
-test('error steps remain visible and body-less steps stay closed', () => {
+test('non-active completed steps stay closed and body-less steps stay closed', () => {
   assert.equal(resolveStepExpanded({
     hasBody: true,
     isAutoActive: false,
-    isError: true,
     userExpanded: null,
-  }), true);
+  }), false);
   assert.equal(resolveStepExpanded({
     hasBody: false,
     isAutoActive: true,
-    isError: false,
     userExpanded: null,
   }), false);
 });
