@@ -7,13 +7,15 @@ export type ProcessNodeStatus = 'pending' | 'success' | 'error';
 
 export interface ProcessNode {
   id: string;
+  /** Provider tool-call id when it is available. Used to merge streamed argument deltas. */
+  sourceId?: string;
   stepNumber: number;
   type: ProcessNodeType;
   status: ProcessNodeStatus;
   title: string;
   duration?: number;
-  details?: any;
-  output?: any;
+  details?: unknown;
+  output?: unknown;
   name?: string;
   reason?: string;
 }
@@ -21,9 +23,9 @@ export interface ProcessNode {
 export interface ToolCall {
   id: string;
   name: string;
-  inputs?: any;
+  inputs?: unknown;
   status: 'running' | 'success' | 'error';
-  output?: any;
+  output?: unknown;
   durationMs?: number;
   reason?: string;
 }
@@ -41,7 +43,7 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   createdAt: Date;
-  extra?: any;
+  extra?: Record<string, unknown>;
   processes?: ProcessNode[];
   status?: MessageStatus;
   plan?: string;
@@ -100,7 +102,7 @@ const useChatStore = create<ChatStore>()(
         return sessionId;
       },
 
-      sendMessage: (sessionId, content, extra?: any) => {
+      sendMessage: (sessionId, content, extra?: Record<string, unknown>) => {
         set((state) => {
           const currentMessages = state.chatMessages[sessionId] || [];
           let message: Message;
@@ -132,7 +134,7 @@ const useChatStore = create<ChatStore>()(
       updateMessage: (sessionId: string, content: string, messageId?: string, processes?: ProcessNode[], plan?: string, status?: MessageStatus) => {
         set((state) => {
           const currentMessages = state.chatMessages[sessionId] || [];
-          let updatedMessages = [...currentMessages];
+          const updatedMessages = [...currentMessages];
 
           const applyUpdates = (msg: Message): Message => {
             const result = { ...msg, content };

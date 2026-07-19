@@ -76,6 +76,7 @@ class TestToolRegistry:
         schemas = await registry.get_all_schemas()
         assert len(schemas) == 1
         assert schemas[0]["type"] == "function"
+        assert "value" in schemas[0]["function"]["parameters"]["properties"]
 
     @pytest.mark.asyncio
     async def test_get_all_schemas_merges_mcp(self, registry):

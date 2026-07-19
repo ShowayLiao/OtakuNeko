@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from langchain_core.tools import BaseTool
 
 
@@ -43,11 +43,14 @@ class ToolRegistry:
         schemas = []
         for tool in self._local_tools.values():
             if hasattr(tool, "args_schema") and tool.args_schema:
+                parameters = tool.args_schema.model_json_schema()
+                parameters.pop("title", None)
                 schemas.append({
                     "type": "function",
                     "function": {
                         "name": tool.name,
                         "description": tool.description,
+                        "parameters": parameters,
                     },
                 })
 

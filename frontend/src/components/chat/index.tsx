@@ -1,9 +1,9 @@
 "use client";
+/* eslint-disable @typescript-eslint/no-explicit-any -- persisted sessions contain legacy fields. */
 
-import { useState, useRef } from 'react';
+import { useMemo, useState, useRef } from 'react';
 import { useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { theme } from 'antd';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ChatInput } from './ChatInput';
 import ApiKeyModal from '../Modal/ApiKeyModal';
@@ -16,32 +16,34 @@ import SessionPanel from './SessionPanel';
 import MessageList from './MessageList';
 import { ChatErrorBoundary } from './ChatErrorBoundary';
 
+const EMPTY_MESSAGES: Message[] = [];
+
 export default function ChatPage() {
-  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
-  const [selectedProvider, setSelectedProvider] = useState('openai');
-  const [selectedRole, setSelectedRole] = useState('preset-1');
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connected');
   const [sessionSearch, setSessionSearch] = useState('');
   const [editText, setEditText] = useState<string | null>(null);
 
-  const { token } = theme.useToken();
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const {
-    sessions,
-    chatMessages,
-    sessionConfigs,
-    activeSessionId,
-    createSession,
-    sendMessage,
-    switchSession,
-    deleteSession,
-    updateSessionTitle,
-    setSessionMessages,
-    setSessionConfig,
-  } = useChatStore();
+  const sessions = useChatStore((state) => state.sessions);
+  const activeSessionId = useChatStore((state) => state.activeSessionId);
+  const sessionConfigs = useChatStore((state) => state.sessionConfigs);
+  const activeSessionConfig = activeSessionId ? sessionConfigs[activeSessionId] : undefined;
+  const selectedModel = activeSessionConfig?.model ?? 'gpt-3.5-turbo';
+  const selectedProvider = activeSessionConfig?.provider ?? 'openai';
+  const selectedRole = activeSessionConfig?.role ?? 'preset-1';
+  const currentMessages = useChatStore((state) => (
+    activeSessionId ? state.chatMessages[activeSessionId] || EMPTY_MESSAGES : EMPTY_MESSAGES
+  ));
+  const createSession = useChatStore((state) => state.createSession);
+  const sendMessage = useChatStore((state) => state.sendMessage);
+  const switchSession = useChatStore((state) => state.switchSession);
+  const deleteSession = useChatStore((state) => state.deleteSession);
+  const updateSessionTitle = useChatStore((state) => state.updateSessionTitle);
+  const setSessionMessages = useChatStore((state) => state.setSessionMessages);
+  const setSessionConfig = useChatStore((state) => state.setSessionConfig);
 
   useEffect(() => {
     if (!activeSessionId && sessions.length === 0) {
@@ -50,19 +52,8 @@ export default function ChatPage() {
   }, [activeSessionId, sessions.length, createSession]);
 
   useEffect(() => {
-    if (activeSessionId) {
-      const cfg = sessionConfigs[activeSessionId];
-      if (cfg) {
-        setSelectedModel(cfg.model);
-        setSelectedProvider(cfg.provider);
-        setSelectedRole(cfg.role);
-      }
-    }
-  }, [activeSessionId]);
-
-  useEffect(() => {
     if (!activeSessionId) return;
-    const existingMsgs = chatMessages[activeSessionId];
+    const existingMsgs = currentMessages;
     if (!existingMsgs || existingMsgs.length === 0) {
       const abortController = new AbortController();
       fetchChatHistory(activeSessionId, abortController.signal).then((serverMsgs) => {
@@ -78,13 +69,9 @@ export default function ChatPage() {
       }).catch(() => {});
       return () => abortController.abort();
     }
-  }, [activeSessionId]);
-
-  const currentMessages: Message[] = activeSessionId ? (chatMessages[activeSessionId] || []) : [];
+  }, [activeSessionId, currentMessages, setSessionMessages]);
 
   const handleModelChange = (modelId: string, provider: string) => {
-    setSelectedModel(modelId);
-    setSelectedProvider(provider);
     if (activeSessionId) {
       setSessionConfig(activeSessionId, { model: modelId, provider });
     }
@@ -93,7 +80,6 @@ export default function ChatPage() {
   const customRoles = useRoleStore((s) => s.customRoles);
 
   const handleRoleChange = (roleId: string) => {
-    setSelectedRole(roleId);
     if (activeSessionId) {
       setSessionConfig(activeSessionId, { role: roleId });
     }
@@ -108,22 +94,56 @@ export default function ChatPage() {
     setIsApiKeyModalOpen(true);
   };
 
-  const { loading, startStreaming, stopGeneration } = useChatStreaming({
+  const { loading, streamingMessageId, streamingPreview, startStreaming, stopGeneration } = useChatStreaming({
     selectedProvider,
     selectedModel,
     onConnectionStatusChange: setConnectionStatus,
   });
 
+  const displayMessages = useMemo(() => {
+    if (!streamingPreview) return currentMessages;
+    return currentMessages.map((message) => (
+      message.id === streamingPreview.messageId
+        ? {
+          ...message,
+          content: streamingPreview.content,
+          processes: streamingPreview.processes,
+          plan: streamingPreview.plan,
+          status: streamingPreview.status,
+        }
+        : message
+    ));
+  }, [currentMessages, streamingPreview]);
+
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
+  const shouldStickToBottomRef = useRef(true);
+
+  const scrollFrameRef = useRef<number | null>(null);
+
   useEffect(() => {
+    if (!shouldStickToBottomRef.current || scrollFrameRef.current !== null) return;
+    scrollFrameRef.current = requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const container = messageContainerRef.current;
+      if (container && shouldStickToBottomRef.current) {
+        container.scrollTop = container.scrollHeight;
+      }
+    });
+    return () => {
+      if (scrollFrameRef.current !== null) {
+        cancelAnimationFrame(scrollFrameRef.current);
+        scrollFrameRef.current = null;
+      }
+    };
+  }, [displayMessages, loading]);
+
+  const handleMessageScroll = () => {
     const container = messageContainerRef.current;
     if (!container) return;
-    const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 150;
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [currentMessages, loading]);
+    shouldStickToBottomRef.current =
+      container.scrollTop + container.clientHeight >= container.scrollHeight - 150;
+  };
 
   const getMessagesForBackend = () => {
     return currentMessages
@@ -250,21 +270,23 @@ export default function ChatPage() {
         <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
           <div
             ref={messageContainerRef}
+            onScroll={handleMessageScroll}
             className="flex-1 overflow-y-auto p-4"
             style={{ paddingBottom: 200 }}
           >
             <MessageList
-              messages={currentMessages}
-              loading={loading}
+              messages={displayMessages}
+              streamingMessageId={streamingMessageId}
               onRegen={handleRegen}
-              onStop={stopGeneration}
               onEdit={handleEdit}
             />
             <div ref={messagesEndRef} />
           </div>
 
           <ChatInput
+            key={editText ?? 'new-message'}
             onSend={editText ? handleEditResend : handleSend}
+            onStop={stopGeneration}
             loading={loading}
             selectedModel={selectedModel}
             selectedProvider={selectedProvider}

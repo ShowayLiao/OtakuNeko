@@ -1,6 +1,15 @@
 import { request } from './client';
 import { BangumiItem, WatchType } from './bangumiService';
 
+interface CollectionResponseItem {
+  collection?: BangumiItem['collection'];
+  subject?: BangumiItem['subject'];
+}
+
+interface CollectionResponse {
+  items?: CollectionResponseItem[];
+}
+
 // 定义排班记录的基础接口
 export interface ScheduleBase {
   id?: number;
@@ -19,6 +28,7 @@ export const getCollections = async (params?: {
   subject_type?: number;
   status?: number;
   keyword?: string;
+  signal?: AbortSignal;
 }): Promise<BangumiItem[]> => {
   try {
     const urlParams = new URLSearchParams();
@@ -30,18 +40,19 @@ export const getCollections = async (params?: {
     const endpoint = `/collections${queryString ? `?${queryString}` : ''}`;
     
     // 调用后端 API 获取收藏数据
-    const response = await request<any>(endpoint, {
-      method: 'GET'
+    const response = await request<CollectionResponse>(endpoint, {
+      method: 'GET',
+      signal: params?.signal,
     });
     
-    let items: BangumiItem[] = (response?.items || []).map((collectionItem: any) => {
+    let items: BangumiItem[] = (response.items || []).filter((item) => item.subject).map((collectionItem) => {
       return {
         collection: collectionItem.collection || null,
-        subject: collectionItem.subject || null,
-        watch_day: null,
-        watch_time: null,
-        watch_type: null,
-        duration: null
+        subject: collectionItem.subject!,
+        watch_day: undefined,
+        watch_time: undefined,
+        watch_type: undefined,
+        duration: undefined
       };
     });
     
@@ -55,18 +66,19 @@ export const getCollections = async (params?: {
       const subjectsEndpoint = `/subjects${subjectsQueryString ? `?${subjectsQueryString}` : ''}`;
       
       // 调用 subjects 接口
-      const subjectsResponse = await request<any>(subjectsEndpoint, {
-        method: 'GET'
+      const subjectsResponse = await request<CollectionResponse>(subjectsEndpoint, {
+        method: 'GET',
+        signal: params?.signal,
       });
       
-      const subjectsItems: BangumiItem[] = (subjectsResponse?.items || []).map((subjectItem: any) => {
+      const subjectsItems: BangumiItem[] = (subjectsResponse.items || []).filter((item) => item.subject).map((subjectItem) => {
         return {
           collection: subjectItem.collection || null,
-          subject: subjectItem.subject || null,
-          watch_day: null,
-          watch_time: null,
-          watch_type: null,
-          duration: null
+          subject: subjectItem.subject!,
+          watch_day: undefined,
+          watch_time: undefined,
+          watch_type: undefined,
+          duration: undefined
         };
       });
       
@@ -91,6 +103,9 @@ export interface ScheduleRead extends ScheduleBase {
   user_id: number;
   created_at: string;
   updated_at: string;
+  subject?: BangumiItem['subject'];
+  collection?: BangumiItem['collection'];
+  schedule?: { day_of_week?: number; start_time?: string; duration?: number; watch_type?: number };
 }
 
 // 定义后端返回的批量 upsert 响应结构
@@ -100,7 +115,7 @@ export interface ScheduleReadList {
 }
 
 // 将 BangumiItem 转换为后端 API 要求的格式
-export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
+export const convertBangumiItemsToSchedules = (items: BangumiItem[]): ScheduleBase[] => {
   const userId = 1; // 暂时硬编码，后续应该从认证系统获取
   
   const convertedItems = items.map(item => {
@@ -129,7 +144,7 @@ export const convertBangumiItemsToSchedules = (items: any[]): any[] => {
 };
 
 // 批量 upsert 排班记录
-export const bulkUpsertSchedules = async (schedules: any[]): Promise<ScheduleReadList> => {
+export const bulkUpsertSchedules = async (schedules: ScheduleBase[]): Promise<ScheduleReadList> => {
   try {
     const response = await request<ScheduleReadList>('/schedules/bulk-upsert', {
       method: 'POST',
@@ -143,12 +158,12 @@ export const bulkUpsertSchedules = async (schedules: any[]): Promise<ScheduleRea
 };
 
 // 将后端返回的 UnifiedScheduleList 转换为 BangumiItem[] 格式
-export const convertSchedulesToBangumiItems = (schedulesData: any): BangumiItem[] => {
+export const convertSchedulesToBangumiItems = (schedulesData: ScheduleReadList): BangumiItem[] => {
   if (!schedulesData || !schedulesData.items) {
     return [];
   }
   
-  return schedulesData.items.filter((item: any) => {
+  return schedulesData.items.filter((item) => {
     // 检查 subject 是否存在，以及 air_time 和 air_weekday 是否不为 null
     if (!item.subject) {
       return false;
@@ -158,7 +173,7 @@ export const convertSchedulesToBangumiItems = (schedulesData: any): BangumiItem[
       return false;
     }
     return true;
-  }).map((item: any) => {
+  }).map((item) => {
     // 构建 BangumiItem 对象
     const bangumiItem: BangumiItem = {
       collection: item.collection || null,
@@ -185,7 +200,7 @@ export const convertSchedulesToBangumiItems = (schedulesData: any): BangumiItem[
 // 获取排班记录列表并转换为 BangumiItem[]
 export const getSchedules = async (): Promise<BangumiItem[]> => {
   try {
-    const response = await request<any>('/schedules', {
+    const response = await request<ScheduleReadList>('/schedules', {
       method: 'GET'
     });
     

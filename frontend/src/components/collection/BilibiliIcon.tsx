@@ -1,4 +1,6 @@
-const BilibiliIcon = (props: any) => {
+import type { SVGProps } from 'react';
+
+const BilibiliIcon = (props: SVGProps<SVGSVGElement>) => {
   // 从 props 中分离出 style 和其他属性，以免冲突
   const { style, ...rest } = props;
 

@@ -1,13 +1,25 @@
-from typing import Dict, Any, List
-from langchain_core.tools import tool as langchain_tool, BaseTool
+from typing import Any, Dict, Optional, Type
+
+from langchain_core.tools import BaseTool, StructuredTool
+from pydantic import BaseModel, create_model
+
+
+_JSON_TYPES = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "array": list,
+    "object": dict,
+}
 
 
 class MCPToolAdapter:
-    """将 MCP tool schema 转换为 LangChain 兼容格式"""
+    """Convert MCP tool definitions into explicit LangChain contracts."""
 
     @staticmethod
-    def to_openai_function(tool_def: Dict) -> Dict:
-        params = tool_def.get("inputSchema", {})
+    def to_openai_function(tool_def: Dict[str, Any]) -> Dict[str, Any]:
+        params = tool_def.get("inputSchema", {}) or {}
         return {
             "type": "function",
             "function": {
@@ -22,18 +34,35 @@ class MCPToolAdapter:
         }
 
     @staticmethod
-    def to_langchain_tool(tool_def: Dict, transport) -> BaseTool:
+    def to_langchain_tool(tool_def: Dict[str, Any], transport) -> BaseTool:
         name = tool_def["name"]
         desc = tool_def.get("description", "")
-        input_schema = tool_def.get("inputSchema", {})
+        input_schema = tool_def.get("inputSchema", {}) or {}
+        args_schema = MCPToolAdapter._args_schema(name, input_schema)
 
         async def _call_tool(**kwargs):
             return await transport.call_tool(name, kwargs)
 
-        _call_tool.__name__ = name
-        _call_tool.__doc__ = desc
+        return StructuredTool.from_function(
+            coroutine=_call_tool,
+            name=name,
+            description=desc or f"Call the {name} MCP tool.",
+            args_schema=args_schema,
+        )
 
-        tool_instance = langchain_tool(_call_tool)
-        tool_instance.name = name
-        tool_instance.description = desc
-        return tool_instance
+    @staticmethod
+    def _args_schema(name: str, input_schema: Dict[str, Any]) -> Type[BaseModel]:
+        """Preserve MCP field names, requiredness and primitive types."""
+        properties = input_schema.get("properties", {}) or {}
+        required = set(input_schema.get("required", []) or [])
+        fields: Dict[str, tuple[Any, Any]] = {}
+        for field_name, definition in properties.items():
+            definition = definition or {}
+            annotation = _JSON_TYPES.get(definition.get("type"), Any)
+            default = ... if field_name in required else None
+            if default is ...:
+                fields[field_name] = (annotation, default)
+            else:
+                fields[field_name] = (Optional[annotation], default)
+        model_name = f"{name.title().replace('_', '')}Input"
+        return create_model(model_name, **fields)

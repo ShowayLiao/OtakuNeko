@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Modal, Input, Switch, Button, Badge, Space, Alert } from 'antd';
+import { Modal, Input, Switch, Button, Badge, Space, Alert, Select } from 'antd';
 import { Lock, Check, AlertCircle, RefreshCw, Trash2, ChevronRight, Server, Cloud, Globe } from 'lucide-react';
 import { useApiStore, ProviderConfig } from '@/store/useApiStore';
 import type { CheckboxChangeEvent } from 'antd';
@@ -113,12 +113,15 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
 
   // 处理服务商选择
   const handleProviderSelect = (provider: keyof typeof config) => {
+    if (provider === 'deepseek' && getProviderConfig(provider).endpoint === 'https://api.deepseek.com/v1') {
+      setProviderConfig(provider, 'endpoint', 'https://api.deepseek.com');
+    }
     setSelectedProvider(provider);
     setCheckResult(null);
   };
 
   // 处理配置更新
-  const handleConfigUpdate = (field: keyof ProviderConfig, value: any) => {
+  const handleConfigUpdate = (field: keyof ProviderConfig, value: unknown) => {
     setProviderConfig(selectedProvider, field, value);
     setCheckResult(null);
   };
@@ -168,7 +171,9 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
       endpoint: providerInfo[provider].fields.includes('endpoint') ? (initialConfig[provider]?.endpoint || '') : '',
       proxyUrl: '',
       deploymentName: '',
-      apiVersion: ''
+      apiVersion: '',
+      thinking: provider === 'deepseek',
+      reasoningEffort: 'high' as const,
     };
 
     Object.keys(defaultConfig).forEach(field => {
@@ -184,7 +189,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
     azure: { enabled: false, apiKey: '', endpoint: '', deploymentName: '', apiVersion: '2024-02-15-preview' },
     google: { enabled: false, apiKey: '', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
     anthropic: { enabled: false, apiKey: '', endpoint: 'https://api.anthropic.com' },
-    deepseek: { enabled: false, apiKey: '', endpoint: 'https://api.deepseek.com/v1' },
+    deepseek: { enabled: false, apiKey: '', endpoint: 'https://api.deepseek.com', thinking: true, reasoningEffort: 'high' as const },
     moonshot: { enabled: false, apiKey: '', endpoint: 'https://api.moonshot.cn/v1' },
     qwen: { enabled: false, apiKey: '', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
     zhipu: { enabled: false, apiKey: '', endpoint: 'https://open.bigmodel.cn/api/paas/v4' },
@@ -200,6 +205,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
   // 获取当前选中的配置
   const currentConfig = getProviderConfig(selectedProvider);
   const isEnabled = currentConfig.enabled;
+  const isDeepSeek = selectedProvider === 'deepseek';
 
   return (
     <Modal
@@ -265,6 +271,14 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
               <div className={`space-y-4 transition-opacity duration-300 ${
                 isEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'
               }`}>
+                {isDeepSeek && (
+                  <Alert
+                    showIcon
+                    type="info"
+                    message="使用 DeepSeek 官方 OpenAI 兼容接口"
+                    description="默认地址为 https://api.deepseek.com。思考模式开启时，温度参数不会生效；可在下方选择 high 或 max 推理强度。"
+                  />
+                )}
                 {/* API Key */}
                 {providerInfo[selectedProvider].fields.includes('apiKey') && selectedProvider !== 'ollama' && (
                   <div>
@@ -283,7 +297,9 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 {/* Endpoint */}
                 {providerInfo[selectedProvider].fields.includes('endpoint') && (
                   <div>
-                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Endpoint</label>
+                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>
+                      {isDeepSeek ? 'Base URL (OpenAI-compatible)' : 'Endpoint'}
+                    </label>
                     <Input
                       value={currentConfig.endpoint || ''}
                       onChange={(e) => handleConfigUpdate('endpoint', e.target.value)}
@@ -294,6 +310,38 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 )}
 
                 {/* Proxy URL (仅 OpenAI) */}
+                {isDeepSeek && (
+                  <div className={`rounded-lg border p-4 ${isDarkMode ? 'border-indigo-400/20 bg-indigo-400/5' : 'border-indigo-100 bg-indigo-50/40'}`}>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <div className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>Thinking mode</div>
+                        <div className={`mt-1 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Show a reasoning trace before the final answer.</div>
+                      </div>
+                      <Switch
+                        checked={currentConfig.thinking ?? true}
+                        checkedChildren="On"
+                        unCheckedChildren="Off"
+                        onChange={(checked: boolean) => handleConfigUpdate('thinking', checked)}
+                      />
+                    </div>
+
+                    {(currentConfig.thinking ?? true) && (
+                      <div className="mt-4">
+                        <label className={`mb-1 block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Reasoning effort</label>
+                        <Select
+                          className="w-full"
+                          value={currentConfig.reasoningEffort ?? 'high'}
+                          onChange={(value: 'high' | 'max') => handleConfigUpdate('reasoningEffort', value)}
+                          options={[
+                            { value: 'high', label: 'high - standard complex tasks' },
+                            { value: 'max', label: 'max - complex agent tasks' },
+                          ]}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {selectedProvider === 'openai' && (
                   <div>
                     <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Proxy URL (选填)</label>

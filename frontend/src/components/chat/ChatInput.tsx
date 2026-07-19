@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Eraser, X } from 'lucide-react';
 import { theme } from 'antd';
 import { ChatInputArea, ChatInputActionBar, ChatSendButton } from '@lobehub/ui/chat';
@@ -14,6 +14,7 @@ import ContextPill from './ContextPill';
 
 interface ChatInputProps {
   onSend: (text: string, contextItems: SearchResultItem[]) => void;
+  onStop: () => void;
   loading: boolean;
   selectedModel: string;
   selectedProvider: string;
@@ -28,6 +29,7 @@ interface ChatInputProps {
 
 export const ChatInput = ({
   onSend,
+  onStop,
   loading,
   selectedModel,
   selectedProvider,
@@ -40,19 +42,13 @@ export const ChatInput = ({
   onEditCancel,
 }: ChatInputProps) => {
   const [isExpand, setIsExpand] = useState(false);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => editText ?? '');
   const [contextItems, setContextItems] = useState<SearchResultItem[]>([]);
   const heights = {
     inputHeight: 160,
     minHeight: 128,
     maxHeight: 600,
   };
-
-  useEffect(() => {
-    if (editText) {
-      setText(editText);
-    }
-  }, [editText]);
 
   const { token } = theme.useToken();
   const { isDarkMode } = useAppTheme();
@@ -156,7 +152,7 @@ export const ChatInput = ({
             }
           />
         }
-        bottomAddons={<ChatSendButton loading={loading} onSend={handleSend} />}
+        bottomAddons={<ChatSendButton loading={loading} onSend={handleSend} onStop={onStop} />}
         expand={isExpand}
         setExpand={setIsExpand}
         heights={heights}

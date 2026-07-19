@@ -1,4 +1,4 @@
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Literal
 from pydantic import BaseModel
 from enum import StrEnum
 
@@ -36,6 +36,10 @@ class StreamEvent(BaseModel):
 
 # 定义前端传来的数据结构
 class Message(BaseModel):
+    # Stable client id lets LangGraph's add_messages reducer replace an
+    # already-persisted turn instead of appending the entire browser history
+    # on every request.
+    id: Optional[str] = None
     role: str
     content: str
 
@@ -44,9 +48,14 @@ class PromptConfig(BaseModel):
     tone: str = ""
     rules: str = ""
 
+class DeepSeekOptions(BaseModel):
+    thinking: bool = True
+    reasoning_effort: Literal["high", "max"] = "high"
+
 class ChatRequest(BaseModel):
     model: str
     messages: List[Message]
     temperature: float = 0.6
     prompt_config: Optional[PromptConfig] = None
     thread_id: Optional[str] = None
+    deepseek_options: Optional[DeepSeekOptions] = None

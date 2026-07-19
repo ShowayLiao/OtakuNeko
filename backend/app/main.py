@@ -11,7 +11,6 @@ from fastapi_cache import FastAPICache
 from fastapi_cache.coder import PickleCoder
 from fastapi_cache.backends.inmemory import InMemoryBackend  # <--- 必须导入这个
 from redis.asyncio import Redis
-import logging
 
 # 初始化日志系统
 logger = get_logger(__name__)
@@ -23,7 +22,8 @@ async def lifespan(app: FastAPI):
     
     # 1. 数据库初始化
     # 如果是本地 SQLite，这一步会自动生成 .db 文件并建表
-    logger.info(f"Initializing database with URL: {settings.DATABASE_URL}")
+    # Never log credentials embedded in a database URL.
+    logger.info("Initializing database connection")
     await init_db()
     logger.info("Database initialized successfully")
     

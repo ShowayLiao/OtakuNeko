@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- user profile extensions are server-defined. */
 import { Avatar, Button, Flexbox, Popover, Tag, toast } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import {

@@ -129,3 +129,5 @@ Thumbs.db
 docs/goal/
 
 backend/spec/
+
+.superpowers/

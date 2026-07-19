@@ -288,7 +288,10 @@ class TestCompileGraph:
 class TestThinkNode:
     @pytest.mark.asyncio
     async def test_returns_messages_and_reasoning_trace(self, workflow, state_without_tool_calls):
-        fake_response = AIMessage(content="分析: 用户想要搜索科幻动画")
+        fake_response = AIMessage(
+            content="准备给用户的可见草稿",
+            additional_kwargs={"reasoning_content": "分析: 用户想要搜索科幻动画"},
+        )
         workflow.llm_with_tools = MagicMock()
         workflow.llm_with_tools.ainvoke = AsyncMock(return_value=fake_response)
         workflow.llm = MagicMock()

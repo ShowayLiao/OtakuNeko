@@ -75,6 +75,8 @@ class TestSSETransport:
             tools = await transport.list_tools()
             assert len(tools) == 1
             assert tools[0]["name"] == "tool-a"
+            methods = [call.kwargs["json"]["method"] for call in mock_client.post.call_args_list]
+            assert methods[:2] == ["initialize", "notifications/initialized"]
 
     def test_server_name_is_set(self):
         t = SSETransport("sse", "http://host:9000")

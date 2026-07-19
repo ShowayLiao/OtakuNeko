@@ -22,7 +22,7 @@ export interface SearchResultItem {
   hasCollection: boolean;
   source: string;
   sourceId: number;
-  fullItem?: any; // 存储完整的 item 结构
+  fullItem?: unknown; // 存储完整的 item 结构
 }
 
 // 修改 Props 定义，增加 onSelect 回调
@@ -74,7 +74,7 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
             title: subject.name_cn || subject.name || keyword,
             cover: subject.image || (subject.images && subject.images.common ? subject.images.common : ''),
             score: subject.rating && subject.rating.score ? subject.rating.score : (subject.score || 0),
-            tags: subject.tags ? subject.tags.map((tag: any) => tag.name || tag) : [],
+            tags: subject.tags ? subject.tags.map((tag) => tag.name) : [],
             hasCollection: !!collection,
             source: subject.source,
             sourceId: subject.source_id ?? 0,
@@ -256,12 +256,32 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
         // 抵消 Popover 的默认内边距，让我们的内容铺满
         styles={{ container: { padding: 4 } }}
       >
-        <ActionIcon 
+        <button
+          type="button"
+          aria-label="搜索并插入"
+          title="搜索并插入"
+          onClick={() => setOpen((current) => !current)}
+          style={{
+            width: 32,
+            height: 32,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: 0,
+            borderRadius: 8,
+            background: open ? 'var(--lobe-color-fill-2)' : 'transparent',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <Search size={16} aria-hidden="true" />
+        </button>
+        {/*
           icon={Search} 
           title="搜索并插入" 
           size={{ blockSize: 32 }}
           active={open} // 激活状态下图标会变色
-        />
+        */}
       </Popover>
       
       {/* 简单的 Hover 样式全局注入 */}

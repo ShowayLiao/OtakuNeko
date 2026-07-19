@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- import data is user-provided JSON. */
 import { request } from './client';
 
 // 同步收藏请求参数

@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 from typing import Dict, Any, List
 
 from app.agents.mcp.transport import MCPTransport
@@ -56,6 +55,7 @@ class StdioTransport(MCPTransport):
             await self.close()
             raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
 
+        await self._send_notification("notifications/initialized", {})
         logger.info("stdio_connected", extra={
             "server_name": self.server_name,
             "server_info": init_response.get("result", {}).get("serverInfo", {}),
@@ -122,6 +122,15 @@ class StdioTransport(MCPTransport):
             raise RuntimeError(f"MCP call '{method}' timed out after {CALL_TIMEOUT}s")
         finally:
             self._pending.pop(msg_id, None)
+
+    async def _send_notification(self, method: str, params: dict) -> None:
+        request = {
+            "jsonrpc": RPC_VERSION,
+            "method": method,
+            "params": params,
+        }
+        self._process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
+        await self._process.stdin.drain()
 
     async def _read_loop(self):
         try:

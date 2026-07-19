@@ -1,28 +1,40 @@
 "use client";
 
-import { Copy, RotateCcw, Square, MessageSquare, Pencil } from 'lucide-react';
+import { memo } from 'react';
+import { Copy, RotateCcw, MessageSquare, Pencil } from 'lucide-react';
 import { ChatItem } from '@lobehub/ui/chat';
-import { ActionIcon, Avatar } from '@lobehub/ui';
+import { ActionIcon } from '@lobehub/ui';
 import { theme } from 'antd';
 import { useAppTheme } from '@/components/providers/LobeProvider';
-import TypingIndicator from './TypingIndicator';
 import ContextPill from './ContextPill';
 import AgentMessageRenderer from './AgentMessageRenderer';
 import type { Message } from '@/stores/useChatStore';
 
 interface MessageListProps {
   messages: Message[];
-  loading: boolean;
+  streamingMessageId: string | null;
   onRegen: (msg: Message) => void;
-  onStop: () => void;
   onEdit: (msg: Message) => void;
 }
 
+interface ContextReference {
+  id: string;
+  title: string;
+  cover?: string;
+  sourceId?: string | number;
+}
+
+const MemoChatItem = memo(ChatItem, (previous, next) => (
+  previous.message === next.message
+  && previous.time === next.time
+  && previous.placement === next.placement
+  && previous.aboveMessage === next.aboveMessage
+));
+
 export default function MessageList({
   messages,
-  loading,
+  streamingMessageId,
   onRegen,
-  onStop,
   onEdit,
 }: MessageListProps) {
   const { isDarkMode } = useAppTheme();
@@ -41,15 +53,17 @@ export default function MessageList({
   return (
     <div className="max-w-3xl mx-auto space-y-4">
       {messages.map((msg: Message, idx: number) => {
-        const isLast = idx === messages.length - 1;
-        const isStreamingPlaceholder = msg.role === 'assistant' && !msg.content && !msg.processes?.length && loading && isLast;
-
-        if (isStreamingPlaceholder) {
-          return <TypingIndicator key={msg.id} />;
-        }
-
-        const isStreaming = loading && isLast && msg.role === 'assistant';
+        const contextItems = Array.isArray(msg.extra?.contextItems)
+          ? (msg.extra.contextItems as ContextReference[])
+          : [];
+        const isStreaming = msg.role === 'assistant' && msg.id === streamingMessageId;
         const showUserActions = msg.role === 'user';
+        const streamVersion = isStreaming
+          ? (msg.processes || []).map((process) => `${process.id}:${process.status}:${String(process.details || '').length}`).join('|')
+          : '';
+        const streamSignal = isStreaming
+          ? <span aria-hidden="true" style={{ display: 'none' }}>{streamVersion}</span>
+          : undefined;
 
         const handleCopy = () => {
           navigator.clipboard.writeText(msg.content);
@@ -79,9 +93,10 @@ export default function MessageList({
               </div>
             )}
 
-            <ChatItem
+            <MemoChatItem
               placement={msg.role === 'user' ? 'right' : 'left'}
               message={msg.content || ' '}
+              aboveMessage={streamSignal}
               renderMessage={(defaultMessageNode) => (
                 <AgentMessageRenderer
                   plan={msg.plan || ''}
@@ -89,53 +104,46 @@ export default function MessageList({
                   isStreaming={isStreaming}
                   hasContent={!!msg.content}
                   isDarkMode={isDarkMode}
+                  actions={
+                    <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                      {!isStreaming && msg.role === 'assistant' && msg.content && (
+                        <>
+                          <ActionIcon
+                            icon={RotateCcw}
+                            title="重新生成"
+                            size={14}
+                            onClick={() => onRegen(msg)}
+                            style={{ opacity: 0.5, cursor: 'pointer' }}
+                          />
+                          <ActionIcon
+                            icon={Copy}
+                            title="复制"
+                            size={14}
+                            onClick={handleCopy}
+                            style={{ opacity: 0.5, cursor: 'pointer' }}
+                          />
+                        </>
+                      )}
+                      {showUserActions && (
+                        <ActionIcon
+                          icon={Pencil}
+                          title="重新编辑"
+                          size={14}
+                          onClick={() => onEdit(msg)}
+                          style={{ opacity: 0.5, cursor: 'pointer' }}
+                        />
+                      )}
+                    </div>
+                  }
                 >
                   {msg.content && defaultMessageNode}
-
-                  <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-                    {isStreaming && (
-                      <ActionIcon
-                        icon={Square}
-                        title="停止生成"
-                        size={14}
-                        onClick={onStop}
-                        style={{ color: isDarkMode ? '#ef4444' : '#dc2626', cursor: 'pointer' }}
-                      />
-                    )}
-                    {!isStreaming && msg.role === 'assistant' && msg.content && (
-                      <>
-                        <ActionIcon
-                          icon={RotateCcw}
-                          title="重新生成"
-                          size={14}
-                          onClick={() => onRegen(msg)}
-                          style={{ opacity: 0.5, cursor: 'pointer' }}
-                        />
-                        <ActionIcon
-                          icon={Copy}
-                          title="复制"
-                          size={14}
-                          onClick={handleCopy}
-                          style={{ opacity: 0.5, cursor: 'pointer' }}
-                        />
-                      </>
-                    )}
-                    {showUserActions && (
-                      <ActionIcon
-                        icon={Pencil}
-                        title="重新编辑"
-                        size={14}
-                        onClick={() => onEdit(msg)}
-                        style={{ opacity: 0.5, cursor: 'pointer' }}
-                      />
-                    )}
-                  </div>
                 </AgentMessageRenderer>
               )}
-              time={msg.createdAt instanceof Date ? msg.createdAt.getTime() : Number(msg.createdAt)}
+              time={msg.createdAt instanceof Date ? msg.createdAt.getTime() : new Date(msg.createdAt).getTime()}
               avatar={{
                 title: msg.role === 'user' ? '用户' : 'OtakuNeko',
-                avatar: '/Icon.png',
+                // 文本头像不会进入 antd Image 路径，避免 React 19 兼容性警告。
+                avatar: msg.role === 'user' ? 'U' : 'O',
               }}
               avatarProps={{
                 size: 40,
@@ -147,9 +155,9 @@ export default function MessageList({
                 }
               }}
               messageExtra={
-                msg.role === 'user' && msg.extra?.contextItems?.length > 0 && (
+                msg.role === 'user' && contextItems.length > 0 && (
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
-                    {msg.extra.contextItems.map((ref: any) => (
+                    {contextItems.map((ref) => (
                       <ContextPill
                         key={ref.id}
                         item={ref}

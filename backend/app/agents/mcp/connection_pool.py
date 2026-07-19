@@ -1,6 +1,6 @@
 import asyncio
 import time
-from typing import Dict, List, Optional
+from typing import Dict
 from dataclasses import dataclass, field
 
 from app.agents.mcp.transport import MCPTransport

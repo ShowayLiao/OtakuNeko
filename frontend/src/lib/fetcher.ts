@@ -1,9 +1,22 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- SSE payloads are provider-defined JSON. */
 import { useApiStore } from '@/store/useApiStore';
 
 interface PromptConfig {
   persona: string;
   tone: string;
   rules: string;
+}
+
+interface DeepSeekOptions {
+  thinking: boolean;
+  reasoning_effort: 'high' | 'max';
+}
+
+type SSEData = Record<string, any>;
+
+interface ParsedSSEEvent {
+  type: string;
+  data: SSEData;
 }
 
 interface ChatWithBackendOptions {
@@ -17,8 +30,8 @@ interface ChatWithBackendOptions {
   onMessageChunk?: (chunk: string) => void;
   onMessageStart?: () => void;
   onMessageEnd?: () => void;
-  onToolCallStart?: (name: string, inputs: any) => void;
-  onToolCallEnd?: (name: string, output: any, durationMs?: number, status?: string) => void;
+  onToolCallStart?: (id: string, name: string, inputs: any) => void;
+  onToolCallEnd?: (id: string, name: string, output: any, durationMs?: number, status?: string) => void;
   onToolCallDelta?: (id: string, name: string, delta: string) => void;
   onPlanUpdate?: (plan: string) => void;
   onProgress?: (data: { tool_name: string; tool_count: number; duration_ms: number }) => void;
@@ -31,10 +44,10 @@ interface ChatWithBackendOptions {
 }
 
 // 解析 SSE 事件流
-const parseSSE = (text: string) => {
-  const events = [];
+const parseSSE = (text: string): ParsedSSEEvent[] => {
+  const events: ParsedSSEEvent[] = [];
   const lines = text.split('\n');
-  let event = { type: 'message', data: '' };
+  let event: { type: string; data: string } = { type: 'message', data: '' };
   
   for (const line of lines) {
     if (line.startsWith('event:')) {
@@ -44,11 +57,13 @@ const parseSSE = (text: string) => {
     } else if (line === '') {
       if (event.data) {
         try {
-          event.data = JSON.parse(event.data.trim());
+          const data = JSON.parse(event.data.trim());
+          if (typeof data === 'object' && data !== null) {
+            events.push({ type: event.type, data: data as SSEData });
+          }
         } catch (e) {
           // 忽略解析错误
         }
-        events.push({ ...event });
         event = { type: 'message', data: '' };
       }
     }
@@ -108,6 +123,12 @@ export const chatWithBackend = async ({
         temperature,
         prompt_config,
         thread_id,
+        deepseek_options: provider === 'deepseek'
+          ? {
+              thinking: config.thinking ?? true,
+              reasoning_effort: config.reasoningEffort ?? 'high',
+            } satisfies DeepSeekOptions
+          : undefined,
       }),
     });
 
@@ -124,6 +145,9 @@ export const chatWithBackend = async ({
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+    // Per-event logging is intentionally opt-in; console I/O can dominate
+    // the main thread while a model emits many small SSE frames.
+    const streamDebug = process.env.NEXT_PUBLIC_CHAT_STREAM_DEBUG === '1';
 
     const resetTimeout = () => {
       if (timeoutId) clearTimeout(timeoutId);
@@ -150,6 +174,15 @@ export const chatWithBackend = async ({
         const events = parseSSE(chunkToParse);
 
         for (const event of events) {
+          if (streamDebug) {
+            console.debug('[chat-stream] ' + JSON.stringify({
+              type: event.type,
+              sequence: event.data.stream_sequence,
+              serverElapsedMs: event.data.server_elapsed_ms,
+              receivedAtMs: Math.round(performance.now()),
+              contentLength: typeof event.data.content === 'string' ? event.data.content.length : 0,
+            }));
+          }
           switch (event.type) {
             case 'message_chunk':
               if (event.data.content && onMessageChunk) {
@@ -180,12 +213,13 @@ export const chatWithBackend = async ({
               break;
             case 'tool_call_start':
               if (event.data.name && onToolCallStart) {
-                onToolCallStart(event.data.name, event.data.inputs);
+                onToolCallStart(event.data.id || event.data.name, event.data.name, event.data.inputs);
               }
               break;
             case 'tool_call_end':
               if (event.data.name && onToolCallEnd) {
                 onToolCallEnd(
+                  event.data.id || event.data.name,
                   event.data.name,
                   event.data.output,
                   event.data.duration_ms,
@@ -214,12 +248,13 @@ export const chatWithBackend = async ({
               break;
             case 'tool_start':
               if (event.data.name && onToolCallStart) {
-                onToolCallStart(event.data.name, event.data.inputs);
+                onToolCallStart(event.data.id || event.data.name, event.data.name, event.data.inputs);
               }
               break;
             case 'tool_end':
               if (event.data.name && onToolCallEnd) {
                 onToolCallEnd(
+                  event.data.id || event.data.name,
                   event.data.name,
                   event.data.output,
                   event.data.duration_ms,
@@ -242,7 +277,8 @@ export const chatWithBackend = async ({
     }
   } catch (err: any) {
     if (err?.name === 'AbortError') {
-      if (onError) onError('生成已停止');
+      // A user-initiated stop is a normal terminal state. Keep any streamed
+      // content instead of replacing it with an error message.
     } else if (onError) {
       onError(err?.message || String(err));
     }

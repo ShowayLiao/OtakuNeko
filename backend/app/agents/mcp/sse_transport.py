@@ -1,6 +1,4 @@
-import json
-import logging
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List
 
 import httpx
 
@@ -23,6 +21,7 @@ class SSETransport(MCPTransport):
         self._client: httpx.AsyncClient = None
         self._request_id = 0
         self._connected = False
+        self._session_id: str | None = None
 
     async def connect(self) -> None:
         if self._connected:
@@ -30,12 +29,15 @@ class SSETransport(MCPTransport):
 
         logger.info("sse_connecting", extra={
             "server_name": self.server_name,
-            "url": self.url,
         })
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(CONNECT_TIMEOUT, read=CALL_TIMEOUT),
-            headers={"Content-Type": "application/json", **self.headers},
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+                **self.headers,
+            },
         )
 
         init_response = await self._send_request("initialize", {
@@ -48,6 +50,7 @@ class SSETransport(MCPTransport):
             await self.close()
             raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
 
+        await self._send_notification("notifications/initialized", {})
         self._connected = True
         logger.info("sse_connected", extra={
             "server_name": self.server_name,
@@ -56,6 +59,7 @@ class SSETransport(MCPTransport):
 
     async def close(self) -> None:
         self._connected = False
+        self._session_id = None
         if self._client:
             await self._client.aclose()
             self._client = None
@@ -84,10 +88,26 @@ class SSETransport(MCPTransport):
         }
 
         try:
-            resp = await self._client.post(self.url, json=request_payload)
+            headers = {"Mcp-Session-Id": self._session_id} if self._session_id else {}
+            resp = await self._client.post(self.url, json=request_payload, headers=headers)
             resp.raise_for_status()
+            session_id = resp.headers.get("Mcp-Session-Id")
+            if session_id:
+                self._session_id = session_id
             return resp.json()
         except httpx.TimeoutException:
             raise RuntimeError(f"MCP call '{method}' timed out after {CALL_TIMEOUT}s")
         except httpx.HTTPError as e:
             raise RuntimeError(f"MCP call '{method}' HTTP error: {e}")
+
+    async def _send_notification(self, method: str, params: dict) -> None:
+        headers = {"Mcp-Session-Id": self._session_id} if self._session_id else {}
+        try:
+            resp = await self._client.post(
+                self.url,
+                json={"jsonrpc": RPC_VERSION, "method": method, "params": params},
+                headers=headers,
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"MCP notification '{method}' HTTP error: {e}")

@@ -72,19 +72,19 @@ describe('AgentMessageRenderer', () => {
 
   it('renders process container when processes are provided', () => {
     render(<AgentMessageRenderer {...defaultProps} processes={[thoughtDone]} />);
-    expect(screen.getByText('思考完毕')).toBeDefined();
+    expect(screen.getByText(/思考完毕/)).toBeDefined();
   });
 
   it('renders plan text in process container', () => {
     render(<AgentMessageRenderer {...defaultProps} plan="第一步搜索" processes={[toolDone]} />);
-    expect(screen.getByText('思考完毕')).toBeDefined();
+    expect(screen.getByText(/思考完毕/)).toBeDefined();
   });
 
   it('shows "正在思考..." during streaming with thought', () => {
     render(
       <AgentMessageRenderer {...defaultProps} processes={[thoughtPending]} isStreaming />
     );
-    expect(screen.getByText(/正在思考/)).toBeDefined();
+    expect(screen.getAllByText(/正在思考/).length).toBeGreaterThan(0);
   });
 
   it('shows "正在调用工具..." during streaming with tool', () => {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- subject payloads vary by catalog provider. */
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Icon, toast } from '@lobehub/ui';
 import { Rss, ExternalLink, CheckCircle2, XCircle, Globe } from 'lucide-react';

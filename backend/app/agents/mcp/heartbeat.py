@@ -1,9 +1,8 @@
 import asyncio
 import time
-from typing import Dict, List
+from typing import Dict
 from dataclasses import dataclass, field
 
-from app.agents.mcp.transport import MCPTransport
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)

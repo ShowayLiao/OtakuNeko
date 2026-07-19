@@ -1,3 +1,4 @@
+import json
 import operator
 from typing import AsyncGenerator, Dict, Any, List, Optional, Annotated, TypedDict, TYPE_CHECKING
 from langchain_core.messages import BaseMessage, trim_messages, filter_messages
@@ -6,6 +7,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+from app.agents.deepseek_chat_model import DeepSeekChatOpenAI
 from app.agents.registry import ToolRegistry
 from app.agents.tools import ALL_TOOLS
 from app.core.logging import get_logger
@@ -15,6 +17,7 @@ if TYPE_CHECKING:
     from app.memory.manager import MemoryManager
 
 logger = get_logger(__name__)
+MAX_GRAPH_STEPS = 24
 
 
 class CodingAgentState(TypedDict):
@@ -54,19 +57,35 @@ class ChatWorkflow:
         if not registry:
             self.registry.register_all(ALL_TOOLS)
         self.checkpointer = None
+        self._db_connection = None
+        self._runtime_tools = None
         self.app = None
         self._speak_prompt: Optional[str] = None
         self._enable_interrupt = enable_interrupt
 
     def _get_tools(self):
-        return self.registry.get_all()
+        return self._runtime_tools or self.registry.get_all()
 
     async def _ensure_checkpointer(self):
         if self.checkpointer is None:
             import aiosqlite
             conn = await aiosqlite.connect(self._db_path)
+            self._db_connection = conn
             self.checkpointer = AsyncSqliteSaver(conn)
+            # Resolve local and MCP tools once per workflow instance so the
+            # graph, model binding and ToolNode share the same tool set.
+            self._runtime_tools = await self.registry.get_runtime_tools()
             self.app = self._compile_graph()
+
+    async def close(self) -> None:
+        """Release resources owned by this workflow instance."""
+        connection = self._db_connection
+        self._db_connection = None
+        self.checkpointer = None
+        self.app = None
+        self._runtime_tools = None
+        if connection is not None:
+            await connection.close()
 
     def _compile_graph(self):
         workflow = StateGraph(CodingAgentState)
@@ -143,9 +162,19 @@ class ChatWorkflow:
         })
 
         response = await self.llm_with_tools.ainvoke(messages)
+        additional_kwargs = getattr(response, "additional_kwargs", {}) or {}
+        reasoning_content = additional_kwargs.get("reasoning_content")
+        if isinstance(reasoning_content, str):
+            reasoning_trace = reasoning_content
+        elif isinstance(self.llm, DeepSeekChatOpenAI):
+            # DeepSeek's visible `content` is an answer/tool draft, not hidden
+            # reasoning. Never persist that draft as the reasoning trace.
+            reasoning_trace = ""
+        else:
+            reasoning_trace = response.content if hasattr(response, "content") else ""
         return {
             "messages": [response],
-            "reasoning_trace": response.content if hasattr(response, "content") else "",
+            "reasoning_trace": reasoning_trace,
         }
 
     async def _speak_node(self, state: CodingAgentState):
@@ -170,16 +199,35 @@ class ChatWorkflow:
         temperature: float,
         thread_id: str = "default",
         speak_prompt: Optional[str] = None,
+        deepseek_options: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         await self._ensure_checkpointer()
         self._speak_prompt = speak_prompt
-        self.llm = ChatOpenAI(
-            model=model,
-            api_key=self.api_key,
-            base_url=self.base_url,
-            temperature=temperature,
-            streaming=True
-        )
+        llm_kwargs: Dict[str, Any] = {
+            "model": model,
+            "api_key": self.api_key,
+            "base_url": self.base_url,
+            "streaming": True,
+            # Do not leave a browser request pending forever when the upstream
+            # provider accepts a connection but never starts streaming.
+            "timeout": 90,
+        }
+        is_deepseek = deepseek_options is not None or "api.deepseek.com" in self.base_url.lower()
+        thinking_enabled = bool(deepseek_options and deepseek_options.get("thinking", True))
+        if is_deepseek and deepseek_options:
+            effort = deepseek_options.get("reasoning_effort", "high")
+            llm_kwargs["extra_body"] = {
+                "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
+            }
+            if thinking_enabled:
+                llm_kwargs["reasoning_effort"] = effort if effort in {"high", "max"} else "high"
+            else:
+                llm_kwargs["temperature"] = temperature
+        else:
+            llm_kwargs["temperature"] = temperature
+
+        llm_class = DeepSeekChatOpenAI if is_deepseek else ChatOpenAI
+        self.llm = llm_class(**llm_kwargs)
         self.llm_with_tools = self.llm.bind_tools(self._get_tools())
 
         enriched_messages = list(messages)
@@ -191,16 +239,53 @@ class ChatWorkflow:
                 if ctx.summary:
                     enriched_messages.insert(0, {"role": "system", "content": ctx.summary})
 
-        config = {"configurable": {"thread_id": thread_id}}
+        # Bound think/tool cycles so a malformed tool response or provider
+        # loop cannot consume an unbounded request budget.
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": MAX_GRAPH_STEPS,
+        }
 
         tool_count: int = 0
         tool_start_times: Dict[str, float] = {}
-        _thinking_active: bool = False
+        active_tool_calls_by_index: Dict[int, Dict[str, Any]] = {}
+        pending_tool_calls: List[Dict[str, Any]] = []
+        tool_runtime_call_ids: Dict[str, str] = {}
+        deferred_tool_starts: Dict[str, Dict[str, Any]] = {}
+        # The API layer emits an immediate placeholder thinking_start before
+        # this workflow begins. Treat that placeholder as active so the first
+        # tool call or answer chunk closes it instead of leaving the UI spinner
+        # pending forever when the provider emits no visible reasoning tokens.
+        _thinking_active: bool = True
         _message_started: bool = False
         _last_reasoning: str = ""
 
         def _emit(event_type: str, **kwargs) -> Dict[str, Any]:
             return {"type": event_type, **kwargs}
+
+        def _parse_tool_args(raw_args: str):
+            try:
+                return json.loads(raw_args) if raw_args else {}
+            except (TypeError, json.JSONDecodeError):
+                return None
+
+        def _match_pending_tool_call(tool_name: str, inputs: Any):
+            candidates = [call for call in pending_tool_calls if call.get("name") == tool_name]
+            exact = [
+                call for call in candidates
+                if _parse_tool_args(call.get("args", "")) == inputs
+            ]
+            matched = exact[0] if len(exact) == 1 else (
+                candidates[0] if len(candidates) == 1 else None
+            )
+            if matched is not None:
+                pending_tool_calls.remove(matched)
+            return matched, bool(candidates)
+
+        # Keep the workflow usable outside the HTTP endpoint too. The API layer
+        # sends the same placeholder earlier to flush the response immediately;
+        # the frontend coalesces the duplicate start event.
+        yield _emit("thinking_start")
 
         try:
             async for event in self.app.astream_events({
@@ -219,19 +304,45 @@ class ChatWorkflow:
 
                     if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
                         for tc in chunk.tool_call_chunks:
+                            index = tc.get("index", 0)
+                            call = active_tool_calls_by_index.setdefault(index, {
+                                "id": None,
+                                "name": None,
+                                "args": "",
+                            })
+                            if tc.get("id"):
+                                call["id"] = tc["id"]
                             if tc.get("name"):
+                                call["name"] = tc["name"]
+                            call["args"] += tc.get("args", "")
+                            if call["id"] and call["name"]:
                                 yield _emit("tool_call_delta",
-                                            id=tc.get("id"), name=tc.get("name"),
+                                            id=call["id"], name=call["name"],
                                             delta=tc.get("args", ""))
-                        continue
 
-                    if not (hasattr(chunk, "content") and isinstance(chunk.content, str)
-                            and chunk.content):
-                        continue
+                    reasoning_delta = getattr(chunk, "reasoning_content", None)
+                    if not reasoning_delta:
+                        reasoning_delta = getattr(chunk, "additional_kwargs", {}).get(
+                            "reasoning_content"
+                        )
+                    if reasoning_delta and node_name in ("think", "speak"):
+                        if not _thinking_active:
+                            _thinking_active = True
+                            _last_reasoning = ""
+                            yield _emit("thinking_start")
+                        _last_reasoning += reasoning_delta
+                        yield _emit("thinking_chunk", content=reasoning_delta)
 
-                    delta = chunk.content
-
-                    if node_name == "think":
+                    if node_name == "think" and not is_deepseek:
+                        # Providers without a separate reasoning field expose
+                        # the internal think-node text as content. DeepSeek is
+                        # handled above via reasoning_content and must not send
+                        # its visible answer draft into the thinking stream.
+                        delta = (
+                            chunk.content if hasattr(chunk, "content") and isinstance(chunk.content, str) else ""
+                        )
+                        if not delta:
+                            continue
                         if not _thinking_active:
                             _thinking_active = True
                             _last_reasoning = ""
@@ -240,6 +351,10 @@ class ChatWorkflow:
                         yield _emit("thinking_chunk", content=delta)
 
                     elif node_name == "speak":
+                        if not (hasattr(chunk, "content") and isinstance(chunk.content, str)
+                                and chunk.content):
+                            continue
+                        delta = chunk.content
                         if _thinking_active:
                             _thinking_active = False
                             yield _emit("thinking_end")
@@ -250,14 +365,21 @@ class ChatWorkflow:
 
                 elif kind == "on_chat_model_end":
                     if node_name == "think":
+                        if active_tool_calls_by_index:
+                            pending_tool_calls.extend(active_tool_calls_by_index.values())
+                            active_tool_calls_by_index.clear()
                         if _thinking_active:
                             yield _emit("thinking_end")
                             _thinking_active = False
                         if _last_reasoning:
                             yield _emit("reasoning_trace", content=_last_reasoning)
-                    elif node_name == "speak" and _message_started:
-                        yield _emit("message_end")
-                        _message_started = False
+                    elif node_name == "speak":
+                        if _thinking_active:
+                            yield _emit("thinking_end")
+                            _thinking_active = False
+                        if _message_started:
+                            yield _emit("message_end")
+                            _message_started = False
 
                 elif kind == "on_tool_start":
                     if _thinking_active:
@@ -267,8 +389,21 @@ class ChatWorkflow:
                     tool_name = event["name"]
                     run_id = event["run_id"]
                     inputs = event["data"].get("input", {})
+                    matched_call, had_candidates = _match_pending_tool_call(tool_name, inputs)
+                    tool_call_id = matched_call.get("id") if matched_call else None
+                    tool_runtime_call_ids[run_id] = tool_call_id or ""
                     tool_start_times[run_id] = time.perf_counter()
-                    yield _emit("tool_call_start", name=tool_name, inputs=inputs)
+                    if tool_call_id:
+                        yield _emit("tool_call_start", id=tool_call_id, name=tool_name, inputs=inputs)
+                    elif had_candidates:
+                        # Identical concurrent calls cannot be distinguished from
+                        # on_tool_start alone. Wait for ToolMessage.tool_call_id.
+                        deferred_tool_starts[run_id] = {
+                            "name": tool_name,
+                            "inputs": inputs,
+                        }
+                    else:
+                        yield _emit("tool_call_start", id=run_id, name=tool_name, inputs=inputs)
 
                 elif kind == "on_tool_end":
                     tool_name = event["name"]
@@ -280,6 +415,31 @@ class ChatWorkflow:
                         ) * 1000
 
                     raw_output = event["data"].get("output")
+                    runtime_tool_call_id = tool_runtime_call_ids.pop(run_id, "")
+                    output_tool_call_id = getattr(raw_output, "tool_call_id", None)
+                    tool_call_id = (
+                        output_tool_call_id
+                        or runtime_tool_call_id
+                        or run_id
+                    )
+                    deferred_start = deferred_tool_starts.pop(run_id, None)
+                    if deferred_start:
+                        if output_tool_call_id:
+                            matched_pending = next(
+                                (
+                                    call for call in pending_tool_calls
+                                    if call.get("id") == output_tool_call_id
+                                ),
+                                None,
+                            )
+                            if matched_pending is not None:
+                                pending_tool_calls.remove(matched_pending)
+                        yield _emit(
+                            "tool_call_start",
+                            id=tool_call_id,
+                            name=deferred_start["name"],
+                            inputs=deferred_start["inputs"],
+                        )
                     tool_count += 1
 
                     if hasattr(raw_output, "content"):
@@ -297,7 +457,7 @@ class ChatWorkflow:
                         tool_status = "error"
 
                     yield _emit("tool_call_end",
-                                name=tool_name, output=output_data,
+                                id=tool_call_id, name=tool_name, output=output_data,
                                 status=tool_status,
                                 duration_ms=round(duration_ms, 2),
                                 tool_count=tool_count)

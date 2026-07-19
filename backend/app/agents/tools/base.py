@@ -25,7 +25,15 @@ def log_tool_call(tool_name: str):
             try:
                 result = await func(*args, **kwargs)
                 duration_ms = (time.perf_counter() - t0) * 1000
-                success = result.get("success", True) if isinstance(result, dict) else True
+                if isinstance(result, dict):
+                    success = result.get("success", True)
+                    result.setdefault("success", success)
+                    result.setdefault("tool_name", tool_name)
+                    result.setdefault("duration_ms", round(duration_ms, 2))
+                    if not success:
+                        result.setdefault("error_type", "internal")
+                else:
+                    success = True
                 logger.info("tool_called", extra={
                     "tool_name": tool_name,
                     "tool_args": str(kwargs)[:200],
@@ -41,6 +49,12 @@ def log_tool_call(tool_name: str):
                     "duration_ms": round(duration_ms, 2),
                     "error": str(e),
                 })
-                return {"error": str(e)}
+                return {
+                    "success": False,
+                    "error": str(e),
+                    "error_type": "internal",
+                    "tool_name": tool_name,
+                    "duration_ms": round(duration_ms, 2),
+                }
         return wrapper
     return decorator

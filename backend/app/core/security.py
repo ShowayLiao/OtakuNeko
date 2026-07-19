@@ -43,8 +43,6 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
-import logging
-
 def decode_access_token(token: str) -> Optional[dict]:
     """
     解码 JWT 访问令牌
@@ -56,13 +54,10 @@ def decode_access_token(token: str) -> Optional[dict]:
         解码后的数据字典，如果令牌无效则返回 None
     """
     try:
-        logging.debug(f"Attempting to decode token: {token[:20]}...")
-        logging.debug(f"SECRET_KEY: {SECRET_KEY}, type: {type(SECRET_KEY)}")
         payload = jwt.decode(token, str(SECRET_KEY), algorithms=[ALGORITHM])
-        logging.debug(f"Token decoded successfully: {payload}")
         return payload
-    except JWTError as e:
-        logging.error(f"JWT Error: {type(e).__name__}: {e}")
+    except JWTError:
+        # Keep auth failures observable without echoing token contents.
         return None
 
 
