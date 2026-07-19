@@ -12,7 +12,7 @@ from langgraph.store.memory import InMemoryStore
 from app.schemas.agent import ChatRequest
 from app.schemas.user import UserRead
 from app.agents.graph import ChatWorkflow
-from app.harness.adapter import ChatWorkflowAdapter
+from app.agents.langgraph_adapter import LangGraphAdapter
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 from app.memory.manager import MemoryManager
@@ -129,7 +129,7 @@ async def chat_endpoint(
             workflow = ChatWorkflow(
                 api_key=api_key, base_url=base_url, store=_store)
 
-            adapter = ChatWorkflowAdapter(workflow)
+            adapter = LangGraphAdapter(workflow)
             runtime = AgentRuntime(adapter)
 
             await workflow._ensure_checkpointer()
