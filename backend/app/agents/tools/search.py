@@ -1,6 +1,6 @@
 from typing import Optional
 from langchain_core.tools import tool
-from app.services.bangumi_client import search_subjects_advanced
+from app.capabilities.anime import AnimeCapability
 from app.agents.tools.base import log_tool_call
 
 
@@ -41,18 +41,7 @@ def _build_air_date_ranges(min_year, max_year, min_month, max_month, min_day, ma
     return ranges
 
 
-def _simplify_results(items):
-    return [{
-        "id": item.get("id"),
-        "name": item.get("name"),
-        "name_cn": item.get("name_cn"),
-        "summary": (item.get("summary", "") or "")[:200] + "..." if item.get("summary") else "",
-        "score": item.get("rating", {}).get("score", 0),
-        "rank": item.get("rating", {}).get("rank", 0),
-        "type": item.get("type"),
-        "air_date": item.get("air_date"),
-        "images": item.get("images", {}),
-    } for item in items]
+_anime_capability = AnimeCapability()
 
 
 @tool
@@ -102,28 +91,29 @@ async def search_anime_advanced(
 
         air_ranges = _build_air_date_ranges(min_year, max_year, min_month, max_month, min_day, max_day)
 
-        result = await search_subjects_advanced(
+        result = await _anime_capability.execute(
+            "search",
             keyword=keyword, subject_types=subject_types, tags=tag_list,
             rating_ranges=rating_ranges if rating_ranges else None,
             air_date_ranges=air_ranges if air_ranges else None,
             limit=limit, offset=0
         )
 
-        simplified = _simplify_results(result.get("data", []))
-
-        if result.get("total", 0) <= 3 and air_ranges:
-            fallback = await search_subjects_advanced(
+        if result.get("success") and result.get("total", 0) <= 3 and air_ranges:
+            fallback = await _anime_capability.execute(
+                "search",
                 keyword=keyword, subject_types=subject_types, tags=tag_list,
                 rating_ranges=rating_ranges if rating_ranges else None,
                 air_date_ranges=None, limit=limit, offset=0
             )
-            fallback_results = _simplify_results(fallback.get("data", []))
+            fallback_results = fallback.get("results", [])
             return {
-                "success": True, "total": fallback.get("total", 0), "limit": limit,
+                "success": fallback.get("success", False), "total": fallback.get("total", 0), "limit": limit,
                 "results": fallback_results,
                 "note": "Bangumi 中该时间段准确 air_date 条目较少，已展示相关结果"
             }
 
-        return {"success": True, "total": result.get("total", 0), "limit": limit, "results": simplified}
+        result["limit"] = limit
+        return result
     except Exception as e:
         return {"success": False, "error": f"高级搜索失败: {str(e)}"}

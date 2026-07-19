@@ -1,7 +1,9 @@
 from langchain_core.tools import tool
-from app.services.bangumi_service import fetch_subject_by_id, get_audience_feedback, get_staff_info, get_cast_info
-from app.schemas.bangumi import SubjectDetail
+from app.capabilities.anime import AnimeCapability
 from app.agents.tools.base import log_tool_call
+
+
+_anime_capability = AnimeCapability()
 
 
 @tool
@@ -13,11 +15,7 @@ async def get_anime_info(subject_id: int) -> dict:
 
     Use this tool to analyze the production quality or background of an anime.
     """
-    try:
-        result: SubjectDetail = await fetch_subject_by_id(subject_id)
-        return {"success": True, **result.model_dump(exclude_none=True)}
-    except Exception as e:
-        return {"success": False, "error": f"Failed to fetch anime info: {str(e)}"}
+    return await _anime_capability.execute("get_detail", subject_id=subject_id)
 
 
 @tool
@@ -29,11 +27,7 @@ async def fetch_audience_reviews(subject_id: int) -> dict:
 
     Use this tool to analyze the audience feedback and口碑 of an anime.
     """
-    try:
-        result = await get_audience_feedback(subject_id)
-        return {"success": True, **result.model_dump(exclude_none=True)}
-    except Exception as e:
-        return {"success": False, "error": f"Failed to fetch audience reviews: {str(e)}"}
+    return await _anime_capability.execute("get_reviews", subject_id=subject_id)
 
 
 @tool
@@ -45,11 +39,7 @@ async def get_anime_staff(subject_id: int) -> dict:
 
     Use this tool to analyze the production team behind an anime.
     """
-    try:
-        result = await get_staff_info(subject_id)
-        return {"success": True, "staff": [staff.model_dump() for staff in result]}
-    except Exception as e:
-        return {"success": False, "error": f"Failed to fetch anime staff: {str(e)}"}
+    return await _anime_capability.execute("get_staff", subject_id=subject_id)
 
 
 @tool
@@ -61,8 +51,4 @@ async def get_anime_cast(subject_id: int) -> dict:
 
     Use this tool to analyze the voice cast of an anime.
     """
-    try:
-        result = await get_cast_info(subject_id)
-        return {"success": True, "cast": [cast.model_dump() for cast in result]}
-    except Exception as e:
-        return {"success": False, "error": f"Failed to fetch anime cast: {str(e)}"}
+    return await _anime_capability.execute("get_cast", subject_id=subject_id)

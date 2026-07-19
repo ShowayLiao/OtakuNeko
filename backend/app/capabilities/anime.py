@@ -1,0 +1,107 @@
+"""Anime capability — wraps existing anime service functions.
+
+Delegates to the same service layer that the current tools use.
+Existing tools and services are NOT modified.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.capabilities.base import BaseCapability
+from app.services.bangumi_service import (
+    fetch_subject_by_id,
+    get_audience_feedback,
+    get_staff_info,
+    get_cast_info,
+)
+from app.services.bangumi_client import search_subjects_advanced
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+_SEARCH_RESULT_SUMMARY_LENGTH = 200
+
+
+def _simplify_search_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": item.get("id"),
+            "name": item.get("name"),
+            "name_cn": item.get("name_cn"),
+            "summary": (item.get("summary", "") or "")[:_SEARCH_RESULT_SUMMARY_LENGTH] + "..."
+            if item.get("summary")
+            else "",
+            "score": item.get("rating", {}).get("score", 0),
+            "rank": item.get("rating", {}).get("rank", 0),
+            "type": item.get("type"),
+            "air_date": item.get("air_date"),
+            "images": item.get("images", {}),
+        }
+        for item in items
+    ]
+
+
+class AnimeCapability(BaseCapability):
+    """Provides anime information via the existing Bangumi service layer."""
+
+    @property
+    def name(self) -> str:
+        return "anime"
+
+    @property
+    def description(self) -> str:
+        return "Search anime, get details, staff, cast, and audience reviews via Bangumi"
+
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
+        """Dispatch to the appropriate internal action handler."""
+        handlers = {
+            "search": self._search,
+            "get_detail": self._get_detail,
+            "get_staff": self._get_staff,
+            "get_cast": self._get_cast,
+            "get_reviews": self._get_reviews,
+        }
+        handler = handlers.get(action)
+        if handler is None:
+            return {"success": False, "error": f"Unknown action: {action}"}
+        try:
+            return await handler(**kwargs)
+        except Exception as exc:
+            logger.error("anime_capability_failed", extra={"action": action, "error": str(exc)})
+            return {"success": False, "error": str(exc)}
+
+    # -- action handlers -------------------------------------------------------
+
+    async def _search(self, **kwargs: Any) -> dict[str, Any]:
+        result = await search_subjects_advanced(
+            keyword=kwargs.get("keyword", ""),
+            subject_types=kwargs.get("subject_types") or [2],
+            tags=kwargs.get("tags"),
+            rating_ranges=kwargs.get("rating_ranges"),
+            air_date_ranges=kwargs.get("air_date_ranges"),
+            limit=kwargs.get("limit", 10),
+            offset=kwargs.get("offset", 0),
+        )
+        simplified = _simplify_search_results(result.get("data", []))
+        return {"success": True, "total": result.get("total", 0), "results": simplified}
+
+    async def _get_detail(self, **kwargs: Any) -> dict[str, Any]:
+        subject_id = kwargs["subject_id"]
+        result = await fetch_subject_by_id(subject_id)
+        return {"success": True, **result.model_dump(exclude_none=True)}
+
+    async def _get_staff(self, **kwargs: Any) -> dict[str, Any]:
+        subject_id = kwargs["subject_id"]
+        result = await get_staff_info(subject_id)
+        return {"success": True, "staff": [s.model_dump() for s in result]}
+
+    async def _get_cast(self, **kwargs: Any) -> dict[str, Any]:
+        subject_id = kwargs["subject_id"]
+        result = await get_cast_info(subject_id)
+        return {"success": True, "cast": [c.model_dump() for c in result]}
+
+    async def _get_reviews(self, **kwargs: Any) -> dict[str, Any]:
+        subject_id = kwargs["subject_id"]
+        result = await get_audience_feedback(subject_id)
+        return {"success": True, **result.model_dump(exclude_none=True)}
