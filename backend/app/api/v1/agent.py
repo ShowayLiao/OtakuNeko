@@ -12,6 +12,9 @@ from langgraph.store.memory import InMemoryStore
 from app.schemas.agent import ChatRequest
 from app.schemas.user import UserRead
 from app.agents.graph import ChatWorkflow
+from app.harness.adapter import ChatWorkflowAdapter
+from app.harness.runtime import AgentRuntime
+from app.harness.task import AgentTask
 from app.memory.manager import MemoryManager
 from app.api.deps import get_current_user, get_optional_user
 from app.agents.thread_scope import (
@@ -126,6 +129,9 @@ async def chat_endpoint(
             workflow = ChatWorkflow(
                 api_key=api_key, base_url=base_url, store=_store)
 
+            adapter = ChatWorkflowAdapter(workflow)
+            runtime = AgentRuntime(adapter)
+
             await workflow._ensure_checkpointer()
             checkpointer = workflow.checkpointer
 
@@ -133,7 +139,22 @@ async def chat_endpoint(
             memory.checkpointer = checkpointer
             workflow.memory = memory
 
-            async for chunk_data in workflow.stream_chat(
+            goal = next(
+                (
+                    message.get("content", "")
+                    for message in reversed(formatted_messages)
+                    if message.get("role") == "user"
+                ),
+                "",
+            )
+            task = AgentTask(
+                user_id=user.id if user is not None else 0,
+                goal=goal,
+                metadata={"thread_id": thread_scope.internal_id},
+            )
+
+            async for chunk_data in runtime.stream(
+                task,
                 model=request.model,
                 messages=formatted_messages,
                 temperature=request.temperature,

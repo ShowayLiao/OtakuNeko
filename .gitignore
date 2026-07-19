@@ -74,6 +74,7 @@ data/
 .trae/
 .vscode/
 .idea/
+.claude/settings.local.json
 *.suo
 *.ntvs*
 *.njsproj
