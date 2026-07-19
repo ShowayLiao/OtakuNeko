@@ -107,6 +107,30 @@ export default function SessionPanel({
                 </div>
               </div>
               <div style={{ flexShrink: 0, marginLeft: 4 }}>
+                <button
+                  type="button"
+                  aria-label="删除会话"
+                  title="删除会话"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onDeleteSession(session.id);
+                  }}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: 24,
+                    height: 24,
+                    padding: 0,
+                    border: 0,
+                    borderRadius: 6,
+                    background: 'transparent',
+                    color: isDarkMode ? '#ef4444' : '#dc2626',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <Trash2 size={16} aria-hidden="true" />
+                </button>
                 <ActionIcon
                   icon={Trash2}
                   title="删除会话"
@@ -115,7 +139,7 @@ export default function SessionPanel({
                     e.stopPropagation();
                     onDeleteSession(session.id);
                   }}
-                  style={{ color: isDarkMode ? '#ef4444' : '#dc2626', cursor: 'pointer' }}
+                  style={{ display: 'none', color: isDarkMode ? '#ef4444' : '#dc2626', cursor: 'pointer' }}
                 />
               </div>
             </div>
