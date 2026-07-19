@@ -22,14 +22,13 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
-from fastapi_cache.decorator import cache
 from fastapi_cache import FastAPICache
 
 router = APIRouter(prefix="/collections", tags=["Collections"])
 
 
-@router.get("/", response_model=UnifiedList)
-@cache(expire=60)
+@router.get("", response_model=UnifiedList)
+@router.get("/", response_model=UnifiedList, include_in_schema=False)
 async def get_user_collect(
     current_user = Depends(get_current_user),
     subject_type: Optional[int] = Query(None, description="条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)"),
@@ -497,5 +496,3 @@ async def sync_manual(
         raise HTTPException(status_code=400, detail=f"Data validation failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Manual sync failed: {str(e)}")
-
-
