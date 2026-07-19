@@ -75,7 +75,10 @@ export const collectionService = {
     if (data.sort_by) params.append('sort_by', data.sort_by);
 
     const queryString = params.toString();
-    const endpoint = `/collections${queryString ? `?${queryString}` : ''}`;
+    // The backend route is declared with a trailing slash. Calling the
+    // canonical URL avoids a 307 redirect through the Next.js rewrite, which
+    // can otherwise drop the Authorization header.
+    const endpoint = `/collections/${queryString ? `?${queryString}` : ''}`;
 
     return request<CollectionListResponse>(endpoint, {
       method: 'GET',

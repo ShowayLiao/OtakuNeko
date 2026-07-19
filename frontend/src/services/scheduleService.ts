@@ -37,7 +37,7 @@ export const getCollections = async (params?: {
     if (params?.keyword !== undefined) urlParams.append('keyword', params.keyword);
 
     const queryString = urlParams.toString();
-    const endpoint = `/collections${queryString ? `?${queryString}` : ''}`;
+    const endpoint = `/collections/${queryString ? `?${queryString}` : ''}`;
     
     // 调用后端 API 获取收藏数据
     const response = await request<CollectionResponse>(endpoint, {
