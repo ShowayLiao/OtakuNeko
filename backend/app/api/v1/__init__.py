@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from . import subjects, collections, dashboard, users, auth, bangumi, agent, rss
+from . import subjects, collections, dashboard, users, auth, bangumi, agent, rss, trace
 from .endpoints import schedules
 
 api_router = APIRouter(prefix="/v1")
@@ -13,3 +13,4 @@ api_router.include_router(bangumi.router, tags=["Bangumi"])
 api_router.include_router(agent.router, tags=["Agent"])
 api_router.include_router(rss.router, tags=["RSS"])
 api_router.include_router(schedules.router, tags=["Schedules"])
+api_router.include_router(trace.router, tags=["Trace"])

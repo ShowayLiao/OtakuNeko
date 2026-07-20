@@ -15,7 +15,10 @@ from app.agents.graph import ChatWorkflow
 from app.agents.langgraph_adapter import LangGraphAdapter
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
-from app.memory.manager import MemoryManager
+from app.memory.manager import MemoryManager  # kept for backward compat
+from app.memory.service import MemoryServiceImpl
+from app.memory.repository import StoreMemoryRepository
+from app.memory.extractor import LLMFactExtractor
 from app.api.deps import get_current_user, get_optional_user
 from app.agents.thread_scope import (
     make_anonymous_thread,
@@ -29,23 +32,34 @@ from app.agents.provider_endpoint import (
 )
 from app.core.config import settings
 
+from app.trace.store import InMemoryTraceStore
+import app.api.v1.trace as trace_module
+
 router = APIRouter()
 
 _store = InMemoryStore()
-_memory_managers: OrderedDict[tuple[str, str], MemoryManager] = OrderedDict()
+_trace_store = InMemoryTraceStore(max_traces=500)
+trace_module.init_trace_store(_trace_store)
+_memory_services: OrderedDict[tuple[str, str], MemoryServiceImpl] = OrderedDict()
 _MAX_MEMORY_MANAGERS = 32
 
 
-def _get_or_create_memory(api_key: str, base_url: str) -> MemoryManager:
+def _get_or_create_memory(api_key: str, base_url: str) -> MemoryServiceImpl:
     key = (api_key, base_url)
-    manager = _memory_managers.pop(key, None)
-    if manager is None:
-        manager = MemoryManager(
-            api_key=api_key, base_url=base_url, store=_store)
-    _memory_managers[key] = manager
-    while len(_memory_managers) > _MAX_MEMORY_MANAGERS:
-        _memory_managers.popitem(last=False)
-    return manager
+    service = _memory_services.pop(key, None)
+    if service is None:
+        repository = StoreMemoryRepository(_store)
+        extractor = LLMFactExtractor(api_key=api_key, base_url=base_url)
+        service = MemoryServiceImpl(
+            repository=repository,
+            extractor=extractor,
+            api_key=api_key,
+            base_url=base_url,
+        )
+    _memory_services[key] = service
+    while len(_memory_services) > _MAX_MEMORY_MANAGERS:
+        _memory_services.popitem(last=False)
+    return service
 
 
 def format_sse(event: str, data: dict) -> str:
@@ -130,7 +144,7 @@ async def chat_endpoint(
                 api_key=api_key, base_url=base_url, store=_store)
 
             adapter = LangGraphAdapter(workflow)
-            runtime = AgentRuntime(adapter)
+            runtime = AgentRuntime(adapter, trace_store=_trace_store)
 
             await workflow._ensure_checkpointer()
             checkpointer = workflow.checkpointer
