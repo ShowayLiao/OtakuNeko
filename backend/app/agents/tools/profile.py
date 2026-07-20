@@ -1,7 +1,9 @@
 from typing import List, Dict, Any
 from langchain_core.tools import tool
-from app.services.user_profile_service import generate_user_profile
+from app.capabilities.recommendation import RecommendationCapability
 from app.agents.tools.base import log_tool_call
+
+_recommendation_capability = RecommendationCapability()
 
 
 @tool
@@ -37,12 +39,20 @@ async def generate_user_profile_tool(collections: List[Dict[str, Any]]) -> dict:
         包含三部分数据的用户画像字典
     """
     try:
-        profile = generate_user_profile(collections)
-        return {
-            "success": True,
-            "profile": profile,
-            "summary": f"成功生成用户画像，分析了{profile.get('llm_summary', {}).get('total_rated', 0)}个有效评分"
-        }
+        result = await _recommendation_capability.execute(
+            "generate_profile", collections=collections
+        )
+        if result.get("success"):
+            profile = result.get("profile", {})
+            return {
+                "success": True,
+                "profile": profile,
+                "summary": (
+                    f"成功生成用户画像，分析了"
+                    f"{profile.get('llm_summary', {}).get('total_rated', 0)}个有效评分"
+                ),
+            }
+        return result
     except Exception as e:
         return {
             "success": False,
@@ -50,6 +60,6 @@ async def generate_user_profile_tool(collections: List[Dict[str, Any]]) -> dict:
             "profile": {
                 "llm_summary": {"total_rated": 0, "taste_dictionary": {}, "error": str(e)},
                 "chart_data": {"radar": [], "bar_count": [], "bar_score": []},
-                "watched_ids": []
-            }
+                "watched_ids": [],
+            },
         }

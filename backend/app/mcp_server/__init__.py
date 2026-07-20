@@ -6,6 +6,9 @@ can consume through JSON-RPC over stdio.
 
 Uses the same protocol version (2024-11-05) as the existing MCP client
 code in ``app/agents/mcp/``.
+
+Tool schemas are derived from capability action descriptors rather than
+hard-coded lists, so new capabilities are automatically exposed.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from typing import Any
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.types import ActionDescriptor
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -26,103 +30,58 @@ PROTOCOL_VERSION = "2024-11-05"
 CLIENT_INFO = {"name": "OtakuNeko-MCP-Server", "version": "0.1.0"}
 
 
-def _build_tool_schema(cap: BaseCapability, action: str) -> dict[str, Any]:
-    """Generate an MCP tool definition for a capability action."""
-    action_map: dict[str, dict[str, Any]] = {
-        "search": {
-            "description": "Search anime by keyword, tags, rating, or air date.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "keyword": {"type": "string", "description": "Search keyword"},
-                    "subject_types": {
-                        "type": "array",
-                        "items": {"type": "integer"},
-                        "description": "Subject type filter (2=anime, 3=music, etc.)",
-                    },
-                    "tags": {"type": "array", "items": {"type": "string"}, "description": "Tag filters"},
-                    "limit": {"type": "integer", "description": "Max results (default 10)"},
-                },
-                "required": ["keyword"],
-            },
-        },
-        "get_detail": {
-            "description": "Get detailed information about a specific anime subject.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "subject_id": {"type": "integer", "description": "Bangumi subject ID"},
-                },
-                "required": ["subject_id"],
-            },
-        },
-        "get_staff": {
-            "description": "Get production staff information for an anime.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "subject_id": {"type": "integer", "description": "Bangumi subject ID"},
-                },
-                "required": ["subject_id"],
-            },
-        },
-        "get_cast": {
-            "description": "Get voice actor / cast information for an anime.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "subject_id": {"type": "integer", "description": "Bangumi subject ID"},
-                },
-                "required": ["subject_id"],
-            },
-        },
-        "get_reviews": {
-            "description": "Get audience reviews and feedback for an anime.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "subject_id": {"type": "integer", "description": "Bangumi subject ID"},
-                },
-                "required": ["subject_id"],
-            },
-        },
+def _build_tool_from_descriptor(descriptor: ActionDescriptor, capability_name: str) -> dict[str, Any]:
+    """Build an MCP tool definition from a capability action descriptor."""
+    return {
+        "name": f"{capability_name}_{descriptor.name}",
+        "description": descriptor.description,
+        "inputSchema": descriptor.input_schema,
     }
 
-    base = action_map.get(action, {})
-    return {
-        "name": f"{cap.name}_{action}",
-        "description": base.get("description", f"{cap.name} {action}"),
-        "inputSchema": base.get("inputSchema", {
-            "type": "object",
-            "properties": {},
-        }),
-    }
+
+def _build_tool_schema(cap: BaseCapability, action: str) -> dict[str, Any]:
+    """Backward-compatible wrapper around action-descriptor-based schema building.
+
+    Deprecated: prefer ``_build_tool_from_descriptor`` with a real
+    ``ActionDescriptor`` obtained from ``cap.actions()``.
+    """
+    descriptor = cap._find_action(action)
+    if descriptor is None:
+        return {
+            "name": f"{cap.name}_{action}",
+            "description": f"{cap.name} {action}",
+            "inputSchema": {"type": "object", "properties": {}},
+        }
+    return _build_tool_from_descriptor(descriptor, cap.name)
 
 
 class MCPServer:
-    """JSON-RPC server that wraps a CapabilityRegistry as MCP tools."""
+    """JSON-RPC server that wraps a CapabilityRegistry as MCP tools.
+
+    Tool definitions and routing are derived from each capability's
+    ``actions()`` descriptors, so registering a new capability
+    automatically exposes it over MCP.
+    """
 
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
 
     def list_tools(self) -> list[dict[str, Any]]:
-        """Return MCP tool definitions for all registered capabilities."""
+        """Return MCP tool definitions for all registered capability actions."""
         tools: list[dict[str, Any]] = []
         for name in self._registry.list_names():
             cap = self._registry.get(name)
-            # Introspect the capability's known actions and build schemas
-            known_actions = ["search", "get_detail", "get_staff", "get_cast", "get_reviews"]
-            for action in known_actions:
-                tools.append(_build_tool_schema(cap, action))
+            for action in cap.actions():
+                tools.append(_build_tool_from_descriptor(action, cap.name))
         return tools
 
     async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         """Execute a tool call by routing to the correct capability action."""
         for name in self._registry.list_names():
             cap = self._registry.get(name)
-            for action in ["search", "get_detail", "get_staff", "get_cast", "get_reviews"]:
-                if tool_name == f"{name}_{action}":
-                    return await cap.execute(action, **arguments)
+            for action in cap.actions():
+                if tool_name == f"{name}_{action.name}":
+                    return await cap.execute(action.name, **arguments)
         return {"success": False, "error": f"Unknown tool: {tool_name}"}
 
     async def handle_request(self, request: dict[str, Any]) -> dict[str, Any]:

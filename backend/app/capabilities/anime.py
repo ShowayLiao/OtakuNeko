@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.capabilities.base import BaseCapability
+from app.capabilities.types import ActionDescriptor
 from app.services.bangumi_service import (
     fetch_subject_by_id,
     get_audience_feedback,
@@ -52,6 +53,54 @@ class AnimeCapability(BaseCapability):
     @property
     def description(self) -> str:
         return "Search anime, get details, staff, cast, and audience reviews via Bangumi"
+
+    def actions(self) -> list[ActionDescriptor]:
+        subject_id_schema: dict[str, Any] = {
+            "type": "object",
+            "properties": {
+                "subject_id": {"type": "integer", "description": "Bangumi subject ID"},
+            },
+            "required": ["subject_id"],
+        }
+        return [
+            ActionDescriptor(
+                name="search",
+                description="Search anime by keyword, tags, rating, or air date",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {"type": "string", "description": "Search keyword"},
+                        "subject_types": {
+                            "type": "array", "items": {"type": "integer"},
+                            "description": "Subject type filter (2=anime)",
+                        },
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "limit": {"type": "integer", "description": "Max results (default 10)"},
+                    },
+                    "required": ["keyword"],
+                },
+            ),
+            ActionDescriptor(
+                name="get_detail",
+                description="Get detailed information about a specific anime subject",
+                input_schema=subject_id_schema,
+            ),
+            ActionDescriptor(
+                name="get_staff",
+                description="Get production staff information for an anime",
+                input_schema=subject_id_schema,
+            ),
+            ActionDescriptor(
+                name="get_cast",
+                description="Get voice actor / cast information for an anime",
+                input_schema=subject_id_schema,
+            ),
+            ActionDescriptor(
+                name="get_reviews",
+                description="Get audience reviews and feedback for an anime",
+                input_schema=subject_id_schema,
+            ),
+        ]
 
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         """Dispatch to the appropriate internal action handler."""

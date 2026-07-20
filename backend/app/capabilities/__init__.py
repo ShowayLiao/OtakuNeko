@@ -7,6 +7,19 @@ capabilities rather than directly on tools or services.
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.anime import AnimeCapability
+from app.capabilities.recommendation import RecommendationCapability
+from app.capabilities.schedule import ScheduleCapability
+from app.capabilities.media import MediaCapability
 from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.types import ActionDescriptor, CapabilityResult
 
-__all__ = ["BaseCapability", "AnimeCapability", "CapabilityRegistry"]
+__all__ = [
+    "BaseCapability",
+    "AnimeCapability",
+    "RecommendationCapability",
+    "ScheduleCapability",
+    "MediaCapability",
+    "CapabilityRegistry",
+    "ActionDescriptor",
+    "CapabilityResult",
+]

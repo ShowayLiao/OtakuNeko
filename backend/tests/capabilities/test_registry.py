@@ -2,6 +2,7 @@ import pytest
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.types import ActionDescriptor
 
 
 class StubCapability(BaseCapability):
@@ -12,6 +13,15 @@ class StubCapability(BaseCapability):
     @property
     def description(self) -> str:
         return "stub capability"
+
+    def actions(self) -> list[ActionDescriptor]:
+        return [
+            ActionDescriptor(
+                name="do_stuff",
+                description="Stub action",
+                input_schema={"type": "object", "properties": {}},
+            )
+        ]
 
     async def execute(self, action: str, **kwargs):
         return {"action": action, **kwargs}
