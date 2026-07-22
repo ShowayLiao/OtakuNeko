@@ -112,6 +112,34 @@ class TestMCPServer:
         assert inner["success"] is False
 
     @pytest.mark.asyncio
+    async def test_handle_tools_call_routes_known_action(self, monkeypatch):
+        capability = AnimeCapability()
+        registry = CapabilityRegistry()
+        registry.register(capability)
+        server = MCPServer(registry)
+
+        async def execute(action_name, **arguments):
+            assert action_name == "search"
+            assert arguments == {"keyword": "Frieren"}
+            return {"success": True, "data": {"items": []}}
+
+        monkeypatch.setattr(capability, "execute", execute)
+
+        resp = await server.handle_request({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {
+                "name": "anime_search",
+                "arguments": {"keyword": "Frieren"},
+            },
+        })
+
+        content = resp["result"]["content"][0]["text"]
+        assert json.loads(content) == {
+            "success": True,
+            "data": {"items": []},
+        }
+
+    @pytest.mark.asyncio
     async def test_handle_notifications_initialized(self):
         server = self._make_server()
         resp = await server.handle_request({

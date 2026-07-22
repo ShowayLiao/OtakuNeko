@@ -1,4 +1,4 @@
-# MCP-002 Step 01 Capability-Driven Discovery
+# MCP-002 Step 01 Approved Capability Discovery
 
 ## Files
 
@@ -8,12 +8,14 @@
 
 ## Requirements
 
-Generate MCP names, descriptions, and input schemas from registered capability
-metadata. Validate schemas at server startup and reject duplicate public names.
-Only actions explicitly marked MCP-exposed are listed.
+Build on MCP-001's descriptor-driven Anime mapping by applying an explicit MCP
+exposure filter across registered capabilities. Validate public schemas at
+server startup and reject duplicate public names. Only actions explicitly
+marked MCP-exposed are listed.
 
 ## Acceptance
 
-- No domain-specific action list remains in MCPServer.
+- No domain-specific action list or implicit expose-all policy remains in
+  MCPServer.
 - Anime tool names and schemas remain compatible.
 - Unsupported schemas fail startup with an actionable message.

@@ -2,8 +2,9 @@
 
 ## Goal
 
-Generalize the Anime MCP pilot so MCP tools are derived from capability action
-metadata and expose approved schedule and media operations safely.
+Generalize the Anime MCP pilot by adding an explicit public-exposure policy and
+startup validation to descriptor-derived tools, then expose approved schedule
+and media operations safely.
 
 ## Dependencies
 
@@ -13,7 +14,8 @@ metadata and expose approved schedule and media operations safely.
 
 ## Scope
 
-- Replace hard-coded Anime action lists with registry discovery.
+- Filter descriptor-driven registry discovery through explicit MCP exposure
+  metadata, schema validation, and duplicate public-name checks.
 - Expose selected ScheduleCapability and MediaCapability actions.
 - Add authentication context and side-effect policy.
 - Harden stdio protocol behavior and document client configuration.
@@ -27,7 +29,7 @@ metadata and expose approved schedule and media operations safely.
 
 ## Execution Order
 
-1. Generate tool schemas from action descriptors.
+1. Validate and filter descriptor-derived schemas for public MCP exposure.
 2. Add authenticated invocation context and policy.
 3. Map schedule and media actions.
 4. Harden transport lifecycle and errors.
@@ -36,6 +38,8 @@ metadata and expose approved schedule and media operations safely.
 ## Definition of Done
 
 - Adding a registered action requires no MCPServer hard-coded action edit.
+- Unapproved actions remain hidden, while invalid or duplicate public schemas
+  fail startup with an actionable error.
 - Side-effecting calls require authorization and explicit policy approval.
 - Protocol errors follow JSON-RPC/MCP semantics.
 - Existing Anime MCP clients remain compatible.
