@@ -8,6 +8,8 @@ import pytest
 from app.capabilities.anime import AnimeCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.mcp_server import MCPServer, _build_tool_schema
+from app.capabilities.recommendation import RecommendationCapability
+from app.capabilities.schedule import ScheduleCapability
 
 
 class TestMCPToolSchema:
@@ -116,3 +118,27 @@ class TestMCPServer:
             "jsonrpc": "2.0", "id": 4, "method": "notifications/initialized",
         })
         assert resp["result"] == {}
+
+    @pytest.mark.asyncio
+    async def test_protected_actions_require_mcp_auth_context(self):
+        registry = CapabilityRegistry()
+        registry.register(RecommendationCapability())
+        server = MCPServer(registry)
+
+        result = await server.call_tool(
+            "recommendation_generate_profile", {"collections": []}
+        )
+
+        assert result["success"] is False
+        assert result["error_type"] == "unauthorized"
+
+    @pytest.mark.asyncio
+    async def test_side_effecting_actions_require_mcp_policy_context(self):
+        registry = CapabilityRegistry()
+        registry.register(ScheduleCapability())
+        server = MCPServer(registry)
+
+        result = await server.call_tool("schedule_create_schedule", {})
+
+        assert result["success"] is False
+        assert result["error_type"] == "policy_denied"

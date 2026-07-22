@@ -81,6 +81,18 @@ class MCPServer:
             cap = self._registry.get(name)
             for action in cap.actions():
                 if tool_name == f"{name}_{action.name}":
+                    if action.is_side_effect:
+                        return {
+                            "success": False,
+                            "error": "Side-effect policy approval is required",
+                            "error_type": "policy_denied",
+                        }
+                    if action.requires_auth:
+                        return {
+                            "success": False,
+                            "error": "Authentication context is required",
+                            "error_type": "unauthorized",
+                        }
                     return await cap.execute(action.name, **arguments)
         return {"success": False, "error": f"Unknown tool: {tool_name}"}
 

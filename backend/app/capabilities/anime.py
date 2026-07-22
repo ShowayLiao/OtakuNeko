@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.capabilities.base import BaseCapability
-from app.capabilities.types import ActionDescriptor
+from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.services.bangumi_service import (
     fetch_subject_by_id,
     get_audience_feedback,
@@ -113,12 +113,14 @@ class AnimeCapability(BaseCapability):
         }
         handler = handlers.get(action)
         if handler is None:
-            return {"success": False, "error": f"Unknown action: {action}"}
+            return CapabilityResult.fail(
+                f"Unknown action: {action}", error_type="invalid_action"
+            ).to_dict()
         try:
             return await handler(**kwargs)
         except Exception as exc:
             logger.error("anime_capability_failed", extra={"action": action, "error": str(exc)})
-            return {"success": False, "error": str(exc)}
+            return CapabilityResult.fail(str(exc), error_type="internal").to_dict()
 
     # -- action handlers -------------------------------------------------------
 
@@ -133,24 +135,24 @@ class AnimeCapability(BaseCapability):
             offset=kwargs.get("offset", 0),
         )
         simplified = _simplify_search_results(result.get("data", []))
-        return {"success": True, "total": result.get("total", 0), "results": simplified}
+        return CapabilityResult.ok(total=result.get("total", 0), results=simplified).to_dict()
 
     async def _get_detail(self, **kwargs: Any) -> dict[str, Any]:
         subject_id = kwargs["subject_id"]
         result = await fetch_subject_by_id(subject_id)
-        return {"success": True, **result.model_dump(exclude_none=True)}
+        return CapabilityResult.ok(**result.model_dump(exclude_none=True)).to_dict()
 
     async def _get_staff(self, **kwargs: Any) -> dict[str, Any]:
         subject_id = kwargs["subject_id"]
         result = await get_staff_info(subject_id)
-        return {"success": True, "staff": [s.model_dump() for s in result]}
+        return CapabilityResult.ok(staff=[s.model_dump() for s in result]).to_dict()
 
     async def _get_cast(self, **kwargs: Any) -> dict[str, Any]:
         subject_id = kwargs["subject_id"]
         result = await get_cast_info(subject_id)
-        return {"success": True, "cast": [c.model_dump() for c in result]}
+        return CapabilityResult.ok(cast=[c.model_dump() for c in result]).to_dict()
 
     async def _get_reviews(self, **kwargs: Any) -> dict[str, Any]:
         subject_id = kwargs["subject_id"]
         result = await get_audience_feedback(subject_id)
-        return {"success": True, **result.model_dump(exclude_none=True)}
+        return CapabilityResult.ok(**result.model_dump(exclude_none=True)).to_dict()

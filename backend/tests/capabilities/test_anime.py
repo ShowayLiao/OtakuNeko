@@ -50,3 +50,22 @@ async def test_search_preserves_explicit_filters(monkeypatch):
         "limit": 5,
         "offset": 10,
     }
+
+
+@pytest.mark.asyncio
+async def test_unknown_action_returns_typed_error():
+    result = await AnimeCapability().execute("bogus")
+    assert result["success"] is False
+    assert result["error_type"] == "invalid_action"
+
+
+@pytest.mark.asyncio
+async def test_service_failure_returns_typed_error(monkeypatch):
+    async def fail(*args, **kwargs):
+        raise RuntimeError("bangumi down")
+
+    monkeypatch.setattr("app.capabilities.anime.fetch_subject_by_id", fail)
+
+    result = await AnimeCapability().execute("get_detail", subject_id=999)
+    assert result["success"] is False
+    assert result["error_type"] == "internal"
