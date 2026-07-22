@@ -7,9 +7,18 @@ import pytest
 
 from app.capabilities.anime import AnimeCapability
 from app.capabilities.registry import CapabilityRegistry
-from app.mcp_server import MCPServer, _build_tool_schema
+from app.mcp_server import MCPServer, ExposureMap, _build_tool_schema
 from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.schedule import ScheduleCapability
+
+
+_ANIME_ACTIONS = [
+    "search", "get_detail", "get_staff", "get_cast", "get_reviews",
+]
+
+
+def _anime_exposure() -> ExposureMap:
+    return ExposureMap({"anime": _ANIME_ACTIONS})
 
 
 class TestMCPToolSchema:
@@ -49,12 +58,12 @@ class TestMCPToolSchema:
 class TestMCPServer:
     """Test the MCP server protocol handling."""
 
-    def _make_server(self) -> MCPServer:
+    def _make_server(self, exposure: ExposureMap | None = None) -> MCPServer:
         registry = CapabilityRegistry()
         registry.register(AnimeCapability())
-        return MCPServer(registry)
+        return MCPServer(registry, exposure or _anime_exposure())
 
-    def test_list_tools_returns_five_tools(self):
+    def test_list_tools_returns_anime_only_tools(self):
         server = self._make_server()
         tools = server.list_tools()
         assert len(tools) == 5
@@ -66,6 +75,16 @@ class TestMCPServer:
             "anime_get_cast",
             "anime_get_reviews",
         }
+
+    def test_exposure_filters_actions(self):
+        """Only actions in the exposure map are listed."""
+        registry = CapabilityRegistry()
+        registry.register(AnimeCapability())
+        exposure = ExposureMap({"anime": ["search", "get_detail"]})
+        server = MCPServer(registry, exposure)
+        tools = server.list_tools()
+        names = {t["name"] for t in tools}
+        assert names == {"anime_search", "anime_get_detail"}
 
     @pytest.mark.asyncio
     async def test_handle_initialize(self):
@@ -107,16 +126,14 @@ class TestMCPServer:
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "bogus", "arguments": {}},
         })
-        content = resp["result"]["content"][0]["text"]
-        inner = json.loads(content)
-        assert inner["success"] is False
+        assert resp["error"]["code"] == -32602
 
     @pytest.mark.asyncio
     async def test_handle_tools_call_routes_known_action(self, monkeypatch):
         capability = AnimeCapability()
         registry = CapabilityRegistry()
         registry.register(capability)
-        server = MCPServer(registry)
+        server = MCPServer(registry, _anime_exposure())
 
         async def execute(action_name, **arguments):
             assert action_name == "search"
@@ -143,15 +160,19 @@ class TestMCPServer:
     async def test_handle_notifications_initialized(self):
         server = self._make_server()
         resp = await server.handle_request({
-            "jsonrpc": "2.0", "id": 4, "method": "notifications/initialized",
+            "jsonrpc": "2.0", "method": "notifications/initialized",
         })
-        assert resp["result"] == {}
+        assert resp is None
 
     @pytest.mark.asyncio
-    async def test_protected_actions_require_mcp_auth_context(self):
+    async def test_protected_actions_require_authentication(self):
+        """Auth-required actions are denied without MCPContext."""
         registry = CapabilityRegistry()
         registry.register(RecommendationCapability())
-        server = MCPServer(registry)
+        server = MCPServer(
+            registry,
+            ExposureMap({"recommendation": ["generate_profile", "analyse_taste"]}),
+        )
 
         result = await server.call_tool(
             "recommendation_generate_profile", {"collections": []}
@@ -161,12 +182,85 @@ class TestMCPServer:
         assert result["error_type"] == "unauthorized"
 
     @pytest.mark.asyncio
-    async def test_side_effecting_actions_require_mcp_policy_context(self):
+    async def test_side_effecting_actions_require_policy(self):
+        """Side-effecting actions are denied without Policy."""
         registry = CapabilityRegistry()
         registry.register(ScheduleCapability())
-        server = MCPServer(registry)
+        server = MCPServer(
+            registry,
+            ExposureMap({"schedule": ["create_schedule"]}),
+        )
 
-        result = await server.call_tool("schedule_create_schedule", {})
+        from app.mcp_server.context import MCPContext
+
+        result = await server.call_tool(
+            "schedule_create_schedule", {}, context=MCPContext(user_id=1)
+        )
 
         assert result["success"] is False
         assert result["error_type"] == "policy_denied"
+
+    @pytest.mark.asyncio
+    async def test_authenticated_context_allows_protected_action(self, monkeypatch):
+        """auth-required action passes with an authenticated MCPContext."""
+        registry = CapabilityRegistry()
+        registry.register(RecommendationCapability())
+        server = MCPServer(
+            registry,
+            ExposureMap({"recommendation": ["generate_profile", "analyse_taste"]}),
+        )
+
+        from app.mcp_server.context import MCPContext
+
+        async def fake_execute(action_name, **kwargs):
+            return {"success": True, "action": action_name}
+
+        monkeypatch.setattr(
+            registry.get("recommendation"), "execute", fake_execute
+        )
+
+        result = await server.call_tool(
+            "recommendation_generate_profile",
+            {"collections": []},
+            context=MCPContext(user_id=42),
+        )
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_policy_allows_side_effect(self, monkeypatch):
+        """Side-effecting action passes with explicit Policy."""
+        registry = CapabilityRegistry()
+        registry.register(ScheduleCapability())
+        server = MCPServer(
+            registry,
+            ExposureMap({"schedule": ["create_schedule"]}),
+        )
+
+        from app.mcp_server.context import MCPContext
+        from app.mcp_server.policy import Policy
+
+        async def fake_execute(action_name, **kwargs):
+            return {"success": True, "action": action_name}
+
+        monkeypatch.setattr(
+            registry.get("schedule"), "execute", fake_execute
+        )
+
+        result = await server.call_tool(
+            "schedule_create_schedule",
+            {"source": "bangumi", "source_id": "42",
+             "day_of_week": 0, "start_time": "18:00:00"},
+            context=MCPContext(user_id=1),
+            policy=Policy(allow_side_effects=True, idempotency_key="create-42"),
+        )
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_non_exposed_tool_is_not_found(self):
+        """Calling a non-exposed tool returns error, not unauth."""
+        server = self._make_server()  # only anime exposed
+
+        result = await server.call_tool(
+            "recommendation_generate_profile", {"collections": []}
+        )
+        assert result["success"] is False

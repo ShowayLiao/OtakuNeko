@@ -44,6 +44,11 @@ and media operations safely.
 - Protocol errors follow JSON-RPC/MCP semantics.
 - Existing Anime MCP clients remain compatible.
 
+## Client Configuration
+
+See `client-config.md` for local stdio launch examples, trusted identity
+configuration, and the MCP-002 security boundary.
+
 ## Rollback
 
 Stop exposing newly registered schedule and media actions and restore the
