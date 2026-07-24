@@ -4,5 +4,9 @@ from .enums import SubjectType, CollectionStatus
 from .user import User
 from .schedule import Schedule
 from .broadcast_metadata import AnimeBroadcastMetadata
+from .agent_memory import AgentMemory
 
-__all__ = ["Collection", "Subject", "SubjectType", "CollectionStatus", "User", "Schedule", "AnimeBroadcastMetadata"]
+__all__ = [
+    "Collection", "Subject", "SubjectType", "CollectionStatus", "User",
+    "Schedule", "AnimeBroadcastMetadata", "AgentMemory",
+]

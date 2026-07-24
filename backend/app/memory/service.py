@@ -1,15 +1,20 @@
-"""Memory service implementation.
+"""Memory service implementation — MEMORY-002.
 
-Wraps the existing MemoryManager through the new layered interfaces
-(MemoryRepository + MemoryExtractor). Produces identical behavior
-to the current MemoryManager while satisfying the MemoryService
-contract.
+Coordinates the repository and extractor layers with kind-aware,
+user-scoped store, retrieve, and retention operations.
+
+Retention limits per kind:
+- episodic: 1000
+- semantic: 500
+- profile: 50 (never evicted by other kinds' retention)
 """
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from app.memory.interfaces import (
     MemoryContext,
@@ -23,6 +28,30 @@ from app.memory.retrievers.hybrid_retriever import HybridRetriever
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Per-kind capacity limits (MEMORY-002 Step 04).
+_RETENTION_LIMITS: dict[str, int] = {
+    "episodic": 1000,
+    "semantic": 500,
+    "profile": 50,
+}
+
+_DEFAULT_KIND = "episodic"
+_LOCK_STRIPES = 64
+_WRITE_LOCKS: WeakKeyDictionary[
+    asyncio.AbstractEventLoop, list[asyncio.Lock]
+] = WeakKeyDictionary()
+
+
+def _write_lock(user_id: int | None, thread_id: str, kind: str) -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    locks = _WRITE_LOCKS.get(loop)
+    if locks is None:
+        locks = [asyncio.Lock() for _ in range(_LOCK_STRIPES)]
+        _WRITE_LOCKS[loop] = locks
+    scope = thread_id if kind == "episodic" else "__user__"
+    index = hash((user_id, scope, kind)) % _LOCK_STRIPES
+    return locks[index]
 
 
 class MemoryServiceImpl(MemoryService):
@@ -41,11 +70,13 @@ class MemoryServiceImpl(MemoryService):
         base_url: str,
         checkpointer: Any = None,
         max_facts: int = 500,
+        default_user_id: int | None = None,
     ) -> None:
         self._repo = repository
         self._extractor = extractor
         self.checkpointer = checkpointer
         self.max_facts = max_facts
+        self.default_user_id = default_user_id
 
         self._bm25 = BM25Retriever()
         self._vector = VectorRetriever(api_key, base_url)
@@ -61,39 +92,87 @@ class MemoryServiceImpl(MemoryService):
         content: str,
         importance: float = 0.5,
         source: str = "conversation",
+        user_id: int | None = None,
+        kind: str = "episodic",
     ) -> str | None:
-        """Persist a fact after deduplication against existing facts."""
-        existing = await self._repo.get_facts(thread_id)
+        """Persist a fact after deduplication against existing facts.
 
-        if existing:
-            all_contents = [f["content"] for f in existing] + [content]
-            vecs = await self._vector.embed(all_contents)
-            new_vec = vecs[-1]
-            for i, existing_vec in enumerate(vecs[:-1]):
-                if VectorRetriever.cosine_similarity(new_vec, existing_vec) > 0.9:
-                    return None
-        else:
-            new_vec = (await self._vector.embed([content]))[0]
+        Deduplication and retention are scoped to the same user+kind+thread.
+        """
+        owner_id = user_id if user_id is not None else self.default_user_id
+        async with _write_lock(owner_id, thread_id, kind):
+            try:
+                if owner_id is not None:
+                    await self._repo.lock_owner(owner_id)
+                existing = await self._repo.get_facts(
+                    thread_id,
+                    user_id=owner_id,
+                    kind=kind,
+                    limit=1000,
+                )
 
-        fact_id = str(uuid.uuid4())
-        await self._repo.put_fact(thread_id, fact_id, content, importance, source)
+                if existing:
+                    all_contents = [f["content"] for f in existing] + [content]
+                    vecs = await self._vector.embed(all_contents)
+                    new_vec = vecs[-1]
+                    for existing_vec in vecs[:-1]:
+                        if (
+                            VectorRetriever.cosine_similarity(
+                                new_vec, existing_vec
+                            )
+                            > 0.9
+                        ):
+                            await self._repo.commit()
+                            return None
+                else:
+                    await self._vector.embed([content])
 
-        overflow = len(existing) + 1 - self.max_facts
-        if overflow > 0:
-            facts_sorted = sorted(
-                existing,
-                key=lambda f: (f.get("importance", 0), f.get("timestamp", "")),
-            )
-            for old in facts_sorted[:overflow]:
-                await self._repo.delete_fact(thread_id, old["id"])
+                fact_id = str(uuid.uuid4())
+                await self._repo.put_fact(
+                    thread_id,
+                    fact_id,
+                    content,
+                    importance,
+                    source,
+                    user_id=owner_id,
+                    kind=kind,
+                )
 
-        return fact_id
+                # Profile changes only through explicit replacement/deletion.
+                limit = min(
+                    _RETENTION_LIMITS.get(kind, self.max_facts),
+                    self.max_facts,
+                )
+                if kind != "profile" and len(existing) + 1 > limit:
+                    facts_sorted = sorted(
+                        existing,
+                        key=lambda f: (
+                            f.get("importance", 0),
+                            f.get("timestamp", ""),
+                            f.get("id", ""),
+                        ),
+                    )
+                    overflow = len(existing) + 1 - limit
+                    for old in facts_sorted[:overflow]:
+                        await self._repo.delete_fact(
+                            thread_id,
+                            old["id"],
+                            user_id=owner_id,
+                            kind=kind,
+                        )
+                await self._repo.commit()
+                return fact_id
+            except BaseException:
+                await self._repo.rollback()
+                raise
 
     async def retrieve_context(
         self,
         thread_id: str,
         query: str,
         top_k: int = 5,
+        user_id: int | None = None,
+        kind: str | None = None,
     ) -> MemoryContext:
         """Retrieve short-term and long-term context for a query."""
         short: list[dict[str, Any]] = []
@@ -112,7 +191,10 @@ class MemoryServiceImpl(MemoryService):
                 terminal_output = channel_values.get("last_terminal_output", "")
 
         long_facts: list[dict[str, Any]] = []
-        all_facts = await self._repo.get_facts(thread_id)
+        owner_id = user_id if user_id is not None else self.default_user_id
+        all_facts = await self._repo.get_facts(
+            thread_id, user_id=owner_id, kind=kind, limit=1000
+        )
         if all_facts:
             long_facts = await self._hybrid.retrieve(
                 query, all_facts, top_k=top_k
@@ -152,8 +234,14 @@ class MemoryServiceImpl(MemoryService):
             summary="\n".join(parts) if parts else "",
         )
 
-    async def extract_and_store_facts(self, thread_id: str) -> int:
-        """Extract facts from recent conversation and persist them."""
+    async def extract_and_store_facts(
+        self, thread_id: str, user_id: int | None = None
+    ) -> int:
+        """Extract facts from recent conversation and persist them.
+
+        Returns the number of new facts stored.  Extraction failure
+        returns 0 (does not fail the calling operation).
+        """
         messages: list[dict[str, Any]] = []
         if self.checkpointer:
             config = {
@@ -163,7 +251,15 @@ class MemoryServiceImpl(MemoryService):
             if cp:
                 messages = self._messages_from_checkpoint(cp.checkpoint)[-20:]
 
-        facts = await self._extractor.extract(messages)
+        owner_id = user_id if user_id is not None else self.default_user_id
+        if owner_id is None:
+            return 0
+
+        try:
+            facts = await self._extractor.extract(messages)
+        except Exception:
+            logger.exception("extract_and_store_facts failed")
+            return 0
 
         count = 0
         for fact in facts:
@@ -171,7 +267,9 @@ class MemoryServiceImpl(MemoryService):
             importance = float(fact.get("importance", 0.5))
             if content:
                 fact_id = await self.store_fact(
-                    thread_id, content, importance=importance
+                    thread_id, content, importance=importance,
+                    user_id=owner_id,
+                    kind="semantic",
                 )
                 if fact_id:
                     count += 1
@@ -182,15 +280,20 @@ class MemoryServiceImpl(MemoryService):
         thread_id: str,
         query: str,
         top_k: int = 10,
+        user_id: int | None = None,
+        kind: str | None = None,
     ) -> list[dict[str, Any]]:
         """Semantic search across stored facts using hybrid retrieval."""
-        all_facts = await self._repo.get_facts(thread_id)
+        owner_id = user_id if user_id is not None else self.default_user_id
+        all_facts = await self._repo.get_facts(
+            thread_id, user_id=owner_id, kind=kind, limit=1000
+        )
         if not all_facts:
             return []
         return await self._hybrid.retrieve(query, all_facts, top_k=top_k)
 
     # ------------------------------------------------------------------
-    # Internal helpers (mirror MemoryManager's private methods)
+    # Internal helpers
     # ------------------------------------------------------------------
 
     @staticmethod

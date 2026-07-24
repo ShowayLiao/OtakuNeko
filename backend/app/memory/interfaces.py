@@ -3,6 +3,9 @@
 Defines the contracts for the MemoryService, MemoryRepository, and
 MemoryExtractor layers. The existing MemoryManager satisfies these
 interfaces without modification — this is an additive abstraction.
+
+MEMORY-002 extends signatures with ``user_id`` and ``kind`` parameters
+while keeping backward-compatible defaults.
 """
 
 from __future__ import annotations
@@ -36,20 +39,50 @@ class MemoryRepository(ABC):
         content: str,
         importance: float,
         source: str,
+        user_id: int | None = None,
+        kind: str = "episodic",
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Store or update a single fact."""
 
     @abstractmethod
-    async def get_facts(self, thread_id: str) -> list[dict[str, Any]]:
-        """Retrieve all facts for a thread."""
+    async def get_facts(
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        """Retrieve facts for a thread, optionally filtered by user and kind."""
 
     @abstractmethod
-    async def delete_fact(self, thread_id: str, fact_id: str) -> None:
-        """Remove a single fact."""
+    async def delete_fact(
+        self,
+        thread_id: str,
+        fact_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
+    ) -> bool:
+        """Remove an owned fact, returning whether a row was deleted."""
 
     @abstractmethod
-    async def count_facts(self, thread_id: str) -> int:
+    async def count_facts(
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
+    ) -> int:
         """Return the number of facts stored for a thread."""
+
+    async def lock_owner(self, user_id: int) -> None:
+        """Serialize durable writes for one owner when supported."""
+
+    async def commit(self) -> None:
+        """Commit a repository unit of work when supported."""
+
+    async def rollback(self) -> None:
+        """Roll back a repository unit of work when supported."""
 
 
 class MemoryExtractor(ABC):
@@ -83,6 +116,8 @@ class MemoryService(ABC):
         content: str,
         importance: float = 0.5,
         source: str = "conversation",
+        user_id: int | None = None,
+        kind: str = "episodic",
     ) -> str | None:
         """Persist a single fact. Returns fact_id or None if duplicate."""
 
@@ -92,11 +127,13 @@ class MemoryService(ABC):
         thread_id: str,
         query: str,
         top_k: int = 5,
+        user_id: int | None = None,
+        kind: str | None = None,
     ) -> MemoryContext:
         """Retrieve relevant memory context for the current query."""
 
     @abstractmethod
-    async def extract_and_store_facts(self, thread_id: str) -> int:
+    async def extract_and_store_facts(self, thread_id: str, user_id: int | None = None) -> int:
         """Extract facts from recent conversation and persist them.
 
         Returns the number of new facts stored.
@@ -108,5 +145,7 @@ class MemoryService(ABC):
         thread_id: str,
         query: str,
         top_k: int = 10,
+        user_id: int | None = None,
+        kind: str | None = None,
     ) -> list[dict[str, Any]]:
         """Semantic search across stored facts."""

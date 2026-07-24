@@ -440,6 +440,55 @@ def _make_tool_chunk(name, args_delta, tc_id="tc-1"):
 
 class TestStreamChatEventFlow:
     @pytest.mark.asyncio
+    async def test_memory_uses_service_retrieve_context_contract(
+        self, temp_db_path
+    ):
+        wf = ChatWorkflow(
+            api_key="sk-test",
+            base_url="https://test.api",
+            db_path=temp_db_path,
+        )
+        await wf._ensure_checkpointer()
+
+        class FakeMemory:
+            def __init__(self):
+                self.calls = []
+
+            async def retrieve_context(
+                self, thread_id, query, top_k=5, user_id=None, kind=None
+            ):
+                from app.memory.interfaces import MemoryContext
+
+                self.calls.append((thread_id, query))
+                return MemoryContext(summary="remembered")
+
+        memory = FakeMemory()
+        wf.memory = memory
+
+        async def fake_astream(*args, **kwargs):
+            yield _stream_event(
+                "on_chat_model_stream", "speak", content="response"
+            )
+            yield _stream_event("on_chat_model_end", "speak")
+
+        wf.app.astream_events = fake_astream
+        try:
+            events = [
+                event
+                async for event in wf.stream_chat(
+                    model="test-model",
+                    messages=[{"role": "user", "content": "hello"}],
+                    temperature=0.6,
+                    thread_id="memory-thread",
+                )
+            ]
+
+            assert memory.calls == [("memory-thread", "hello")]
+            assert not [event for event in events if event["type"] == "error"]
+        finally:
+            await wf.close()
+
+    @pytest.mark.asyncio
     async def test_think_node_produces_thinking_start_chunk_end_events(self, temp_db_path):
         wf = ChatWorkflow(api_key="sk-test", base_url="https://test.api", db_path=temp_db_path)
         await wf._ensure_checkpointer()

@@ -7,7 +7,9 @@ from app.memory.interfaces import (
 )
 from app.memory.service import MemoryServiceImpl
 from app.memory.repository import StoreMemoryRepository
+from app.memory.sql_repository import SqlMemoryRepository
 from app.memory.extractor import LLMFactExtractor
+from app.memory.types import MemoryKind, MemoryRecord
 
 __all__ = [
     "MemoryManager",
@@ -17,5 +19,8 @@ __all__ = [
     "MemoryService",
     "MemoryServiceImpl",
     "StoreMemoryRepository",
+    "SqlMemoryRepository",
     "LLMFactExtractor",
+    "MemoryKind",
+    "MemoryRecord",
 ]

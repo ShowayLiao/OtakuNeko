@@ -1,7 +1,6 @@
 import os
 import json
 import time
-from collections import OrderedDict
 from uuid import uuid4
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -9,17 +8,18 @@ from fastapi.responses import StreamingResponse
 import httpx
 from openai import AsyncOpenAI
 from langgraph.store.memory import InMemoryStore
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.agent import ChatRequest
 from app.schemas.user import UserRead
 from app.agents.graph import ChatWorkflow
 from app.agents.langgraph_adapter import LangGraphAdapter
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
-from app.memory.manager import MemoryManager  # kept for backward compat
 from app.memory.service import MemoryServiceImpl
-from app.memory.repository import StoreMemoryRepository
+from app.memory.sql_repository import SqlMemoryRepository
 from app.memory.extractor import LLMFactExtractor
 from app.api.deps import get_current_user, get_optional_user
+from app.db.database import get_session
 from app.agents.thread_scope import (
     make_anonymous_thread,
     make_user_thread,
@@ -40,28 +40,6 @@ router = APIRouter()
 _store = InMemoryStore()
 _trace_store = InMemoryTraceStore(max_traces=500)
 trace_module.init_trace_store(_trace_store)
-_memory_services: OrderedDict[tuple[str, str], MemoryServiceImpl] = OrderedDict()
-_MAX_MEMORY_MANAGERS = 32
-
-
-def _get_or_create_memory(api_key: str, base_url: str) -> MemoryServiceImpl:
-    key = (api_key, base_url)
-    service = _memory_services.pop(key, None)
-    if service is None:
-        repository = StoreMemoryRepository(_store)
-        extractor = LLMFactExtractor(api_key=api_key, base_url=base_url)
-        service = MemoryServiceImpl(
-            repository=repository,
-            extractor=extractor,
-            api_key=api_key,
-            base_url=base_url,
-        )
-    _memory_services[key] = service
-    while len(_memory_services) > _MAX_MEMORY_MANAGERS:
-        _memory_services.popitem(last=False)
-    return service
-
-
 def format_sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -107,6 +85,7 @@ async def chat_endpoint(
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
     user: Optional[UserRead] = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_session),
 ):
     api_key = x_api_key or os.getenv("OPENAI_API_KEY")
     base_url = _resolve_provider_base_url(x_base_url)
@@ -149,9 +128,20 @@ async def chat_endpoint(
             await workflow._ensure_checkpointer()
             checkpointer = workflow.checkpointer
 
-            memory = _get_or_create_memory(api_key, base_url)
-            memory.checkpointer = checkpointer
-            workflow.memory = memory
+            memory = None
+            if user is not None:
+                memory = MemoryServiceImpl(
+                    repository=SqlMemoryRepository(db),
+                    extractor=LLMFactExtractor(
+                        api_key=api_key,
+                        base_url=base_url,
+                    ),
+                    api_key=api_key,
+                    base_url=base_url,
+                    checkpointer=checkpointer,
+                    default_user_id=user.id,
+                )
+                workflow.memory = memory
 
             goal = next(
                 (
@@ -189,8 +179,11 @@ async def chat_endpoint(
                     diagnostic_data["thread_id"] = thread_scope.public_id
                 yield format_sse(event=event_type, data=diagnostic_data)
 
-            if user is not None:
-                await memory.extract_and_store_facts(thread_scope.internal_id)
+            if memory is not None and user is not None:
+                await memory.extract_and_store_facts(
+                    thread_scope.internal_id,
+                    user_id=user.id,
+                )
 
         except Exception as e:
             yield format_sse(event="error", data={"detail": str(e)})

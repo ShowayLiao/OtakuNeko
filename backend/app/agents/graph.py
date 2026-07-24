@@ -235,7 +235,7 @@ class ChatWorkflow:
             user_query = next((m["content"] for m in reversed(messages)
                               if m.get("role") == "user"), "")
             if user_query:
-                ctx = await self.memory.load_context(thread_id, user_query)
+                ctx = await self.memory.retrieve_context(thread_id, user_query)
                 if ctx.summary:
                     enriched_messages.insert(0, {"role": "system", "content": ctx.summary})
 
