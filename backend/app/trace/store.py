@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Protocol
 
 from app.trace import AgentTrace
+from app.trace.redaction import sanitize_trace
 
 
 class TraceStore(Protocol):
@@ -19,7 +20,9 @@ class TraceStore(Protocol):
         """Persist a completed or failed trace."""
         ...
 
-    async def query(self, trace_id: str) -> AgentTrace | None:
+    async def query(
+        self, trace_id: str, *, user_id: int | None = None
+    ) -> AgentTrace | None:
         """Retrieve a single trace by ID."""
         ...
 
@@ -38,6 +41,7 @@ class InMemoryTraceStore:
         self._max_traces = max_traces
 
     async def record(self, trace: AgentTrace) -> None:
+        trace = sanitize_trace(trace)
         if len(self._traces) >= self._max_traces:
             oldest = min(
                 self._traces.keys(),
@@ -46,8 +50,15 @@ class InMemoryTraceStore:
             del self._traces[oldest]
         self._traces[trace.trace_id] = trace
 
-    async def query(self, trace_id: str) -> AgentTrace | None:
-        return self._traces.get(trace_id)
+    async def query(
+        self, trace_id: str, *, user_id: int | None = None
+    ) -> AgentTrace | None:
+        trace = self._traces.get(trace_id)
+        if trace is None:
+            return None
+        if user_id is not None and trace.user_id != user_id:
+            return None
+        return trace
 
     async def list_recent(
         self, limit: int = 20, user_id: int | None = None

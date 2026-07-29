@@ -3,6 +3,8 @@ from typing import Any, Dict, Optional, Type
 from langchain_core.tools import BaseTool, StructuredTool
 from pydantic import BaseModel, create_model
 
+from app.trace import TraceEventType
+from app.trace.recorder import safe_argument_shape, trace_span
 
 _JSON_TYPES = {
     "string": str,
@@ -41,7 +43,22 @@ class MCPToolAdapter:
         args_schema = MCPToolAdapter._args_schema(name, input_schema)
 
         async def _call_tool(**kwargs):
-            return await transport.call_tool(name, kwargs)
+            async with trace_span(
+                TraceEventType.MCP_CALL,
+                name,
+                {"argument_shape": safe_argument_shape(kwargs)},
+            ) as event:
+                result = await transport.call_tool(name, kwargs)
+                if (
+                    event is not None
+                    and isinstance(result, dict)
+                    and result.get("success") is False
+                ):
+                    event.status = "failed"
+                    event.data["error_category"] = str(
+                        result.get("error_type", "protocol_error")
+                    )
+                return result
 
         return StructuredTool.from_function(
             coroutine=_call_tool,

@@ -40,14 +40,13 @@ from app.agents.provider_endpoint import (
 )
 from app.core.config import settings
 
-from app.trace.store import InMemoryTraceStore
-import app.api.v1.trace as trace_module
+from app.trace.sql_store import SqlTraceStore
 
 router = APIRouter()
 
 _store = InMemoryStore()
-_trace_store = InMemoryTraceStore(max_traces=500)
-trace_module.init_trace_store(_trace_store)
+
+
 def format_sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
@@ -173,7 +172,7 @@ async def chat_endpoint(
                 AgentRouter(registry),
                 enabled=settings.ENABLE_MULTI_AGENT_ROUTING,
             )
-            runtime = AgentRuntime(adapter, trace_store=_trace_store)
+            runtime = AgentRuntime(adapter, trace_store=SqlTraceStore(db))
 
             goal = next(
                 (

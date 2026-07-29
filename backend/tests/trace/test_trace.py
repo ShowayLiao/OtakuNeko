@@ -145,10 +145,6 @@ class TestInMemoryTraceStore:
         await store.record(t1)
         await store.record(AgentTrace(task_id=2))
 
-        # task_id=1 should be evicted since max is 2
-        found = await store.query(t1.trace_id)
-        # Depending on timestamps it may or may not still be there
-        # Just verify the store has at most 2 entries
         recent = await store.list_recent(limit=10)
         assert len(recent) <= 2
 
@@ -182,7 +178,7 @@ class TestInMemoryTraceStore:
         assert len(recent) == 1
         trace = recent[0]
         assert trace.user_id == 1
-        assert trace.goal == "say hello"
+        assert trace.goal == "[REDACTED]"
         assert trace.status == "completed"
 
     @pytest.mark.asyncio

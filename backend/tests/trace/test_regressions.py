@@ -36,7 +36,16 @@ async def test_trace_list_ignores_user_id_override(monkeypatch):
     class User:
         id = 1
 
-    response = await trace_api.list_traces(limit=20, user_id=2, user=User())
+    response = await trace_api.list_traces(
+        limit=20,
+        user_id=2,
+        user=User(),
+        db=None,
+        task_id=None,
+        status=None,
+        started_after=None,
+        started_before=None,
+    )
 
     assert response["total"] == 1
     assert response["traces"][0]["user_id"] == 1

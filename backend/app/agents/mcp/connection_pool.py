@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 
 from app.agents.mcp.transport import MCPTransport
 from app.core.logging import get_logger
+from app.trace import TraceEventType
+from app.trace.recorder import current_trace_recorder
 
 logger = get_logger(__name__)
 
@@ -133,6 +135,18 @@ class MCPConnectionPool:
                     "error": str(e),
                 })
                 if attempt < self._max_retries:
+                    recorder = current_trace_recorder()
+                    if recorder is not None:
+                        recorder.record(
+                            TraceEventType.RETRY,
+                            "mcp.connect",
+                            {
+                                "server": name,
+                                "attempt": attempt + 1,
+                                "max_attempts": self._max_retries,
+                                "error_category": type(e).__name__,
+                            },
+                        )
                     await asyncio.sleep(self._retry_delay * attempt)
 
         logger.error("reconnect_exhausted", extra={

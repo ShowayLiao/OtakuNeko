@@ -21,6 +21,8 @@ from app.capabilities.types import ActionDescriptor
 from app.core.logging import get_logger
 from app.mcp_server.context import MCPContext
 from app.mcp_server.policy import Policy
+from app.trace import TraceEventType
+from app.trace.recorder import safe_argument_shape, trace_span
 
 logger = get_logger(__name__)
 
@@ -395,15 +397,39 @@ class MCPServer:
         tool_name: str,
         arguments: dict[str, Any],
     ) -> dict[str, Any]:
-        try:
-            return await capability.execute(action_name, **arguments)
-        except Exception as exc:
-            logger.exception("mcp_tool_failed", extra={"tool_name": tool_name})
-            return {
-                "success": False,
-                "error": f"Tool execution failed: {type(exc).__name__}",
-                "error_type": "internal",
-            }
+        async with trace_span(
+            TraceEventType.MCP_CALL,
+            tool_name,
+            {"argument_shape": safe_argument_shape(arguments)},
+        ) as event:
+            try:
+                result = await capability.execute(action_name, **arguments)
+            except asyncio.TimeoutError:
+                if event is not None:
+                    event.status = "timeout"
+                    event.data["error_category"] = "timeout"
+                logger.warning("mcp_tool_timeout", extra={"tool_name": tool_name})
+                return {
+                    "success": False,
+                    "error": "Tool execution timed out",
+                    "error_type": "timeout",
+                }
+            except Exception as exc:
+                if event is not None:
+                    event.status = "failed"
+                    event.data["error_category"] = type(exc).__name__
+                logger.exception("mcp_tool_failed", extra={"tool_name": tool_name})
+                return {
+                    "success": False,
+                    "error": f"Tool execution failed: {type(exc).__name__}",
+                    "error_type": "internal",
+                }
+            if event is not None and result.get("success") is False:
+                event.status = "failed"
+                event.data["error_category"] = str(
+                    result.get("error_type", "protocol_error")
+                )
+            return result
 
     async def _call_idempotent(
         self,

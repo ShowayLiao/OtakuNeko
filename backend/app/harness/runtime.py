@@ -1,13 +1,20 @@
 from __future__ import annotations
 
+import asyncio
+from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Protocol
 
 from app.harness.checkpoint import CheckpointStore
 from app.harness.task import AgentTask
 from app.harness.state import AgentState
-from app.trace import AgentTrace, TraceEvent, TraceStep
+from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
+from app.trace.redaction import sanitize_trace
+from app.trace.recorder import bind_trace
 from app.trace.store import TraceStore
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -68,6 +75,17 @@ class AgentRuntime:
         if self.checkpoint_store is not None:
             await self.checkpoint_store.save_state(state)
 
+    async def _record_trace(self, trace: AgentTrace) -> None:
+        if self.trace_store is None:
+            return
+        try:
+            await self.trace_store.record(sanitize_trace(trace))
+        except Exception:
+            logger.exception(
+                "trace_storage_failed",
+                extra={"trace_id": trace.trace_id},
+            )
+
     async def execute(self, task: AgentTask) -> AgentState:
         trace: AgentTrace | None = None
         if self.trace_store is not None:
@@ -79,8 +97,7 @@ class AgentRuntime:
             )
             if task.metadata.get("trace_id"):
                 trace.trace_id = str(task.metadata["trace_id"])
-            trace.steps.append(
-                TraceStep(
+            scheduled_step = TraceStep(
                     step_index=0,
                     step_label="scheduled_context",
                     agent_name=self.adapter_name,
@@ -92,15 +109,57 @@ class AgentRuntime:
                         }
                     ),
                 )
-            )
+            scheduled_step.complete()
+            trace.steps.append(scheduled_step)
 
         state = AgentState(task=task, status="running")
         await self._save_checkpoint(state)
         try:
-            state.result = await self.adapter.run(state)
+            trace_context = bind_trace(trace) if trace is not None else nullcontext()
+            with trace_context as recorder:
+                if recorder is not None:
+                    recorder.record(
+                        TraceEventType.NODE_START,
+                        "agent.execute",
+                        {"agent": self.adapter_name},
+                    )
+                try:
+                    state.result = await self.adapter.run(state)
+                except BaseException as exc:
+                    if recorder is not None:
+                        status = (
+                            "cancelled"
+                            if isinstance(exc, (asyncio.CancelledError, GeneratorExit))
+                            else "failed"
+                        )
+                        recorder.record(
+                            TraceEventType.FAILURE,
+                            "agent.execute",
+                            {"error_category": type(exc).__name__},
+                            status=status,
+                        )
+                        recorder.record(
+                            TraceEventType.NODE_END,
+                            "agent.execute",
+                            {"outcome": status},
+                            status=status,
+                        )
+                    raise
+                if recorder is not None:
+                    recorder.record(
+                        TraceEventType.NODE_END,
+                        "agent.execute",
+                        {"outcome": "completed"},
+                    )
             state.status = "completed"
             if trace is not None:
                 trace.mark_completed()
+        except (asyncio.CancelledError, GeneratorExit):
+            state.status = "cancelled"
+            if trace is not None:
+                trace.mark_cancelled()
+            await self._save_checkpoint(state)
+            raise
         except Exception:
             state.status = "failed"
             if trace is not None:
@@ -109,7 +168,7 @@ class AgentRuntime:
             raise
         finally:
             if trace is not None and self.trace_store is not None:
-                await self.trace_store.record(trace)
+                await self._record_trace(trace)
         await self._save_checkpoint(state)
         return state
 
@@ -126,14 +185,57 @@ class AgentRuntime:
 
         state = AgentState(task=task, status="running", context=kwargs)
         await self._save_checkpoint(state)
+        stream_completed = False
         try:
             stream = getattr(self.adapter, "stream", None)
             if stream is None:
                 raise TypeError("The configured adapter does not support streaming")
-            async for chunk in stream(state, **kwargs):
-                if trace is not None and isinstance(chunk, dict):
-                    self._record_stream_trace(trace, chunk)
-                yield chunk
+            trace_context = bind_trace(trace) if trace is not None else nullcontext()
+            with trace_context as recorder:
+                if recorder is not None:
+                    recorder.record(
+                        TraceEventType.NODE_START,
+                        "agent.stream",
+                        {"agent": self.adapter_name},
+                    )
+                try:
+                    async for chunk in stream(state, **kwargs):
+                        if trace is not None and isinstance(chunk, dict):
+                            self._record_stream_trace(trace, chunk)
+                        yield chunk
+                except BaseException as exc:
+                    if recorder is not None:
+                        status = (
+                            "cancelled"
+                            if isinstance(exc, (asyncio.CancelledError, GeneratorExit))
+                            else "failed"
+                        )
+                        recorder.record(
+                            TraceEventType.FAILURE,
+                            "agent.stream",
+                            {"error_category": type(exc).__name__},
+                            status=status,
+                        )
+                        recorder.record(
+                            TraceEventType.NODE_END,
+                            "agent.stream",
+                            {"outcome": status},
+                            status=status,
+                        )
+                    raise
+                if recorder is not None:
+                    recorder.record(
+                        TraceEventType.NODE_END,
+                        "agent.stream",
+                        {"outcome": "completed"},
+                    )
+            stream_completed = True
+        except (asyncio.CancelledError, GeneratorExit):
+            state.status = "cancelled"
+            if trace is not None:
+                trace.mark_cancelled()
+            await self._save_checkpoint(state)
+            raise
         except Exception:
             state.status = "failed"
             if trace is not None:
@@ -143,8 +245,11 @@ class AgentRuntime:
         finally:
             if trace is not None and self.trace_store is not None:
                 if trace.status == "running":
-                    trace.mark_completed()
-                await self.trace_store.record(trace)
+                    if stream_completed:
+                        trace.mark_completed()
+                    else:
+                        trace.mark_cancelled()
+                await self._record_trace(trace)
         state.status = "completed"
         await self._save_checkpoint(state)
 
@@ -159,13 +264,15 @@ class AgentRuntime:
         )
         step.events.append(
             TraceEvent(
-                event_type="route_decision",
+                event_type=TraceEventType.ROUTING_DECISION,
+                correlation_id=trace.trace_id,
                 data={
                     "route": chunk.get("route"),
                     "agent": chunk.get("agent"),
                     "confidence": chunk.get("confidence"),
-                    "rationale": chunk.get("rationale", ""),
+                    "rationale_present": bool(chunk.get("rationale")),
                 },
+                status="completed",
             )
         )
         step.complete()

@@ -6,9 +6,11 @@ from .schedule import Schedule
 from .broadcast_metadata import AnimeBroadcastMetadata
 from .agent_memory import AgentMemory
 from .agent_task import AgentTaskDef, AgentTaskRun
+from .agent_trace import AgentTraceModel, TraceEventModel
 
 __all__ = [
     "Collection", "Subject", "SubjectType", "CollectionStatus", "User",
     "Schedule", "AnimeBroadcastMetadata", "AgentMemory",
     "AgentTaskDef", "AgentTaskRun",
+    "AgentTraceModel", "TraceEventModel",
 ]
