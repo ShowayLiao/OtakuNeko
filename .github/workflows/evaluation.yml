@@ -1,0 +1,51 @@
+name: Agent evaluation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked --dev
+      - run: uv run pytest tests/evaluation -q
+      - run: uv run ruff check app/evaluation tests/evaluation
+      - run: uv run python -m app.evaluation.runner --config evals/config/fast.yaml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: evaluation-fast-report
+          path: backend/.runtime/evaluation/fast.json
+
+  full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: evaluation-full
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --locked --dev
+      - run: uv run python -m app.evaluation.runner --config evals/config/full.yaml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-full-report
+          path: backend/.runtime/evaluation/full.json

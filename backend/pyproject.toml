@@ -30,6 +30,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "python-jose[cryptography]>=3.3.0",
     "python-multipart>=0.0.9",
+    "pyyaml>=6.0",
     "qbittorrent-api>=2025.11.1",
     "rank-bm25>=0.2.2",
     "redis>=7.1.1",
@@ -37,6 +38,9 @@ dependencies = [
     "sqlmodel>=0.0.16",
     "uvicorn[standard]>=0.27.0",
 ]
+
+[project.scripts]
+otakuneko-eval = "app.evaluation.runner:main"
 
 [dependency-groups]
 dev = [
