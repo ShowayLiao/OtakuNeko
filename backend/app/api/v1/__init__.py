@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from . import subjects, collections, dashboard, users, auth, bangumi, agent, rss, trace, memory
+from . import subjects, collections, dashboard, users, auth, bangumi, agent, rss, trace, memory, proactive
 from .endpoints import schedules
 
 api_router = APIRouter(prefix="/v1")
@@ -15,3 +15,4 @@ api_router.include_router(rss.router, tags=["RSS"])
 api_router.include_router(schedules.router, tags=["Schedules"])
 api_router.include_router(trace.router, tags=["Trace"])
 api_router.include_router(memory.router)
+api_router.include_router(proactive.router)

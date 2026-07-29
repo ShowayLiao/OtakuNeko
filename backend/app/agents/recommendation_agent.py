@@ -44,8 +44,15 @@ class RecommendationAgent(BaseAgent):
         """Generate a structured recommendation for the given task."""
         goal = task.goal if hasattr(task, "goal") else str(task)
         metadata = getattr(task, "metadata", None) or {}
+        policy = metadata.get("policy") or {}
+        allowed = policy.get("allowed_capabilities", ())
+        if "allowed_capabilities" in policy and "recommendation.generate_profile" not in allowed:
+            return self._fallback("policy_denied")
+        max_model_calls = min(
+            self.max_model_calls, int(policy.get("max_model_calls", self.max_model_calls))
+        )
         collections = self._resolve_collections(task)
-        if self._response_generator is not None and self.max_model_calls < 1:
+        if self._response_generator is not None and max_model_calls < 1:
             return self._fallback("model_budget_exhausted")
 
         memory_context = None
@@ -72,7 +79,7 @@ class RecommendationAgent(BaseAgent):
         content = self._build_response(goal, candidates, profile)
         model_calls_used = 0
         if self._response_generator is not None:
-            if model_calls_used >= self.max_model_calls:
+            if model_calls_used >= max_model_calls:
                 return self._fallback("model_budget_exhausted")
             model_calls_used += 1
             content = await self._response_generator.generate(

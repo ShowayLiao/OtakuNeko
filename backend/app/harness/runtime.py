@@ -77,6 +77,22 @@ class AgentRuntime:
                 agent_name=self.adapter_name,
                 goal=task.goal,
             )
+            if task.metadata.get("trace_id"):
+                trace.trace_id = str(task.metadata["trace_id"])
+            trace.steps.append(
+                TraceStep(
+                    step_index=0,
+                    step_label="scheduled_context",
+                    agent_name=self.adapter_name,
+                    input_summary=str(
+                        {
+                            "task_def_id": task.metadata.get("task_def_id"),
+                            "run_id": task.metadata.get("run_id"),
+                            "scheduled_slot": task.metadata.get("scheduled_slot"),
+                        }
+                    ),
+                )
+            )
 
         state = AgentState(task=task, status="running")
         await self._save_checkpoint(state)

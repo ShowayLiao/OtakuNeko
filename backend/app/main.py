@@ -1,16 +1,32 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from app.db.database import init_db
 from app.api import api_router
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.harness.scheduler.repository import SqlTaskRepository
+from app.harness.scheduler import Scheduler
+from app.harness.scheduler.execution import handle_task_def
+from app.db.database import AsyncSessionLocal
+from app.agents.agent_registry import AgentRegistry
+from app.agents.router import AgentRouter
+from app.agents.recommendation_agent import RecommendationAgent
+from app.capabilities.recommendation import RecommendationCapability
+from app.harness.runtime import AgentRuntime
+from app.trace.store import InMemoryTraceStore
+
+
+class _ScheduledAdapter:
+    async def run(self, state):
+        return {"status": "completed", "task_id": state.task.task_id}
 
 # 缓存相关导入
-from fastapi_cache import FastAPICache
-from fastapi_cache.coder import PickleCoder
-from fastapi_cache.backends.inmemory import InMemoryBackend  # <--- 必须导入这个
-from redis.asyncio import Redis
+from fastapi_cache import FastAPICache  # noqa: E402
+from fastapi_cache.coder import PickleCoder  # noqa: E402
+from fastapi_cache.backends.inmemory import InMemoryBackend  # noqa: E402
+from redis.asyncio import Redis  # noqa: E402
 
 # 初始化日志系统
 logger = get_logger(__name__)
@@ -26,6 +42,35 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing database connection")
     await init_db()
     logger.info("Database initialized successfully")
+    app.state.proactive_repository = SqlTaskRepository(AsyncSessionLocal)
+    app.state.proactive_scheduler = None
+    if settings.ENABLE_PROACTIVE_SCHEDULER:
+        # Wiring is explicit and isolated; deployments provide claim/handler
+        # dependencies without changing the interactive API path.
+        registry = AgentRegistry()
+        registry.register("recommendation", RecommendationAgent(RecommendationCapability()))
+        app.state.proactive_router = AgentRouter(registry)
+        app.state.proactive_trace_store = InMemoryTraceStore()
+        app.state.proactive_runtime = AgentRuntime(
+            _ScheduledAdapter(), trace_store=app.state.proactive_trace_store
+        )
+
+        async def scheduled_handler(task_def, run):
+            return await handle_task_def(
+                task_def,
+                run,
+                app.state.proactive_runtime,
+                app.state.proactive_router,
+                repository=app.state.proactive_repository,
+            )
+
+        app.state.proactive_scheduler = Scheduler(
+            lambda lease: app.state.proactive_repository.claim_due(
+                datetime.now(timezone.utc), lease
+            ),
+            scheduled_handler,
+        )
+        await app.state.proactive_scheduler.start()
     
     # 2. 缓存初始化 (智能切换逻辑)
     redis = None
@@ -82,6 +127,9 @@ async def lifespan(app: FastAPI):
             logger.info("Redis connection closed")
         except Exception as e:
             logger.error(f"Failed to close Redis connection: {e}")
+
+    if app.state.proactive_scheduler is not None:
+        await app.state.proactive_scheduler.stop()
     
     await FastAPICache.clear()
     logger.info("Cache cleared")

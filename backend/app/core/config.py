@@ -15,6 +15,7 @@ class Settings(BaseSettings):
 
     # Feature flags
     ENABLE_MULTI_AGENT_ROUTING: bool = False
+    ENABLE_PROACTIVE_SCHEDULER: bool = False
 
     # 2. 读取 Local 模式配置
     SQLITE_FILE: str = "./local.db"
