@@ -1,4 +1,3 @@
-import pytest
 from app.agents.mcp.adapter import MCPToolAdapter
 
 

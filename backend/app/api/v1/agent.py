@@ -10,14 +10,22 @@ from openai import AsyncOpenAI
 from langgraph.store.memory import InMemoryStore
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.agent import ChatRequest
+from app.schemas.collection import CollectionSearchBase
 from app.schemas.user import UserRead
 from app.agents.graph import ChatWorkflow
 from app.agents.langgraph_adapter import LangGraphAdapter
+from app.agents.agent_registry import AgentRegistry
+from app.agents.recommendation_agent import RecommendationAgent
+from app.agents.router import AgentRouter
+from app.capabilities.recommendation import RecommendationCapability
+from app.capabilities.anime import AnimeCapability
 from app.harness.runtime import AgentRuntime
+from app.harness.routing_adapter import FeatureFlagRoutingAdapter
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
 from app.memory.sql_repository import SqlMemoryRepository
 from app.memory.extractor import LLMFactExtractor
+from app.services.collection_service import get_user_collections
 from app.api.deps import get_current_user, get_optional_user
 from app.db.database import get_session
 from app.agents.thread_scope import (
@@ -122,13 +130,11 @@ async def chat_endpoint(
             workflow = ChatWorkflow(
                 api_key=api_key, base_url=base_url, store=_store)
 
-            adapter = LangGraphAdapter(workflow)
-            runtime = AgentRuntime(adapter, trace_store=_trace_store)
-
             await workflow._ensure_checkpointer()
             checkpointer = workflow.checkpointer
 
             memory = None
+            collections: list = []
             if user is not None:
                 memory = MemoryServiceImpl(
                     repository=SqlMemoryRepository(db),
@@ -142,6 +148,32 @@ async def chat_endpoint(
                     default_user_id=user.id,
                 )
                 workflow.memory = memory
+                if settings.ENABLE_MULTI_AGENT_ROUTING:
+                    try:
+                        collection_list = await get_user_collections(
+                            db,
+                            CollectionSearchBase(user_id=user.id, limit=100),
+                        )
+                        collections = collection_list.items
+                    except Exception:
+                        collections = []
+
+            fallback_adapter = LangGraphAdapter(workflow)
+            registry = AgentRegistry()
+            registry.register(
+                "recommendation",
+                RecommendationAgent(
+                    RecommendationCapability(),
+                    anime_capability=AnimeCapability(),
+                    memory_service=memory,
+                ),
+            )
+            adapter = FeatureFlagRoutingAdapter(
+                fallback_adapter,
+                AgentRouter(registry),
+                enabled=settings.ENABLE_MULTI_AGENT_ROUTING,
+            )
+            runtime = AgentRuntime(adapter, trace_store=_trace_store)
 
             goal = next(
                 (
@@ -154,7 +186,11 @@ async def chat_endpoint(
             task = AgentTask(
                 user_id=user.id if user is not None else 0,
                 goal=goal,
-                metadata={"thread_id": thread_scope.internal_id},
+                metadata={
+                    "thread_id": thread_scope.internal_id,
+                    "messages": formatted_messages,
+                    "collections": collections,
+                },
             )
 
             async for chunk_data in runtime.stream(

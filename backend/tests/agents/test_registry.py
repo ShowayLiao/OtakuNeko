@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import AsyncMock
 from langchain_core.tools import tool as langchain_tool
 
 from app.agents.registry import ToolRegistry

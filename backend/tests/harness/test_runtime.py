@@ -6,6 +6,7 @@ from app.harness.task import AgentTask
 from app.harness.state import AgentState
 from app.harness.runtime import AgentRuntime
 from app.harness.checkpoint import InMemoryCheckpointStore
+from app.trace.store import InMemoryTraceStore
 
 
 class MockAdapter:
@@ -94,3 +95,24 @@ class TestAgentRuntime:
         saved = await checkpoints.load_state(12)
         assert saved is not None
         assert saved.status == "failed"
+
+    async def test_stream_records_routing_decision_in_trace(self) -> None:
+        class RoutingAdapter:
+            async def stream(self, state, **kwargs):
+                yield {
+                    "type": "route_decision",
+                    "route": "recommendation",
+                    "agent": "recommendation",
+                    "confidence": 1.0,
+                    "rationale": "keyword",
+                }
+                yield {"type": "message_chunk", "content": "ok"}
+
+        traces = InMemoryTraceStore()
+        runtime = AgentRuntime(RoutingAdapter(), trace_store=traces)
+        task = AgentTask(user_id=1, goal="recommend")
+        _ = [chunk async for chunk in runtime.stream(task)]
+
+        recorded = await traces.list_recent(limit=1)
+        assert len(recorded) == 1
+        assert recorded[0].steps[0].events[0].event_type == "route_decision"

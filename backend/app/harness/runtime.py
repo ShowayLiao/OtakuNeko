@@ -6,7 +6,7 @@ from typing import Any, AsyncIterator, Protocol
 from app.harness.checkpoint import CheckpointStore
 from app.harness.task import AgentTask
 from app.harness.state import AgentState
-from app.trace import AgentTrace
+from app.trace import AgentTrace, TraceEvent, TraceStep
 from app.trace.store import TraceStore
 
 
@@ -115,6 +115,8 @@ class AgentRuntime:
             if stream is None:
                 raise TypeError("The configured adapter does not support streaming")
             async for chunk in stream(state, **kwargs):
+                if trace is not None and isinstance(chunk, dict):
+                    self._record_stream_trace(trace, chunk)
                 yield chunk
         except Exception:
             state.status = "failed"
@@ -129,3 +131,26 @@ class AgentRuntime:
                 await self.trace_store.record(trace)
         state.status = "completed"
         await self._save_checkpoint(state)
+
+    def _record_stream_trace(self, trace: AgentTrace, chunk: dict[str, Any]) -> None:
+        if chunk.get("type") != "route_decision":
+            return
+        step = TraceStep(
+            step_index=len(trace.steps),
+            step_label="routing",
+            agent_name=str(chunk.get("agent", self.adapter_name)),
+            output_summary=str(chunk.get("route", "unknown")),
+        )
+        step.events.append(
+            TraceEvent(
+                event_type="route_decision",
+                data={
+                    "route": chunk.get("route"),
+                    "agent": chunk.get("agent"),
+                    "confidence": chunk.get("confidence"),
+                    "rationale": chunk.get("rationale", ""),
+                },
+            )
+        )
+        step.complete()
+        trace.add_step(step)
