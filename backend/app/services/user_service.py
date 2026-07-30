@@ -1,9 +1,8 @@
-from typing import Dict, Any, Optional, List
+from typing import Optional, List
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import User
-from app.schemas.user import UserCreate, UserUpdate, UserRead, UserSearch, UserList, UserLogin
+from app.schemas.user import UserCreate, UserUpdate, UserRead, UserSearch, UserLogin
 from app.repositories.user_repo import UserRepo
 from app.core.logging import get_logger
 

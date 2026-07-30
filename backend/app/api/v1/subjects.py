@@ -1,31 +1,23 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, List
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
 from app.services.subject_service import (
-    search_mixed, search_subject_by_name, search_subject_cloud,
-    create_subject, delete_subject, update_subject as update_subject_service,
+    search_mixed, create_subject, delete_subject, update_subject as update_subject_service,
     get_subject_by_source, sync_subject_air_time
 )
-from app.services.bangumi_service import sync_subject_detail
-from app.schemas.adaptersV2 import bangumi_subject_to_subjectlist,UnifiedCollectionSubject
-from app.models import Subject, Collection
+from app.schemas.adaptersV2 import UnifiedCollectionSubject, UnifiedList
 from app.schemas.subject import (
-    SubjectRead, SubjectUpdate, SubjectCreate, 
-    SubjectSearchByName, SubjectSearchCloud, SubjectSearchBase,
-    SubjectSearchByID
+    SubjectUpdate, SubjectCreate,
+    SubjectSearchByName, SubjectSearchByID
 )
-from app.schemas.collection import CollectionList, CollectionRead
 from app.api.deps import get_current_user
-import httpx
 
 from fastapi_cache.decorator import cache
 
 router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 BANGUMI_API_BASE = "https://api.bgm.tv"
-
-from app.schemas.adaptersV2 import UnifiedList
 
 @router.get("/", response_model=UnifiedList)
 @cache(expire=60)
@@ -173,7 +165,7 @@ async def create_subject_endpoint(
     """
     try:
         # 调用服务层的create_subject函数
-        created_subject = await create_subject(db, data)
+        await create_subject(db, data)
         
         # 使用get_subject_by_source获取完整的UnifiedCollectionSubject对象
         from app.schemas.subject import SubjectSearchByID

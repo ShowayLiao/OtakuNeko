@@ -245,7 +245,7 @@ class BangumiDataSyncService:
                 retry_delay *= 2  # 指数退避
         
         # 所有重试都失败
-        error_msg = f"所有重试都失败，无法同步 bangumi-data 数据"
+        error_msg = "所有重试都失败，无法同步 bangumi-data 数据"
         logger.error(error_msg)
         await db.rollback()
         raise Exception(error_msg)
@@ -330,7 +330,7 @@ class BangumiDataSyncService:
             # 自动回退机制
             # 如果查询结果的数量远少于传入 ID 的数量，触发同步
             if len(records) < len(bangumi_ids) * 0.5:
-                logger.warning(f"查询结果数量较少，尝试同步数据")
+                logger.warning("查询结果数量较少，尝试同步数据")
                 await cls.fetch_and_sync_recent_data(db)
                 
                 # 重新查询
@@ -344,8 +344,6 @@ class BangumiDataSyncService:
             
             # 构建返回字典
             result_dict: Dict[int, str] = {}
-            current_date = datetime.now(timezone.utc)
-            
             for record in records:
                 # 提取放送时间，直接返回原始的 ISO 时间格式
                 broadcast_begin = record.broadcast_begin

@@ -1,11 +1,11 @@
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Optional
 from sqlmodel import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_logger
-from ..models import Subject, SubjectType, Collection
-from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectList, SubjectUpsertList, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName, SubjectWithCollection, SubjectWithCollectionList
+from ..models import Subject, Collection
+from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectUpsertList, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName, SubjectWithCollection, SubjectWithCollectionList
 
 logger = get_logger(__name__)
 
@@ -37,7 +37,6 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            from sqlmodel import select
             from ..schemas.subject import SubjectSearchByID
             
             # 将 SubjectCreate 转换为字典
@@ -160,7 +159,6 @@ class SubjectRepo:
             
             # 添加 JSON 字段搜索（使用PostgreSQL兼容的操作）
             from sqlalchemy import cast, String
-            from sqlalchemy.dialects.postgresql import JSONB
             
             # 安全处理Collection.tags（JSON数组）
             conditions.append(
@@ -343,7 +341,6 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            from sqlalchemy import false
             
             # 验证必要的更新字段
             if not subject_data.source or not subject_data.source_id:
@@ -528,7 +525,7 @@ class SubjectRepo:
                 )
             
             # 7. 执行语句
-            result = await db.execute(stmt)
+            await db.execute(stmt)
             await db.commit()
             
             # 清除可能受影响的用户统计缓存

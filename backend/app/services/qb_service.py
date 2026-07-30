@@ -1,4 +1,4 @@
-from typing import Optional, Dict, Any
+from typing import Optional
 import qbittorrentapi
 from fastapi import HTTPException, status
 from app.core.config import settings
@@ -27,7 +27,7 @@ class QBService:
         """
         try:
             # 记录初始化开始
-            logger.info(f"开始初始化 qBittorrent 客户端")
+            logger.info("开始初始化 qBittorrent 客户端")
             logger.debug(f"qBittorrent 配置: host={settings.QB_HOST}, username={settings.QB_USERNAME}")
             
             # 创建 qBittorrent 客户端

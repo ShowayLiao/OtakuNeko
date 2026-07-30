@@ -4,7 +4,7 @@ import traceback
 
 from app.core.logging import get_logger
 from app.models import Schedule
-from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList, UnifiedSchedule, UnifiedScheduleList
+from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, UnifiedSchedule, UnifiedScheduleList
 from app.repositories.schedule_repo import ScheduleRepository
 
 # 导入 Bangumi 相关服务
@@ -212,7 +212,7 @@ class ScheduleService:
             
             # 校验用户ID
             if schedule_data.user_id != user_id:
-                logger.warning(f"Upsert 排班记录失败: 用户ID不匹配")
+                logger.warning("Upsert 排班记录失败: 用户ID不匹配")
                 return None
             
             # 直接调用 repository 的 upsert 方法
@@ -220,7 +220,7 @@ class ScheduleService:
             if result:
                 logger.info(f"成功 Upsert 用户 {user_id} 的排班记录")
             else:
-                logger.warning(f"Upsert 排班记录失败")
+                logger.warning("Upsert 排班记录失败")
             return result
         except Exception as e:
             logger.error(f"Upsert 排班记录失败: {e}")
@@ -315,7 +315,6 @@ class ScheduleService:
                 logger.info(f"第一个返回的时间值 - bangumi_id: {first_id}, time: {air_time_dict[first_id]}")
             
             # 遍历 subject_upsert_list.items，填充 air_time
-            from datetime import time
             for subject_upsert in subject_upsert_list.items:
                 try:
                     bangumi_id = int(subject_upsert.source_id)

@@ -1,18 +1,15 @@
-from typing import Any, Dict, List, Optional
+from typing import Optional
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, or_
 
 from fastapi_cache import FastAPICache
 from app.core.logging import get_logger
 
-from app.models import Collection, Subject, SubjectType, User
-from app.schemas.collection import CollectionList, CollectionRead
+from app.models import Subject
 from app.schemas.subject import (
     SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectUpsertList,
-    SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName,
-    SubjectWithCollection, SubjectWithCollectionList
+    SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName
 )
 from app.services.bangumi_client import search_subjects as search_bangumi_subjects
 from app.repositories.subject_repo import SubjectRepo
@@ -75,7 +72,6 @@ async def get_subject_by_source(
     """
     try:
         from app.schemas.adaptersV2 import subject_with_collection_to_unified
-        from app.schemas.adaptersV2 import UnifiedCollectionSubject
         from app.schemas.subject import SubjectWithCollection
         
         subject, collection = await SubjectRepo.get_by_source(db, search_data)

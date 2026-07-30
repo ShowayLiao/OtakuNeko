@@ -1,7 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional
+from sqlmodel import SQLModel, Field
 from sqlalchemy import Column,UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSON
 from .enums import CollectionStatus

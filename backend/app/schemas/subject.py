@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Dict, Any, TYPE_CHECKING
-from datetime import datetime, time
+from datetime import datetime
 from app.models.enums import SubjectType, CollectionStatus
 from .shared import BaseList, SearchBase
 

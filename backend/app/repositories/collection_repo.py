@@ -1,16 +1,14 @@
-from typing import Dict, Any, Optional, List, Tuple
-from datetime import datetime
+from typing import Optional
 from sqlmodel import select, and_
 from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_logger
-from ..models import Collection, CollectionStatus, Subject
+from ..models import Collection, Subject
 from ..schemas.collection import (
     CollectionCreate, CollectionUpdate, CollectionSearchByID, 
-    CollectionSearchBase, CollectionSearchByName, CollectionUpdateList, CollectionList, CollectionCreateList,
-    CollectionWithSubject, CollectionWithSubjectList, CollectionUpsertList
+    CollectionSearchByName, CollectionWithSubject, CollectionWithSubjectList, CollectionUpsertList
 )
 
 logger = get_logger(__name__)
@@ -446,7 +444,7 @@ class CollectionRepo:
             elif settings.DEPLOY_MODE == "cloud":
                 from sqlalchemy.dialects.postgresql import insert
             else:
-                logging.error("Deploy mode not supported")
+                logger.error("Deploy mode not supported")
                 return 
 
             if not data_list.collections:

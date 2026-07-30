@@ -1,28 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from typing import Optional, List
-from datetime import datetime
-import logging
+from typing import Optional
 import json
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
-from app.services.collection_service import get_user_collections, update_collection, upsert_collection, get_collection, delete_collection, batch_upsert_collections
+from app.services.collection_service import update_collection, upsert_collection, get_collection, delete_collection, batch_upsert_collections
 from app.services.bangumi_service import sync_user_collections
 from app.services.douban_service import sync_user_collections_douban
 from app.schemas.collection import CollectionRead, CollectionList, CollectionSyncRequest, CollectionUpsertRequest, CollectionSearchByName, CollectionUpdate, CollectionSearchBase
 from app.schemas.adaptersV2 import UnifiedList
-from app.models.user import User
-from app.models.subject import Subject
-from app.models.collection import Collection
 from app.api.deps import get_current_user
-from app.repositories import CollectionRepo, SubjectRepo
 import httpx
+from fastapi_cache import FastAPICache
 
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
-
-from fastapi_cache import FastAPICache
 
 router = APIRouter(prefix="/collections", tags=["Collections"])
 

@@ -1,17 +1,10 @@
-import asyncio
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+import json
 
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
 from fastapi_cache import FastAPICache
 from app.core.logging import get_logger
 
-from ..models import Collection, CollectionStatus, Subject, SubjectType, User
-from ..repositories import CollectionRepo, SubjectRepo
-from ..schemas.adaptersV2 import douban_to_bangumi_list
 
 logger = get_logger(__name__)
 
@@ -34,7 +27,7 @@ async def sync_user_collections_douban(
     Raises:
         Exception: 同步过程中发生错误时抛出
     """
-    from app.schemas.adaptersV2 import douban_to_bangumi_list, douban_to_collectionlist
+    from app.schemas.adaptersV2 import douban_to_bangumi_list
     from app.services.collection_service import batch_upsert_collections
     
     try:

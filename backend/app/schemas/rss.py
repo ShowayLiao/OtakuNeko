@@ -1,5 +1,5 @@
-from typing import Optional, Dict, List, Any
-from pydantic import BaseModel, RootModel
+from typing import Optional, Dict, List
+from pydantic import BaseModel
 
 
 class RemoveRssRuleRequest(BaseModel):

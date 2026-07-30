@@ -1,5 +1,4 @@
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from app.api.deps import check_qb_enabled
 from app.services.qb_service import QBService
 from app.schemas.rss import (
@@ -8,8 +7,7 @@ from app.schemas.rss import (
     SetRssRuleRequest,
     RemoveRssRuleRequest,
     RssRulesResponse,
-    RssItemsResponse,
-    RssRule
+    RssItemsResponse
 )
 
 router = APIRouter(prefix="/rss", tags=["RSS"])

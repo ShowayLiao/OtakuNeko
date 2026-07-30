@@ -1,14 +1,10 @@
 from __future__ import annotations
 from datetime import time
-from typing import Optional, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship
+from typing import Optional
+from sqlmodel import SQLModel, Field
 from sqlalchemy import UniqueConstraint
 
 from .enums import WatchType
-
-if TYPE_CHECKING:
-    from .user import User
-
 
 class Schedule(SQLModel, table=True):
     """

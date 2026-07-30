@@ -1,10 +1,6 @@
-from datetime import datetime, timezone
-from typing import Optional, TYPE_CHECKING, List
-from sqlmodel import SQLModel, Field, Relationship
-
-if TYPE_CHECKING:
-    from .schedule import Schedule
-
+from datetime import datetime
+from typing import Optional
+from sqlmodel import SQLModel, Field
 
 def utc_now():
     """获取当前 UTC 时间，返回不带时区信息的datetime对象"""

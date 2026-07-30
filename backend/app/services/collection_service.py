@@ -1,20 +1,14 @@
-from datetime import datetime
-from typing import Any, Dict, Optional, List
+from typing import Optional
 
-from sqlalchemy import desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
 
-from app.models import Collection, CollectionStatus, Subject, SubjectType
+from app.models import Collection, CollectionStatus, Subject
 from app.repositories.collection_repo import CollectionRepo
 from app.repositories.subject_repo import SubjectRepo
 from app.schemas.collection import (
-    CollectionCreate, CollectionUpdate, CollectionUpdateList,
-    CollectionRead, CollectionList, CollectionReadList,
-    CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionCreateList,
-    CollectionWithSubject, CollectionWithSubjectList, CollectionUpsertList
+    CollectionCreate, CollectionUpdate, CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionUpsertList
 )
-from app.schemas.subject import SubjectCreate, SubjectSearchByID
+from app.schemas.subject import SubjectSearchByID
 from app.schemas.adaptersV2 import (
     UnifiedCollectionSubject, UnifiedList,
     collection_with_subject_to_unified, collection_with_subject_list_to_unified_list
@@ -220,8 +214,6 @@ async def upsert_collection(
     """
     # 从data中提取collection和subject信息
     collection_data = data.collection if hasattr(data, 'collection') else data.get('collection') if isinstance(data, dict) else None
-    subject_data = data.subject if hasattr(data, 'subject') else data.get('subject') if isinstance(data, dict) else None
-    
     # 第一步：检查subject是否存在
     if sid:
         # 使用sid查询subject
@@ -384,14 +376,14 @@ async def import_json_collections(
         total_success = 0
         
         # 第一步：导入条目数据
-        logger.info(f"开始导入条目数据...")
+        logger.info("开始导入条目数据...")
         subjects_list = bangumi_subject_to_subjectlist(json_data)
         subject_success_count = await batch_upsert_subjects(db, subjects_list, user_id)
         total_success += subject_success_count
         logger.info(f"条目数据导入完成: {subject_success_count}/{subjects_list.total} 条成功")
         
         # 第二步：导入收藏数据
-        logger.info(f"开始导入收藏数据...")
+        logger.info("开始导入收藏数据...")
         collections_list = bangumi_collection_to_collectionlist(json_data, user_id)
         collection_success_count = await batch_upsert_collections(db, collections_list, user_id)
         total_success += collection_success_count

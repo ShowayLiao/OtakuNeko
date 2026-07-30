@@ -326,7 +326,7 @@ class ScheduleRepository:
             
             # 提交事务
             await db.commit()
-            logger.info(f"事务提交成功")
+            logger.info("事务提交成功")
             
             logger.info(f"成功删除用户 {user_id} 的所有排班记录，共删除 {result.rowcount} 条")
             return True
@@ -335,7 +335,7 @@ class ScheduleRepository:
             logger.error(f"错误类型: {type(e).__name__}")
             logger.error(f"错误堆栈: {traceback.format_exc()}")
             await db.rollback()
-            logger.info(f"事务回滚成功")
+            logger.info("事务回滚成功")
             raise
     
     @staticmethod
@@ -435,7 +435,7 @@ class ScheduleRepository:
                 )
             
             # 7. 执行语句
-            result = await db.execute(stmt)
+            await db.execute(stmt)
             await db.commit()
             
             logger.info(f"批量 Upsert 完成: {len(schedule_dicts)} 个排班记录处理成功")
@@ -534,7 +534,7 @@ class ScheduleRepository:
             result = await db.execute(query)
             updated_schedule = result.scalar_one_or_none()
             
-            logger.info(f"Upsert 完成: 排班记录处理成功")
+            logger.info("Upsert 完成: 排班记录处理成功")
             return updated_schedule
             
         except SQLAlchemyError as e:

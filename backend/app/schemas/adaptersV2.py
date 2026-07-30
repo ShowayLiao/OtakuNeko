@@ -1,14 +1,17 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import logging
-from datetime import datetime, time
+from datetime import time
 from .subject import SubjectUpsert, SubjectUpsertList, SubjectRead, SubjectReadList, SubjectWithCollection, SubjectWithCollectionList
 from .collection import CollectionUpsert, CollectionUpsertList, CollectionRead, CollectionReadList, CollectionWithSubject, CollectionWithSubjectList
 from .schedule import ScheduleUpsert, ScheduleUpsertList
-from .bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem
+from .bangumi import BangumiCalendar
 from ..models import SubjectType
 from app.models.enums import CollectionStatus, WatchType
 from pydantic import BaseModel, Field
 from .shared import BaseList
+
+if TYPE_CHECKING:
+    from .adapters import CollectionSubjectList
 
 logger = logging.getLogger(__name__)
 

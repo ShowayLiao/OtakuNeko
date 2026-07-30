@@ -1,11 +1,11 @@
 from typing import Optional, List
-from sqlmodel import select, or_
+from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_logger
 from ..models import User
-from ..schemas.user import UserCreate, UserUpdate, UserRead, UserSearch
+from ..schemas.user import UserCreate, UserUpdate, UserSearch
 
 logger = get_logger(__name__)
 

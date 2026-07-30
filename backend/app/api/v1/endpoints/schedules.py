@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Path
+from fastapi import APIRouter, Depends, HTTPException, Path
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 import traceback
@@ -7,12 +7,11 @@ from app.api.deps import get_current_user
 from app.services.schedule_service import ScheduleService
 from app.schemas.schedule import ScheduleRead, ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList, UnifiedScheduleList
 from app.schemas.adaptersV2 import UnifiedList
+from app.core.logging import get_logger
 
 router = APIRouter(prefix="/schedules", tags=["Schedules"])
 
-
-from app.core.logging import get_logger
-logger = get_logger(__name__)   
+logger = get_logger(__name__)
 
 
 @router.get("/", response_model=UnifiedScheduleList)

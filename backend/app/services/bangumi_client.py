@@ -347,7 +347,7 @@ class BangumiClient:
             httpx.HTTPStatusError: 请求失败时抛出
             httpx.RequestError: 网络错误时抛出
         """
-        url = f"https://api.bgm.tv/calendar"
+        url = "https://api.bgm.tv/calendar"
         
         async with httpx.AsyncClient(headers=self.HEADERS) as client:
             try:

@@ -3,12 +3,10 @@ from typing import Any, Dict, Optional, List
 from bs4 import BeautifulSoup
 
 from fastapi_cache import FastAPICache
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from ..models import Subject, SubjectType, User
-from ..repositories import CollectionRepo, SubjectRepo
+from ..models import Subject, User
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
 from ..schemas.bangumi import StaffInfo, SubjectDetail, CastInfo, ShortComment, LongReview, AudienceFeedback
@@ -16,7 +14,7 @@ from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_
 from app.clients.bangumi_client import BangumiClient
 from app.schemas.bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem, BangumiCalendarRating, BangumiCalendarCollection, BangumiCalendarImage
 from app.core.logging import get_logger
-from app.schemas.collection import CollectionList, CollectionSyncRequest
+from app.schemas.collection import CollectionSyncRequest
 
 logger = get_logger(__name__)
 
@@ -254,7 +252,6 @@ async def sync_user_collections(
         limit = request_data.limit if request_data and request_data.limit else 50
         offset = request_data.offset if request_data and request_data.offset else 0
         subject_type = request_data.subject_type if request_data and request_data.subject_type else None
-        sync_count = 0
         total_success = 0
         
         while True:
@@ -461,7 +458,6 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         # 转换数据结构以匹配 schema
         calendar_days = []
         for day_index, day_data in enumerate(calendar_info):
-            weekday = day_data.get('weekday', {}).get('id', 'unknown')
             # 转换 items
             items = []
             for item_index, item in enumerate(day_data.get('items', [])):

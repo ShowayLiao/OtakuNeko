@@ -3,7 +3,6 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
-from app.models.user import User
 from app.core.security import create_access_token
 from app.services.user_service import UserService
 from app.schemas.user import UserLogin

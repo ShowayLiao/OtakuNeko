@@ -306,8 +306,6 @@ def _calculate_affinity_scores(filtered_tags: Dict[str, Dict[str, Any]]) -> Dict
     
     for tag_name, stats in filtered_tags.items():
         avg_score = stats["avg_score"]
-        count = stats["count"]
-        
         # 基础分：评分映射到0-70分
         # 评分范围0-10，映射到0-70
         base_score = int((avg_score / 10.0) * 70)
