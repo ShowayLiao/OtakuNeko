@@ -36,17 +36,20 @@ class MediaCapability(BaseCapability):
         return [
             ActionDescriptor(
                 name="library_status",
+                public_name="library_status",
                 description="Check media library connection status",
                 input_schema={"type": "object", "properties": {}},
             ),
             ActionDescriptor(
                 name="list_rss_feeds",
+                public_name="list_rss_feeds",
                 description="List configured RSS feeds",
                 input_schema={"type": "object", "properties": {}},
                 requires_auth=True,
             ),
             ActionDescriptor(
                 name="add_rss_feed",
+                public_name="add_rss_feed",
                 description="Add or update an RSS subscription feed",
                 input_schema={
                     "type": "object",

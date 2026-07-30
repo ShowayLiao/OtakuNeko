@@ -49,6 +49,7 @@ class ScheduleCapability(BaseCapability):
         return [
             ActionDescriptor(
                 name="list_schedules",
+                public_name="list_schedules",
                 description="List all schedules for a user",
                 input_schema={
                     "type": "object",
@@ -61,6 +62,7 @@ class ScheduleCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="create_schedule",
+                public_name="create_schedule",
                 description="Create a new schedule entry",
                 input_schema={
                     "type": "object",
@@ -89,6 +91,7 @@ class ScheduleCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="update_schedule",
+                public_name="update_schedule",
                 description="Update an existing schedule entry",
                 input_schema={
                     "type": "object",
@@ -105,6 +108,7 @@ class ScheduleCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="delete_schedule",
+                public_name="delete_schedule",
                 description="Delete a schedule entry",
                 input_schema={
                     "type": "object",

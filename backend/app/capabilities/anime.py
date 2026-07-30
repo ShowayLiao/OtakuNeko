@@ -65,6 +65,7 @@ class AnimeCapability(BaseCapability):
         return [
             ActionDescriptor(
                 name="search",
+                public_name="search_anime_advanced",
                 description="Search anime by keyword, tags, rating, or air date",
                 input_schema={
                     "type": "object",
@@ -82,21 +83,25 @@ class AnimeCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="get_detail",
+                public_name="get_anime_info",
                 description="Get detailed information about a specific anime subject",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_staff",
+                public_name="get_anime_staff",
                 description="Get production staff information for an anime",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_cast",
+                public_name="get_anime_cast",
                 description="Get voice actor / cast information for an anime",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_reviews",
+                public_name="fetch_audience_reviews",
                 description="Get audience reviews and feedback for an anime",
                 input_schema=subject_id_schema,
             ),

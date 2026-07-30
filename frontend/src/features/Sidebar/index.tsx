@@ -1,7 +1,6 @@
 "use client";
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
-import { MessageSquare, Grid, CalendarDays, UserCircle, Settings } from 'lucide-react';
+import { MessageSquare, Grid, CalendarDays, UserCircle, Settings, BrainCircuit } from 'lucide-react';
 import { ActionIcon, Flexbox, SideNav } from '@lobehub/ui';
 import { theme } from 'antd';
 import { ThemeSwitcher } from '@/features/Theme/ThemeSwitcher';
@@ -11,10 +10,9 @@ export const DesktopSidebar = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { token } = theme.useToken();
-  const [activeKey, setActiveKey] = useState<string>(pathname || '');
+  const activeKey = pathname || '';
 
   const handleSelect = (key: string) => {
-    setActiveKey(key);
     router.push(key);
   };
 
@@ -53,6 +51,13 @@ export const DesktopSidebar = () => {
             color={activeKey === '/Personal' ? token.colorPrimary : undefined}
             icon={UserCircle}
             onClick={() => handleSelect('/Personal')}
+            size="large"
+          />
+          <ActionIcon
+            active={activeKey === '/ai' || activeKey.startsWith('/ai/')}
+            color={activeKey === '/ai' || activeKey.startsWith('/ai/') ? token.colorPrimary : undefined}
+            icon={BrainCircuit}
+            onClick={() => handleSelect('/ai')}
             size="large"
           />
         </>

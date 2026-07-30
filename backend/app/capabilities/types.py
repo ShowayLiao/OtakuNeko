@@ -22,12 +22,14 @@ class ActionDescriptor:
     name: str
     description: str
     input_schema: dict[str, Any]
+    public_name: str | None = None
     requires_auth: bool = False
     is_side_effect: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
+            "public_name": self.public_name,
             "description": self.description,
             "input_schema": self.input_schema,
             "requires_auth": self.requires_auth,

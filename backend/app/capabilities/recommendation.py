@@ -41,6 +41,7 @@ class RecommendationCapability(BaseCapability):
         return [
             ActionDescriptor(
                 name="generate_profile",
+                public_name="generate_user_profile_tool",
                 description="Generate a user preference profile from collection data",
                 input_schema={
                     "type": "object",
@@ -57,6 +58,7 @@ class RecommendationCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="analyse_taste",
+                public_name="analyse_taste",
                 description="Analyse taste affinities and extract quadrant labels",
                 input_schema={
                     "type": "object",

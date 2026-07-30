@@ -11,6 +11,7 @@ from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.schedule import ScheduleCapability
 from app.capabilities.media import MediaCapability
 from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.factory import build_capability_registry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "CapabilityRegistry",
     "ActionDescriptor",
     "CapabilityResult",
+    "build_capability_registry",
 ]

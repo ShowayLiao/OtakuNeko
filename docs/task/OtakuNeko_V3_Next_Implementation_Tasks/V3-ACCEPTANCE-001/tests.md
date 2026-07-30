@@ -19,8 +19,8 @@ uv run ruff check app tests
 uv run python -m app.evaluation.runner --config evals/config/fast.yaml
 ```
 
-Repository-specific frontend checks and migration drills must be appended to the
-final completion report with their exact commands and outputs.
+Repository-specific migration drills must be appended to the final completion
+report with their exact commands and outputs.
 
 ## Exit Gate
 

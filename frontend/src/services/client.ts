@@ -23,6 +23,10 @@ export const request = async <T>(endpoint: string, options: RequestInit = {}): P
     throw new Error(errorData.detail || `请求失败: ${response.status}`);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   // 4. 返回数据
   return response.json();
 };

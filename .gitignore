@@ -132,3 +132,5 @@ docs/goal/
 backend/spec/
 
 .superpowers/
+# Local documentation/tooling scratch output
+.docs/
