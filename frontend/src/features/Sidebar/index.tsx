@@ -1,6 +1,6 @@
 "use client";
 import { usePathname, useRouter } from 'next/navigation';
-import { MessageSquare, Grid, CalendarDays, UserCircle, Settings, BrainCircuit } from 'lucide-react';
+import { MessageSquare, Grid, CalendarDays, UserCircle, Settings } from 'lucide-react';
 import { ActionIcon, Flexbox, SideNav } from '@lobehub/ui';
 import { theme } from 'antd';
 import { ThemeSwitcher } from '@/features/Theme/ThemeSwitcher';
@@ -51,13 +51,6 @@ export const DesktopSidebar = () => {
             color={activeKey === '/Personal' ? token.colorPrimary : undefined}
             icon={UserCircle}
             onClick={() => handleSelect('/Personal')}
-            size="large"
-          />
-          <ActionIcon
-            active={activeKey === '/ai' || activeKey.startsWith('/ai/')}
-            color={activeKey === '/ai' || activeKey.startsWith('/ai/') ? token.colorPrimary : undefined}
-            icon={BrainCircuit}
-            onClick={() => handleSelect('/ai')}
             size="large"
           />
         </>

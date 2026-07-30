@@ -14,7 +14,9 @@ class Settings(BaseSettings):
     DEPLOY_MODE: str = "local"
 
     # Feature flags
-    ENABLE_MULTI_AGENT_ROUTING: bool = False
+    # Personalized chat needs the routing path so authenticated collection
+    # data reaches RecommendationAgent instead of falling back to plain chat.
+    ENABLE_MULTI_AGENT_ROUTING: bool = True
     ENABLE_PROACTIVE_SCHEDULER: bool = False
 
     # 2. 读取 Local 模式配置
