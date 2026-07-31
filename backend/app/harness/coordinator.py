@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 from uuid import uuid4
@@ -17,9 +18,12 @@ from app.harness.budget import (
 )
 from app.harness.contracts import ErrorCode, RunEvent, RunResult
 from app.harness.model_gateway import ModelGateway
+from app.harness.persistence.event_store import EventStore
+from app.harness.persistence.run_store import RunStore
 from app.harness.result import AgentResult
 from app.harness.state import AgentState
 from app.harness.task import AgentTask
+from app.models.agent_run import AgentRun
 
 
 _STEP_EVENTS = {
@@ -45,6 +49,10 @@ _COORDINATOR_ONLY_CONTEXT = {
 }
 
 
+class PersistenceHalt(RuntimeError):
+    """Persistence failed; the Run must not be reported as successful."""
+
+
 class RunCoordinator:
     """Own the terminal state of one interactive Run.
 
@@ -62,17 +70,27 @@ class RunCoordinator:
         model_gateway: ModelGateway | None = None,
         max_model_calls: int = 1,
         fallback_from_result: Callable[[AgentResult, str], str] | None = None,
+        run_store: RunStore | None = None,
+        event_store: EventStore | None = None,
     ) -> None:
+        if (run_store is None) != (event_store is None):
+            raise ValueError("run_store and event_store must be configured together")
         self.adapter = adapter
         self.model_gateway = model_gateway
         self.max_model_calls = max_model_calls
         self._fallback_from_result = fallback_from_result
+        self.run_store = run_store
+        self.event_store = event_store
         self.events: list[RunEvent] = []
         self.terminal_result: RunResult | None = None
         self.failure: BaseException | None = None
         self.budget: RunBudget | None = None
         self.cancellation: CancellationToken | None = None
         self._pending_chunks: list[dict[str, Any]] = []
+        self._persist_sequence = 0
+        self._terminal_persisted = False
+        self.persistence_failure: BaseException | None = None
+        self._active_invocations: dict[str, list[str]] = {}
 
     async def stream(
         self,
@@ -87,6 +105,10 @@ class RunCoordinator:
         self.events = []
         self.terminal_result = None
         self.failure = None
+        self.persistence_failure = None
+        self._persist_sequence = 0
+        self._terminal_persisted = False
+        self._active_invocations = {}
         self.budget = budget or RunBudget()
         self.cancellation = cancellation or CancellationToken()
         run_id = str((task.metadata or {}).get("run_id") or task.task_id or uuid4().hex)
@@ -109,6 +131,7 @@ class RunCoordinator:
         iterator: Any = None
 
         try:
+            await self._persist_run_start(task, run_context, run_id)
             self.cancellation.raise_if_cancelled()
             self.budget.check_deadline()
             adapter_stream = getattr(self.adapter, "stream", None)
@@ -132,6 +155,7 @@ class RunCoordinator:
                 event = self._record_event(chunk, run_id)
                 if event is not None:
                     self._account_event(event)
+                    await self._persist_event(event)
 
                 chunk_type = str(chunk.get("type", ""))
                 if chunk_type == "message_chunk":
@@ -206,6 +230,10 @@ class RunCoordinator:
                 self._finish("completed", None, "".join(message_parts) or None)
         except RunCancellationError:
             self._finish("cancelled", ErrorCode.CANCELLED)
+        except PersistenceHalt as exc:
+            self.persistence_failure = exc
+            self.failure = None
+            self._finish("failed", ErrorCode.PERMANENT)
         except DeadlineExceededError:
             self._finish("timeout", ErrorCode.TIMEOUT)
         except BudgetExceededError:
@@ -233,6 +261,8 @@ class RunCoordinator:
             if iterator is not None and hasattr(iterator, "aclose"):
                 with suppress(Exception):
                     await iterator.aclose()
+            with suppress(Exception):
+                await self._persist_terminal()
 
         if self.terminal_result is None:
             self._finish("completed", None)
@@ -433,6 +463,145 @@ class RunCoordinator:
         if reason == "model_budget_exhausted":
             return "Model call budget exhausted; tool results are available."
         return "Tool results are available, but synthesis is temporarily unavailable."
+
+    async def _persist_run_start(
+        self,
+        task: AgentTask,
+        context: dict[str, Any],
+        run_id: str,
+    ) -> None:
+        if self.run_store is None or self.event_store is None:
+            return
+        run = await self.run_store.create(
+            AgentRun(
+                run_id=run_id,
+                user_id=task.user_id,
+                thread_id=str(task.metadata.get("thread_id"))
+                if task.metadata.get("thread_id") is not None
+                else None,
+                status="queued",
+                goal_hash=hashlib.sha256(task.goal.encode("utf-8")).hexdigest(),
+                model=str(context.get("model", "")),
+            )
+        )
+        if run.status == "queued":
+            await self.run_store.transition(run_id, "running")
+        self._persist_sequence = 1
+        await self.event_store.append(
+            RunEvent(
+                run_id=run_id,
+                sequence=self._persist_sequence,
+                event_type="run.started",
+                payload={"model": str(context.get("model", ""))},
+            )
+        )
+
+    async def _persist_event(self, event: RunEvent) -> None:
+        if self.event_store is None or self.run_store is None:
+            return
+        self._persist_sequence += 1
+        try:
+            persisted_invocation_id = event.invocation_id
+            if event.event_type == "tool_call_start":
+                capability = str(event.payload.get("name", "unknown"))
+                invocation_id = event.invocation_id or (
+                    f"inv-{event.run_id}-{self._persist_sequence}"
+                )
+                self._active_invocations.setdefault(capability, []).append(invocation_id)
+                await self.run_store.create_invocation(
+                    run_id=event.run_id,
+                    invocation_id=invocation_id,
+                    sequence=self._persist_sequence,
+                    capability=capability,
+                    input_payload=event.payload,
+                )
+                persisted_invocation_id = invocation_id
+            elif event.event_type == "tool_call_end" and not persisted_invocation_id:
+                capability = str(event.payload.get("name", "unknown"))
+                active = self._active_invocations.get(capability, [])
+                if active:
+                    persisted_invocation_id = active.pop(0)
+            await self.event_store.append(
+                RunEvent(
+                    run_id=event.run_id,
+                    sequence=self._persist_sequence,
+                    event_type=event.event_type,
+                    invocation_id=persisted_invocation_id,
+                    payload=event.payload,
+                )
+            )
+            if event.event_type == "tool_call_end" and persisted_invocation_id:
+                status = str(event.payload.get("status", "failed"))
+                mapped_status = (
+                    "succeeded"
+                    if status in {"success", "succeeded", "completed"}
+                    else "timed_out"
+                    if status in {"timeout", "timed_out"}
+                    else "denied"
+                    if status in {"denied", "policy_denied"}
+                    else "cancelled"
+                    if status == "cancelled"
+                    else "failed"
+                )
+                await self.run_store.finish_invocation(
+                    persisted_invocation_id,
+                    mapped_status,
+                    error_code=None if mapped_status == "succeeded" else mapped_status,
+                )
+        except Exception as exc:
+            raise PersistenceHalt("interactive Run persistence failed") from exc
+
+    async def _persist_terminal(self) -> None:
+        if (
+            self._terminal_persisted
+            or self.run_store is None
+            or self.event_store is None
+            or self.terminal_result is None
+        ):
+            return
+        self._terminal_persisted = True
+        result = self.terminal_result
+        status = (
+            "succeeded"
+            if result.status == "completed"
+            else "cancelled"
+            if result.status == "cancelled"
+            else "failed"
+        )
+        try:
+            self._persist_sequence += 1
+            await self.event_store.append(
+                RunEvent(
+                    run_id=result.run_id,
+                    sequence=self._persist_sequence,
+                    event_type=f"run.{status}",
+                    payload={
+                        "error_code": result.error_code.value
+                        if result.error_code
+                        else None
+                    },
+                )
+            )
+            await self.run_store.transition(
+                result.run_id,
+                status,
+                error_code=result.error_code.value if result.error_code else None,
+            )
+        except Exception as exc:
+            self.persistence_failure = exc
+            if result.status != "failed" or result.error_code != ErrorCode.PERMANENT:
+                self.terminal_result = RunResult(
+                    run_id=result.run_id,
+                    status="failed",
+                    content=None,
+                    error_code=ErrorCode.PERMANENT,
+                )
+            with suppress(Exception):
+                await self.run_store.transition(
+                    result.run_id,
+                    "failed",
+                    error_code=ErrorCode.PERMANENT.value,
+                )
 
     @classmethod
     def _gateway_terminal(

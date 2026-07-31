@@ -11,6 +11,8 @@ from app.harness.budget import CancellationToken, RunBudget
 from app.harness.coordinator import RunCoordinator
 from app.harness.contracts import RunResult
 from app.harness.model_gateway import ModelGateway
+from app.harness.persistence.event_store import EventStore
+from app.harness.persistence.run_store import RunStore
 from app.harness.result import AgentResult
 from app.harness.task import AgentTask
 from app.harness.state import AgentState
@@ -66,12 +68,16 @@ class AgentRuntime:
         trace_store: TraceStore | None = None,
         model_gateway: ModelGateway | None = None,
         max_model_calls: int = 1,
+        run_store: RunStore | None = None,
+        event_store: EventStore | None = None,
     ):
         self.adapter = adapter
         self.checkpoint_store = checkpoint_store
         self.trace_store = trace_store
         self.model_gateway = model_gateway
         self.max_model_calls = max_model_calls
+        self.run_store = run_store
+        self.event_store = event_store
 
     @property
     def adapter_name(self) -> str:
@@ -219,6 +225,18 @@ class AgentRuntime:
             model_gateway=self.model_gateway,
             max_model_calls=self.max_model_calls,
             fallback_from_result=self._fallback_from_result,
+            run_store=(
+                self.run_store
+                if os.getenv("INTERACTIVE_RUN_STORE_ENABLED", "true").lower()
+                not in {"0", "false", "off", "no"}
+                else None
+            ),
+            event_store=(
+                self.event_store
+                if os.getenv("INTERACTIVE_RUN_STORE_ENABLED", "true").lower()
+                not in {"0", "false", "off", "no"}
+                else None
+            ),
         )
         try:
             trace_context = bind_trace(trace) if trace is not None else nullcontext()
