@@ -2,7 +2,7 @@
 
 ## 结论
 
-本审计以当前源码为准，权威对照文档实际位于 [`docs/standard-agent-harness-reference-and-codex-audit-guide.md`](../standard-agent-harness-reference-and-codex-audit-guide.md)，而不是提示中给出的 `docs/architecture/standard-agent-harness-reference.md`；参考文档的 §20 明确要求本目录的 12 个文件（参考文档:1695-1713）。
+本审计以当前源码为准，项目级权威入口为 [`docs/architecture/standard-agent-harness-reference.md`](../architecture/standard-agent-harness-reference.md)，完整通用参考与 Codex 审计指南仍位于 [`docs/standard-agent-harness-reference-and-codex-audit-guide.md`](../standard-agent-harness-reference-and-codex-audit-guide.md)；参考文档的 §20 明确要求本目录的 12 个文件（参考文档:1695-1713）。
 
 当前成熟度判定为 **Level 1.5：Agent Loop 已存在，Controlled Runtime 只有局部能力，未达到可靠 Level 2，也未达到 Durable Harness Level 3**。判定依据是：LangGraph 已经执行 `think -> tools -> think -> speak`，并设置 `recursion_limit=24`（`backend/app/agents/graph.py:20,90-108,242-247`）；但聊天主路径没有统一 Run Coordinator、统一 Invocation、持久化 Run/Step/Event、断线补拉、取消状态落库或全局预算（`backend/app/api/v1/agent.py:176-219`; `backend/app/harness/runtime.py:181-336`）。参考文档把这些分别列为 Level 1、2、3 的判据（参考文档:1576-1599）。
 
