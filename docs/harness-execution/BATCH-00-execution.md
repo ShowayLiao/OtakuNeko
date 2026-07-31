@@ -2,6 +2,7 @@
 
 > Batch: `BATCH-00`  
 > Task: `TASK-HARNESS-000`  
+> Final status: `completed`
 > 开始时间: `2026-07-31 22:47 Asia/Shanghai`  
 > 分支: `feature-harness`  
 > 起始 commit: `26ff29c2b2e97dd0e8b27ad601b19fe801698afd`  
@@ -129,8 +130,8 @@ Review verdict: `pass`
 ```yaml
 batch_result:
   batch: BATCH-00
-  status: ready_for_commit
-  commit: pending
+  status: completed
+  commit: a398da8
   tasks_completed:
     - TASK-HARNESS-000
   tests:
