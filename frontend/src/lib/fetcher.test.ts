@@ -37,4 +37,50 @@ describe('chatWithBackend authentication', () => {
       'Bearer user-access-token',
     );
   });
+
+  it('replays the current SSE event vocabulary into callbacks', async () => {
+    const frames = [
+      ['thinking_start', { stream_sequence: 1 }],
+      ['tool_start', { stream_sequence: 2, id: 'tool-1', name: 'fake.search', inputs: {} }],
+      ['tool_end', { stream_sequence: 3, id: 'tool-1', name: 'fake.search', output: { success: true }, status: 'success' }],
+      ['message_start', { stream_sequence: 4 }],
+      ['message_chunk', { stream_sequence: 5, content: 'answer' }],
+      ['message_end', { stream_sequence: 6 }],
+    ]
+      .map(([type, data]) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`)
+      .join('');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(frames));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const events: string[] = [];
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      onThinkingStart: () => events.push('thinking_start'),
+      onToolCallStart: (_id, name) => events.push(`tool_start:${name}`),
+      onToolCallEnd: (_id, name, _output, _duration, status) => events.push(`tool_end:${name}:${status}`),
+      onMessageStart: () => events.push('message_start'),
+      onMessageChunk: chunk => events.push(`message_chunk:${chunk}`),
+      onMessageEnd: () => events.push('message_end'),
+      onComplete: () => events.push('complete'),
+    });
+
+    expect(events).toEqual([
+      'thinking_start',
+      'tool_start:fake.search',
+      'tool_end:fake.search:success',
+      'message_start',
+      'message_chunk:answer',
+      'message_end',
+      'complete',
+    ]);
+  });
 });
