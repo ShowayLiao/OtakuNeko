@@ -11,6 +11,8 @@ def test_registry_contains_all_capabilities():
     assert "recommendation" in registry.list_names()
     assert "schedule" in registry.list_names()
     assert "media" in registry.list_names()
+    assert "system" in registry.list_names()
+    assert registry.get_public_definition("get_current_time", "v1") is not None
 
 
 def test_exposure_map_limits_to_approved_actions():

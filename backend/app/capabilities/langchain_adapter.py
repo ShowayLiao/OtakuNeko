@@ -15,10 +15,13 @@ from app.capabilities.factory import (
     build_capability_registry as _build_capability_registry,
 )
 from app.capabilities.registry import CapabilityRegistry
-from app.capabilities.types import ActionDescriptor
+from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.core.logging import get_logger
+from app.harness.contracts import ExecutionContext
 
 logger = get_logger(__name__)
+
+_DEFAULT_ACTIVE_CAPABILITIES = frozenset({"anime", "system", "recommendation"})
 
 
 def build_capability_registry() -> CapabilityRegistry:
@@ -29,6 +32,9 @@ def build_capability_registry() -> CapabilityRegistry:
 def _build_runtime_tool(
     capability: BaseCapability,
     descriptor: ActionDescriptor,
+    *,
+    input_schema: dict[str, Any] | None = None,
+    context: ExecutionContext | None = None,
 ) -> BaseTool:
     """Create a LangChain BaseTool from a capability action descriptor.
 
@@ -44,18 +50,33 @@ def _build_runtime_tool(
     @tool(descriptor.public_name)
     async def _inner(**kwargs: Any) -> dict[str, Any]:
         """Auto-generated tool — see descriptor.description."""
-        result = await capability.execute(descriptor.name, **kwargs)
+        public_kwargs = dict(kwargs)
+        public_kwargs.pop("user_id", None)
+        public_kwargs.pop("principal_id", None)
+        if (
+            descriptor.requires_auth
+            and context is not None
+            and context.principal_id is not None
+        ):
+            public_kwargs["user_id"] = context.principal_id
+        result = await capability.execute(descriptor.name, **public_kwargs)
+        if isinstance(result, CapabilityResult):
+            return result.to_safe_dict(
+                output_schema=descriptor.output_schema,
+                max_payload_bytes=descriptor.max_payload_bytes,
+            )
         return result
 
     _inner.name = descriptor.public_name
     _inner.description = descriptor.description
 
     # Build Pydantic args schema from input_schema
-    if descriptor.input_schema:
+    public_input_schema = input_schema if input_schema is not None else descriptor.input_schema
+    if public_input_schema:
         try:
             from pydantic import create_model, Field
-            props = descriptor.input_schema.get("properties", {})
-            required = set(descriptor.input_schema.get("required", []) or [])
+            props = public_input_schema.get("properties", {})
+            required = set(public_input_schema.get("required", []) or [])
             fields: dict[str, Any] = {}
             for field_name, field_schema in props.items():
                 field_type = _json_type_to_python(field_schema.get("type", "string"))
@@ -83,11 +104,32 @@ def _json_type_to_python(json_type: str) -> type:
     return mapping.get(json_type, str)
 
 
-def derive_tools(registry: CapabilityRegistry) -> list[BaseTool]:
-    """Derive LangChain BaseTool list from all registered capabilities."""
+def derive_tools(
+    registry: CapabilityRegistry,
+    *,
+    allowlist: set[str] | None = None,
+    context: ExecutionContext | None = None,
+) -> list[BaseTool]:
+    """Derive read-only LangChain tools from versioned public definitions."""
     tools: list[BaseTool] = []
-    for name in registry.list_names():
-        cap = registry.get(name)
-        for descriptor in cap.actions():
-            tools.append(_build_runtime_tool(cap, descriptor))
+    definitions = registry.allowed_public_definitions(allowlist)
+    if allowlist is None:
+        definitions = [
+            definition
+            for definition in definitions
+            if definition.capability_name in _DEFAULT_ACTIVE_CAPABILITIES
+        ]
+    for definition in definitions:
+        owner = registry.find_action(definition.public_name)
+        if owner is None:
+            continue
+        capability, descriptor = owner
+        tools.append(
+            _build_runtime_tool(
+                capability,
+                descriptor,
+                input_schema=definition.input_schema,
+                context=context,
+            )
+        )
     return tools

@@ -31,12 +31,36 @@ class TestActionDescriptor:
         desc = ActionDescriptor("a", "desc", input_schema={})
         assert desc.requires_auth is False
         assert desc.is_side_effect is False
+        assert desc.version == "v1"
+        assert desc.risk_level == "low"
+        assert desc.approval_required is False
+        assert desc.output_schema["type"] == "object"
 
     def test_side_effecting_actions_are_distinguishable(self):
         read = ActionDescriptor("read", "r", input_schema={}, is_side_effect=False)
         write = ActionDescriptor("write", "w", input_schema={}, is_side_effect=True)
         assert not read.is_side_effect
         assert write.is_side_effect
+        assert write.approval_required is True
+
+    def test_versioned_public_metadata_is_serializable(self):
+        desc = ActionDescriptor(
+            "read",
+            "read data",
+            input_schema={"type": "object", "properties": {}},
+            version="v2",
+            output_schema={"type": "object", "properties": {"value": {"type": "string"}}},
+            risk_level="medium",
+            timeout_seconds=12,
+            retry_class="transient",
+            idempotency_mode="keyed",
+            approval_required=True,
+        )
+        data = desc.to_dict()
+        assert json.dumps(data)
+        assert data["version"] == "v2"
+        assert data["timeout_seconds"] == 12
+        assert data["idempotency_mode"] == "keyed"
 
     def test_descriptor_is_immutable(self):
         desc = ActionDescriptor("a", "desc", input_schema={})
@@ -69,3 +93,18 @@ class TestCapabilityResult:
         r = CapabilityResult.ok(count=5, items=[])
         d = r.to_dict()
         assert json.dumps(d)
+
+    def test_to_safe_dict_uses_structured_data_envelope(self):
+        result = CapabilityResult.ok(value="safe")
+        assert result.to_safe_dict() == {"success": True, "data": {"value": "safe"}}
+
+    def test_to_safe_dict_rejects_invalid_or_oversized_payload(self):
+        result = CapabilityResult.ok(value="too-large")
+        invalid = result.to_safe_dict(
+            output_schema={"type": "object", "required": ["missing"]}
+        )
+        oversized = result.to_safe_dict(max_payload_bytes=10)
+        assert invalid["success"] is False
+        assert invalid["error_type"] == "invalid_output"
+        assert oversized["success"] is False
+        assert oversized["error_type"] == "payload_too_large"

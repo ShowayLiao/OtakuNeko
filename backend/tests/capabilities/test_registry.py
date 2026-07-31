@@ -51,6 +51,30 @@ class AnotherStubCapability(BaseCapability):
         return {"action": action, **kwargs}
 
 
+class WriteStubCapability(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "writer"
+
+    @property
+    def description(self) -> str:
+        return "write capability"
+
+    def actions(self) -> list[ActionDescriptor]:
+        return [
+            ActionDescriptor(
+                name="write_data",
+                public_name="write_data",
+                description="Write data",
+                input_schema={"type": "object", "properties": {"user_id": {"type": "integer"}}},
+                is_side_effect=True,
+            )
+        ]
+
+    async def execute(self, action: str, **kwargs):
+        return {"success": True}
+
+
 def test_registry_register_lookup_and_unregister():
     registry = CapabilityRegistry()
     capability = StubCapability()
@@ -87,3 +111,50 @@ def test_list_actions_returns_all_actions():
     actions = registry.list_actions()
     assert len(actions) == 1
     assert actions[0].name == "do_stuff"
+
+
+def test_registry_returns_versioned_public_definition_without_authority_fields():
+    registry = CapabilityRegistry()
+    registry.register(StubCapability())
+
+    definition = registry.get_public_definition("do_stuff", "v1")
+
+    assert definition is not None
+    assert definition.name == "do_stuff"
+    assert definition.version == "v1"
+    assert "user_id" not in definition.input_schema.get("properties", {})
+    assert "user_id" not in definition.to_dict()
+    assert "capability_object" not in definition.to_dict()
+    assert registry.get_public_definition("do_stuff", "v2") is None
+
+
+def test_registry_default_public_allowlist_excludes_writes():
+    registry = CapabilityRegistry()
+    registry.register(StubCapability())
+    registry.register(WriteStubCapability())
+
+    definitions = registry.allowed_public_definitions()
+    explicit = registry.allowed_public_definitions({"do_stuff", "write_data"})
+
+    assert [definition.public_name for definition in definitions] == ["do_stuff"]
+    assert [definition.public_name for definition in explicit] == ["do_stuff"]
+    write = registry.get_public_definition("write_data", "v1")
+    assert write is not None
+    assert write.approval_required is True
+
+
+def test_registry_validates_public_output_with_schema_and_size_limit():
+    registry = CapabilityRegistry()
+    registry.register(StubCapability())
+
+    valid = registry.validate_public_output(
+        "do_stuff", {"value": "ok"}, output_schema={"type": "object", "required": ["value"]}
+    )
+    invalid = registry.validate_public_output(
+        "do_stuff", {"other": "ok"}, output_schema={"type": "object", "required": ["value"]}
+    )
+    oversized = registry.validate_public_output("do_stuff", {"value": "x"}, max_payload_bytes=1)
+
+    assert valid == {"success": True, "data": {"value": "ok"}}
+    assert invalid["error_type"] == "invalid_output"
+    assert oversized["error_type"] == "payload_too_large"

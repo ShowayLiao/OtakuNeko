@@ -16,10 +16,7 @@ import asyncio
 from contextlib import asynccontextmanager
 import os
 
-from app.capabilities.anime import AnimeCapability
-from app.capabilities.media import MediaCapability
-from app.capabilities.recommendation import RecommendationCapability
-from app.capabilities.schedule import ScheduleCapability
+from app.capabilities.factory import build_capability_registry
 from app.capabilities.registry import CapabilityRegistry
 from app.mcp_server import ExposureMap, MCPServer, StdioServer
 from app.mcp_server.context import MCPContext
@@ -27,25 +24,30 @@ from app.mcp_server.context import MCPContext
 
 def build_registry() -> CapabilityRegistry:
     """Build the registry with all capabilities registered."""
-    registry = CapabilityRegistry()
-    registry.register(AnimeCapability())
-    registry.register(RecommendationCapability())
-    registry.register(ScheduleCapability())
-    registry.register(MediaCapability())
-    return registry
+    return build_capability_registry()
 
 
-def build_exposure() -> ExposureMap:
+def build_exposure(registry: CapabilityRegistry | None = None) -> ExposureMap:
     """Define which capability actions are publicly exposed over MCP.
 
     MCP-001 scope: Anime (all 5 read-only actions).
     MCP-002 additions: schedule list (read), media (list_rss, library_status).
     """
-    return ExposureMap({
+    exposure = {
         "anime": ["search", "get_detail", "get_staff", "get_cast", "get_reviews"],
         "schedule": ["list_schedules"],
         "media": ["library_status", "list_rss_feeds"],
-    })
+    }
+    canonical_registry = registry or build_registry()
+    for capability_name, action_names in exposure.items():
+        for action_name in action_names:
+            definition = canonical_registry.get_public_definition(action_name, "v1")
+            if definition is None or definition.is_side_effect:
+                raise RuntimeError(
+                    f"MCP exposure is not backed by a read-only Registry action: "
+                    f"{capability_name}.{action_name}"
+                )
+    return ExposureMap(exposure)
 
 
 def build_context() -> MCPContext:
@@ -75,7 +77,7 @@ async def _request_dependencies():
 
 async def _run() -> None:
     registry = build_registry()
-    exposure = build_exposure()
+    exposure = build_exposure(registry)
     server = MCPServer(registry, exposure)
     context = build_context()
 

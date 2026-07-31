@@ -82,3 +82,15 @@ class TestToolRegistry:
         registry.register_mcp(FakeMCPTransport())
         schemas = await registry.get_all_schemas()
         assert len(schemas) == 2
+
+    def test_register_capability_registry_uses_canonical_derivation(self):
+        from app.capabilities.factory import build_capability_registry
+
+        derived = ToolRegistry.from_capability_registry(build_capability_registry())
+
+        assert set(derived.list_names()) >= {
+            "get_anime_info",
+            "search_anime_advanced",
+            "get_current_time",
+        }
+        assert "create_schedule" not in derived.list_names()

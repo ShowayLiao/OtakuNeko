@@ -14,6 +14,15 @@ class ToolRegistry:
         for t in tools:
             self.register(t)
 
+    @classmethod
+    def from_capability_registry(cls, capability_registry) -> "ToolRegistry":
+        """Build the local tool catalog from the canonical capability registry."""
+        from app.capabilities.langchain_adapter import derive_tools
+
+        registry = cls()
+        registry.register_all(derive_tools(capability_registry))
+        return registry
+
     def register_mcp(self, client) -> None:
         self._mcp_clients.append(client)
 

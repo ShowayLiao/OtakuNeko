@@ -9,6 +9,7 @@ from app.capabilities.base import BaseCapability
 from app.capabilities.factory import build_capability_registry
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
+from app.harness.contracts import ExecutionContext
 
 
 def _legacy_public_names() -> list[str]:
@@ -40,6 +41,74 @@ def test_derived_tools_preserve_all_legacy_public_names():
     }
 
     assert set(_legacy_public_names()) <= derived_names
+
+
+def test_derived_tools_do_not_activate_side_effecting_actions():
+    from app.capabilities.langchain_adapter import derive_tools
+
+    derived_names = {
+        tool.name for tool in derive_tools(build_capability_registry())
+    }
+
+    assert "create_schedule" not in derived_names
+    assert "update_schedule" not in derived_names
+    assert "delete_schedule" not in derived_names
+    assert "add_rss_feed" not in derived_names
+
+
+@pytest.mark.asyncio
+async def test_derived_tool_strips_model_user_id_and_injects_trusted_context():
+    calls: list[dict] = []
+
+    class ProtectedCapability(BaseCapability):
+        @property
+        def name(self) -> str:
+            return "protected"
+
+        @property
+        def description(self) -> str:
+            return "protected reads"
+
+        def actions(self) -> list[ActionDescriptor]:
+            return [
+                ActionDescriptor(
+                    name="read_private",
+                    public_name="read_private",
+                    description="Read private data",
+                    requires_auth=True,
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "user_id": {"type": "integer"},
+                            "query": {"type": "string"},
+                        },
+                        "required": ["user_id", "query"],
+                    },
+                )
+            ]
+
+        async def execute(self, action: str, **kwargs):
+            calls.append(kwargs)
+            return {"success": True, "principal": kwargs["user_id"]}
+
+    registry = CapabilityRegistry()
+    registry.register(ProtectedCapability())
+    from app.capabilities.langchain_adapter import derive_tools
+
+    tools = derive_tools(
+        registry,
+        allowlist={"read_private"},
+        context=ExecutionContext(
+            principal_id=42,
+            run_id="run-1",
+            trace_id="trace-1",
+        ),
+    )
+
+    result = await tools[0].ainvoke({"query": "q", "user_id": 999})
+
+    assert result["principal"] == 42
+    assert calls == [{"query": "q", "user_id": 42}]
 
 
 class _PublicNameCapability(BaseCapability):
