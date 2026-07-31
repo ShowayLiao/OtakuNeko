@@ -134,3 +134,4 @@ backend/spec/
 .superpowers/
 # Local documentation/tooling scratch output
 .docs/
+.worktrees/
