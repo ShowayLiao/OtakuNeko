@@ -4,6 +4,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from app.harness.contracts import InvocationResult
+
 
 class AgentResult(BaseModel):
     """Normalized result returned by a Capability or Subagent.
@@ -47,6 +49,15 @@ class AgentResult(BaseModel):
         Keeping this boundary tolerant lets existing agents migrate without
         forcing the Runtime to understand their domain-specific dictionary.
         """
+        if isinstance(value, InvocationResult):
+            return cls.from_invocation_result(value, kind=kind, name=name)
+        if isinstance(value, BaseException):
+            return cls(
+                kind=kind,
+                name=name,
+                status="failed",
+                error_code="permanent",
+            )
         if isinstance(value, cls):
             return value
         if not isinstance(value, dict):
@@ -82,4 +93,21 @@ class AgentResult(BaseModel):
             evidence=value.get("evidence") or {},
             error_code=value.get("error_code"),
             content=value.get("content"),
+        )
+
+    @classmethod
+    def from_invocation_result(
+        cls,
+        result: InvocationResult,
+        *,
+        kind: Literal["capability", "subagent"],
+        name: str,
+    ) -> "AgentResult":
+        """Convert the versioned invocation contract into the legacy result."""
+        return cls(
+            kind=kind,
+            name=name,
+            status="completed" if result.status == "succeeded" else "failed",
+            data=result.output,
+            error_code=result.error_code.value if result.error_code else None,
         )

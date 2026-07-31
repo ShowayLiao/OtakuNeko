@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.harness.model_gateway import OpenAIModelGateway
+from app.harness.contracts import InvocationResult
 from app.harness.result import AgentResult
 from app.trace import AgentTrace, TraceEventType
 from app.trace.recorder import bind_trace
@@ -20,6 +21,34 @@ def test_agent_result_supports_capability_and_subagent_kinds():
     assert result.kind == "subagent"
     assert result.name == "recommendation"
     assert result.data["candidates"]
+
+
+def test_agent_result_explicitly_converts_invocation_result():
+    result = AgentResult.from_raw(
+        InvocationResult(
+            invocation_id="inv-1",
+            status="succeeded",
+            output={"items": [{"id": 1}]},
+        ),
+        kind="capability",
+        name="anime.search",
+    )
+
+    assert result.status == "completed"
+    assert result.data == {"items": [{"id": 1}]}
+    assert result.prompt_payload()["data"] == result.data
+    assert "content" not in result.prompt_payload()
+
+
+def test_agent_result_does_not_expose_raw_exception_in_prompt_payload():
+    result = AgentResult.from_raw(
+        RuntimeError("provider secret must stay internal"),
+        kind="capability",
+        name="anime.search",
+    )
+
+    assert result.status == "failed"
+    assert "provider secret" not in str(result.prompt_payload())
 
 
 class FakeCompletions:

@@ -3,7 +3,11 @@
 import pytest
 
 from app.agents.base import BaseAgent
-from app.agents.langgraph_adapter import LangGraphAdapter
+from app.agents.langgraph_adapter import (
+    LangGraphAdapter,
+    adapt_langgraph_event,
+    adapt_langgraph_events,
+)
 
 
 class FakeChatWorkflow:
@@ -77,6 +81,58 @@ class TestLangGraphAdapter:
     async def test_reflect_returns_observations(self, adapter):
         reflection = await adapter.reflect(None, "some result")
         assert reflection["goal_achieved"] is True
+
+
+def test_adapt_langgraph_event_redacts_raw_tool_output_and_error_detail():
+    tool_event = adapt_langgraph_event(
+        {
+            "type": "tool_call_end",
+            "id": "tool-1",
+            "name": "anime.search",
+            "output": {"secret": "do-not-publish"},
+            "status": "success",
+        },
+        run_id="run-1",
+        sequence=3,
+    )
+    error_event = adapt_langgraph_event(
+        {"type": "error", "detail": "raw provider secret"},
+        run_id="run-1",
+        sequence=4,
+    )
+
+    assert tool_event is not None
+    assert tool_event.event_type == "tool_call_end"
+    assert tool_event.invocation_id == "tool-1"
+    assert "secret" not in str(tool_event.payload)
+    assert error_event is not None
+    assert error_event.payload == {"error_code": "permanent"}
+    assert "raw provider secret" not in str(error_event.payload)
+
+
+def test_adapt_langgraph_events_assigns_stable_sequences_and_ids():
+    events = list(
+        adapt_langgraph_events(
+            [
+                {"type": "thinking_start"},
+                {"type": "tool_call_start", "id": "tool-1", "name": "search", "inputs": {"q": "x"}},
+                {"type": "message_chunk", "content": "answer"},
+                {"type": "unknown", "ignored": True},
+                {"type": "message_end"},
+            ],
+            run_id="run-1",
+        )
+    )
+
+    assert [event.sequence for event in events] == [1, 2, 3, 4]
+    assert [event.event_type for event in events] == [
+        "thinking_start",
+        "tool_call_start",
+        "message_chunk",
+        "message_end",
+    ]
+    assert events[1].invocation_id == "tool-1"
+    assert events[2].payload == {"content": "answer"}
 
 
 class FakeTaskStub:

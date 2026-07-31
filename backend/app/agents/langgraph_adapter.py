@@ -5,12 +5,83 @@ from time import monotonic
 from typing import Any, AsyncGenerator
 
 from app.agents.base import BaseAgent
+from app.harness.contracts import RunEvent
 from app.trace import TraceEventType
 from app.trace.recorder import (
     TraceRecorder,
     current_trace_recorder,
     safe_argument_shape,
 )
+
+
+_ADAPTABLE_EVENT_TYPES = {
+    "thinking_start",
+    "thinking_end",
+    "tool_call_start",
+    "tool_call_end",
+    "message_start",
+    "message_chunk",
+    "message_end",
+    "error",
+}
+
+
+def adapt_langgraph_event(
+    event: dict[str, Any],
+    *,
+    run_id: str,
+    sequence: int,
+) -> RunEvent | None:
+    """Convert one legacy LangGraph chunk into a safe internal RunEvent."""
+    event_type = event.get("type")
+    if event_type not in _ADAPTABLE_EVENT_TYPES:
+        return None
+
+    invocation_id = event.get("id")
+    payload: dict[str, Any] = {}
+    if event_type == "tool_call_start":
+        inputs = event.get("inputs")
+        payload = {
+            "name": str(event.get("name", "unknown")),
+            "argument_keys": sorted(inputs) if isinstance(inputs, dict) else [],
+        }
+    elif event_type == "tool_call_end":
+        payload = {
+            "name": str(event.get("name", "unknown")),
+            "status": str(event.get("status", "unknown")),
+        }
+        if isinstance(event.get("duration_ms"), (int, float)):
+            payload["duration_ms"] = event["duration_ms"]
+    elif event_type == "message_chunk":
+        payload = {"content": str(event.get("content", ""))}
+    elif event_type == "error":
+        payload = {"error_code": "permanent"}
+
+    return RunEvent(
+        run_id=run_id,
+        sequence=sequence,
+        event_type=str(event_type),
+        invocation_id=str(invocation_id) if invocation_id is not None else None,
+        payload=payload,
+    )
+
+
+def adapt_langgraph_events(
+    events: list[dict[str, Any]],
+    *,
+    run_id: str,
+) -> list[RunEvent]:
+    """Convert recognized legacy chunks with a stable contiguous sequence."""
+    adapted: list[RunEvent] = []
+    for event in events:
+        converted = adapt_langgraph_event(
+            event,
+            run_id=run_id,
+            sequence=len(adapted) + 1,
+        )
+        if converted is not None:
+            adapted.append(converted)
+    return adapted
 
 
 class LangGraphAdapter(BaseAgent):
