@@ -5,7 +5,7 @@
 > 开始时间：`2026-07-31 23:50 Asia/Shanghai`
 > 当前分支：`feature-harness`
 > 起始 commit：`2c5a1e327326c473dcf54c87cd51a64448104e64`
-> 记录状态：`in_progress`
+> 记录状态：`completed`
 
 ## 1. Preflight
 
@@ -116,8 +116,8 @@ Remediation rounds：1（修复 Graph 既有 `LLM 不可用` 安全文案兼容�
 ```yaml
 batch_result:
   batch: BATCH-04
-  status: in_progress
-  commit: null
+  status: committed
+  commit: 116e6ef
   tasks_completed:
     - "ModelUsage/ModelDelta/ModelCallResult/ProviderModelAdapter"
     - "OpenAI-compatible complete/stream adapter 与安全错误映射"
