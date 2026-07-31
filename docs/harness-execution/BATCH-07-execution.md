@@ -5,7 +5,7 @@
 > Started: `2026-08-01 00:35 Asia/Shanghai`
 > Branch: `feature-harness`
 > Starting commit: `a2d1d42aee38f6fbb3f010e5acda2100ff1c385b`
-> Record status: `in_progress`
+> Record status: `completed`
 
 ## 1. Preflight
 
@@ -120,8 +120,8 @@ Remediation rounds: 1. No blocker, critical, high, or unresolved medium findings
 ```yaml
 batch_result:
   batch: BATCH-07
-  status: ready_to_commit
-  commit: null
+  status: completed
+  commit: ff35cda
   tasks_completed:
     - TASK-HARNESS-007
   tests:
