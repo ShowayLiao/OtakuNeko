@@ -5,6 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.harness.task import AgentTask
+from app.harness.contracts import RunResult
 
 
 class AgentState(BaseModel):
@@ -14,7 +15,20 @@ class AgentState(BaseModel):
     current_step: str = Field(default="", description="Label of the current execution step")
     context: dict[str, Any] = Field(default_factory=dict, description="Scratch context accumulated during execution")
     result: Any = Field(default=None, description="Final result produced by the agent")
-    status: str = Field(default="pending", description="Execution status: pending | running | completed | failed")
+    status: str = Field(
+        default="pending",
+        description="Execution status: pending | running | completed | failed | cancelled | timeout",
+    )
+    terminal_result: RunResult | None = Field(
+        default=None,
+        exclude=True,
+        description="The single in-memory terminal result owned by the Coordinator",
+    )
+    budget: dict[str, Any] = Field(
+        default_factory=dict,
+        exclude=True,
+        description="In-memory budget snapshot; durable Run/Event state is deferred",
+    )
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize state to a plain dict for persistence."""
