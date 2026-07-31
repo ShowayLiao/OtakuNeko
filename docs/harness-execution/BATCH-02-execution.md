@@ -2,6 +2,7 @@
 
 > Batch: `BATCH-02`
 > Task: `TASK-HARNESS-002`
+> Final status: `completed`
 > Start: `2026-07-31 23:16:15 +08:00`
 > Branch: `feature-harness`
 > Start commit: `9ffa22ebdf7a0a2948370aa04fe3a5ca448b67fe`
@@ -109,8 +110,8 @@ review_result:
 ```yaml
 batch_result:
   batch: BATCH-02
-  status: ready_for_commit
-  commit: null
+  status: completed
+  commit: 336006b
   tasks_completed:
     - TASK-HARNESS-002
   tests:
