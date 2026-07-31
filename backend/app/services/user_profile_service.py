@@ -4,6 +4,7 @@
 生成高质量的用户画像，用于动画推荐和个性化分析。
 """
 
+from datetime import datetime, timezone
 from typing import List, Dict, Any, TYPE_CHECKING, Tuple, TypedDict
 from collections import defaultdict
 from app.core.logging import get_logger
@@ -12,6 +13,12 @@ if TYPE_CHECKING:
     from app.schemas.collection import CollectionSubject
 
 logger = get_logger(__name__)
+
+_NEUTRAL_SCORE = 7.0
+_BASELINE_PRIOR_WEIGHT = 5.0
+_RECENCY_HALF_LIFE_DAYS = 180.0
+_TAG_PRIOR_WEIGHT = 2.0
+_PREFERENCE_MARGIN = 0.3
 
 
 
@@ -48,7 +55,11 @@ class UserProfile(TypedDict):
     watched_ids: List[int]
 
 
-def generate_user_profile(collections: List['CollectionSubject']) -> UserProfile:
+def generate_user_profile(
+    collections: List['CollectionSubject'],
+    *,
+    as_of: datetime | None = None,
+) -> UserProfile:
     """
     生成用户画像的核心函数
 
@@ -76,32 +87,64 @@ def generate_user_profile(collections: List['CollectionSubject']) -> UserProfile
         return _create_empty_profile()
     
     try:
+        reference_time = _normalise_datetime(as_of) or datetime.now(timezone.utc)
         # 步骤1: 数据清洗 - 提取有效数据
-        watched_ids, valid_entries = _clean_and_extract_data(collections)
+        watched_ids, rated_entries, tagged_entries = _clean_and_extract_data(collections)
         
-        if not valid_entries:
+        if not rated_entries:
             logger.warning("没有有效的评分数据，返回基础画像")
             return _create_basic_profile(watched_ids)
+
+        rating_baseline = _calculate_rating_baseline(rated_entries, reference_time)
         
         # 步骤2: 基础统计 - 统计每个标签的出现次数和总分
-        tag_stats = _calculate_tag_statistics(valid_entries)
+        tag_stats = _calculate_tag_statistics(tagged_entries, reference_time)
         
         if not tag_stats:
             logger.warning("没有有效的标签数据，返回基础画像")
-            return _create_basic_profile(watched_ids)
+            return _create_basic_profile(
+                watched_ids,
+                rating_baseline=rating_baseline,
+                total_rated_items=len(rated_entries),
+            )
         
         # 步骤3: 统计学修正 - 计算平均分并过滤小样本
         filtered_tags = _apply_statistical_correction(tag_stats)
         
         if not filtered_tags:
             logger.warning("过滤后没有有效的标签数据，返回基础画像")
-            return _create_basic_profile(watched_ids)
+            return _create_basic_profile(
+                watched_ids,
+                rating_baseline=rating_baseline,
+                total_rated_items=len(rated_entries),
+            )
         
         # 步骤4: 构建全景字典 - 按频次降序排列
         taste_dictionary = _build_taste_dictionary(filtered_tags)
         
         # 步骤5: 计算综合偏好指数
-        affinity_scores = _calculate_affinity_scores(filtered_tags)
+        tag_preferences = _build_tag_preferences(filtered_tags, rating_baseline)
+        affinity_scores = {
+            tag: preference["preference_score"]
+            for tag, preference in tag_preferences.items()
+        }
+        favorite_tags = sorted(
+            (
+                tag
+                for tag, preference in tag_preferences.items()
+                if preference["preference_delta"] >= _PREFERENCE_MARGIN
+            ),
+            key=lambda tag: tag_preferences[tag]["preference_score"],
+            reverse=True,
+        )
+        avoid_tags = sorted(
+            (
+                tag
+                for tag, preference in tag_preferences.items()
+                if preference["preference_delta"] <= -_PREFERENCE_MARGIN
+            ),
+            key=lambda tag: tag_preferences[tag]["preference_score"],
+        )
         
         # 步骤6: 构建图表数据
         chart_data = _build_chart_data(filtered_tags, affinity_scores)
@@ -109,8 +152,13 @@ def generate_user_profile(collections: List['CollectionSubject']) -> UserProfile
         # 步骤7: 构建最终结果
         return {
             "llm_summary": {
-                "total_rated": len(valid_entries),
-                "taste_dictionary": taste_dictionary
+                "total_rated": len(tagged_entries),
+                "total_rated_items": len(rated_entries),
+                "taste_dictionary": taste_dictionary,
+                "rating_baseline": round(rating_baseline, 2),
+                "favorite_tags": favorite_tags,
+                "avoid_tags": avoid_tags,
+                "tag_preferences": tag_preferences,
             },
             "chart_data": chart_data,
             "watched_ids": watched_ids
@@ -121,7 +169,9 @@ def generate_user_profile(collections: List['CollectionSubject']) -> UserProfile
         return _create_error_profile(str(e))
 
 
-def _clean_and_extract_data(collections: List['CollectionSubject']) -> Tuple[List[int], List[Dict[str, Any]]]:
+def _clean_and_extract_data(
+    collections: List['CollectionSubject'],
+) -> Tuple[List[int], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     数据清洗：提取有效数据
 
@@ -133,15 +183,17 @@ def _clean_and_extract_data(collections: List['CollectionSubject']) -> Tuple[Lis
         collections: CollectionSubject 列表
 
     Returns:
-        Tuple[watched_ids, valid_entries]
+        Tuple[watched_ids, rated_entries, tagged_entries]
         - watched_ids: 所有观看过的动画ID列表（去重）
-        - valid_entries: 有效条目的列表，每个元素包含tags和score
+        - rated_entries: 所有有效评分条目，用于计算用户评分基准
+        - tagged_entries: 同时包含标签的评分条目，用于标签统计
 
     Note:
         会跳过格式异常或数据不完整的条目
     """
     watched_ids = []
-    valid_entries = []
+    rated_entries = []
+    tagged_entries = []
 
     for item in collections:
         try:
@@ -166,23 +218,70 @@ def _clean_and_extract_data(collections: List['CollectionSubject']) -> Tuple[Lis
 
             # 提取标签
             tags = subject.tags or []
-            if not tags:
-                continue
-
-            # 存储有效条目
-            valid_entries.append({
+            entry = {
                 "tags": tags,
-                "score": float(score)
-            })
+                "score": float(score),
+                "updated_at": getattr(item, "updated_at", None),
+            }
+            rated_entries.append(entry)
+            if tags:
+                tagged_entries.append(entry)
 
         except Exception as e:
             logger.debug(f"处理收藏条目时跳过（可能数据格式异常）: {e}")
             continue
 
-    return watched_ids, valid_entries
+    return watched_ids, rated_entries, tagged_entries
 
 
-def _calculate_tag_statistics(valid_entries: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+def _normalise_datetime(value: Any) -> datetime | None:
+    """Return a timezone-aware UTC datetime, or ``None`` for bad input."""
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if not isinstance(value, datetime):
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _recency_weight(updated_at: Any, as_of: datetime) -> float:
+    timestamp = _normalise_datetime(updated_at)
+    if timestamp is None:
+        return 1.0
+    age_days = max((as_of - timestamp).total_seconds() / 86400.0, 0.0)
+    return 0.5 ** (age_days / _RECENCY_HALF_LIFE_DAYS)
+
+
+def _calculate_rating_baseline(
+    rated_entries: List[Dict[str, Any]],
+    as_of: datetime,
+) -> float:
+    weighted_count = 0.0
+    weighted_score = 0.0
+    for entry in rated_entries:
+        weight = _recency_weight(entry.get("updated_at"), as_of)
+        weighted_count += weight
+        weighted_score += weight * float(entry["score"])
+
+    if weighted_count == 0:
+        return _NEUTRAL_SCORE
+
+    baseline = (
+        weighted_score + _BASELINE_PRIOR_WEIGHT * _NEUTRAL_SCORE
+    ) / (weighted_count + _BASELINE_PRIOR_WEIGHT)
+    return min(10.0, max(0.0, baseline))
+
+
+def _calculate_tag_statistics(
+    valid_entries: List[Dict[str, Any]],
+    as_of: datetime | None = None,
+) -> Dict[str, Dict[str, Any]]:
     """
     基础统计：统计每个标签的出现次数和累加总分
     
@@ -192,11 +291,20 @@ def _calculate_tag_statistics(valid_entries: List[Dict[str, Any]]) -> Dict[str, 
     Returns:
         标签统计字典：{tag_name: {"count": X, "total_score": Y}}
     """
-    tag_stats = defaultdict(lambda: {"count": 0, "total_score": 0.0})
+    reference_time = _normalise_datetime(as_of) or datetime.now(timezone.utc)
+    tag_stats = defaultdict(
+        lambda: {
+            "count": 0,
+            "total_score": 0.0,
+            "weighted_count": 0.0,
+            "weighted_score": 0.0,
+        }
+    )
     
     for entry in valid_entries:
         tags = entry["tags"]
         score = entry["score"]
+        weight = _recency_weight(entry.get("updated_at"), reference_time)
         
         # 处理标签列表（每个标签是字典，包含name字段）
         for tag_item in tags:
@@ -209,6 +317,8 @@ def _calculate_tag_statistics(valid_entries: List[Dict[str, Any]]) -> Dict[str, 
                 # 更新统计
                 tag_stats[tag_name]["count"] += 1
                 tag_stats[tag_name]["total_score"] += score
+                tag_stats[tag_name]["weighted_count"] += weight
+                tag_stats[tag_name]["weighted_score"] += weight * score
             except (AttributeError, KeyError):
                 # 跳过格式异常的标签
                 continue
@@ -244,7 +354,9 @@ def _apply_statistical_correction(tag_stats: Dict[str, Dict[str, Any]]) -> Dict[
         
         filtered_tags[tag_name] = {
             "count": count,
-            "avg_score": avg_score
+            "avg_score": avg_score,
+            "weighted_count": stats.get("weighted_count", float(count)),
+            "weighted_score": stats.get("weighted_score", total_score),
         }
     
     return filtered_tags
@@ -275,6 +387,37 @@ def _build_taste_dictionary(filtered_tags: Dict[str, Dict[str, Any]]) -> Dict[st
         taste_dict[tag_name] = [stats["count"], stats["avg_score"]]
     
     return taste_dict
+
+
+def _build_tag_preferences(
+    filtered_tags: Dict[str, Dict[str, Any]],
+    baseline: float,
+) -> Dict[str, Dict[str, Any]]:
+    """Build smoothed, centered preference data for each retained tag."""
+    preferences: Dict[str, Dict[str, Any]] = {}
+    for tag_name, stats in filtered_tags.items():
+        weighted_count = float(stats.get("weighted_count", stats["count"]))
+        weighted_score = float(
+            stats["weighted_score"]
+            if "weighted_score" in stats
+            else stats["total_score"]
+        )
+        smoothed_score = (
+            weighted_score + _TAG_PRIOR_WEIGHT * baseline
+        ) / (weighted_count + _TAG_PRIOR_WEIGHT)
+        preference_delta = smoothed_score - baseline
+        preference_score = round(
+            min(100.0, max(0.0, 50.0 + preference_delta * (100.0 / 6.0)))
+        )
+        preferences[tag_name] = {
+            "count": stats["count"],
+            "avg_score": stats["avg_score"],
+            "smoothed_score": round(smoothed_score, 2),
+            "preference_score": preference_score,
+            "preference_delta": round(preference_delta, 2),
+            "weighted_count": round(weighted_count, 2),
+        }
+    return preferences
 
 
 def _calculate_affinity_scores(filtered_tags: Dict[str, Dict[str, Any]]) -> Dict[str, int]:
@@ -391,13 +534,26 @@ def _build_chart_data(filtered_tags: Dict[str, Dict[str, Any]],
     }
 
 
+def _summary_defaults(
+    *,
+    rating_baseline: float = _NEUTRAL_SCORE,
+    total_rated_items: int = 0,
+) -> Dict[str, Any]:
+    return {
+        "total_rated": 0,
+        "total_rated_items": total_rated_items,
+        "taste_dictionary": {},
+        "rating_baseline": round(rating_baseline, 2),
+        "favorite_tags": [],
+        "avoid_tags": [],
+        "tag_preferences": {},
+    }
+
+
 def _create_empty_profile() -> Dict[str, Any]:
     """创建空画像（输入为空时使用）"""
     return {
-        "llm_summary": {
-            "total_rated": 0,
-            "taste_dictionary": {}
-        },
+        "llm_summary": _summary_defaults(),
         "chart_data": {
             "radar": [],
             "bar_count": [],
@@ -407,13 +563,18 @@ def _create_empty_profile() -> Dict[str, Any]:
     }
 
 
-def _create_basic_profile(watched_ids: List[int]) -> Dict[str, Any]:
+def _create_basic_profile(
+    watched_ids: List[int],
+    *,
+    rating_baseline: float = _NEUTRAL_SCORE,
+    total_rated_items: int = 0,
+) -> Dict[str, Any]:
     """创建基础画像（数据不足时使用）"""
     return {
-        "llm_summary": {
-            "total_rated": 0,
-            "taste_dictionary": {}
-        },
+        "llm_summary": _summary_defaults(
+            rating_baseline=rating_baseline,
+            total_rated_items=total_rated_items,
+        ),
         "chart_data": {
             "radar": [],
             "bar_count": [],
@@ -427,9 +588,8 @@ def _create_error_profile(error_msg: str) -> Dict[str, Any]:
     """创建错误画像（发生异常时使用）"""
     return {
         "llm_summary": {
-            "total_rated": 0,
-            "taste_dictionary": {},
-            "error": error_msg
+            **_summary_defaults(),
+            "error": error_msg,
         },
         "chart_data": {
             "radar": [],
