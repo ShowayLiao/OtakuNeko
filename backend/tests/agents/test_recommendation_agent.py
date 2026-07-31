@@ -43,13 +43,18 @@ class RecordingMemory:
 
 
 class StubAnimeCapability:
+    def __init__(self, results=None):
+        self.results = results or [
+            {"id": 99, "name": "攻壳机动队", "score": 9.0},
+        ]
+        self.last_kwargs = None
+
     async def execute(self, action, **kwargs):
         assert action == "search"
+        self.last_kwargs = kwargs
         return {
             "success": True,
-            "results": [
-                {"id": 99, "name": "攻壳机动队", "score": 9.0},
-            ],
+            "results": self.results,
         }
 
 
@@ -164,3 +169,52 @@ class TestRecommendationAgent:
         )
         fallback = await exhausted.execute(task)
         assert fallback["evidence"]["reason"] == "model_budget_exhausted"
+
+    @pytest.mark.asyncio
+    async def test_candidate_search_uses_favorites_and_filters_avoid_tags(self):
+        profile = {
+            "llm_summary": {
+                "total_rated": 8,
+                "taste_dictionary": {"校园": [4, 8.0]},
+                "favorite_tags": ["科幻"],
+                "avoid_tags": ["校园"],
+            },
+            "watched_ids": [1],
+        }
+        anime = StubAnimeCapability(
+            results=[
+                {"id": 1, "name": "已看", "tags": ["科幻"]},
+                {"id": 2, "name": "雷区作品", "tags": ["科幻", "校园"]},
+                {"id": 3, "name": "合适作品", "tags": ["科幻"]},
+            ]
+        )
+        agent = RecommendationAgent(
+            StubCapability(profile=profile),
+            anime_capability=anime,
+        )
+
+        result = await agent.execute(AgentTask(user_id=1, goal="推荐动漫"))
+
+        assert [item["id"] for item in result["candidates"]] == [3]
+        assert anime.last_kwargs["tags"] == ["科幻"]
+
+    @pytest.mark.asyncio
+    async def test_candidates_without_tags_are_not_dropped(self):
+        profile = {
+            "llm_summary": {
+                "total_rated": 2,
+                "taste_dictionary": {"科幻": [2, 8.0]},
+                "favorite_tags": ["科幻"],
+                "avoid_tags": ["校园"],
+            },
+            "watched_ids": [],
+        }
+        anime = StubAnimeCapability(results=[{"id": 2, "name": "未知标签"}])
+        agent = RecommendationAgent(
+            StubCapability(profile=profile),
+            anime_capability=anime,
+        )
+
+        result = await agent.execute(AgentTask(user_id=1, goal="推荐动漫"))
+
+        assert result["candidates"] == [{"id": 2, "name": "未知标签"}]
