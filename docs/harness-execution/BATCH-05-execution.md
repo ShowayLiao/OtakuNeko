@@ -5,7 +5,7 @@
 > Started: `2026-07-31 23:58 Asia/Shanghai`
 > Branch: `feature-harness`
 > Starting commit: `8f6a268d4cc972638235ff88c1c2663dcc0d722b`
-> Record status: `in_progress`
+> Record status: `completed`
 
 ## 1. Preflight
 
@@ -114,7 +114,7 @@ Remediation rounds: 2 (provider timeout facade compatibility; terminal error-cod
 batch_result:
   batch: BATCH-05
   status: committed
-  commit: null
+  commit: ae5b796
   tasks_completed:
     - "Finite RunBudget with steps/tool/model/deadline/token/cost accounting and explicit unknown usage counters"
     - "CancellationToken and cooperative cancellation/deadline checks at adapter, event, model and tool boundaries"
