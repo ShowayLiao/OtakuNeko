@@ -5,7 +5,8 @@
 > Started: `2026-08-01 00:12 Asia/Shanghai`
 > Branch: `feature-harness`
 > Starting commit: `e59d225c517ebbb6a173084e3799b2260dd3311f`
-> Record status: `in_progress`
+> Implementation commit: `4519f51f22d731bee2d807ab2ea7236fa7db4dc5`
+> Record status: `completed`
 
 ## 1. Preflight
 
@@ -159,8 +160,8 @@ Remediation rounds: 1 (initial Review found REVIEW-001; remediation and full re-
 ```yaml
 batch_result:
   batch: BATCH-06
-  status: in_progress
-  commit: null
+  status: committed
+  commit: 4519f51f22d731bee2d807ab2ea7236fa7db4dc5
   tasks_completed:
     - TASK-HARNESS-006
   tests:
