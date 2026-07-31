@@ -135,9 +135,12 @@ class RecommendationAgent(BaseAgent):
             return profile_candidates[: self.max_candidates], False
         if self._anime_capability is None:
             return [], False
-        tastes = list(
-            profile.get("llm_summary", {}).get("taste_dictionary", {}).keys()
-        )
+        summary = profile.get("llm_summary", {})
+        favorite_tags = summary.get("favorite_tags")
+        if favorite_tags is None:
+            tastes = list(summary.get("taste_dictionary", {}).keys())
+        else:
+            tastes = list(favorite_tags)
         if not tastes:
             return [], False
         search = await self._anime_capability.execute(
@@ -149,14 +152,35 @@ class RecommendationAgent(BaseAgent):
         if not search.get("success"):
             return [], True
         watched_ids = set(profile.get("watched_ids", []))
+        avoid_tags = {
+            str(tag) for tag in summary.get("avoid_tags", []) if tag
+        }
         return (
             [
                 candidate
                 for candidate in search.get("results", [])
                 if candidate.get("id") not in watched_ids
+                and not self._has_avoided_tag(candidate, avoid_tags)
             ][: self.max_candidates],
             False,
         )
+
+    @staticmethod
+    def _has_avoided_tag(candidate: dict[str, Any], avoid_tags: set[str]) -> bool:
+        if not avoid_tags:
+            return False
+        raw_tags = candidate.get("tags")
+        if not raw_tags:
+            return False
+        candidate_tags = set()
+        for tag in raw_tags:
+            if isinstance(tag, dict):
+                name = tag.get("name")
+            else:
+                name = tag
+            if name:
+                candidate_tags.add(str(name))
+        return bool(candidate_tags & avoid_tags)
 
     @staticmethod
     def _fallback(reason: str) -> dict[str, Any]:

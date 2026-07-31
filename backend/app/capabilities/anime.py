@@ -24,6 +24,20 @@ logger = get_logger(__name__)
 _SEARCH_RESULT_SUMMARY_LENGTH = 200
 
 
+def _normalise_tags(raw_tags: Any) -> list[str]:
+    names: list[str] = []
+    for tag in raw_tags or []:
+        if isinstance(tag, dict):
+            name = tag.get("name")
+        elif isinstance(tag, str):
+            name = tag
+        else:
+            name = None
+        if name:
+            names.append(str(name))
+    return names
+
+
 def _simplify_search_results(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
@@ -38,6 +52,7 @@ def _simplify_search_results(items: list[dict[str, Any]]) -> list[dict[str, Any]
             "type": item.get("type"),
             "air_date": item.get("air_date"),
             "images": item.get("images", {}),
+            "tags": _normalise_tags(item.get("tags")),
         }
         for item in items
     ]
