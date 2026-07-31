@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     QB_HOST: str = "http://localhost:8080"
     QB_USERNAME: str = "admin"
     QB_PASSWORD: str = "123456"
+    QB_ALLOWED_USER_IDS: str = ""
 
     # 4. 【核心逻辑】自动生成 DATABASE_URL
     @computed_field

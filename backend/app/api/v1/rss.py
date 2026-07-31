@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from app.api.deps import check_qb_enabled
+from app.api.deps import check_qb_access
 from app.services.qb_service import QBService
 from app.schemas.rss import (
     AddRssFeedRequest,
@@ -13,7 +13,7 @@ from app.schemas.rss import (
 router = APIRouter(prefix="/rss", tags=["RSS"])
 
 
-@router.get("/list", dependencies=[Depends(check_qb_enabled)], response_model=RssItemsResponse)
+@router.get("/list", dependencies=[Depends(check_qb_access)], response_model=RssItemsResponse)
 def get_rss_list():
     """
     获取所有 RSS 订阅项
@@ -25,7 +25,7 @@ def get_rss_list():
     return qb_service.get_rss_items()
 
 
-@router.post("/add", dependencies=[Depends(check_qb_enabled)])
+@router.post("/add", dependencies=[Depends(check_qb_access)])
 def add_rss_feed(request: AddRssFeedRequest):
     """
     添加 RSS 订阅源
@@ -38,7 +38,7 @@ def add_rss_feed(request: AddRssFeedRequest):
     return {"message": "RSS 订阅源添加成功"}
 
 
-@router.post("/upsert", dependencies=[Depends(check_qb_enabled)])
+@router.post("/upsert", dependencies=[Depends(check_qb_access)])
 def upsert_rss_feed(request: AddRssFeedRequest):
     """
     Upsert RSS 订阅源 (存在则检查更新，不存在则添加)
@@ -51,7 +51,7 @@ def upsert_rss_feed(request: AddRssFeedRequest):
     return {"message": "RSS 订阅源 upsert 成功"}
 
 
-@router.delete("/remove", dependencies=[Depends(check_qb_enabled)])
+@router.delete("/remove", dependencies=[Depends(check_qb_access)])
 def remove_rss_item(request: RemoveRssItemRequest):
     """
     删除 RSS 订阅项
@@ -64,7 +64,7 @@ def remove_rss_item(request: RemoveRssItemRequest):
     return {"message": "RSS 订阅项删除成功"}
 
 
-@router.post("/set-rule", dependencies=[Depends(check_qb_enabled)])
+@router.post("/set-rule", dependencies=[Depends(check_qb_access)])
 def set_rss_rule(request: SetRssRuleRequest):
     """
     设置 RSS 自动下载规则
@@ -80,7 +80,7 @@ def set_rss_rule(request: SetRssRuleRequest):
     return {"message": "RSS 自动下载规则设置成功"}
 
 
-@router.delete("/remove-rule", dependencies=[Depends(check_qb_enabled)])
+@router.delete("/remove-rule", dependencies=[Depends(check_qb_access)])
 def remove_rss_rule(request: RemoveRssRuleRequest):
     """
     删除 RSS 自动下载规则
@@ -93,7 +93,7 @@ def remove_rss_rule(request: RemoveRssRuleRequest):
     return {"message": "RSS 自动下载规则删除成功"}
 
 
-@router.get("/rules", dependencies=[Depends(check_qb_enabled)], response_model=RssRulesResponse)
+@router.get("/rules", dependencies=[Depends(check_qb_access)], response_model=RssRulesResponse)
 def get_rss_rules():
     """
     获取所有 RSS 自动下载规则

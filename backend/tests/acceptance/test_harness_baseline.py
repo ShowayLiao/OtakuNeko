@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -16,11 +17,13 @@ os.environ["DEBUG"] = "false"
 
 from app.api.v1 import rss as rss_module
 from app.api.v1.rss import router as rss_router
+from app.api.deps import _parse_qb_allowed_user_ids, get_current_user
 from app.core.config import settings
 from app.harness.checkpoint import InMemoryCheckpointStore
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 from app.schemas.rss import RssItemsResponse, RssRulesResponse
+from app.schemas.user import UserRead
 
 
 class FakeModel:
@@ -241,15 +244,15 @@ class FakeQBService:
         self.calls.append(("remove-rule", kwargs))
 
 
-@pytest.mark.asyncio
-async def test_anonymous_qb_routes_currently_reach_fake_service(monkeypatch) -> None:
-    """BATCH-01 must reverse this characterization without external qB calls."""
-    app = FastAPI()
-    app.include_router(rss_router, prefix="/v1")
-    FakeQBService.calls = []
-    monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
-    monkeypatch.setattr(rss_module, "QBService", FakeQBService)
+def _make_user(user_id: int) -> UserRead:
+    return UserRead(
+        id=user_id,
+        username=f"user-{user_id}",
+        created_at=datetime.now(timezone.utc),
+    )
 
+
+def _rss_requests() -> list[tuple[str, str, dict[str, Any] | None]]:
     rule = {
         "affectedFeeds": [],
         "assignedCategory": "anime",
@@ -264,7 +267,7 @@ async def test_anonymous_qb_routes_currently_reach_fake_service(monkeypatch) -> 
         "smartFilter": False,
         "useRegex": False,
     }
-    requests = [
+    return [
         ("GET", "/v1/rss/list", None),
         ("GET", "/v1/rss/rules", None),
         ("POST", "/v1/rss/add", {"url": "https://example.test/feed", "name": "feed"}),
@@ -274,18 +277,76 @@ async def test_anonymous_qb_routes_currently_reach_fake_service(monkeypatch) -> 
         ("DELETE", "/v1/rss/remove-rule", {"rule_name": "rule"}),
     ]
 
+
+def _make_rss_app(user: UserRead | None = None) -> FastAPI:
+    app = FastAPI()
+    app.include_router(rss_router, prefix="/v1")
+    if user is not None:
+        async def override_user() -> UserRead:
+            return user
+
+        app.dependency_overrides[get_current_user] = override_user
+    return app
+
+
+async def _request_rss_routes(app: FastAPI) -> list[httpx.Response]:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
         responses = []
-        for method, path, payload in requests:
+        for method, path, payload in _rss_requests():
             responses.append(
                 await client.request(method, path, json=payload)
                 if payload is not None
                 else await client.request(method, path)
             )
+        return responses
 
-    assert [response.status_code for response in responses] == [200] * len(requests)
+
+@pytest.mark.parametrize(
+    ("raw_value", "expected"),
+    [
+        ("", set()),
+        ("   ", set()),
+        ("7, 7", {7}),
+        (" 7, 8 ", {7, 8}),
+        ("7,not-a-number", None),
+        ("0", None),
+        ("7,,8", None),
+        ("9" * 5000, None),
+    ],
+)
+def test_qb_allowed_user_id_parser_fails_closed(raw_value: str, expected) -> None:
+    assert _parse_qb_allowed_user_ids(raw_value) == expected
+
+
+@pytest.mark.asyncio
+async def test_qb_routes_fail_closed_for_anonymous_and_unauthorized_users(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
+    monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7", raising=False)
+    monkeypatch.setattr(rss_module, "QBService", FakeQBService)
+
+    FakeQBService.calls = []
+    anonymous_responses = await _request_rss_routes(_make_rss_app())
+    assert all(response.status_code in {401, 403} for response in anonymous_responses)
+    assert FakeQBService.calls == []
+
+    FakeQBService.calls = []
+    unauthorized_responses = await _request_rss_routes(_make_rss_app(_make_user(8)))
+    assert [response.status_code for response in unauthorized_responses] == [403] * 7
+    assert FakeQBService.calls == []
+
+
+@pytest.mark.asyncio
+async def test_authorized_user_can_reach_all_qb_routes(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
+    monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7, 7", raising=False)
+    monkeypatch.setattr(rss_module, "QBService", FakeQBService)
+    FakeQBService.calls = []
+
+    responses = await _request_rss_routes(_make_rss_app(_make_user(7)))
+
+    assert [response.status_code for response in responses] == [200] * 7
     assert [name for name, _ in FakeQBService.calls] == [
         "init",
         "list",
@@ -302,3 +363,44 @@ async def test_anonymous_qb_routes_currently_reach_fake_service(monkeypatch) -> 
         "init",
         "remove-rule",
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("allowlist", "expected_status"),
+    [
+        ("", 403),
+        ("   ", 403),
+        ("7, 7", 200),
+        (" 7, 8 ", 200),
+        ("7,not-a-number", 403),
+        ("0", 403),
+        ("7,,8", 403),
+    ],
+)
+async def test_qb_allowlist_parsing_fails_closed(
+    monkeypatch, allowlist: str, expected_status: int
+) -> None:
+    monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
+    monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", allowlist, raising=False)
+    monkeypatch.setattr(rss_module, "QBService", FakeQBService)
+    FakeQBService.calls = []
+
+    responses = await _request_rss_routes(_make_rss_app(_make_user(7)))
+
+    assert [response.status_code for response in responses] == [expected_status] * 7
+    if expected_status == 403:
+        assert FakeQBService.calls == []
+
+
+@pytest.mark.asyncio
+async def test_qb_proxy_disabled_stops_before_service(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ENABLE_QB_PROXY", False)
+    monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7", raising=False)
+    monkeypatch.setattr(rss_module, "QBService", FakeQBService)
+    FakeQBService.calls = []
+
+    responses = await _request_rss_routes(_make_rss_app(_make_user(7)))
+
+    assert [response.status_code for response in responses] == [403] * 7
+    assert FakeQBService.calls == []

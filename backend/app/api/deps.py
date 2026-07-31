@@ -90,6 +90,43 @@ def check_qb_enabled():
         )
 
 
+def _parse_qb_allowed_user_ids(raw_value: str) -> set[int] | None:
+    """Parse the server-owned qB allowlist, returning None for invalid config."""
+    if not raw_value.strip():
+        return set()
+
+    tokens = [token.strip() for token in raw_value.split(",")]
+    parsed_ids: set[int] = set()
+    for token in tokens:
+        if not token or not token.isascii() or not token.isdecimal():
+            return None
+        try:
+            user_id = int(token)
+        except ValueError:
+            return None
+        if user_id <= 0:
+            return None
+        parsed_ids.add(user_id)
+    return parsed_ids
+
+
+def check_qb_access(
+    user: UserRead = Depends(get_current_user),
+) -> None:
+    """Require an authenticated user explicitly allowed to use the qB proxy."""
+    check_qb_enabled()
+    allowed_user_ids = _parse_qb_allowed_user_ids(settings.QB_ALLOWED_USER_IDS)
+    if (
+        allowed_user_ids is None
+        or not allowed_user_ids
+        or user.id not in allowed_user_ids
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="QBittorrent access is not authorized",
+        )
+
+
 async def get_optional_user(
     token_auth: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
     db: AsyncSession = Depends(get_session)
