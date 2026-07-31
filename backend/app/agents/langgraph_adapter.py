@@ -5,6 +5,7 @@ from time import monotonic
 from typing import Any, AsyncGenerator
 
 from app.agents.base import BaseAgent
+from app.harness.budget import CancellationToken
 from app.harness.contracts import RunEvent
 from app.trace import TraceEventType
 from app.trace.recorder import (
@@ -125,6 +126,7 @@ class LangGraphAdapter(BaseAgent):
         thread_id: str | None = None,
         speak_prompt: str | None = None,
         deepseek_options: dict[str, Any] | None = None,
+        cancellation: CancellationToken | None = None,
     ) -> AsyncGenerator[dict[str, Any], None]:
         """Forward streaming execution to ChatWorkflow without dropping options."""
         metadata = getattr(task, "metadata", None) or {}
@@ -137,29 +139,34 @@ class LangGraphAdapter(BaseAgent):
         active_tools: dict[str, tuple[Any, float, str]] = {}
         terminal_status = "completed"
         try:
-            async for chunk in self._workflow.stream_chat(
-                model=selected_model,
-                messages=messages if messages is not None else options.get("messages", []),
-                temperature=(
+            workflow_kwargs = {
+                "model": selected_model,
+                "messages": messages if messages is not None else options.get("messages", []),
+                "temperature": (
                     temperature
                     if temperature is not None
                     else options.get("temperature", 0.7)
                 ),
-                thread_id=(
+                "thread_id": (
                     thread_id
                     if thread_id is not None
                     else options.get("thread_id", "default")
                 ),
-                speak_prompt=(
+                "speak_prompt": (
                     speak_prompt
                     if speak_prompt is not None
                     else options.get("speak_prompt")
                 ),
-                deepseek_options=(
+                "deepseek_options": (
                     deepseek_options
                     if deepseek_options is not None
                     else options.get("deepseek_options")
                 ),
+            }
+            if cancellation is not None:
+                workflow_kwargs["cancellation"] = cancellation
+            async for chunk in self._workflow.stream_chat(
+                **workflow_kwargs,
             ):
                 recorder = current_trace_recorder()
                 if recorder is not None:

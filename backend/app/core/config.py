@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     ENABLE_MULTI_AGENT_ROUTING: bool = True
     ENABLE_PROACTIVE_SCHEDULER: bool = False
 
+    # Checkpoint lifecycle. The local SQLite path remains the development
+    # default; production deployments must provide a durable mounted path or
+    # an adapter with equivalent persistence semantics.
+    CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
+    HARNESS_CHECKPOINT_ADAPTER: str = "sqlite"
+    CHECKPOINT_LEASE_SECONDS: int = 3600
+
     # 2. 读取 Local 模式配置
     SQLITE_FILE: str = "./local.db"
 

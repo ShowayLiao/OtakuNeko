@@ -1,6 +1,7 @@
 import os
 import json
 import time
+from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
@@ -20,9 +21,11 @@ from app.agents.router import AgentRouter
 from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.anime import AnimeCapability
 from app.harness.runtime import AgentRuntime
+from app.harness.budget import CancellationToken
+from app.harness.checkpoint import SqliteCheckpointStore
 from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
 from app.harness.persistence.event_store import EventStore
-from app.harness.persistence.run_store import RunStore
+from app.harness.persistence.run_store import InvalidRunTransition, RunStore
 from app.harness.routing_adapter import FeatureFlagRoutingAdapter
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
@@ -64,6 +67,22 @@ def _interactive_run_store_enabled() -> bool:
     }
 
 
+def _checkpoint_adapter_enabled() -> bool:
+    return settings.HARNESS_CHECKPOINT_ADAPTER.lower() not in {
+        "legacy",
+        "off",
+        "disabled",
+    }
+
+
+async def _latest_thread_checkpoint(checkpointer, thread_id: str):
+    """Read the newest checkpoint across legacy and run-scoped namespaces."""
+    config = {"configurable": {"thread_id": thread_id}}
+    async for checkpoint in checkpointer.alist(config, limit=1):
+        return checkpoint
+    return None
+
+
 def format_sse(event: str, data: dict, *, event_id: int | str | None = None) -> str:
     identifier = f"id: {event_id}\n" if event_id is not None else ""
     return (
@@ -101,7 +120,49 @@ async def _get_scoped_run(
             raise HTTPException(status_code=404, detail="Run not found") from None
         if run.thread_id != expected_thread:
             raise HTTPException(status_code=404, detail="Run not found")
-    return run
+    return await _recover_stale_run(run, db)
+
+
+async def _recover_stale_run(run, db: AsyncSession):
+    """Fail closed after a single-worker lease has clearly expired.
+
+    AgentRun has no separate lease column by design in this batch. The start
+    timestamp is therefore a conservative local-development lease boundary;
+    production shared-worker coordination remains an adapter concern.
+    """
+    lease_seconds = settings.CHECKPOINT_LEASE_SECONDS
+    started_at = run.started_at
+    if (
+        run.status != "running"
+        or started_at is None
+        or lease_seconds <= 0
+    ):
+        return run
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    age_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
+    if age_seconds <= lease_seconds:
+        return run
+
+    run_store = RunStore(db)
+    try:
+        recovered = await run_store.transition(
+            run.run_id,
+            "abandoned",
+            error_code="checkpoint_lease_expired",
+        )
+    except InvalidRunTransition:
+        recovered = await run_store.get(run.run_id, user_id=run.user_id)
+        if recovered is None:
+            raise HTTPException(status_code=404, detail="Run not found") from None
+        return recovered
+    if _checkpoint_adapter_enabled():
+        checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
+        await checkpoint_store.mark_abandoned(
+            run.run_id,
+            "checkpoint lease expired during service recovery",
+        )
+    return recovered
 
 
 async def _last_event_sequence(run_id: str, db: AsyncSession) -> int:
@@ -229,11 +290,13 @@ async def chat_endpoint(
     thread_scope = _resolve_chat_thread(user, request.thread_id)
     run_id = uuid4().hex
     durable_run = user is not None and _interactive_run_store_enabled()
+    cancellation = CancellationToken()
 
     async def stream_generator():
         stream_started = time.perf_counter()
         sequence = 0
         workflow: Optional[ChatWorkflow] = None
+        checkpoint_store: Optional[SqliteCheckpointStore] = None
         try:
             # Send a first SSE frame before workflow setup or the model request.
             # This flushes the response immediately and prevents the client from
@@ -247,7 +310,14 @@ async def chat_endpoint(
                 event_id=1 if durable_run else None,
             )
             workflow = ChatWorkflow(
-                api_key=api_key, base_url=base_url, store=_store)
+                api_key=api_key,
+                base_url=base_url,
+                store=_store,
+                checkpoint_path=settings.CHECKPOINT_DB_PATH,
+                run_id=run_id,
+                thread_id=thread_scope.internal_id,
+                cancellation=cancellation,
+            )
 
             await workflow._ensure_checkpointer()
             checkpointer = workflow.checkpointer
@@ -292,6 +362,11 @@ async def chat_endpoint(
                 AgentRouter(registry),
                 enabled=settings.ENABLE_MULTI_AGENT_ROUTING,
             )
+            checkpoint_store = (
+                SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
+                if durable_run and _checkpoint_adapter_enabled()
+                else None
+            )
             model_gateway = OpenAIModelGateway(
                 api_key=api_key,
                 base_url=base_url,
@@ -305,6 +380,7 @@ async def chat_endpoint(
             )
             runtime = AgentRuntime(
                 adapter,
+                checkpoint_store=checkpoint_store,
                 trace_store=SqlTraceStore(db),
                 model_gateway=model_gateway,
                 run_store=RunStore(db) if durable_run else None,
@@ -338,6 +414,7 @@ async def chat_endpoint(
                 thread_id=thread_scope.internal_id,
                 speak_prompt=speak_prompt,
                 deepseek_options=request.deepseek_options.model_dump() if request.deepseek_options else None,
+                cancellation=cancellation,
             ):
                 event_type = chunk_data.get("type", "message")
                 sequence += 1
@@ -390,6 +467,8 @@ async def chat_endpoint(
         finally:
             if workflow is not None:
                 await workflow.close()
+            if checkpoint_store is not None:
+                await checkpoint_store.close()
 
     return StreamingResponse(
         stream_generator(),
@@ -409,11 +488,17 @@ async def get_chat_history(
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
     base_url = _resolve_provider_base_url(x_base_url)
 
-    workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
+    workflow = ChatWorkflow(
+        api_key=api_key,
+        base_url=base_url,
+        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    )
     try:
         await workflow._ensure_checkpointer()
-        config = {"configurable": {"thread_id": thread_scope.internal_id, "checkpoint_ns": ""}}
-        cp = await workflow.checkpointer.aget_tuple(config)
+        cp = await _latest_thread_checkpoint(
+            workflow.checkpointer,
+            thread_scope.internal_id,
+        )
 
         messages = []
         if cp:
@@ -442,11 +527,17 @@ async def get_chat_reasoning(
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
     base_url = _resolve_provider_base_url(x_base_url)
 
-    workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
+    workflow = ChatWorkflow(
+        api_key=api_key,
+        base_url=base_url,
+        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    )
     try:
         await workflow._ensure_checkpointer()
-        config = {"configurable": {"thread_id": thread_scope.internal_id, "checkpoint_ns": ""}}
-        cp = await workflow.checkpointer.aget_tuple(config)
+        cp = await _latest_thread_checkpoint(
+            workflow.checkpointer,
+            thread_scope.internal_id,
+        )
 
         if not cp:
             raise HTTPException(status_code=404, detail="Thread not found")
@@ -470,7 +561,11 @@ async def delete_chat_history(
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
     base_url = _resolve_provider_base_url(x_base_url)
 
-    workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
+    workflow = ChatWorkflow(
+        api_key=api_key,
+        base_url=base_url,
+        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    )
     try:
         await workflow._ensure_checkpointer()
         await workflow.checkpointer.adelete_thread(thread_scope.internal_id)
@@ -482,10 +577,12 @@ async def delete_chat_history(
 @router.post("/chat/resume")
 async def resume_chat(
     thread_id: str = Query(...),
+    run_id: Optional[str] = Query(None),
     decision: str = Query("approve"),
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
     user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     thread_scope = _resolve_user_thread(user, thread_id)
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
@@ -494,13 +591,46 @@ async def resume_chat(
     if decision not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
 
-    workflow = ChatWorkflow(api_key=api_key, base_url=base_url, enable_interrupt=True)
+    if run_id is not None:
+        run = await RunStore(db).get(run_id, user_id=user.id)
+        if run is None or run.thread_id != thread_scope.internal_id:
+            raise HTTPException(status_code=404, detail="Run not found")
+        run = await _recover_stale_run(run, db)
+        if run.status not in {"running", "paused"}:
+            raise HTTPException(status_code=409, detail="Run is not resumable")
+
+    workflow = ChatWorkflow(
+        api_key=api_key,
+        base_url=base_url,
+        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+        run_id=run_id,
+        thread_id=thread_scope.internal_id,
+        cancellation=CancellationToken(),
+        enable_interrupt=True,
+    )
     try:
         await workflow._ensure_checkpointer()
     except Exception:
         await workflow.close()
         raise
-    config = {"configurable": {"thread_id": thread_scope.internal_id, "checkpoint_ns": ""}}
+    if hasattr(workflow, "_checkpoint_config"):
+        config = workflow._checkpoint_config(thread_scope.internal_id, run_id)
+        if run_id is None and hasattr(workflow.checkpointer, "alist"):
+            latest = await _latest_thread_checkpoint(
+                workflow.checkpointer,
+                thread_scope.internal_id,
+            )
+            if latest is not None:
+                config = latest.config
+    else:
+        config = {
+            "configurable": {
+                "thread_id": thread_scope.internal_id,
+                "checkpoint_ns": "",
+            }
+        }
+        if run_id is not None:
+            config["metadata"] = {"run_id": run_id}
 
     from langgraph.types import Command
 
@@ -540,7 +670,11 @@ async def list_chat_threads(
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
     base_url = _resolve_provider_base_url(x_base_url)
 
-    workflow = ChatWorkflow(api_key=api_key, base_url=base_url)
+    workflow = ChatWorkflow(
+        api_key=api_key,
+        base_url=base_url,
+        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    )
     try:
         await workflow._ensure_checkpointer()
         checkpoints = [c async for c in workflow.checkpointer.alist(None)]

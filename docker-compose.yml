@@ -50,6 +50,11 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    volumes:
+      # Keep LangGraph and harness checkpoints across backend restarts.
+      # SQLite is a single-worker/local-development store unless replaced by
+      # an adapter with explicit multi-worker coordination semantics.
+      - ./data:/app/data
     # 【关键点】这里定义的变量会覆盖 .env 文件中的同名变量
     environment:
       # 1. 强制切换为 cloud 模式
@@ -69,6 +74,8 @@ services:
       
       # 4. 其他配置保持默认或按需覆盖
       - PROJECT_NAME=OtakuNeko
+      - CHECKPOINT_DB_PATH=/app/data/checkpoints.db
+      - HARNESS_CHECKPOINT_ADAPTER=sqlite
       
       # 5. QBittorrent 配置
       - ENABLE_QB_PROXY=false

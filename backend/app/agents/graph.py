@@ -1,5 +1,8 @@
 import json
 import operator
+import asyncio
+import os
+from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, List, Optional, Annotated, TypedDict, TYPE_CHECKING
 from langchain_core.messages import BaseMessage, trim_messages, filter_messages
 from langgraph.graph import StateGraph, START, END
@@ -11,6 +14,7 @@ from app.agents.registry import ToolRegistry
 from app.agents.tools import ALL_TOOLS
 from app.core.logging import get_logger
 from app.harness.model_gateway import LangChainModelAdapter, safe_provider_detail
+from app.harness.budget import CancellationToken
 from app.trace import TraceEventType
 from app.trace.recorder import current_trace_recorder
 import time
@@ -49,11 +53,32 @@ class ChatWorkflow:
                  db_path: str = "data/checkpoints.db",
                  store=None,
                  registry: Optional[ToolRegistry] = None,
-                 enable_interrupt: bool = False):
+                 enable_interrupt: bool = False,
+                 *,
+                 checkpoint_path: Optional[str] = None,
+                 checkpoint_adapter: Any = None,
+                 checkpoint_store: Any = None,
+                 run_id: Optional[str] = None,
+                 thread_id: Optional[str] = None,
+                 cancellation: Optional[CancellationToken] = None):
         self.api_key = api_key
         self.base_url = base_url
         self.memory = memory_manager
-        self._db_path = db_path
+        self._db_path = str(
+            checkpoint_path
+            or os.getenv("CHECKPOINT_DB_PATH")
+            or db_path
+        )
+        self.run_id = run_id
+        self.thread_id = thread_id
+        self.cancellation = cancellation
+        self._checkpoint_adapter = (
+            checkpoint_adapter
+            if checkpoint_adapter is not None
+            else checkpoint_store
+        )
+        self._owns_checkpointer = self._checkpoint_adapter is None
+        self._checkpointer_lock = asyncio.Lock()
         self._store = store
         self.registry = registry or ToolRegistry()
         if not registry:
@@ -71,11 +96,18 @@ class ChatWorkflow:
         return self._runtime_tools or self.registry.get_all()
 
     async def _ensure_checkpointer(self):
-        if self.checkpointer is None:
-            import aiosqlite
-            conn = await aiosqlite.connect(self._db_path)
-            self._db_connection = conn
-            self.checkpointer = AsyncSqliteSaver(conn)
+        self._raise_if_cancelled()
+        async with self._checkpointer_lock:
+            if self.checkpointer is not None:
+                return
+            if self._checkpoint_adapter is not None:
+                self.checkpointer = self._checkpoint_adapter
+            else:
+                import aiosqlite
+                Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+                conn = await aiosqlite.connect(self._db_path)
+                self._db_connection = conn
+                self.checkpointer = AsyncSqliteSaver(conn)
             # Resolve local and MCP tools once per workflow instance so the
             # graph, model binding and ToolNode share the same tool set.
             self._runtime_tools = await self.registry.get_runtime_tools()
@@ -88,8 +120,41 @@ class ChatWorkflow:
         self.checkpointer = None
         self.app = None
         self._runtime_tools = None
-        if connection is not None:
+        if connection is not None and self._owns_checkpointer:
             await connection.close()
+
+    def _raise_if_cancelled(self) -> None:
+        if self.cancellation is not None:
+            self.cancellation.raise_if_cancelled()
+
+    def _resolve_thread_id(self, thread_id: Optional[str] = None) -> str:
+        if self.thread_id is not None and thread_id is not None and thread_id != self.thread_id:
+            raise ValueError("thread_id is immutable for this workflow")
+        return self.thread_id or thread_id or "default"
+
+    def _resolve_run_id(self, run_id: Optional[str] = None) -> Optional[str]:
+        if self.run_id is not None and run_id is not None and run_id != self.run_id:
+            raise ValueError("run_id is immutable for this workflow")
+        return self.run_id or run_id
+
+    def _checkpoint_config(
+        self,
+        thread_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+    ) -> dict[str, Any]:
+        resolved_run_id = self._resolve_run_id(run_id)
+        config: dict[str, Any] = {
+            "configurable": {
+                "thread_id": self._resolve_thread_id(thread_id),
+                # AsyncSqliteSaver scopes records by thread_id and namespace;
+                # metadata alone would not isolate concurrent Runs on one chat
+                # thread.
+                "checkpoint_ns": resolved_run_id or "",
+            }
+        }
+        if resolved_run_id is not None:
+            config["metadata"] = {"run_id": resolved_run_id}
+        return config
 
     def _compile_graph(self):
         workflow = StateGraph(CodingAgentState)
@@ -154,6 +219,7 @@ class ChatWorkflow:
         return self._strip_orphaned_tool_calls(messages)
 
     async def _think_node(self, state: CodingAgentState):
+        self._raise_if_cancelled()
         messages = list(state["messages"])
         messages = self._trim_and_clean(messages)
 
@@ -182,6 +248,7 @@ class ChatWorkflow:
         }
 
     async def _speak_node(self, state: CodingAgentState):
+        self._raise_if_cancelled()
         messages = list(state["messages"])
         messages = self._trim_and_clean(messages)
 
@@ -201,10 +268,41 @@ class ChatWorkflow:
         model: str,
         messages: List[Dict[str, Any]],
         temperature: float,
-        thread_id: str = "default",
+        thread_id: Optional[str] = None,
+        speak_prompt: Optional[str] = None,
+        deepseek_options: Optional[Dict[str, Any]] = None,
+        cancellation: Optional[CancellationToken] = None,
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        if cancellation is not None:
+            if self.cancellation is not None and self.cancellation is not cancellation:
+                raise ValueError("cancellation token is immutable for this workflow")
+            self.cancellation = cancellation
+        self._resolve_thread_id(thread_id)
+        self._raise_if_cancelled()
+        try:
+            async for chunk in self._stream_chat_impl(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                thread_id=self._resolve_thread_id(thread_id),
+                speak_prompt=speak_prompt,
+                deepseek_options=deepseek_options,
+            ):
+                self._raise_if_cancelled()
+                yield chunk
+        finally:
+            await self.close()
+
+    async def _stream_chat_impl(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        thread_id: str,
         speak_prompt: Optional[str] = None,
         deepseek_options: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        self._raise_if_cancelled()
         await self._ensure_checkpointer()
         self._speak_prompt = speak_prompt
         llm_kwargs: Dict[str, Any] = {
@@ -250,7 +348,7 @@ class ChatWorkflow:
         # Bound think/tool cycles so a malformed tool response or provider
         # loop cannot consume an unbounded request budget.
         config = {
-            "configurable": {"thread_id": thread_id},
+            **self._checkpoint_config(thread_id),
             "recursion_limit": MAX_GRAPH_STEPS,
         }
 
@@ -304,10 +402,12 @@ class ChatWorkflow:
                 "last_terminal_output": "",
                 "reasoning_trace": "",
             }, config=config, version="v2"):
+                self._raise_if_cancelled()
                 kind = event["event"]
                 node_name = event.get("metadata", {}).get("langgraph_node")
 
                 if kind == "on_chat_model_stream":
+                    self._raise_if_cancelled()
                     chunk = event["data"]["chunk"]
 
                     if hasattr(chunk, "tool_call_chunks") and chunk.tool_call_chunks:
@@ -413,6 +513,7 @@ class ChatWorkflow:
                             _message_started = False
 
                 elif kind == "on_tool_start":
+                    self._raise_if_cancelled()
                     if _thinking_active:
                         yield _emit("thinking_end")
                         _thinking_active = False
@@ -437,6 +538,7 @@ class ChatWorkflow:
                         yield _emit("tool_call_start", id=run_id, name=tool_name, inputs=inputs)
 
                 elif kind == "on_tool_end":
+                    self._raise_if_cancelled()
                     tool_name = event["name"]
                     run_id = event["run_id"]
                     duration_ms = 0.0
