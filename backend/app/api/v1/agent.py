@@ -6,7 +6,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import httpx
-from openai import AsyncOpenAI
 from langgraph.store.memory import InMemoryStore
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.agent import ChatRequest
@@ -20,7 +19,7 @@ from app.agents.router import AgentRouter
 from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.anime import AnimeCapability
 from app.harness.runtime import AgentRuntime
-from app.harness.model_gateway import OpenAIModelGateway
+from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
 from app.harness.routing_adapter import FeatureFlagRoutingAdapter
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
@@ -425,11 +424,26 @@ async def check_connection(
                 if resp.status_code == 200:
                     return {"status": "ok"}
 
+        from openai import AsyncOpenAI
+
         client = AsyncOpenAI(api_key=x_api_key, base_url=base_url)
-        await client.models.list()
-        return {"status": "ok", "message": "Connection successful"}
+        result = await OpenAICompatibleModelAdapter(
+            client,
+            provider="openai-compatible",
+        ).check_connection()
+        if result.status == "completed":
+            return {"status": "ok", "message": "Connection successful"}
+        detail = {
+            "auth": "Provider authentication failed",
+            "rate_limited": "Provider rate limit reached",
+            "timeout": "Provider request timed out",
+            "invalid_request": "Provider request was invalid",
+            "transient": "Provider temporarily unavailable",
+            "cancelled": "Provider request was cancelled",
+        }.get(result.error_code, "Provider connection failed")
+        raise HTTPException(status_code=400, detail=detail)
 
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Provider connection failed")

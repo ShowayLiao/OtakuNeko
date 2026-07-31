@@ -4,6 +4,11 @@ from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
 
+def build_chat_model(*, deepseek: bool, **kwargs: Any) -> ChatOpenAI:
+    """Construct the provider model through one LangChain adapter boundary."""
+    return (DeepSeekChatOpenAI if deepseek else ChatOpenAI)(**kwargs)
+
+
 class DeepSeekChatOpenAI(ChatOpenAI):
     """Preserve DeepSeek-specific fields dropped by ChatOpenAI's converter."""
 

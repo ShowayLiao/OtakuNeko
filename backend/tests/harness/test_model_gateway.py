@@ -1,0 +1,281 @@
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from pydantic import ValidationError
+
+from app.harness.model_gateway import (
+    LangChainModelAdapter,
+    OpenAICompatibleModelAdapter,
+    OpenAIModelGateway,
+)
+from app.harness.model_types import ModelCallResult, ModelUsage
+from app.trace import AgentTrace, TraceEventType
+from app.trace.recorder import bind_trace
+
+
+class FakeCompletions:
+    def __init__(self, response=None, error=None):
+        self.response = response
+        self.error = error
+        self.calls: list[dict] = []
+
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
+        return self.response
+
+
+class FakeClient:
+    def __init__(self, completions):
+        self.chat = SimpleNamespace(completions=completions)
+        self.models = SimpleNamespace(list=self._list_models)
+
+    async def _list_models(self):
+        return SimpleNamespace(data=[])
+
+
+def response(*, content="answer", usage=None, finish_reason="stop"):
+    return SimpleNamespace(
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content=content),
+                finish_reason=finish_reason,
+            )
+        ],
+        usage=usage,
+    )
+
+
+def test_model_contract_rejects_unknown_status_and_preserves_unknown_usage():
+    usage = ModelUsage(latency_ms=4)
+    assert usage.prompt_tokens is None
+    assert usage.completion_tokens is None
+    assert usage.total_tokens is None
+    assert usage.estimated_cost_usd is None
+
+    with pytest.raises(ValidationError):
+        ModelCallResult(
+            provider="openai",
+            model="test-model",
+            operation="complete",
+            status="unknown",
+        )
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_normalizes_completion_usage_and_finish_reason():
+    completion = response(
+        content="normalized",
+        usage=SimpleNamespace(prompt_tokens=3, completion_tokens=5, total_tokens=8),
+    )
+    completions = FakeCompletions(response=completion)
+    adapter = OpenAICompatibleModelAdapter(
+        FakeClient(completions), provider="openai-compatible"
+    )
+
+    result = await adapter.complete(
+        messages=[{"role": "user", "content": "hello"}],
+        model="test-model",
+        temperature=0.2,
+    )
+
+    assert result.status == "completed"
+    assert result.text == "normalized"
+    assert result.finish_reason == "stop"
+    assert result.usage.prompt_tokens == 3
+    assert result.usage.completion_tokens == 5
+    assert result.usage.total_tokens == 8
+    assert result.usage.latency_ms >= 0
+    assert "api_key" not in result.model_dump()
+
+
+@pytest.mark.asyncio
+async def test_openai_adapter_keeps_missing_provider_usage_as_none():
+    completions = FakeCompletions(response=response(usage=None))
+    adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="openai")
+
+    result = await adapter.complete(
+        messages=[{"role": "user", "content": "hello"}],
+        model="test-model",
+    )
+
+    assert result.status == "completed"
+    assert result.usage.prompt_tokens is None
+    assert result.usage.completion_tokens is None
+    assert result.usage.total_tokens is None
+    assert result.usage.estimated_cost_usd is None
+
+
+@pytest.mark.asyncio
+async def test_provider_error_is_classified_and_does_not_expose_raw_detail():
+    class RateLimitError(Exception):
+        pass
+
+    completions = FakeCompletions(error=RateLimitError("sensitive provider detail"))
+    adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="openai")
+
+    result = await adapter.complete(
+        messages=[{"role": "user", "content": "hello"}],
+        model="test-model",
+    )
+
+    assert result.status == "failed"
+    assert result.error_code == "rate_limited"
+    assert result.retryable is True
+    assert "sensitive provider detail" not in str(result.model_dump())
+
+
+class AsyncChunkStream:
+    def __init__(self, chunks):
+        self.chunks = chunks
+
+    def __aiter__(self):
+        return self._iterate()
+
+    async def _iterate(self):
+        for chunk in self.chunks:
+            yield chunk
+
+
+@pytest.mark.asyncio
+async def test_provider_stream_normalizes_reasoning_tool_and_final_chunks():
+    chunks = [
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        reasoning_content="thinking",
+                        tool_calls=[],
+                    ),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content="answer",
+                        reasoning_content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id="call-1",
+                                function=SimpleNamespace(
+                                    name="search",
+                                    arguments='{"q":"x"}',
+                                ),
+                            )
+                        ],
+                    ),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        ),
+        SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        content=None,
+                        reasoning_content=None,
+                        tool_calls=[],
+                    ),
+                    finish_reason="stop",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=2, total_tokens=3),
+        ),
+    ]
+    completions = FakeCompletions()
+
+    async def create(**kwargs):
+        completions.calls.append(kwargs)
+        return AsyncChunkStream(chunks)
+
+    completions.create = create
+    adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="deepseek")
+
+    deltas = [
+        delta
+        async for delta in adapter.stream(
+            messages=[{"role": "user", "content": "hello"}],
+            model="deepseek-chat",
+        )
+    ]
+
+    assert [delta.kind for delta in deltas] == ["reasoning", "tool_call", "text"]
+    assert deltas[0].text == "thinking"
+    assert deltas[1].tool_call["id"] == "call-1"
+    assert deltas[2].text == "answer"
+    assert adapter.last_result is not None
+    assert adapter.last_result.finish_reason == "stop"
+    assert adapter.last_result.usage.total_tokens == 3
+
+
+@pytest.mark.asyncio
+async def test_gateway_keeps_synthesize_signature_and_records_safe_result():
+    completions = FakeCompletions(response=response(content="final"))
+    client = FakeClient(completions)
+    gateway = OpenAIModelGateway(
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        model="test-model",
+        client=client,
+    )
+    trace = AgentTrace(agent_name="model-test")
+
+    with bind_trace(trace):
+        text = await gateway.synthesize(
+            goal="goal",
+            messages=[{"role": "user", "content": "hello"}],
+            results=[],
+        )
+
+    assert text == "final"
+    assert gateway.last_result is not None
+    assert gateway.last_result.provider == "openai-compatible"
+    events = [event for step in trace.steps for event in step.events]
+    model_events = [event for event in events if event.event_type == TraceEventType.MODEL_CALL]
+    assert model_events
+    assert model_events[0].data["provider"] == "openai-compatible"
+    assert "test-key" not in str(model_events[0].data)
+    assert "hello" not in str(model_events[0].data)
+
+
+class FakeLangChainModel:
+    async def ainvoke(self, _messages):
+        return SimpleNamespace(
+            content="answer",
+            response_metadata={
+                "finish_reason": "stop",
+                "token_usage": {
+                    "prompt_tokens": 2,
+                    "completion_tokens": 3,
+                    "total_tokens": 5,
+                },
+            },
+        )
+
+    async def astream(self, _messages):
+        yield SimpleNamespace(content="part", additional_kwargs={})
+
+
+@pytest.mark.asyncio
+async def test_langchain_adapter_produces_same_result_contract():
+    adapter = LangChainModelAdapter(
+        FakeLangChainModel(), provider="deepseek", model_name="deepseek-chat"
+    )
+
+    result = await adapter.complete(messages=[{"role": "user", "content": "hello"}])
+    deltas = [delta async for delta in adapter.stream(messages=[])]
+
+    assert result.status == "completed"
+    assert result.usage.total_tokens == 5
+    assert deltas[0].kind == "text"
+    assert deltas[0].text == "part"

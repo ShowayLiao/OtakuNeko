@@ -2,15 +2,17 @@ import json
 import operator
 from typing import AsyncGenerator, Dict, Any, List, Optional, Annotated, TypedDict, TYPE_CHECKING
 from langchain_core.messages import BaseMessage, trim_messages, filter_messages
-from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-from app.agents.deepseek_chat_model import DeepSeekChatOpenAI
+from app.agents.deepseek_chat_model import DeepSeekChatOpenAI, build_chat_model
 from app.agents.registry import ToolRegistry
 from app.agents.tools import ALL_TOOLS
 from app.core.logging import get_logger
+from app.harness.model_gateway import LangChainModelAdapter, safe_provider_detail
+from app.trace import TraceEventType
+from app.trace.recorder import current_trace_recorder
 import time
 
 if TYPE_CHECKING:
@@ -62,6 +64,8 @@ class ChatWorkflow:
         self.app = None
         self._speak_prompt: Optional[str] = None
         self._enable_interrupt = enable_interrupt
+        self.model_adapter: Optional[LangChainModelAdapter] = None
+        self.last_model_result = None
 
     def _get_tools(self):
         return self._runtime_tools or self.registry.get_all()
@@ -226,8 +230,12 @@ class ChatWorkflow:
         else:
             llm_kwargs["temperature"] = temperature
 
-        llm_class = DeepSeekChatOpenAI if is_deepseek else ChatOpenAI
-        self.llm = llm_class(**llm_kwargs)
+        self.llm = build_chat_model(deepseek=is_deepseek, **llm_kwargs)
+        self.model_adapter = LangChainModelAdapter(
+            self.llm,
+            provider="deepseek" if is_deepseek else "openai-compatible",
+            model_name=model,
+        )
         self.llm_with_tools = self.llm.bind_tools(self._get_tools())
 
         enriched_messages = list(messages)
@@ -364,6 +372,29 @@ class ChatWorkflow:
                         yield _emit("message_chunk", content=delta)
 
                 elif kind == "on_chat_model_end":
+                    if self.model_adapter is not None:
+                        output = event.get("data", {}).get("output")
+                        if output is not None:
+                            self.last_model_result = self.model_adapter.result_from_response(
+                                output,
+                                operation=f"graph.{node_name or 'model'}",
+                            )
+                            recorder = current_trace_recorder()
+                            if recorder is not None:
+                                result = self.last_model_result
+                                recorder.record(
+                                    TraceEventType.MODEL_CALL,
+                                    result.operation,
+                                    {
+                                        "provider": result.provider,
+                                        "model": result.model,
+                                        "usage": result.usage.model_dump(mode="json"),
+                                        "finish_reason": result.finish_reason,
+                                        "error_code": result.error_code,
+                                        "retryable": result.retryable,
+                                    },
+                                    status=result.status,
+                                )
                     if node_name == "think":
                         if active_tool_calls_by_index:
                             pending_tool_calls.extend(active_tool_calls_by_index.values())
@@ -473,5 +504,6 @@ class ChatWorkflow:
                         yield _emit("interrupt",
                                     detail=interrupt_data.__interrupt__[0])
 
-        except Exception as e:
-            yield _emit("error", detail=f"Graph Execution Error: {str(e)}")
+        except Exception as exc:
+            logger.exception("graph_model_execution_failed")
+            yield _emit("error", detail=safe_provider_detail(exc))
