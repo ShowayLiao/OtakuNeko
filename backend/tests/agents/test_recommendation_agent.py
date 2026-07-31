@@ -6,6 +6,8 @@ import pytest
 
 from app.agents.recommendation_agent import RecommendationAgent
 from app.harness.task import AgentTask
+from app.trace import AgentTrace
+from app.trace.recorder import bind_trace
 
 
 class StubCapability:
@@ -56,6 +58,18 @@ class StubAnimeCapability:
             "success": True,
             "results": self.results,
         }
+
+
+class MultiRouteAnimeCapability:
+    def __init__(self, responses):
+        self.responses = responses
+        self.calls = []
+
+    async def execute(self, action, **kwargs):
+        assert action == "search"
+        self.calls.append(kwargs)
+        tag = (kwargs.get("tags") or [None])[0]
+        return self.responses[tag]
 
 
 class FailingAnimeCapability:
@@ -121,10 +135,9 @@ class TestRecommendationAgent:
 
         result = await agent.execute(AgentTask(user_id=1, goal="推荐动漫"))
 
-        assert result["evidence"] == {
-            "source": "fallback",
-            "reason": "candidate_search_failed",
-        }
+        assert result["evidence"]["source"] == "fallback"
+        assert result["evidence"]["reason"] == "candidate_search_failed"
+        assert result["evidence"]["candidate_search"]["failed_searches"] == 1
         assert "推荐服务暂时不可用" in result["content"]
 
     @pytest.mark.asyncio
@@ -178,6 +191,7 @@ class TestRecommendationAgent:
                 "taste_dictionary": {"校园": [4, 8.0]},
                 "favorite_tags": ["科幻"],
                 "avoid_tags": ["校园"],
+                "strong_avoid_tags": ["校园"],
             },
             "watched_ids": [1],
         }
@@ -218,3 +232,139 @@ class TestRecommendationAgent:
         result = await agent.execute(AgentTask(user_id=1, goal="推荐动漫"))
 
         assert result["candidates"] == [{"id": 2, "name": "未知标签"}]
+    @pytest.mark.asyncio
+    async def test_candidate_search_uses_independent_routes_and_strong_avoid_filter(self):
+        profile = {
+            "llm_summary": {
+                "total_rated": 8,
+                "favorite_tags": ["tag-a", "tag-b", "tag-c"],
+                "avoid_tags": ["soft-avoid"],
+                "strong_avoid_tags": ["hard-avoid"],
+                "tag_preferences": {
+                    "tag-a": {"preference_score": 80, "preference_delta": 1.0},
+                    "tag-b": {"preference_score": 70, "preference_delta": 0.8},
+                    "tag-c": {"preference_score": 60, "preference_delta": 0.5},
+                    "soft-avoid": {"preference_score": 30, "preference_delta": -0.4},
+                },
+            },
+            "watched_ids": [1],
+        }
+        anime = MultiRouteAnimeCapability({
+            "tag-a": {"success": True, "results": [
+                {"id": 1, "name": "watched", "tags": ["tag-a"]},
+                {"id": 2, "name": "soft", "tags": ["tag-a", "soft-avoid"]},
+                {"id": 3, "name": "hard", "tags": ["tag-a", "hard-avoid"]},
+            ]},
+            "tag-b": {"success": True, "results": [
+                {"id": 2, "name": "soft-duplicate", "tags": ["tag-b", "soft-avoid"]},
+                {"id": 4, "name": "plain", "tags": ["tag-b"]},
+            ]},
+            "tag-c": {"success": True, "results": [
+                {"id": 5, "name": "third", "tags": ["tag-c"]},
+            ]},
+        })
+
+        agent = RecommendationAgent(
+            StubCapability(profile=profile),
+            anime_capability=anime,
+            max_candidates=3,
+        )
+
+        result = await agent.execute(AgentTask(user_id=1, goal="recommend"))
+
+        assert [call["keyword"] for call in anime.calls] == ["", "", ""]
+        assert [call["tags"] for call in anime.calls] == [["tag-a"], ["tag-b"], ["tag-c"]]
+        assert all(call["limit"] >= 20 for call in anime.calls)
+        assert {item["id"] for item in result["candidates"]} == {2, 4, 5}
+
+    @pytest.mark.asyncio
+    async def test_candidate_search_continues_after_one_route_fails(self):
+        profile = {
+            "llm_summary": {
+                "total_rated": 3,
+                "favorite_tags": ["tag-a", "tag-b", "tag-c"],
+                "strong_avoid_tags": [],
+            },
+            "watched_ids": [],
+        }
+        anime = MultiRouteAnimeCapability({
+            "tag-a": {"success": False, "error": "timeout"},
+            "tag-b": {"success": True, "results": [{"id": 2, "name": "second"}]},
+            "tag-c": {"success": True, "results": [{"id": 3, "name": "third"}]},
+        })
+
+        agent = RecommendationAgent(
+            StubCapability(profile=profile),
+            anime_capability=anime,
+        )
+
+        result = await agent.execute(AgentTask(user_id=1, goal="recommend"))
+
+        assert {item["id"] for item in result["candidates"]} == {2, 3}
+        assert result["evidence"]["source"] == "profile"
+
+    @pytest.mark.asyncio
+    async def test_successful_search_with_no_results_has_distinct_reason(self):
+        profile = {
+            "llm_summary": {"favorite_tags": ["tag-a"], "strong_avoid_tags": []},
+            "watched_ids": [],
+        }
+        anime = MultiRouteAnimeCapability({
+            "tag-a": {"success": True, "results": []},
+        })
+
+        result = await RecommendationAgent(
+            StubCapability(profile=profile), anime_capability=anime
+        ).execute(AgentTask(user_id=1, goal="recommend"))
+
+        assert result["evidence"]["reason"] == "no_search_results"
+        assert result["evidence"]["candidate_search"]["successful_searches"] == 1
+
+    @pytest.mark.asyncio
+    async def test_filtered_candidates_have_distinct_reason_and_counts(self):
+        profile = {
+            "llm_summary": {
+                "favorite_tags": ["tag-a"],
+                "strong_avoid_tags": ["hard-avoid"],
+            },
+            "watched_ids": [1],
+        }
+        anime = MultiRouteAnimeCapability({
+            "tag-a": {"success": True, "results": [
+                {"id": 1, "name": "watched"},
+                {"id": 2, "name": "hard", "tags": ["hard-avoid"]},
+            ]},
+        })
+
+        result = await RecommendationAgent(
+            StubCapability(profile=profile), anime_capability=anime
+        ).execute(AgentTask(user_id=1, goal="recommend"))
+
+        assert result["evidence"]["reason"] == "no_unseen_safe_candidates"
+        assert result["evidence"]["candidate_search"]["filtered_watched"] == 1
+        assert result["evidence"]["candidate_search"]["filtered_strong_avoid"] == 1
+
+    @pytest.mark.asyncio
+    async def test_candidate_search_stats_are_recorded_without_private_values(self):
+        profile = {
+            "llm_summary": {"favorite_tags": ["tag-a"], "strong_avoid_tags": []},
+            "watched_ids": [],
+        }
+        anime = MultiRouteAnimeCapability({
+            "tag-a": {"success": True, "results": [{"id": 1, "name": "one"}]},
+        })
+        trace = AgentTrace(user_id=1, agent_name="recommendation")
+
+        with bind_trace(trace):
+            await RecommendationAgent(
+                StubCapability(profile=profile), anime_capability=anime
+            ).execute(AgentTask(user_id=1, goal="recommend"))
+
+        event = next(
+            event
+            for step in trace.steps
+            for event in step.events
+            if event.data.get("operation") == "recommendation.candidate_search"
+        )
+        assert event.data["final_candidates"] == 1
+        assert "tag-a" not in event.data

@@ -5,6 +5,7 @@
 """
 
 from datetime import datetime, timezone
+import re
 from typing import List, Dict, Any, TYPE_CHECKING, Tuple, TypedDict
 from collections import defaultdict
 from app.core.logging import get_logger
@@ -19,6 +20,10 @@ _BASELINE_PRIOR_WEIGHT = 5.0
 _RECENCY_HALF_LIFE_DAYS = 180.0
 _TAG_PRIOR_WEIGHT = 2.0
 _PREFERENCE_MARGIN = 0.3
+_STRONG_AVOID_MARGIN = 0.6
+_STRONG_AVOID_MIN_WEIGHTED_COUNT = 3.0
+_STRUCTURAL_TAGS = {"动画", "TV", "WEB", "OVA", "OAD", "剧场版"}
+_YEAR_TAG_PATTERN = re.compile(r"^\d{4}(年(?:\d{1,2}月)?)?$")
 
 
 
@@ -145,6 +150,16 @@ def generate_user_profile(
             ),
             key=lambda tag: tag_preferences[tag]["preference_score"],
         )
+        strong_avoid_tags = sorted(
+            (
+                tag
+                for tag, preference in tag_preferences.items()
+                if preference["preference_delta"] <= -_STRONG_AVOID_MARGIN
+                and preference["weighted_count"] >= _STRONG_AVOID_MIN_WEIGHTED_COUNT
+                and not _is_structural_tag(tag)
+            ),
+            key=lambda tag: tag_preferences[tag]["preference_score"],
+        )
         
         # 步骤6: 构建图表数据
         chart_data = _build_chart_data(filtered_tags, affinity_scores)
@@ -158,6 +173,7 @@ def generate_user_profile(
                 "rating_baseline": round(rating_baseline, 2),
                 "favorite_tags": favorite_tags,
                 "avoid_tags": avoid_tags,
+                "strong_avoid_tags": strong_avoid_tags,
                 "tag_preferences": tag_preferences,
             },
             "chart_data": chart_data,
@@ -212,16 +228,22 @@ def _clean_and_extract_data(
                     pass
 
             # 检查是否有有效评分
-            score = item.rate
+            collection = getattr(item, "collection", None)
+            score = getattr(item, "rate", None)
+            if score is None and collection is not None:
+                score = getattr(collection, "rate", None)
             if score is None or score == 0:
                 continue
 
             # 提取标签
             tags = subject.tags or []
+            updated_at = getattr(item, "updated_at", None)
+            if updated_at is None and collection is not None:
+                updated_at = getattr(collection, "updated_at", None)
             entry = {
                 "tags": tags,
                 "score": float(score),
-                "updated_at": getattr(item, "updated_at", None),
+                "updated_at": updated_at,
             }
             rated_entries.append(entry)
             if tags:
@@ -546,8 +568,13 @@ def _summary_defaults(
         "rating_baseline": round(rating_baseline, 2),
         "favorite_tags": [],
         "avoid_tags": [],
+        "strong_avoid_tags": [],
         "tag_preferences": {},
     }
+
+
+def _is_structural_tag(tag: str) -> bool:
+    return tag in _STRUCTURAL_TAGS or bool(_YEAR_TAG_PATTERN.fullmatch(tag))
 
 
 def _create_empty_profile() -> Dict[str, Any]:

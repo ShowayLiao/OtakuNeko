@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   const headers = new Headers();
-  for (const name of ['content-type', 'x-api-key', 'x-provider-endpoint']) {
+  for (const name of ['authorization', 'content-type', 'x-api-key', 'x-provider-endpoint']) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }

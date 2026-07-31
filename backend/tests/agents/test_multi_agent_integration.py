@@ -91,6 +91,34 @@ class TestRouterIntegration:
         ]
 
     @pytest.mark.asyncio
+    async def test_feature_flag_adapter_returns_structured_result_for_runtime(self):
+        class Fallback:
+            async def stream(self, state, **kwargs):
+                yield {"type": "message_chunk", "content": "legacy"}
+
+        class Specialist:
+            async def execute(self, task):
+                return {"candidates": [{"name": "X"}], "evidence": {"source": "test"}}
+
+        class Registry:
+            def list_agents(self):
+                return ["recommendation"]
+
+            def get(self, name):
+                return Specialist()
+
+        task = AgentTask(user_id=1, goal="\u63a8\u8350\u52a8\u6f2b")
+        state = AgentState(task=task, context={"orchestrate_results": True})
+        adapter = FeatureFlagRoutingAdapter(
+            Fallback(), AgentRouter(Registry()), enabled=True
+        )
+
+        chunks = [chunk async for chunk in adapter.stream(state, messages=[])]
+
+        assert chunks[1]["type"] == "agent_result"
+        assert chunks[1]["result"]["data"]["candidates"] == [{"name": "X"}]
+
+    @pytest.mark.asyncio
     async def test_runtime_executes_recommendation_agent(self):
         """The base agent execute() method works for recommendation."""
         agent = RecommendationAgent(StubCapability())

@@ -109,6 +109,7 @@ export const chatWithBackend = async ({
   if (onConnectionStatus) onConnectionStatus('connecting');
 
   try {
+    const userToken = localStorage.getItem('token');
     const response = await fetch('/api/v1/chat', {
       method: 'POST',
       signal: signalSource,
@@ -116,6 +117,7 @@ export const chatWithBackend = async ({
         'Content-Type': 'application/json',
         'X-Api-Key': config.apiKey,
         'X-Provider-Endpoint': config.endpoint || '',
+        ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}),
       },
       body: JSON.stringify({
         messages,

@@ -15,7 +15,7 @@ from typing import Any
 
 from sqlalchemy import and_, or_
 from sqlmodel import select, func, delete
-from sqlmodel.ext.asyncio.session import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.memory.interfaces import MemoryRepository
 from app.models.agent_memory import AgentMemory
@@ -106,8 +106,8 @@ class SqlMemoryRepository(MemoryRepository):
             .limit(limit)
         )
 
-        result = await self._session.exec(stmt)
-        rows = result.all()
+        result = await self._session.execute(stmt)
+        rows = result.scalars().all()
 
         return [self._row_to_dict(r) for r in rows]
 
@@ -129,7 +129,7 @@ class SqlMemoryRepository(MemoryRepository):
             stmt = stmt.where(AgentMemory.kind == kind)
         if kind not in _LONG_TERM_KINDS:
             stmt = stmt.where(AgentMemory.thread_id == thread_id)
-        result = await self._session.exec(stmt)
+        result = await self._session.execute(stmt)
         await self._session.flush()
         if result.rowcount:
             logger.info(
@@ -152,12 +152,12 @@ class SqlMemoryRepository(MemoryRepository):
         )
         stmt = self._apply_scope(stmt, thread_id, kind)
 
-        result = await self._session.exec(stmt)
-        return result.one()
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
 
     async def lock_owner(self, user_id: int) -> None:
         owner_id = _require_user_id(user_id)
-        await self._session.exec(
+        await self._session.execute(
             select(User.id).where(User.id == owner_id).with_for_update()
         )
 
@@ -182,7 +182,7 @@ class SqlMemoryRepository(MemoryRepository):
         stmt = delete(AgentMemory).where(AgentMemory.user_id == owner_id)
         if kind is not None:
             stmt = stmt.where(AgentMemory.kind == kind)
-        result = await self._session.exec(stmt)
+        result = await self._session.execute(stmt)
         await self._session.commit()
         return result.rowcount or 0
 
@@ -197,7 +197,7 @@ class SqlMemoryRepository(MemoryRepository):
             .where(AgentMemory.thread_id == thread_id)
             .where(AgentMemory.user_id == owner_id)
         )
-        result = await self._session.exec(stmt)
+        result = await self._session.execute(stmt)
         await self._session.commit()
         return result.rowcount or 0
 

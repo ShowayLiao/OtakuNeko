@@ -37,6 +37,7 @@ class TraceEventType(StrEnum):
     TOOL_CALL = "tool_call"
     TOOL_CALL_START = "tool_call_start"
     TOOL_CALL_END = "tool_call_end"
+    AGENT_RESULT = "agent_result"
 
 
 class TraceEvent(BaseModel):

@@ -20,6 +20,7 @@ from app.agents.router import AgentRouter
 from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.anime import AnimeCapability
 from app.harness.runtime import AgentRuntime
+from app.harness.model_gateway import OpenAIModelGateway
 from app.harness.routing_adapter import FeatureFlagRoutingAdapter
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
@@ -172,7 +173,22 @@ async def chat_endpoint(
                 AgentRouter(registry),
                 enabled=settings.ENABLE_MULTI_AGENT_ROUTING,
             )
-            runtime = AgentRuntime(adapter, trace_store=SqlTraceStore(db))
+            model_gateway = OpenAIModelGateway(
+                api_key=api_key,
+                base_url=base_url,
+                model=request.model,
+                temperature=request.temperature,
+                deepseek_options=(
+                    request.deepseek_options.model_dump()
+                    if request.deepseek_options
+                    else None
+                ),
+            )
+            runtime = AgentRuntime(
+                adapter,
+                trace_store=SqlTraceStore(db),
+                model_gateway=model_gateway,
+            )
 
             goal = next(
                 (

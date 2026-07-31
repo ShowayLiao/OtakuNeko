@@ -84,3 +84,44 @@ def test_legacy_profile_fields_remain_available():
     assert {"total_rated", "taste_dictionary"} <= summary.keys()
     assert {"radar", "bar_count", "bar_score"} <= chart_data.keys()
     assert summary["taste_dictionary"]["喜欢"][0] == 2
+
+
+def test_profile_reads_rate_from_nested_collection_object():
+    def nested_item(subject_id: int) -> SimpleNamespace:
+        return SimpleNamespace(
+            collection=SimpleNamespace(
+                rate=9,
+                updated_at=AS_OF,
+            ),
+            subject=SimpleNamespace(
+                id=subject_id,
+                source_id=str(subject_id),
+                tags=[{"name": "favorite"}],
+            ),
+        )
+
+    profile = generate_user_profile(
+        [nested_item(1), nested_item(2)],
+        as_of=AS_OF,
+    )
+
+    assert profile["llm_summary"]["total_rated_items"] == 2
+    assert "favorite" in profile["llm_summary"]["favorite_tags"]
+
+
+def test_strong_avoid_tags_require_evidence_and_ignore_structural_tags():
+    items = [
+        rated_item(4, tags=["strong-avoid"], subject_id=1),
+        rated_item(4, tags=["strong-avoid"], subject_id=2),
+        rated_item(4, tags=["strong-avoid"], subject_id=3),
+        rated_item(4, tags=["weak-avoid"], subject_id=4),
+        rated_item(4, tags=["动画"], subject_id=5),
+        rated_item(4, tags=["动画"], subject_id=6),
+        rated_item(4, tags=["动画"], subject_id=7),
+    ]
+
+    summary = generate_user_profile(items, as_of=AS_OF)["llm_summary"]
+
+    assert "strong-avoid" in summary["strong_avoid_tags"]
+    assert "weak-avoid" not in summary["strong_avoid_tags"]
+    assert "动画" not in summary["strong_avoid_tags"]

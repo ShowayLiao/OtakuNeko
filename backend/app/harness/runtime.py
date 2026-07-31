@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Protocol
 
 from app.harness.checkpoint import CheckpointStore
+from app.harness.model_gateway import ModelGateway
+from app.harness.result import AgentResult
 from app.harness.task import AgentTask
 from app.harness.state import AgentState
 from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
@@ -58,10 +60,14 @@ class AgentRuntime:
         checkpoint_store: CheckpointStore | None = None,
         *,
         trace_store: TraceStore | None = None,
+        model_gateway: ModelGateway | None = None,
+        max_model_calls: int = 1,
     ):
         self.adapter = adapter
         self.checkpoint_store = checkpoint_store
         self.trace_store = trace_store
+        self.model_gateway = model_gateway
+        self.max_model_calls = max_model_calls
 
     @property
     def adapter_name(self) -> str:
@@ -184,6 +190,7 @@ class AgentRuntime:
             )
 
         state = AgentState(task=task, status="running", context=kwargs)
+        state.context["orchestrate_results"] = self.model_gateway is not None
         await self._save_checkpoint(state)
         stream_completed = False
         try:
@@ -199,9 +206,84 @@ class AgentRuntime:
                         {"agent": self.adapter_name},
                     )
                 try:
+                    model_calls_used = 0
+                    execution_results: list[AgentResult] = []
                     async for chunk in stream(state, **kwargs):
                         if trace is not None and isinstance(chunk, dict):
                             self._record_stream_trace(trace, chunk)
+                        if (
+                            isinstance(chunk, dict)
+                            and chunk.get("type") == "agent_result"
+                        ):
+                            result = AgentResult.from_raw(
+                                chunk.get("result", {}),
+                                kind=chunk.get("kind", "subagent"),
+                                name=str(chunk.get("agent", "unknown")),
+                            )
+                            execution_results.append(result)
+                            normalized_chunk = {
+                                **chunk,
+                                "kind": result.kind,
+                                "agent": result.name,
+                                "result": result.model_dump(),
+                            }
+                            yield normalized_chunk
+
+                            if self.model_gateway is None:
+                                continue
+
+                            budget = int(
+                                kwargs.get(
+                                    "max_model_calls",
+                                    (task.metadata.get("policy") or {}).get(
+                                        "max_model_calls", self.max_model_calls
+                                    ),
+                                )
+                            )
+                            if model_calls_used >= budget:
+                                content = self._fallback_from_result(
+                                    result, "model_budget_exhausted"
+                                )
+                                synthesis_status = "degraded"
+                            else:
+                                try:
+                                    model_calls_used += 1
+                                    content = await self.model_gateway.synthesize(
+                                        goal=task.goal,
+                                        messages=kwargs.get("messages")
+                                        or task.metadata.get("messages", []),
+                                        results=execution_results,
+                                        model_calls_used=model_calls_used,
+                                    )
+                                    content = content or self._fallback_from_result(
+                                        result, "empty_model_response"
+                                    )
+                                    synthesis_status = "completed"
+                                except Exception:
+                                    logger.warning(
+                                        "model_synthesis_failed", exc_info=True
+                                    )
+                                    content = self._fallback_from_result(
+                                        result, "model_synthesis_failed"
+                                    )
+                                    synthesis_status = "degraded"
+
+                            yield {"type": "message_start"}
+                            yield {"type": "message_chunk", "content": content}
+                            yield {"type": "message_end"}
+                            yield {
+                                "type": "agent_complete",
+                                "agent": result.name,
+                                "kind": result.kind,
+                                "status": synthesis_status,
+                                "candidates": result.data.get("candidates", []),
+                                "evidence": {
+                                    **result.evidence,
+                                    "model_calls_used": model_calls_used,
+                                    "synthesis_status": synthesis_status,
+                                },
+                            }
+                            continue
                         yield chunk
                 except BaseException as exc:
                     if recorder is not None:
@@ -254,6 +336,37 @@ class AgentRuntime:
         await self._save_checkpoint(state)
 
     def _record_stream_trace(self, trace: AgentTrace, chunk: dict[str, Any]) -> None:
+        if chunk.get("type") == "agent_result":
+            result = chunk.get("result") or {}
+            data = result.get("data") if isinstance(result, dict) else {}
+            step = TraceStep(
+                step_index=len(trace.steps),
+                step_label="agent.result",
+                agent_name=str(chunk.get("agent", self.adapter_name)),
+                output_summary=str(result.get("status", "completed"))
+                if isinstance(result, dict)
+                else "completed",
+            )
+            step.events.append(
+                TraceEvent(
+                    event_type=TraceEventType.AGENT_RESULT,
+                    correlation_id=trace.trace_id,
+                    data={
+                        "kind": chunk.get("kind", "subagent"),
+                        "name": chunk.get("agent", "unknown"),
+                        "status": result.get("status", "completed")
+                        if isinstance(result, dict)
+                        else "completed",
+                        "data_keys": sorted(data.keys())
+                        if isinstance(data, dict)
+                        else [],
+                    },
+                    status="completed",
+                )
+            )
+            step.complete()
+            trace.add_step(step)
+            return
         if chunk.get("type") != "route_decision":
             return
         step = TraceStep(
@@ -277,3 +390,26 @@ class AgentRuntime:
         )
         step.complete()
         trace.add_step(step)
+
+    @staticmethod
+    def _fallback_from_result(result: AgentResult, reason: str) -> str:
+        """Return a safe deterministic answer when synthesis is unavailable."""
+        if reason == "model_budget_exhausted":
+            prefix = "模型调用预算不足，已完成工具检索。"
+        else:
+            prefix = "已完成信息检索，暂时无法生成详细整合报告。"
+        candidates = result.data.get("candidates", [])
+        if candidates:
+            names = []
+            for candidate in candidates[:5]:
+                if isinstance(candidate, dict):
+                    name = candidate.get("name") or candidate.get("label")
+                    if name:
+                        names.append(str(name))
+            if names:
+                return prefix + "候选内容：\n" + "\n".join(
+                    f"{index}. {name}" for index, name in enumerate(names, 1)
+                )
+        if reason == "model_budget_exhausted":
+            return prefix + "暂时无法生成整合回答。"
+        return "已完成工具检索，但暂时无法生成详细整合回答，请稍后重试。"
