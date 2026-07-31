@@ -5,7 +5,7 @@
 > 开始时间：`2026-07-31 23:22 Asia/Shanghai`
 > 当前分支：`feature-harness`
 > 起始 commit：`1e4f340acccf76495b18f594a23509a01720561e`
-> 记录状态：`in_progress`
+> 记录状态：`completed`
 
 ## 1. Preflight
 
@@ -114,8 +114,8 @@ Remediation rounds：0
 ```yaml
 batch_result:
   batch: BATCH-03
-  status: in_progress
-  commit: null
+  status: committed
+  commit: 8488d32
   tasks_completed:
     - "ActionDescriptor 版本化风险/超时/重试/幂等/审批/Schema 元数据"
     - "CapabilityRegistry public definition 与只读 allowlist"
