@@ -17,6 +17,7 @@ type SSEData = Record<string, any>;
 interface ParsedSSEEvent {
   type: string;
   data: SSEData;
+  id?: string;
 }
 
 interface ChatWithBackendOptions {
@@ -40,17 +41,28 @@ interface ChatWithBackendOptions {
   onThinkingChunk?: (chunk: string) => void;
   onThinkingEnd?: () => void;
   onError?: (error: string) => void;
-  onComplete?: () => void;
+  onRunStatus?: (status: {
+    run_id: string;
+    status: string;
+    error_code?: string | null;
+    last_sequence?: number;
+  }) => void;
+  onComplete?: (metadata?: {
+    hasDurableRun: boolean;
+    terminalStatus: string | null;
+  }) => void;
 }
 
 // 解析 SSE 事件流
 const parseSSE = (text: string): ParsedSSEEvent[] => {
   const events: ParsedSSEEvent[] = [];
   const lines = text.split('\n');
-  let event: { type: string; data: string } = { type: 'message', data: '' };
+  let event: { type: string; data: string; id?: string } = { type: 'message', data: '' };
   
   for (const line of lines) {
-    if (line.startsWith('event:')) {
+    if (line.startsWith('id:')) {
+      event.id = line.substring(3).trim();
+    } else if (line.startsWith('event:')) {
       event.type = line.substring(6).trim();
     } else if (line.startsWith('data:')) {
       event.data += line.substring(5).trim() + '\n';
@@ -59,7 +71,7 @@ const parseSSE = (text: string): ParsedSSEEvent[] => {
         try {
           const data = JSON.parse(event.data.trim());
           if (typeof data === 'object' && data !== null) {
-            events.push({ type: event.type, data: data as SSEData });
+            events.push({ type: event.type, data: data as SSEData, id: event.id });
           }
         } catch (e) {
           // 忽略解析错误
@@ -93,6 +105,7 @@ export const chatWithBackend = async ({
   onThinkingChunk,
   onThinkingEnd,
   onError,
+  onRunStatus,
   onComplete
 }: ChatWithBackendOptions) => {
   const config = (useApiStore.getState().config as any)[provider];
@@ -107,6 +120,18 @@ export const chatWithBackend = async ({
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
   if (onConnectionStatus) onConnectionStatus('connecting');
+
+  let currentRunId: string | null = null;
+  let lastSequence = 0;
+  let terminalStatus: {
+    run_id: string;
+    status: string;
+    error_code?: string | null;
+    last_sequence?: number;
+  } | null = null;
+  let replayAfterDisconnect: (() => Promise<boolean>) | null = null;
+  const getTerminalStatus = () =>
+    (terminalStatus as { status: string } | null)?.status || null;
 
   try {
     const userToken = localStorage.getItem('token');
@@ -150,13 +175,165 @@ export const chatWithBackend = async ({
     // Per-event logging is intentionally opt-in; console I/O can dominate
     // the main thread while a model emits many small SSE frames.
     const streamDebug = process.env.NEXT_PUBLIC_CHAT_STREAM_DEBUG === '1';
+    const handleFrame = (frame: ParsedSSEEvent) => {
+      const data = frame.data;
+      if (typeof data.run_id === 'string') currentRunId = data.run_id;
+      const frameSequence = Number(frame.id ?? data.sequence ?? data.stream_sequence);
+      if (Number.isFinite(frameSequence)) {
+        lastSequence = Math.max(lastSequence, frameSequence);
+      }
+
+      const statusFromEvent = frame.type === 'run_status'
+        ? data.status
+        : frame.type === 'run.succeeded'
+          ? 'succeeded'
+          : frame.type === 'run.failed'
+            ? 'failed'
+            : frame.type === 'run.cancelled'
+              ? 'cancelled'
+              : undefined;
+      if (typeof statusFromEvent === 'string' &&
+        ['succeeded', 'failed', 'cancelled'].includes(statusFromEvent)) {
+        const status = {
+          run_id: currentRunId || String(data.run_id || ''),
+          status: statusFromEvent,
+          error_code: data.error_code ?? null,
+          last_sequence: Number(data.last_sequence ?? lastSequence),
+        };
+        currentRunId = status.run_id || currentRunId;
+        lastSequence = Math.max(lastSequence, status.last_sequence || 0);
+        if (!terminalStatus) {
+          terminalStatus = status;
+          if (onRunStatus) onRunStatus(status);
+        }
+        return;
+      }
+
+      switch (frame.type) {
+        case 'message_chunk':
+          if (data.content && onMessageChunk) onMessageChunk(data.content);
+          break;
+        case 'message_start':
+          if (onMessageStart) onMessageStart();
+          break;
+        case 'message_end':
+          if (onMessageEnd) onMessageEnd();
+          break;
+        case 'thinking_start':
+          if (onThinkingStart) onThinkingStart();
+          break;
+        case 'thinking_chunk':
+          if (data.content && onThinkingChunk) onThinkingChunk(data.content);
+          break;
+        case 'thinking_end':
+          if (onThinkingEnd) onThinkingEnd();
+          break;
+        case 'tool_call_delta':
+          if (onToolCallDelta && data.id) onToolCallDelta(data.id, data.name, data.delta);
+          break;
+        case 'tool_call_start':
+          if (data.name && onToolCallStart) {
+            onToolCallStart(data.id || data.name, data.name, data.inputs || data.argument_keys);
+          }
+          break;
+        case 'tool_call_end':
+          if (data.name && onToolCallEnd) {
+            onToolCallEnd(
+              data.id || data.name,
+              data.name,
+              data.output,
+              data.duration_ms,
+              data.status,
+            );
+          }
+          break;
+        case 'plan_update':
+          if (data.content && onPlanUpdate) onPlanUpdate(data.content);
+          break;
+        case 'progress':
+          if (onProgress && data.tool_name) {
+            onProgress({
+              tool_name: data.tool_name,
+              tool_count: data.tool_count || 1,
+              duration_ms: data.duration_ms || 0,
+            });
+          }
+          break;
+        case 'reasoning_chunk':
+          if (data.content && onThinkingChunk) onThinkingChunk(data.content);
+          break;
+        case 'tool_start':
+          if (data.name && onToolCallStart) {
+            onToolCallStart(data.id || data.name, data.name, data.inputs);
+          }
+          break;
+        case 'tool_end':
+          if (data.name && onToolCallEnd) {
+            onToolCallEnd(
+              data.id || data.name,
+              data.name,
+              data.output,
+              data.duration_ms,
+              data.status || 'success',
+            );
+          }
+          break;
+        case 'error':
+          if (data.detail && onError) onError(data.detail);
+          break;
+      }
+    };
+
+    replayAfterDisconnect = async (): Promise<boolean> => {
+      if (!currentRunId) return false;
+      const replayToken = localStorage.getItem('token');
+      while (!terminalStatus) {
+        const cursorBeforeRequest = lastSequence;
+        const replayResponse = await fetch(
+          `/api/v1/runs/${encodeURIComponent(currentRunId)}/events?after=${lastSequence}`,
+          {
+            method: 'GET',
+            signal: signalSource,
+            headers: replayToken ? { Authorization: `Bearer ${replayToken}` } : {},
+          },
+        );
+        if (!replayResponse.ok) {
+          throw new Error(`Replay request failed: ${replayResponse.status}`);
+        }
+        const replayPayload = await replayResponse.json();
+        const persistedEvents = Array.isArray(replayPayload.events)
+          ? replayPayload.events
+          : [];
+        for (const persistedEvent of persistedEvents) {
+          const payload = persistedEvent.payload && typeof persistedEvent.payload === 'object'
+            ? persistedEvent.payload
+            : {};
+          handleFrame({
+            type: persistedEvent.event_type,
+            id: String(persistedEvent.sequence),
+            data: {
+              ...payload,
+              run_id: persistedEvent.run_id,
+              sequence: persistedEvent.sequence,
+            },
+          });
+        }
+        if (
+          terminalStatus ||
+          persistedEvents.length < 500 ||
+          lastSequence <= cursorBeforeRequest
+        ) {
+          break;
+        }
+      }
+      return terminalStatus !== null;
+    };
 
     const resetTimeout = () => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         reader.cancel().catch(() => {});
         if (onError) onError('请求超时');
-        if (onComplete) onComplete();
       }, timeoutMs);
     };
 
@@ -185,104 +362,40 @@ export const chatWithBackend = async ({
               contentLength: typeof event.data.content === 'string' ? event.data.content.length : 0,
             }));
           }
-          switch (event.type) {
-            case 'message_chunk':
-              if (event.data.content && onMessageChunk) {
-                onMessageChunk(event.data.content);
-              }
-              break;
-            case 'message_start':
-              if (onMessageStart) onMessageStart();
-              break;
-            case 'message_end':
-              if (onMessageEnd) onMessageEnd();
-              break;
-            case 'thinking_start':
-              if (onThinkingStart) onThinkingStart();
-              break;
-            case 'thinking_chunk':
-              if (event.data.content && onThinkingChunk) {
-                onThinkingChunk(event.data.content);
-              }
-              break;
-            case 'thinking_end':
-              if (onThinkingEnd) onThinkingEnd();
-              break;
-            case 'tool_call_delta':
-              if (onToolCallDelta && event.data.id) {
-                onToolCallDelta(event.data.id, event.data.name, event.data.delta);
-              }
-              break;
-            case 'tool_call_start':
-              if (event.data.name && onToolCallStart) {
-                onToolCallStart(event.data.id || event.data.name, event.data.name, event.data.inputs);
-              }
-              break;
-            case 'tool_call_end':
-              if (event.data.name && onToolCallEnd) {
-                onToolCallEnd(
-                  event.data.id || event.data.name,
-                  event.data.name,
-                  event.data.output,
-                  event.data.duration_ms,
-                  event.data.status
-                );
-              }
-              break;
-            case 'plan_update':
-              if (event.data.content && onPlanUpdate) {
-                onPlanUpdate(event.data.content);
-              }
-              break;
-            case 'progress':
-              if (onProgress && event.data.tool_name) {
-                onProgress({
-                  tool_name: event.data.tool_name,
-                  tool_count: event.data.tool_count || 1,
-                  duration_ms: event.data.duration_ms || 0,
-                });
-              }
-              break;
-            case 'reasoning_chunk':
-              if (event.data.content && onThinkingChunk) {
-                onThinkingChunk(event.data.content);
-              }
-              break;
-            case 'tool_start':
-              if (event.data.name && onToolCallStart) {
-                onToolCallStart(event.data.id || event.data.name, event.data.name, event.data.inputs);
-              }
-              break;
-            case 'tool_end':
-              if (event.data.name && onToolCallEnd) {
-                onToolCallEnd(
-                  event.data.id || event.data.name,
-                  event.data.name,
-                  event.data.output,
-                  event.data.duration_ms,
-                  event.data.status || 'success'
-                );
-              }
-              break;
-            case 'error':
-              if (event.data.detail && onError) {
-                onError(event.data.detail);
-              }
-              break;
-          }
+          handleFrame(event);
         }
       }
     }
 
     if (onComplete) {
-      onComplete();
+      onComplete({
+        hasDurableRun: currentRunId !== null,
+        terminalStatus: getTerminalStatus(),
+      });
     }
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       // A user-initiated stop is a normal terminal state. Keep any streamed
       // content instead of replacing it with an error message.
-    } else if (onError) {
-      onError(err?.message || String(err));
+    } else {
+      let replayed = false;
+      if (currentRunId && !terminalStatus && replayAfterDisconnect) {
+        try {
+          replayed = await replayAfterDisconnect();
+        } catch (replayError: any) {
+          err = replayError;
+        }
+      }
+      if (replayed) {
+        if (onComplete) {
+          onComplete({
+            hasDurableRun: currentRunId !== null,
+            terminalStatus: getTerminalStatus(),
+          });
+        }
+      } else if (onError) {
+        onError(err?.message || String(err));
+      }
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);

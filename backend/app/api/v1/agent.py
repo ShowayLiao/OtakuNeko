@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import httpx
 from langgraph.store.memory import InMemoryStore
+from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.agent import ChatRequest
 from app.schemas.collection import CollectionSearchBase
@@ -20,6 +21,8 @@ from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.anime import AnimeCapability
 from app.harness.runtime import AgentRuntime
 from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
+from app.harness.persistence.event_store import EventStore
+from app.harness.persistence.run_store import RunStore
 from app.harness.routing_adapter import FeatureFlagRoutingAdapter
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
@@ -41,14 +44,122 @@ from app.agents.provider_endpoint import (
 from app.core.config import settings
 
 from app.trace.sql_store import SqlTraceStore
+from app.models.agent_run import AgentRunEvent
 
 router = APIRouter()
 
 _store = InMemoryStore()
 
 
-def format_sse(event: str, data: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+_TERMINAL_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
+_MAX_REPLAY_CURSOR = 1_000_000_000
+
+
+def _interactive_run_store_enabled() -> bool:
+    return os.getenv("INTERACTIVE_RUN_STORE_ENABLED", "true").lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
+
+
+def format_sse(event: str, data: dict, *, event_id: int | str | None = None) -> str:
+    identifier = f"id: {event_id}\n" if event_id is not None else ""
+    return (
+        f"{identifier}event: {event}\n"
+        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+    )
+
+
+def _parse_replay_cursor(after: str | None, last_event_id: str | None) -> int:
+    raw_value = after if after is not None else last_event_id
+    if raw_value in (None, ""):
+        return 0
+    try:
+        cursor = int(raw_value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="invalid event cursor") from exc
+    if cursor < 0 or cursor > _MAX_REPLAY_CURSOR:
+        raise HTTPException(status_code=400, detail="event cursor out of range")
+    return cursor
+
+
+async def _get_scoped_run(
+    run_id: str,
+    user: UserRead,
+    thread_id: Optional[str],
+    db: AsyncSession,
+):
+    run = await RunStore(db).get(run_id, user_id=user.id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if thread_id is not None:
+        try:
+            expected_thread = _resolve_user_thread(user, thread_id).internal_id
+        except HTTPException:
+            raise HTTPException(status_code=404, detail="Run not found") from None
+        if run.thread_id != expected_thread:
+            raise HTTPException(status_code=404, detail="Run not found")
+    return run
+
+
+async def _last_event_sequence(run_id: str, db: AsyncSession) -> int:
+    result = await db.execute(
+        sa_select(func.max(AgentRunEvent.sequence)).where(
+            AgentRunEvent.run_id == run_id
+        )
+    )
+    return int(result.scalar_one() or 0)
+
+
+def _serialize_run_event(event: AgentRunEvent) -> dict:
+    return {
+        "event_id": event.event_id,
+        "run_id": event.run_id,
+        "sequence": event.sequence,
+        "event_type": event.event_type,
+        "invocation_id": event.invocation_id,
+        "payload": event.payload,
+        "occurred_at": event.occurred_at.isoformat(),
+    }
+
+
+@router.get("/runs/{run_id}")
+async def get_run_projection(
+    run_id: str,
+    thread_id: Optional[str] = Query(None),
+    user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    run = await _get_scoped_run(run_id, user, thread_id, db)
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "last_sequence": await _last_event_sequence(run_id, db),
+        "error_code": run.error_code,
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+    }
+
+
+@router.get("/runs/{run_id}/events")
+async def get_run_events_projection(
+    run_id: str,
+    after: Optional[str] = Query(None),
+    thread_id: Optional[str] = Query(None),
+    last_event_id: Optional[str] = Header(None, alias="Last-Event-ID"),
+    user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    cursor = _parse_replay_cursor(after, last_event_id)
+    await _get_scoped_run(run_id, user, thread_id, db)
+    events = await EventStore(db).list_after(run_id, after_sequence=cursor)
+    return {
+        "run_id": run_id,
+        "after": cursor,
+        "events": [_serialize_run_event(event) for event in events],
+    }
 
 
 def _resolve_chat_thread(user: Optional[UserRead], requested_id: Optional[str]):
@@ -116,6 +227,8 @@ async def chat_endpoint(
             formatted_messages.append(msg.model_dump())
 
     thread_scope = _resolve_chat_thread(user, request.thread_id)
+    run_id = uuid4().hex
+    durable_run = user is not None and _interactive_run_store_enabled()
 
     async def stream_generator():
         stream_started = time.perf_counter()
@@ -125,7 +238,14 @@ async def chat_endpoint(
             # Send a first SSE frame before workflow setup or the model request.
             # This flushes the response immediately and prevents the client from
             # looking frozen while an upstream provider is connecting.
-            yield format_sse(event="thinking_start", data={"type": "thinking_start"})
+            initial_data = {"type": "thinking_start"}
+            if durable_run:
+                initial_data["run_id"] = run_id
+            yield format_sse(
+                event="thinking_start",
+                data=initial_data,
+                event_id=1 if durable_run else None,
+            )
             workflow = ChatWorkflow(
                 api_key=api_key, base_url=base_url, store=_store)
 
@@ -187,6 +307,8 @@ async def chat_endpoint(
                 adapter,
                 trace_store=SqlTraceStore(db),
                 model_gateway=model_gateway,
+                run_store=RunStore(db) if durable_run else None,
+                event_store=EventStore(db) if durable_run else None,
             )
 
             goal = next(
@@ -204,6 +326,7 @@ async def chat_endpoint(
                     "thread_id": thread_scope.internal_id,
                     "messages": formatted_messages,
                     "collections": collections,
+                    "run_id": run_id,
                 },
             )
 
@@ -218,6 +341,11 @@ async def chat_endpoint(
             ):
                 event_type = chunk_data.get("type", "message")
                 sequence += 1
+                durable_sequence = (
+                    await _last_event_sequence(run_id, db)
+                    if durable_run
+                    else None
+                )
                 diagnostic_data = {
                     **chunk_data,
                     "stream_sequence": sequence,
@@ -227,7 +355,29 @@ async def chat_endpoint(
                 }
                 if thread_scope.public_id is not None:
                     diagnostic_data["thread_id"] = thread_scope.public_id
-                yield format_sse(event=event_type, data=diagnostic_data)
+                if durable_run:
+                    diagnostic_data["run_id"] = run_id
+                yield format_sse(
+                    event=event_type,
+                    data=diagnostic_data,
+                    event_id=durable_sequence if durable_run else None,
+                )
+
+            if durable_run:
+                stored_run = await RunStore(db).get(run_id, user_id=user.id)
+                if stored_run is not None and stored_run.status in _TERMINAL_RUN_STATUSES:
+                    last_sequence = await _last_event_sequence(run_id, db)
+                    yield format_sse(
+                        event="run_status",
+                        data={
+                            "type": "run_status",
+                            "run_id": run_id,
+                            "status": stored_run.status,
+                            "error_code": stored_run.error_code,
+                            "last_sequence": last_sequence,
+                        },
+                        event_id=last_sequence or None,
+                    )
 
             if memory is not None and user is not None:
                 await memory.extract_and_store_facts(

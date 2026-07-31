@@ -84,7 +84,6 @@ export function useChatStreaming({
   const planRef = useRef<string>('');
   const pendingContentRef = useRef<string>('');
   const pendingProcessesRef = useRef<ProcessNode[] | null>(null);
-  const wasStoppedRef = useRef(false);
   const contentBufferRef = useRef(new TextRevealBuffer());
   const processRevealQueueRef = useRef(new KeyedTextRevealQueue());
   const revealRafIdRef = useRef<number | null>(null);
@@ -92,6 +91,7 @@ export function useChatStreaming({
   const processCompletionsRef = useRef(new Map<string, Partial<ProcessNode>>());
   const networkCompleteRef = useRef(false);
   const completionStatusRef = useRef<MessageStatus>('completed');
+  const terminalStatusRef = useRef<string | null>(null);
   const streamTargetRef = useRef<{ sessionId: string; messageId: string } | null>(null);
   const runIdRef = useRef(0);
   const terminalRef = useRef(false);
@@ -184,6 +184,7 @@ export function useChatStreaming({
     processCompletionsRef.current.clear();
     networkCompleteRef.current = false;
     completionStatusRef.current = 'completed';
+    terminalStatusRef.current = null;
     if (revealRafIdRef.current !== null) {
       cancelAnimationFrame(revealRafIdRef.current);
       revealRafIdRef.current = null;
@@ -284,7 +285,7 @@ export function useChatStreaming({
 
   const stopGeneration = useCallback(() => {
     terminalRef.current = true;
-    wasStoppedRef.current = true;
+    completionStatusRef.current = 'error';
     contentBufferRef.current.clear();
     processRevealQueueRef.current.clear();
     processCompletionsRef.current.clear();
@@ -303,7 +304,7 @@ export function useChatStreaming({
     const target = streamTargetRef.current;
     if (target) {
       const stoppedProcesses = processesRef.current.map((node) =>
-        node.status === 'pending' ? { ...node, status: 'success' as const } : node
+        node.status === 'pending' ? { ...node, status: 'error' as const } : node
       );
       processesRef.current = stoppedProcesses;
       pendingProcessesRef.current = stoppedProcesses;
@@ -313,7 +314,7 @@ export function useChatStreaming({
         target.messageId,
         stoppedProcesses,
         planRef.current || undefined,
-        'completed',
+        'error',
       );
       setStreamingPreview(null);
     }
@@ -334,7 +335,6 @@ export function useChatStreaming({
     setLoading(true);
     setStreamingMessageId(aiMessageId);
     resetInternal();
-    wasStoppedRef.current = false;
     streamTargetRef.current = { sessionId: activeSessionId, messageId: aiMessageId };
 
     const abortController = new AbortController();
@@ -507,6 +507,10 @@ export function useChatStreaming({
         onConnectionStatus: (status) => {
           if (isCurrentRun()) onConnectionStatusChange(status);
         },
+        onRunStatus: (status) => {
+          if (!isCurrentRun()) return;
+          terminalStatusRef.current = status.status;
+        },
         onError: (error) => {
           if (!acceptsStreamEvent()) return;
           terminalRef.current = true;
@@ -529,21 +533,45 @@ export function useChatStreaming({
           networkCompleteRef.current = true;
           finalizeDisplay(activeSessionId, aiMessageId);
         },
-        onComplete: () => {
-          // Some transport failures call onError before the reader closes and
-          // subsequently reports completion. Preserve the error terminal state.
-          if (!acceptsStreamEvent() || completionStatusRef.current === 'error') return;
+        onComplete: (metadata) => {
+          if (!acceptsStreamEvent()) return;
+          const terminalStatus = terminalStatusRef.current;
+          if (!terminalStatus) {
+            if (!metadata?.hasDurableRun) {
+              terminalRef.current = true;
+              for (const node of processesRef.current) {
+                if (node.status === 'pending') {
+                  processCompletionsRef.current.set(node.id, { status: 'success' });
+                }
+              }
+              applyReadyProcessCompletions();
+              completionStatusRef.current = 'completed';
+              networkCompleteRef.current = true;
+              finalizeDisplay(activeSessionId, aiMessageId);
+              return;
+            }
+            terminalRef.current = true;
+            completionStatusRef.current = 'error';
+            for (const node of processesRef.current) {
+              if (node.status === 'pending') {
+                processCompletionsRef.current.set(node.id, { status: 'error' });
+              }
+            }
+            applyReadyProcessCompletions();
+            networkCompleteRef.current = true;
+            finalizeDisplay(activeSessionId, aiMessageId);
+            return;
+          }
           terminalRef.current = true;
-          const wasStopped = wasStoppedRef.current;
           for (const node of processesRef.current) {
             if (node.status === 'pending' && !processCompletionsRef.current.has(node.id)) {
               processCompletionsRef.current.set(node.id, {
-                status: wasStopped ? 'success' : 'error',
+                status: terminalStatus === 'succeeded' ? 'success' : 'error',
               });
             }
           }
           applyReadyProcessCompletions();
-          completionStatusRef.current = 'completed';
+          completionStatusRef.current = terminalStatus === 'succeeded' ? 'completed' : 'error';
           networkCompleteRef.current = true;
           finalizeDisplay(activeSessionId, aiMessageId);
         },

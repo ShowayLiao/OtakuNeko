@@ -83,4 +83,59 @@ describe('chatWithBackend authentication', () => {
       'complete',
     ]);
   });
+
+  it('replays durable events after a disconnect without resubmitting the chat POST', async () => {
+    const liveFrames = [
+      `id: 1\nevent: thinking_start\ndata: ${JSON.stringify({ run_id: 'run-1', stream_sequence: 1 })}\n\n`,
+      `id: 2\nevent: message_chunk\ndata: ${JSON.stringify({ run_id: 'run-1', stream_sequence: 2, content: 'partial' })}\n\n`,
+    ].join('');
+    const liveBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(liveFrames));
+        setTimeout(() => controller.error(new Error('connection lost')), 0);
+      },
+    });
+    const replayResponse = new Response(
+      JSON.stringify({
+        events: [
+          {
+            event_id: 'evt-3',
+            run_id: 'run-1',
+            sequence: 3,
+            event_type: 'run.succeeded',
+            invocation_id: null,
+            payload: {},
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    );
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(liveBody, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      )
+      .mockResolvedValueOnce(replayResponse);
+    vi.stubGlobal('fetch', fetchMock);
+    const statuses: string[] = [];
+    const chunks: string[] = [];
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      onMessageChunk: chunk => chunks.push(chunk),
+      onRunStatus: status => statuses.push(status.status),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/chat');
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      '/api/v1/runs/run-1/events?after=2',
+    );
+    expect(chunks).toEqual(['partial']);
+    expect(statuses).toEqual(['succeeded']);
+  });
 });
