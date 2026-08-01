@@ -6,6 +6,100 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.capabilities.types import ActionDescriptor
+
+
+@dataclass(frozen=True)
+class Principal:
+    """Trusted authenticated identity supplied by the Runtime."""
+
+    principal_id: int
+    roles: frozenset[str] = frozenset()
+
+    @property
+    def id(self) -> int:
+        """Compatibility alias for policy integrations."""
+        return self.principal_id
+
+
+@dataclass(frozen=True)
+class Approval:
+    """Server-side approval state; never populated from model arguments."""
+
+    approval_id: str
+    approved: bool = True
+    principal_id: int | None = None
+    action: str | None = None
+
+
+@dataclass(frozen=True)
+class PolicyDecision:
+    allowed: bool
+    error_type: str | None = None
+    reason: str | None = None
+
+    def __bool__(self) -> bool:
+        return self.allowed
+
+
+class PolicyEngine:
+    """Authorize a capability action before any domain service is called."""
+
+    def __init__(self, *, allow_side_effects: bool = False) -> None:
+        self.allow_side_effects = allow_side_effects
+
+    def authorize(
+        self,
+        principal: Principal | None,
+        descriptor: ActionDescriptor,
+        approval: Approval | None,
+        idempotency_key: str | None,
+    ) -> PolicyDecision:
+        if descriptor.requires_auth and (
+            principal is None or principal.principal_id <= 0
+        ):
+            return PolicyDecision(False, "unauthorized", "Authenticated principal required")
+
+        if descriptor.is_side_effect and (
+            principal is None or principal.principal_id <= 0
+        ):
+            return PolicyDecision(False, "unauthorized", "Authenticated principal required")
+
+        if not descriptor.is_side_effect:
+            return PolicyDecision(True)
+
+        if not self.allow_side_effects:
+            return PolicyDecision(
+                False,
+                "policy_denied",
+                "Side effects are disabled by policy",
+            )
+
+        if approval is None or not isinstance(approval, Approval) or not approval.approved:
+            return PolicyDecision(
+                False,
+                "policy_denied",
+                "Trusted approval is required",
+            )
+        if (
+            principal is not None
+            and approval.principal_id is not None
+            and approval.principal_id != principal.principal_id
+        ):
+            return PolicyDecision(False, "policy_denied", "Approval principal mismatch")
+        if approval.action is not None and approval.action != descriptor.name:
+            return PolicyDecision(False, "policy_denied", "Approval action mismatch")
+
+        if descriptor.is_side_effect and not (
+            isinstance(idempotency_key, str) and idempotency_key.strip()
+        ):
+            return PolicyDecision(
+                False,
+                "idempotency_required",
+                "An explicit idempotency key is required",
+            )
+        return PolicyDecision(True)
+
 
 @dataclass(frozen=True)
 class ProactivePolicy:

@@ -18,6 +18,7 @@ from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.core.logging import get_logger
 from app.harness.contracts import ExecutionContext
+from app.harness.capability_adapter import CapabilityAdapter
 
 logger = get_logger(__name__)
 
@@ -35,11 +36,12 @@ def _build_runtime_tool(
     *,
     input_schema: dict[str, Any] | None = None,
     context: ExecutionContext | None = None,
+    capability_adapter: CapabilityAdapter | None = None,
 ) -> BaseTool:
     """Create a LangChain BaseTool from a capability action descriptor.
 
-    The tool validates inputs, injects trusted context, delegates to
-    ``capability.execute()``, and preserves typed failures.
+    The tool validates public inputs and delegates authenticated execution to
+    ``CapabilityAdapter`` when a runtime context is present.
     """
 
     if descriptor.public_name is None:
@@ -53,13 +55,11 @@ def _build_runtime_tool(
         public_kwargs = dict(kwargs)
         public_kwargs.pop("user_id", None)
         public_kwargs.pop("principal_id", None)
-        if (
-            descriptor.requires_auth
-            and context is not None
-            and context.principal_id is not None
-        ):
-            public_kwargs["user_id"] = context.principal_id
-        result = await capability.execute(descriptor.name, **public_kwargs)
+        if context is not None:
+            adapter = capability_adapter or CapabilityAdapter(capability)
+            result = await adapter.execute(context, descriptor.name, public_kwargs)
+        else:
+            result = await capability.execute(descriptor.name, **public_kwargs)
         if isinstance(result, CapabilityResult):
             return result.to_safe_dict(
                 output_schema=descriptor.output_schema,
@@ -71,7 +71,9 @@ def _build_runtime_tool(
     _inner.description = descriptor.description
 
     # Build Pydantic args schema from input_schema
-    public_input_schema = input_schema if input_schema is not None else descriptor.input_schema
+    public_input_schema = _public_schema(
+        input_schema if input_schema is not None else descriptor.input_schema
+    )
     if public_input_schema:
         try:
             from pydantic import create_model, Field
@@ -92,6 +94,28 @@ def _build_runtime_tool(
     return _inner
 
 
+def _public_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Copy a schema while excluding model-owned authority fields."""
+    copied = dict(schema)
+    properties = copied.get("properties")
+    if isinstance(properties, dict):
+        copied["properties"] = {
+            name: _public_schema(value) if isinstance(value, dict) else value
+            for name, value in properties.items()
+            if name not in {"user_id", "principal_id"}
+        }
+    required = copied.get("required")
+    if isinstance(required, list):
+        copied["required"] = [
+            name for name in required if name not in {"user_id", "principal_id"}
+        ]
+    for key in ("items", "additionalProperties"):
+        value = copied.get(key)
+        if isinstance(value, dict):
+            copied[key] = _public_schema(value)
+    return copied
+
+
 def _json_type_to_python(json_type: str) -> type:
     mapping = {
         "string": str,
@@ -109,6 +133,7 @@ def derive_tools(
     *,
     allowlist: set[str] | None = None,
     context: ExecutionContext | None = None,
+    capability_adapter: CapabilityAdapter | None = None,
 ) -> list[BaseTool]:
     """Derive read-only LangChain tools from versioned public definitions."""
     tools: list[BaseTool] = []
@@ -130,6 +155,7 @@ def derive_tools(
                 descriptor,
                 input_schema=definition.input_schema,
                 context=context,
+                capability_adapter=capability_adapter,
             )
         )
     return tools

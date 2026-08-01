@@ -33,8 +33,8 @@ def _idempotency_key(user_id: int, action: str, payload: dict[str, Any]) -> str:
 class ScheduleCapability(BaseCapability):
     """Read and write user schedule records.
 
-    All write actions require ``user_id`` and validate ownership.
-    Idempotency keys prevent duplicate schedule creation on replay.
+    The public action contract contains no authority fields. Runtime adapters
+    inject the authenticated user ID before reusing the domain service.
     """
 
     @property
@@ -53,10 +53,8 @@ class ScheduleCapability(BaseCapability):
                 description="List all schedules for a user",
                 input_schema={
                     "type": "object",
-                    "properties": {
-                        "user_id": {"type": "integer", "description": "Owner user ID"},
-                    },
-                    "required": ["user_id"],
+                    "properties": {},
+                    "required": [],
                 },
                 requires_auth=True,
             ),
@@ -67,7 +65,6 @@ class ScheduleCapability(BaseCapability):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "user_id": {"type": "integer", "description": "Owner user ID"},
                         "source": {"type": "string", "description": "Data source (bangumi/douban)"},
                         "source_id": {
                             "type": "string", "description": "ID from the source system",
@@ -81,13 +78,16 @@ class ScheduleCapability(BaseCapability):
                         },
                         "idempotency_key": {
                             "type": "string",
-                            "description": "Optional client-generated key",
+                            "description": "Client-generated idempotency key",
                         },
                     },
-                    "required": ["user_id", "source", "source_id", "day_of_week", "start_time"],
+                    "required": [
+                        "source", "source_id", "day_of_week", "start_time",
+                    ],
                 },
                 requires_auth=True,
                 is_side_effect=True,
+                idempotency_mode="required",
             ),
             ActionDescriptor(
                 name="update_schedule",
@@ -96,15 +96,19 @@ class ScheduleCapability(BaseCapability):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "user_id": {"type": "integer", "description": "Owner user ID"},
                         "schedule_id": {"type": "integer", "description": "Schedule record ID"},
                         "day_of_week": {"type": "integer", "minimum": 0, "maximum": 6},
                         "start_time": {"type": "string", "description": "Broadcast time (HH:MM:SS)"},
+                        "idempotency_key": {
+                            "type": "string",
+                            "description": "Client-generated idempotency key",
+                        },
                     },
-                    "required": ["user_id", "schedule_id"],
+                    "required": ["schedule_id"],
                 },
                 requires_auth=True,
                 is_side_effect=True,
+                idempotency_mode="required",
             ),
             ActionDescriptor(
                 name="delete_schedule",
@@ -113,13 +117,17 @@ class ScheduleCapability(BaseCapability):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "user_id": {"type": "integer", "description": "Owner user ID"},
                         "schedule_id": {"type": "integer", "description": "Schedule record ID"},
+                        "idempotency_key": {
+                            "type": "string",
+                            "description": "Client-generated idempotency key",
+                        },
                     },
-                    "required": ["user_id", "schedule_id"],
+                    "required": ["schedule_id"],
                 },
                 requires_auth=True,
                 is_side_effect=True,
+                idempotency_mode="required",
             ),
         ]
 
@@ -147,9 +155,11 @@ class ScheduleCapability(BaseCapability):
         except Exception as exc:
             logger.error(
                 "schedule_capability_failed",
-                extra={"action": action, "user_id": user_id, "error": str(exc)},
+                extra={"action": action, "error_type": type(exc).__name__},
             )
-            return CapabilityResult.fail(str(exc), error_type="internal").to_dict()
+            return CapabilityResult.fail(
+                "Schedule operation failed", error_type="internal"
+            ).to_dict()
 
     async def _list(self, **kwargs: Any) -> dict[str, Any]:
         user_id: int = kwargs["user_id"]
@@ -173,9 +183,7 @@ class ScheduleCapability(BaseCapability):
                 "db session is required", error_type="invalid_args"
             ).to_dict()
 
-        idempotency_key = kwargs.get("idempotency_key") or _idempotency_key(
-            user_id, "create_schedule", kwargs
-        )
+        idempotency_key = kwargs.get("idempotency_key")
         schedule_data = ScheduleCreate(
             source=kwargs["source"],
             source_id=str(kwargs["source_id"]),

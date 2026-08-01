@@ -14,6 +14,7 @@ from app.capabilities.registry import CapabilityRegistry
 from app.mcp_server import MCPServer, ExposureMap
 from app.mcp_server.context import MCPContext
 from app.mcp_server.policy import Policy
+from app.harness.policy import Approval, PolicyEngine, Principal
 
 
 def _make_server() -> MCPServer:
@@ -54,6 +55,27 @@ class TestPolicy:
         p = Policy(allow_side_effects=True, idempotency_key="create-1")
         assert p.allow_side_effects is True
         assert p.idempotency_key == "create-1"
+
+    def test_harness_policy_defaults_to_deny_without_trusted_approval(self):
+        descriptor = ScheduleCapability().actions()[1]
+        decision = PolicyEngine().authorize(
+            Principal(principal_id=1), descriptor, None, "key"
+        )
+
+        assert decision.allowed is False
+        assert decision.error_type == "policy_denied"
+
+    def test_harness_policy_requires_idempotency_after_approval(self):
+        descriptor = ScheduleCapability().actions()[1]
+        decision = PolicyEngine(allow_side_effects=True).authorize(
+            Principal(principal_id=1),
+            descriptor,
+            Approval(approval_id="approval-1"),
+            None,
+        )
+
+        assert decision.allowed is False
+        assert decision.error_type == "idempotency_required"
 
 
 class TestAuthAndPolicyIntegration:

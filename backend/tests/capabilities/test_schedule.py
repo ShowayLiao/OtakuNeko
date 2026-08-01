@@ -26,6 +26,21 @@ class TestScheduleCapability:
         for name in ("create_schedule", "update_schedule", "delete_schedule"):
             assert actions[name].requires_auth is True, f"{name} must require auth"
 
+    def test_public_schema_does_not_expose_authority_fields(self, capability):
+        actions = {a.name: a for a in capability.actions()}
+        for action in actions.values():
+            properties = action.input_schema.get("properties", {})
+            required = action.input_schema.get("required", [])
+            assert "user_id" not in properties
+            assert "principal_id" not in properties
+            assert "user_id" not in required
+            assert "principal_id" not in required
+
+        for name in ("create_schedule", "update_schedule", "delete_schedule"):
+            descriptor = actions[name]
+            assert descriptor.idempotency_mode == "required"
+            assert "idempotency_key" in descriptor.input_schema["properties"]
+
     @pytest.mark.asyncio
     async def test_missing_user_id_returns_unauthorized(self, capability):
         for action in ("create_schedule", "update_schedule", "delete_schedule", "list_schedules"):
