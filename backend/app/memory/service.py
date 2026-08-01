@@ -12,16 +12,20 @@ Retention limits per kind:
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
+from datetime import datetime
 from typing import Any
 from weakref import WeakKeyDictionary
 
 from app.memory.interfaces import (
+    ContextCompiler,
     MemoryContext,
     MemoryExtractor,
     MemoryRepository,
     MemoryService,
 )
+from app.memory.types import MemoryFact, MemorySourceType
 from app.memory.retrievers.bm25_retriever import BM25Retriever
 from app.memory.retrievers.vector_retriever import VectorRetriever
 from app.memory.retrievers.hybrid_retriever import HybridRetriever
@@ -81,6 +85,7 @@ class MemoryServiceImpl(MemoryService):
         self._bm25 = BM25Retriever()
         self._vector = VectorRetriever(api_key, base_url)
         self._hybrid = HybridRetriever(self._bm25, self._vector)
+        self._compiler = ContextCompiler()
 
     # ------------------------------------------------------------------
     # MemoryService interface
@@ -94,11 +99,26 @@ class MemoryServiceImpl(MemoryService):
         source: str = "conversation",
         user_id: int | None = None,
         kind: str = "episodic",
+        source_type: str | None = None,
+        source_id: str | None = None,
+        confidence: float = 0.5,
+        verified: bool = False,
+        expires_at: datetime | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> str | None:
         """Persist a fact after deduplication against existing facts.
 
         Deduplication and retention are scoped to the same user+kind+thread.
         """
+        if (
+            os.getenv("MEMORY_TRUST_MODE") == "legacy-read-safe"
+            and source_type is None
+        ):
+            logger.warning(
+                "memory_write_blocked_legacy_read_safe",
+                extra={"kind": kind},
+            )
+            return None
         owner_id = user_id if user_id is not None else self.default_user_id
         async with _write_lock(owner_id, thread_id, kind):
             try:
@@ -128,6 +148,21 @@ class MemoryServiceImpl(MemoryService):
                     await self._vector.embed([content])
 
                 fact_id = str(uuid.uuid4())
+                fact = MemoryFact(
+                    content=content,
+                    source_type=source_type or MemorySourceType.USER,
+                    source_id=source_id,
+                    confidence=confidence,
+                    verified=verified,
+                    expires_at=expires_at,
+                    id=fact_id,
+                    user_id=owner_id,
+                    thread_id=thread_id,
+                    kind=kind,
+                    importance=importance,
+                    source=source,
+                    metadata=metadata or {},
+                )
                 await self._repo.put_fact(
                     thread_id,
                     fact_id,
@@ -136,6 +171,7 @@ class MemoryServiceImpl(MemoryService):
                     source,
                     user_id=owner_id,
                     kind=kind,
+                    metadata=fact.to_dict()["metadata"],
                 )
 
                 # Profile changes only through explicit replacement/deletion.
@@ -192,13 +228,23 @@ class MemoryServiceImpl(MemoryService):
 
         long_facts: list[dict[str, Any]] = []
         owner_id = user_id if user_id is not None else self.default_user_id
+        if owner_id is None:
+            return MemoryContext(short_term_messages=short)
         all_facts = await self._repo.get_facts(
             thread_id, user_id=owner_id, kind=kind, limit=1000
         )
-        if all_facts:
-            long_facts = await self._hybrid.retrieve(
-                query, all_facts, top_k=top_k
+        typed_facts: list[MemoryFact] = []
+        for raw_fact in all_facts:
+            fact = MemoryFact.from_dict(raw_fact)
+            if not fact.is_expired():
+                typed_facts.append(fact)
+        if typed_facts:
+            ranked_facts = await self._hybrid.retrieve(
+                query,
+                [fact.to_dict() for fact in typed_facts],
+                top_k=top_k,
             )
+            long_facts = _restore_fact_provenance(ranked_facts, typed_facts)
 
         parts: list[str] = []
         if long_facts:
@@ -217,6 +263,26 @@ class MemoryServiceImpl(MemoryService):
                 role_label = "用户" if m["role"] in ("human", "user") else "AI"
                 parts.append(f"- [{role_label}] {m['content'][:200]}")
 
+        memory_facts = [MemoryFact.from_dict(fact) for fact in long_facts]
+        tool_outputs: list[Any] = []
+        if completed_steps:
+            tool_outputs.append({
+                "kind": "execution_progress",
+                "completed_steps": [
+                    str(step)[:100] for step in completed_steps[:20]
+                ],
+            })
+        if terminal_output:
+            tool_outputs.append({
+                "kind": "terminal_output",
+                "data": str(terminal_output),
+            })
+        envelopes = self._compiler.compile(
+            memory_facts=memory_facts,
+            tool_outputs=tool_outputs,
+        )
+        compiled_summary = self._compiler.render(envelopes)
+
         logger.info(
             "context_loaded",
             extra={
@@ -231,7 +297,9 @@ class MemoryServiceImpl(MemoryService):
         return MemoryContext(
             short_term_messages=short,
             long_term_facts=long_facts,
-            summary="\n".join(parts) if parts else "",
+            summary=compiled_summary,
+            memory_facts=memory_facts,
+            envelopes=envelopes,
         )
 
     async def extract_and_store_facts(
@@ -255,8 +323,12 @@ class MemoryServiceImpl(MemoryService):
         if owner_id is None:
             return 0
 
+        user_messages = [
+            message for message in messages
+            if message.get("role") in {"user", "human"}
+        ]
         try:
-            facts = await self._extractor.extract(messages)
+            facts = await self._extractor.extract(user_messages)
         except Exception:
             logger.exception("extract_and_store_facts failed")
             return 0
@@ -264,12 +336,31 @@ class MemoryServiceImpl(MemoryService):
         count = 0
         for fact in facts:
             content = fact.get("content", "")
-            importance = float(fact.get("importance", 0.5))
-            if content:
+            if not isinstance(content, str):
+                continue
+            try:
+                importance = min(
+                    1.0, max(0.0, float(fact.get("importance", 0.5)))
+                )
+            except (TypeError, ValueError):
+                importance = 0.5
+            source_type = fact.get(
+                "source_type", MemorySourceType.USER.value
+            )
+            if (
+                content
+                and source_type == MemorySourceType.USER.value
+                and not _looks_like_instruction_or_secret(str(content))
+            ):
                 fact_id = await self.store_fact(
                     thread_id, content, importance=importance,
                     user_id=owner_id,
                     kind="semantic",
+                    source="extraction",
+                    source_type=source_type,
+                    source_id=fact.get("source_id") or thread_id,
+                    confidence=_bounded_confidence(fact.get("confidence", 0.5)),
+                    verified=False,
                 )
                 if fact_id:
                     count += 1
@@ -285,12 +376,24 @@ class MemoryServiceImpl(MemoryService):
     ) -> list[dict[str, Any]]:
         """Semantic search across stored facts using hybrid retrieval."""
         owner_id = user_id if user_id is not None else self.default_user_id
+        if owner_id is None:
+            return []
         all_facts = await self._repo.get_facts(
             thread_id, user_id=owner_id, kind=kind, limit=1000
         )
-        if not all_facts:
+        active_facts: list[MemoryFact] = []
+        for raw_fact in all_facts:
+            fact = MemoryFact.from_dict(raw_fact)
+            if not fact.is_expired():
+                active_facts.append(fact)
+        if not active_facts:
             return []
-        return await self._hybrid.retrieve(query, all_facts, top_k=top_k)
+        ranked_facts = await self._hybrid.retrieve(
+            query,
+            [fact.to_dict() for fact in active_facts],
+            top_k=top_k,
+        )
+        return _restore_fact_provenance(ranked_facts, active_facts)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -305,3 +408,155 @@ class MemoryServiceImpl(MemoryService):
             if hasattr(m, "type") and hasattr(m, "content"):
                 messages.append({"role": m.type, "content": str(m.content)})
         return messages
+
+
+def _looks_like_instruction_or_secret(content: str) -> bool:
+    lowered = content.lower()
+    markers = (
+        "ignore previous",
+        "ignore system",
+        "ignore policy",
+        "system prompt",
+        "api key",
+        "access token",
+        "泄露",
+        "忽略系统",
+        "系统策略",
+        "批准写",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _bounded_confidence(value: Any) -> float:
+    try:
+        return min(1.0, max(0.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.5
+
+
+def _restore_fact_provenance(
+    ranked_facts: list[dict[str, Any]],
+    source_facts: list[MemoryFact],
+) -> list[dict[str, Any]]:
+    """Reattach provenance after a retriever returns ranked projections."""
+    by_content: dict[str, list[MemoryFact]] = {}
+    for fact in source_facts:
+        by_content.setdefault(fact.content, []).append(fact)
+
+    restored: list[dict[str, Any]] = []
+    for ranked in ranked_facts:
+        content = str(ranked.get("content", ""))
+        candidates = by_content.get(content, [])
+        fact = candidates.pop(0) if candidates else MemoryFact.from_dict(ranked)
+        value = fact.to_dict()
+        for key in ("score", "timestamp", "embedding"):
+            if key in ranked:
+                value[key] = ranked[key]
+        restored.append(value)
+    return restored
+
+
+class LegacyMemoryServiceAdapter(MemoryService):
+    """Deprecated read-compatible adapter for the old MemoryManager path."""
+
+    def __init__(self, manager: Any, default_user_id: int | None = None) -> None:
+        self._manager = manager
+        self.default_user_id = default_user_id
+
+    def _scope(
+        self, thread_id: str, user_id: int | None, kind: str | None = None
+    ) -> str:
+        owner = user_id if user_id is not None else self.default_user_id
+        if owner is None:
+            return ""
+        scope = "user" if kind in {"semantic", "profile"} else f"thread:{thread_id}"
+        return f"legacy-user:{owner}:{scope}"
+
+    def _deprecated(self) -> None:
+        logger.warning(
+            "deprecated_memory_manager_path",
+            extra={
+                "adapter": "legacy_memory_service",
+                "operation": "memory",
+            },
+        )
+
+    async def store_fact(
+        self,
+        thread_id: str,
+        content: str,
+        importance: float = 0.5,
+        source: str = "conversation",
+        user_id: int | None = None,
+        kind: str = "episodic",
+        **kwargs: Any,
+    ) -> str | None:
+        self._deprecated()
+        scoped = self._scope(thread_id, user_id, kind)
+        if not scoped or not getattr(self._manager, "_store", None):
+            return None
+        return await self._manager._add_fact(
+            scoped, content, importance=importance, source=source
+        )
+
+    async def retrieve_context(
+        self,
+        thread_id: str,
+        query: str,
+        top_k: int = 5,
+        user_id: int | None = None,
+        kind: str | None = None,
+    ) -> MemoryContext:
+        self._deprecated()
+        scoped = self._scope(thread_id, user_id, kind)
+        if not scoped:
+            return MemoryContext()
+        legacy_context = await self._manager.load_context(
+            scoped, query, top_k=top_k
+        )
+        facts = []
+        for raw_fact in legacy_context.long_term_facts:
+            fact = MemoryFact.from_dict(raw_fact)
+            if not fact.is_expired():
+                facts.append(fact)
+        tool_outputs = [
+            message.get("content", "")
+            for message in legacy_context.short_term_messages
+            if message.get("role") == "tool"
+        ]
+        envelopes = ContextCompiler().compile(
+            memory_facts=facts,
+            tool_outputs=tool_outputs,
+        )
+        return MemoryContext(
+            short_term_messages=legacy_context.short_term_messages,
+            long_term_facts=[fact.to_dict() for fact in facts],
+            summary=legacy_context.summary,
+            memory_facts=facts,
+            envelopes=envelopes,
+        )
+
+    async def extract_and_store_facts(
+        self, thread_id: str, user_id: int | None = None
+    ) -> int:
+        self._deprecated()
+        scoped = self._scope(thread_id, user_id, "semantic")
+        if not scoped:
+            return 0
+        return await self._manager.extract_and_store_facts(scoped)
+
+    async def search_facts(
+        self,
+        thread_id: str,
+        query: str,
+        top_k: int = 10,
+        user_id: int | None = None,
+        kind: str | None = None,
+    ) -> list[dict[str, Any]]:
+        context = await self.retrieve_context(
+            thread_id, query, top_k=top_k, user_id=user_id, kind=kind
+        )
+        return context.long_term_facts
+
+
+MemoryManagerAdapter = LegacyMemoryServiceAdapter

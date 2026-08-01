@@ -13,6 +13,7 @@ from typing import Any
 from openai import AsyncOpenAI
 
 from app.memory.interfaces import MemoryExtractor
+from app.memory.types import MemorySourceType
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -33,12 +34,16 @@ class LLMFactExtractor(MemoryExtractor):
 
     async def extract(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Run fact extraction over the given messages."""
-        if len(messages) < 4:
+        user_messages = [
+            message for message in messages
+            if message.get("role") in ("human", "user")
+        ]
+        if not user_messages:
             return []
 
         conv_text = "\n".join(
             f"{'用户' if m['role'] in ('human', 'user') else 'AI'}: {m['content']}"
-            for m in messages
+            for m in user_messages
         )
 
         try:
@@ -56,15 +61,59 @@ class LLMFactExtractor(MemoryExtractor):
 
             validated: list[dict[str, Any]] = []
             for fact in facts:
+                if not isinstance(fact, dict):
+                    continue
+                forbidden = {
+                    "instruction", "instructions", "credential",
+                    "credentials", "approval", "approve", "policy",
+                    "system", "tool", "external", "prompt",
+                }
+                if any(key.lower() in forbidden for key in fact):
+                    continue
                 content = fact.get("content", "")
                 if content:
+                    content = str(content).strip()
+                    if _looks_like_untrusted_instruction(content):
+                        continue
+                    try:
+                        importance = min(
+                            1.0, max(0.0, float(fact.get("importance", 0.5)))
+                        )
+                    except (TypeError, ValueError):
+                        importance = 0.5
+                    try:
+                        confidence = min(
+                            1.0, max(0.0, float(fact.get("confidence", 0.5)))
+                        )
+                    except (TypeError, ValueError):
+                        confidence = 0.5
                     validated.append(
                         {
-                            "content": str(content),
-                            "importance": float(fact.get("importance", 0.5)),
+                            "content": content[:2000],
+                            "importance": importance,
+                            "source_type": MemorySourceType.USER.value,
+                            "source_id": "user-statement",
+                            "confidence": confidence,
+                            "verified": False,
                         }
                     )
             return validated
         except Exception:
             logger.exception("fact_extraction_failed")
             return []
+
+
+def _looks_like_untrusted_instruction(content: str) -> bool:
+    lowered = content.lower()
+    markers = (
+        "ignore previous",
+        "ignore system",
+        "ignore policy",
+        "system prompt",
+        "api key",
+        "access token",
+        "忽略系统",
+        "系统策略",
+        "泄露",
+    )
+    return any(marker in lowered for marker in markers)

@@ -230,6 +230,14 @@ class SqlMemoryRepository(MemoryRepository):
 
     @staticmethod
     def _row_to_dict(row: AgentMemory) -> dict[str, Any]:
+        metadata = (
+            json.loads(row.metadata_json)
+            if row.metadata_json
+            else {}
+        )
+        provenance = metadata.get("provenance")
+        if not isinstance(provenance, dict):
+            provenance = {}
         return {
             "id": row.fact_id,
             "user_id": row.user_id,
@@ -239,9 +247,10 @@ class SqlMemoryRepository(MemoryRepository):
             "importance": row.importance,
             "source": row.source,
             "timestamp": row.created_at.isoformat() if row.created_at else "",
-            "metadata": (
-                json.loads(row.metadata_json)
-                if row.metadata_json
-                else {}
-            ),
+            "metadata": metadata,
+            "source_type": provenance.get("source_type", "legacy"),
+            "source_id": provenance.get("source_id"),
+            "confidence": provenance.get("confidence", 0.5),
+            "verified": bool(provenance.get("verified", False)),
+            "expires_at": provenance.get("expires_at"),
         }

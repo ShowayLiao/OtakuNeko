@@ -1,6 +1,7 @@
 import json
 import operator
 import asyncio
+import html
 import os
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, List, Optional, Annotated, TypedDict, TYPE_CHECKING
@@ -17,6 +18,7 @@ from app.harness.model_gateway import LangChainModelAdapter, safe_provider_detai
 from app.harness.budget import CancellationToken
 from app.trace import TraceEventType
 from app.trace.recorder import current_trace_recorder
+from app.memory.interfaces import ContextCompiler
 import time
 
 if TYPE_CHECKING:
@@ -24,6 +26,21 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 MAX_GRAPH_STEPS = 24
+
+
+def _safe_user_preference_prompt(value: Optional[str]) -> Optional[str]:
+    """Keep prompt_config bounded and explicitly below fixed policy."""
+    if not value:
+        return None
+    preference = str(value)[:2000]
+    preference = html.escape(preference, quote=False)
+    return (
+        f"{SPEAK_SYSTEM_PROMPT}\n\n"
+        f"<user_preferences trust=\"untrusted-data\">"
+        f"{preference}</user_preferences>\n"
+        f"<runtime_policy trust=\"fixed\">"
+        f"{ContextCompiler.SYSTEM_POLICY}</runtime_policy>"
+    )
 
 
 class CodingAgentState(TypedDict):
@@ -88,6 +105,7 @@ class ChatWorkflow:
         self._runtime_tools = None
         self.app = None
         self._speak_prompt: Optional[str] = None
+        self._speak_prompt_compiled = False
         self._enable_interrupt = enable_interrupt
         self.model_adapter: Optional[LangChainModelAdapter] = None
         self.last_model_result = None
@@ -252,7 +270,12 @@ class ChatWorkflow:
         messages = list(state["messages"])
         messages = self._trim_and_clean(messages)
 
-        speak_sys = {"role": "system", "content": self._speak_prompt or SPEAK_SYSTEM_PROMPT}
+        speak_content = (
+            self._speak_prompt
+            if self._speak_prompt_compiled
+            else _safe_user_preference_prompt(self._speak_prompt)
+        ) or SPEAK_SYSTEM_PROMPT
+        speak_sys = {"role": "system", "content": speak_content}
         messages.insert(0, speak_sys)
 
         logger.info("speak_node", extra={
@@ -304,7 +327,8 @@ class ChatWorkflow:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         self._raise_if_cancelled()
         await self._ensure_checkpointer()
-        self._speak_prompt = speak_prompt
+        self._speak_prompt = _safe_user_preference_prompt(speak_prompt)
+        self._speak_prompt_compiled = self._speak_prompt is not None
         llm_kwargs: Dict[str, Any] = {
             "model": model,
             "api_key": self.api_key,
@@ -342,8 +366,19 @@ class ChatWorkflow:
                               if m.get("role") == "user"), "")
             if user_query:
                 ctx = await self.memory.retrieve_context(thread_id, user_query)
-                if ctx.summary:
-                    enriched_messages.insert(0, {"role": "system", "content": ctx.summary})
+                context_prompt = (
+                    ctx.to_prompt()
+                    if hasattr(ctx, "to_prompt")
+                    else getattr(ctx, "summary", "")
+                )
+                if context_prompt:
+                    enriched_messages.insert(
+                        0,
+                        {
+                            "role": "system",
+                            "content": context_prompt,
+                        },
+                    )
 
         # Bound think/tool cycles so a malformed tool response or provider
         # loop cannot consume an unbounded request budget.
