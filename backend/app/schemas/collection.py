@@ -112,7 +112,11 @@ class CollectionList(BaseList):
     
     用于返回分页的收藏列表，包含总数和条目列表
     """
-    items: List[CollectionBase] = Field(default_factory=list, description="收藏列表")
+    items: List[CollectionBase] = Field(
+        default_factory=list,
+        max_length=100,
+        description="收藏列表",
+    )
 
 class CollectionUpdateList(BaseList):
     """
@@ -170,7 +174,11 @@ class CollectionSyncRequest(BaseModel):
     limit: Optional[int] = Field(default=50, ge=1, le=100, description="每页请求数量")
     offset: Optional[int] = Field(default=0, ge=0, description="分页偏移量")
     sync_count: Optional[int] = Field(default=0, ge=0, description="已同步数量")
-    data: Optional[List[Dict[str, Any]]] = Field(None, description="用于豆瓣上传的数据列表")
+    data: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        max_length=100,
+        description="用于豆瓣上传的数据列表",
+    )
 
 
 class CollectionUpsertRequest(BaseModel):
@@ -200,7 +208,11 @@ class CollectionUpsertList(BaseList):
     
     用于插入或更新多个收藏记录，包含多个CollectionUpsert对象
     """
-    collections: List[CollectionUpsert] = Field(default_factory=list, description="收藏列表")
+    collections: List[CollectionUpsert] = Field(
+        default_factory=list,
+        max_length=100,
+        description="收藏列表",
+    )
 
 
 class CollectionSubject(CollectionBase):

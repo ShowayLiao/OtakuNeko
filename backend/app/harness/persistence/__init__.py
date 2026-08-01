@@ -2,6 +2,13 @@
 
 from .event_store import EventConflict, EventPayloadError, EventStore
 from .run_store import InvalidRunTransition, RunNotFound, RunStore
+from .collection_http import (
+    CollectionHttpIdempotencyAdapter,
+    HttpWriteResult,
+    canonical_collection_resource_key,
+    collection_http_response,
+    collection_idempotency_scope,
+)
 
 __all__ = [
     "EventConflict",
@@ -10,4 +17,9 @@ __all__ = [
     "InvalidRunTransition",
     "RunNotFound",
     "RunStore",
+    "CollectionHttpIdempotencyAdapter",
+    "HttpWriteResult",
+    "canonical_collection_resource_key",
+    "collection_http_response",
+    "collection_idempotency_scope",
 ]
