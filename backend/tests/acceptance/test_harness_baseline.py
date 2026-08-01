@@ -16,10 +16,11 @@ from fastapi import FastAPI
 os.environ["DEBUG"] = "false"
 
 from app.api.v1 import rss as rss_module
-from app.api.v1.rss import router as rss_router
+from app.api.v1.rss import get_idempotency_store, router as rss_router
 from app.api.deps import _parse_qb_allowed_user_ids, get_current_user
 from app.core.config import settings
 from app.harness.checkpoint import InMemoryCheckpointStore
+from app.harness.persistence.idempotency import InMemoryIdempotencyStore
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 from app.schemas.rss import RssItemsResponse, RssRulesResponse
@@ -270,17 +271,18 @@ def _rss_requests() -> list[tuple[str, str, dict[str, Any] | None]]:
     return [
         ("GET", "/v1/rss/list", None),
         ("GET", "/v1/rss/rules", None),
-        ("POST", "/v1/rss/add", {"url": "https://example.test/feed", "name": "feed"}),
-        ("POST", "/v1/rss/upsert", {"url": "https://example.test/feed", "name": "feed"}),
-        ("DELETE", "/v1/rss/remove", {"item_path": "feed"}),
-        ("POST", "/v1/rss/set-rule", {"rule_name": "rule", "rule": rule}),
-        ("DELETE", "/v1/rss/remove-rule", {"rule_name": "rule"}),
+        ("POST", "/v1/rss/add", {"url": "https://example.test/feed", "name": "feed", "idempotency_key": "baseline-add"}),
+        ("POST", "/v1/rss/upsert", {"url": "https://example.test/feed", "name": "feed", "idempotency_key": "baseline-upsert"}),
+        ("DELETE", "/v1/rss/remove", {"item_path": "feed", "idempotency_key": "baseline-remove"}),
+        ("POST", "/v1/rss/set-rule", {"rule_name": "rule", "rule": rule, "idempotency_key": "baseline-set-rule"}),
+        ("DELETE", "/v1/rss/remove-rule", {"rule_name": "rule", "idempotency_key": "baseline-remove-rule"}),
     ]
 
 
 def _make_rss_app(user: UserRead | None = None) -> FastAPI:
     app = FastAPI()
     app.include_router(rss_router, prefix="/v1")
+    app.dependency_overrides[get_idempotency_store] = InMemoryIdempotencyStore
     if user is not None:
         async def override_user() -> UserRead:
             return user
@@ -363,6 +365,26 @@ async def test_authorized_user_can_reach_all_qb_routes(monkeypatch) -> None:
         "init",
         "remove-rule",
     ]
+
+
+@pytest.mark.asyncio
+async def test_authorized_write_without_idempotency_key_is_rejected(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
+    monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7")
+    monkeypatch.setattr(rss_module, "QBService", FakeQBService)
+    FakeQBService.calls = []
+
+    app = _make_rss_app(_make_user(7))
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/v1/rss/add",
+            json={"url": "https://example.test/feed", "name": "feed"},
+        )
+
+    assert response.status_code == 422
+    assert FakeQBService.calls == []
 
 
 @pytest.mark.asyncio
