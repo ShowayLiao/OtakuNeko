@@ -5,7 +5,7 @@
 > Start: `2026-08-01 Asia/Shanghai`
 > Branch: `feature-harness`
 > Start commit: `9f023a2e739f7f54517adaee0881f8b01d998b89`
-> Record status: `in_progress` (implementation and review complete; local commit pending)
+> Record status: `completed`
 
 ## 1. Preflight
 
@@ -114,22 +114,36 @@ Remediation rounds: 2
 ```yaml
 batch_result:
   batch: BATCH-11
-  status: in_progress
-  commit: null
-  tasks_completed: []
+  status: committed
+  commit: 6e4aa233e4fac97072ecbd904173dd05a313115e
+  tasks_completed:
+    - TASK-HARNESS-011
   tests:
-    passed: []
+    passed:
+      - "17 regression tests"
+      - "605 full backend tests"
+      - "ruff check app tests"
+      - "git diff --check"
     failed: []
-    skipped: []
+    skipped:
+      - "1 existing full-suite test"
   review:
     verdict: pass
     rounds: 2
     deferred_findings:
       - "Batch import partial-state/manual-verification semantics."
       - "Cache backend cross-process invalidation semantics."
-  changed_files: []
+  changed_files:
+    - backend/app/api/v1/collections.py
+    - backend/app/services/collection_service.py
+    - backend/app/schemas/collection.py
+    - backend/app/harness/persistence/collection_http.py
+    - backend/app/harness/persistence/__init__.py
+    - backend/tests/api/test_collections_idempotency.py
+    - backend/tests/services/test_collection_service.py
+    - docs/harness-execution/BATCH-11-execution.md
   unresolved_risks:
     - "Batch import can span multiple service commits; idempotency records the outcome but cannot compensate already committed external data."
     - "Frontend callers without Idempotency-Key require a separate migration."
-  next_batch: null
+  next_batch: "Re-read docs/harness-tasks/INDEX.md; no later Batch is started in this turn."
 ```
