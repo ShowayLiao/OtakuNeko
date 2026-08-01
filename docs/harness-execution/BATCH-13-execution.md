@@ -5,7 +5,7 @@ Task: TASK-HARNESS-013
 Date: 2026-08-01 Asia/Shanghai
 Branch: feature-harness
 Start commit: d329916a5d1a504345f3e14e4c763556cf39144c
-Record status: in_progress
+Record status: completed
 
 ## 1. Preflight
 
@@ -251,7 +251,7 @@ scope amendment and remediation closed all non-deferred findings.
 batch_result:
   batch: BATCH-13
   status: committed
-  commit: null
+  commit: dd9820f
   tasks_completed:
     - TASK-HARNESS-013
   tests:
