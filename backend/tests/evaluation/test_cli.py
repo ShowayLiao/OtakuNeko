@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 from app.evaluation.runner import main
 
@@ -45,3 +49,29 @@ def test_cli_returns_nonzero_when_threshold_regresses(tmp_path):
     )
 
     assert main(["--config", str(config_path)]) == 1
+
+
+def test_module_cli_starts_in_a_fresh_process(tmp_path):
+    report_path = tmp_path / "subprocess-report.json"
+    backend_dir = Path(__file__).parents[2]
+    environment = os.environ.copy()
+    environment["DEBUG"] = "false"
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "app.evaluation.runner",
+            "--config",
+            "evals/config/fast.yaml",
+            "--report",
+            str(report_path),
+        ],
+        cwd=backend_dir,
+        env=environment,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert report_path.exists()

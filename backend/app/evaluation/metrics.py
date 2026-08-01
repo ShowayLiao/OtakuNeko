@@ -7,6 +7,19 @@ from collections import defaultdict
 from app.evaluation.types import EvalCase, ExecutionResult, MetricResult
 
 
+OBSERVABILITY_METRICS = (
+    "run_success_rate",
+    "tool_success_rate",
+    "policy_denied_count",
+    "budget_exceeded_count",
+    "cancelled_count",
+    "reconnect_count",
+    "model_tokens",
+    "estimated_cost_unknown_count",
+    "latency_ms",
+)
+
+
 def _boolean(metric: str, passed: bool, detail: str) -> MetricResult:
     return MetricResult(
         metric=metric,
@@ -150,4 +163,74 @@ def aggregate_metrics(
     aggregates["routing_accuracy"] = aggregates.get("routing", 1.0)
     aggregates["latency_ms"] = aggregates.get("latency", 0.0)
     aggregates["call_count"] = aggregates.get("call_budget", 0.0)
+    return aggregates
+
+
+def observability_snapshot(result: ExecutionResult) -> dict[str, float]:
+    tool_calls = max(
+        result.tool_call_count,
+        result.tool_success_count + result.tool_failure_count,
+    )
+    tool_success_rate = (
+        result.tool_success_count / tool_calls if tool_calls else 1.0
+    )
+    unknown_costs = result.estimated_cost_unknown_count
+    if result.model_call_count and result.estimated_cost_usd is None:
+        unknown_costs = max(unknown_costs, result.model_call_count)
+    return {
+        "run_success_rate": 1.0 if result.run_status == "completed" else 0.0,
+        "tool_success_rate": tool_success_rate,
+        "tool_success_count": float(result.tool_success_count),
+        "tool_call_count": float(tool_calls),
+        "policy_denied_count": float(result.policy_denied_count),
+        "budget_exceeded_count": float(result.budget_exceeded_count),
+        "cancelled_count": float(result.cancelled_count),
+        "reconnect_count": float(result.reconnect_count),
+        "model_tokens": float(result.model_tokens or 0),
+        "estimated_cost_unknown_count": float(unknown_costs),
+        "latency_ms": float(result.latency_ms),
+    }
+
+
+def aggregate_observability(
+    results: list[ExecutionResult],
+) -> dict[str, float]:
+    if not results:
+        return {
+            "run_success_rate": 1.0,
+            "tool_success_rate": 1.0,
+            "policy_denied_count": 0.0,
+            "budget_exceeded_count": 0.0,
+            "cancelled_count": 0.0,
+            "reconnect_count": 0.0,
+            "model_tokens": 0.0,
+            "estimated_cost_unknown_count": 0.0,
+            "latency_ms": 0.0,
+        }
+    snapshots = [observability_snapshot(result) for result in results]
+    return aggregate_observability_snapshots(snapshots)
+
+
+def aggregate_observability_snapshots(
+    snapshots: list[dict[str, float]],
+) -> dict[str, float]:
+    if not snapshots:
+        return aggregate_observability([])
+    rate_metrics = {"run_success_rate", "tool_success_rate", "latency_ms"}
+    aggregates: dict[str, float] = {}
+    for metric in OBSERVABILITY_METRICS:
+        values = [float(snapshot.get(metric, 0.0)) for snapshot in snapshots]
+        if metric in rate_metrics:
+            aggregates[metric] = sum(values) / len(values)
+        else:
+            aggregates[metric] = sum(values)
+    total_tool_calls = sum(
+        float(snapshot.get("tool_call_count", 0.0))
+        for snapshot in snapshots
+    )
+    if total_tool_calls:
+        aggregates["tool_success_rate"] = sum(
+            float(snapshot.get("tool_success_count", 0.0))
+            for snapshot in snapshots
+        ) / total_tool_calls
     return aggregates

@@ -5,6 +5,7 @@ import os
 from contextlib import nullcontext
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Protocol
+from uuid import uuid4
 
 from app.harness.checkpoint import CheckpointStore
 from app.harness.budget import CancellationToken, RunBudget
@@ -18,7 +19,7 @@ from app.harness.task import AgentTask
 from app.harness.state import AgentState
 from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
 from app.trace.redaction import sanitize_trace
-from app.trace.recorder import bind_trace
+from app.trace.recorder import bind_trace, current_trace_recorder
 from app.trace.store import TraceStore
 from app.core.logging import get_logger
 
@@ -87,6 +88,15 @@ class AgentRuntime:
             return cls.__name__
         return type(self.adapter).__name__
 
+    @staticmethod
+    def _ensure_run_id(task: AgentTask) -> str:
+        current = (task.metadata or {}).get("run_id")
+        if current:
+            return str(current)
+        run_id = str(task.task_id or uuid4().hex)
+        task.metadata["run_id"] = run_id
+        return run_id
+
     async def _save_checkpoint(self, state: AgentState) -> None:
         if self.checkpoint_store is not None:
             await self.checkpoint_store.save_state(state)
@@ -104,8 +114,10 @@ class AgentRuntime:
 
     async def execute(self, task: AgentTask) -> AgentState:
         trace: AgentTrace | None = None
+        run_id = self._ensure_run_id(task)
         if self.trace_store is not None:
             trace = AgentTrace(
+                run_id=run_id,
                 task_id=task.task_id,
                 user_id=task.user_id,
                 agent_name=self.adapter_name,
@@ -131,7 +143,11 @@ class AgentRuntime:
         state = AgentState(task=task, status="running")
         await self._save_checkpoint(state)
         try:
-            trace_context = bind_trace(trace) if trace is not None else nullcontext()
+            trace_context = (
+                bind_trace(trace, run_id=run_id)
+                if trace is not None
+                else nullcontext()
+            )
             with trace_context as recorder:
                 if recorder is not None:
                     recorder.record(
@@ -197,8 +213,10 @@ class AgentRuntime:
             return
 
         trace: AgentTrace | None = None
+        run_id = self._ensure_run_id(task)
         if self.trace_store is not None:
             trace = AgentTrace(
+                run_id=run_id,
                 task_id=task.task_id,
                 user_id=task.user_id,
                 agent_name=self.adapter_name,
@@ -239,7 +257,11 @@ class AgentRuntime:
             ),
         )
         try:
-            trace_context = bind_trace(trace) if trace is not None else nullcontext()
+            trace_context = (
+                bind_trace(trace, run_id=run_id)
+                if trace is not None
+                else nullcontext()
+            )
             with trace_context as recorder:
                 if recorder is not None:
                     recorder.record(
@@ -382,8 +404,10 @@ class AgentRuntime:
     async def _legacy_stream(self, task: AgentTask, **kwargs: Any) -> AsyncIterator[Any]:
         """Pre-BATCH-05 facade retained for the explicit rollback flag."""
         trace: AgentTrace | None = None
+        run_id = self._ensure_run_id(task)
         if self.trace_store is not None:
             trace = AgentTrace(
+                run_id=run_id,
                 task_id=task.task_id,
                 user_id=task.user_id,
                 agent_name=self.adapter_name,
@@ -398,7 +422,11 @@ class AgentRuntime:
             stream = getattr(self.adapter, "stream", None)
             if stream is None:
                 raise TypeError("The configured adapter does not support streaming")
-            trace_context = bind_trace(trace) if trace is not None else nullcontext()
+            trace_context = (
+                bind_trace(trace, run_id=run_id)
+                if trace is not None
+                else nullcontext()
+            )
             with trace_context as recorder:
                 if recorder is not None:
                     recorder.record(
@@ -537,6 +565,45 @@ class AgentRuntime:
         await self._save_checkpoint(state)
 
     def _record_stream_trace(self, trace: AgentTrace, chunk: dict[str, Any]) -> None:
+        recorder = current_trace_recorder()
+        if recorder is not None:
+            if chunk.get("type") == "agent_result":
+                result = chunk.get("result") or {}
+                data = result.get("data") if isinstance(result, dict) else {}
+                result_status = (
+                    str(result.get("status", "completed"))
+                    if isinstance(result, dict)
+                    else "completed"
+                )
+                recorder.record(
+                    TraceEventType.AGENT_RESULT,
+                    "agent.result",
+                    {
+                        "kind": chunk.get("kind", "subagent"),
+                        "name": chunk.get("agent", "unknown"),
+                        "status": result_status,
+                        "data_keys": sorted(data.keys())
+                        if isinstance(data, dict)
+                        else [],
+                    },
+                    status=(
+                        "completed" if result_status == "completed" else "failed"
+                    ),
+                )
+                return
+            if chunk.get("type") == "route_decision":
+                recorder.record(
+                    TraceEventType.ROUTING_DECISION,
+                    "routing",
+                    {
+                        "route": chunk.get("route"),
+                        "agent": chunk.get("agent"),
+                        "confidence": chunk.get("confidence"),
+                        "rationale_present": bool(chunk.get("rationale")),
+                    },
+                )
+                return
+
         if chunk.get("type") == "agent_result":
             result = chunk.get("result") or {}
             data = result.get("data") if isinstance(result, dict) else {}

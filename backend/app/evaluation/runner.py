@@ -26,9 +26,11 @@ from app.evaluation.judge import (
 )
 from app.evaluation.metrics import (
     aggregate_metrics,
+    aggregate_observability_snapshots,
     case_passed,
     compute_case_metrics,
     failure_metrics,
+    observability_snapshot,
 )
 from app.evaluation.reporting import write_report
 from app.evaluation.types import (
@@ -37,6 +39,7 @@ from app.evaluation.types import (
     EvalDataset,
     EvalReport,
     JudgeOutcome,
+    ExecutionResult,
 )
 
 __all__ = [
@@ -110,6 +113,12 @@ async def run_case(
                     timeout=config.judge.timeout_seconds,
                     cache=judge_cache,
                 )
+            judge_outcome = judge_outcome.model_copy(
+                update={
+                    "model": config.judge.model,
+                    "provider": config.judge.provider,
+                }
+            )
         return CaseResult(
             case_id=case.id,
             category=case.category.value,
@@ -118,15 +127,28 @@ async def run_case(
             capabilities=execution.capabilities,
             metrics=metrics,
             judge=judge_outcome,
+            run_id=execution.run_id,
+            observability=observability_snapshot(execution),
+            tool_argument_keys=execution.tool_argument_keys,
+            providers=execution.providers,
+            models=execution.models,
         )
     except Exception as exc:
         metrics = failure_metrics(case)
+        failed_observability = observability_snapshot(
+            ExecutionResult(
+                route="",
+                schema_valid=False,
+                run_status="failed",
+            )
+        )
         return CaseResult(
             case_id=case.id,
             category=case.category.value,
             passed=False,
             metrics=metrics,
             error=safe_error(exc, "execution_failed"),
+            observability=failed_observability,
         )
 
 
@@ -209,6 +231,11 @@ async def run_evaluation(
     ]
     if judge_costs:
         aggregates["judge_cost_usd"] = sum(judge_costs)
+    aggregates.update(
+        aggregate_observability_snapshots(
+            [result.observability for result in results]
+        )
+    )
     gate_failures = evaluate_gate(config, aggregates)
     if not results:
         gate_failures.append("no evaluation cases selected")
@@ -240,6 +267,13 @@ async def run_evaluation(
         aggregates=aggregates,
         gate_failures=gate_failures,
         baseline_failures=baseline_failures,
+        evaluation_budget={
+            "judge_enabled": config.judge.enabled,
+            "judge_required": config.judge.required,
+            "judge_timeout_seconds": config.judge.timeout_seconds,
+            "judge_max_cost_usd": config.judge.max_cost_usd,
+            "judge_max_cost_per_call_usd": config.judge.max_cost_per_call_usd,
+        },
     )
 
 

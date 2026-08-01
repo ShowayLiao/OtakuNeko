@@ -100,3 +100,51 @@ def test_real_dataset_covers_required_scenarios():
         "recovery",
     } <= categories
     assert {"ambiguous", "provider_failure", "cancellation"} <= tags
+
+
+def test_script_event_supports_observability_failure_and_recovery_scenarios():
+    from app.evaluation.types import ScriptEvent
+
+    events = [
+        ScriptEvent(type="tool_call_start", name="search", value={"q": "x"}),
+        ScriptEvent(type="policy_denied", code="policy_denied"),
+        ScriptEvent(type="budget_exceeded", code="budget_exceeded"),
+        ScriptEvent(type="timeout", code="timeout"),
+        ScriptEvent(type="cancelled", code="cancelled"),
+        ScriptEvent(type="reconnect", value={"attempt": 2}),
+        ScriptEvent(type="model_call", provider="fake", model="model-v1"),
+    ]
+
+    assert [event.type for event in events] == [
+        "tool_call_start",
+        "policy_denied",
+        "budget_exceeded",
+        "timeout",
+        "cancelled",
+        "reconnect",
+        "model_call",
+    ]
+
+
+def test_observability_dataset_covers_required_scenarios():
+    from app.evaluation.dataset import load_dataset
+
+    dataset = load_dataset("evals/datasets/v1-observability.jsonl")
+    tags = {tag for case in dataset.cases for tag in case.tags}
+
+    assert dataset.dataset_version == "v1-observability"
+    assert {
+        "normal",
+        "tool_selection_args",
+        "tool_failure",
+        "policy_deny",
+        "identity_spoofing",
+        "prompt_injection",
+        "tool_output_injection",
+        "memory_poisoning",
+        "timeout",
+        "cancel",
+        "reconnect",
+        "multi_provider",
+        "qb_unauthorized",
+    } <= tags

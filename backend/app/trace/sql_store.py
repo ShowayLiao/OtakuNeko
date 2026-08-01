@@ -13,8 +13,12 @@ from sqlmodel import select
 
 from app.core.logging import get_logger
 from app.models.agent_trace import AgentTraceModel, TraceEventModel
-from app.trace import AgentTrace, TraceStep
-from app.trace.redaction import sanitize_trace
+from app.trace import (
+    TRACE_LEGACY_SCHEMA_VERSION,
+    AgentTrace,
+    TraceStep,
+)
+from app.trace.redaction import UnsafeTraceDataError, sanitize_trace
 
 logger = get_logger(__name__)
 
@@ -42,6 +46,25 @@ def _decode_cursor(cursor: str) -> tuple[datetime, str]:
         raise ValueError("invalid trace cursor") from exc
 
 
+def _fallback_safe_trace(trace: AgentTrace) -> AgentTrace:
+    """Keep correlation/error fields when the normal sanitizer rejects payloads."""
+    payload = trace.model_dump(mode="json")
+    payload["goal"] = "[REDACTED]"
+    payload["error"] = None
+    for step in payload.get("steps", []):
+        step["input_summary"] = None
+        step["output_summary"] = None
+        for event in step.get("events", []):
+            raw_data = event.get("data") or {}
+            error_code = event.get("error_code")
+            if error_code is None and isinstance(raw_data, dict):
+                error_code = raw_data.get("error_code")
+            event["data"] = {"redaction": "unsafe_payload_dropped"}
+            if error_code is not None:
+                event["data"]["error_code"] = str(error_code)
+    return AgentTrace.model_validate(payload)
+
+
 class SqlTraceStore:
     """Persistent trace store with bounded retention and stable pagination."""
 
@@ -59,7 +82,14 @@ class SqlTraceStore:
 
     async def record(self, trace: AgentTrace) -> None:
         try:
-            safe_trace = sanitize_trace(trace)
+            try:
+                safe_trace = sanitize_trace(trace)
+            except UnsafeTraceDataError:
+                logger.warning(
+                    "trace_payload_redaction_failed",
+                    extra={"trace_id": trace.trace_id},
+                )
+                safe_trace = _fallback_safe_trace(trace)
             headers = safe_trace.model_dump(mode="json", exclude={"steps"})
             self._session.add(
                 AgentTraceModel(
@@ -211,6 +241,9 @@ class SqlTraceStore:
         headers: dict[str, Any] = {}
         if model.headers_json:
             headers = json.loads(model.headers_json)
+        legacy_trace = "schema_version" not in headers
+        if legacy_trace:
+            headers["schema_version"] = TRACE_LEGACY_SCHEMA_VERSION
         event_stmt = (
             select(TraceEventModel)
             .where(TraceEventModel.trace_id == model.trace_id)
@@ -219,11 +252,20 @@ class SqlTraceStore:
         event_models = (
             (await self._session.execute(event_stmt)).scalars().all()
         )
-        steps = [
-            TraceStep.model_validate_json(event.step_json)
-            for event in event_models
-            if event.step_json
-        ]
+        steps: list[TraceStep] = []
+        for event in event_models:
+            if not event.step_json:
+                continue
+            step_payload = json.loads(event.step_json)
+            for event_payload in step_payload.get("events", []):
+                if (
+                    legacy_trace
+                    and "schema_version" not in event_payload
+                ):
+                    event_payload["schema_version"] = (
+                        TRACE_LEGACY_SCHEMA_VERSION
+                    )
+            steps.append(TraceStep.model_validate(step_payload))
         headers["steps"] = steps
         headers["trace_id"] = model.trace_id
         headers["user_id"] = model.user_id

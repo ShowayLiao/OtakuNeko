@@ -47,6 +47,39 @@ class TestEventContract:
         assert len(reloaded["steps"]) == 1
         assert reloaded["steps"][0]["events"][0]["event_type"] == "capability_call"
 
+    def test_trace_recorder_assigns_shared_ids_and_safe_payload_metadata(self):
+        trace = AgentTrace(run_id="run-1", agent_name="agent")
+        recorder = TraceRecorder(trace)
+
+        first = recorder.record(
+            "model_call",
+            "model.complete",
+            {
+                "provider": "fake",
+                "model": "model-v1",
+                "usage": {
+                    "total_tokens": 12,
+                    "prompt": "private prompt",
+                },
+                "invocation_id": "inv-1",
+                "content": "private prompt",
+            },
+        )
+        second = recorder.record("tool_call", "search", {"content": "private result"})
+
+        assert first.run_id == "run-1"
+        assert second.run_id == "run-1"
+        assert first.sequence == 1
+        assert second.sequence == 2
+        assert first.invocation_id == "inv-1"
+        assert first.provider == "fake"
+        assert first.model == "model-v1"
+        assert first.usage["total_tokens"] == 12
+        assert "prompt" not in first.usage
+        assert first.data["content"]["length"] == len("private prompt")
+        assert "sha256" in first.data["content"]
+        assert "private prompt" not in trace.model_dump_json()
+
 
 class TestRedaction:
     def test_secret_keys_redacted(self):

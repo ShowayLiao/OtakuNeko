@@ -1,6 +1,10 @@
 """Boundary tests for deterministic EVAL-001 metrics."""
 
-from app.evaluation.metrics import aggregate_metrics, compute_case_metrics
+from app.evaluation.metrics import (
+    aggregate_metrics,
+    aggregate_observability,
+    compute_case_metrics,
+)
 from app.evaluation.types import (
     CaseAssertions,
     Category,
@@ -103,3 +107,60 @@ def test_aggregate_metrics_include_pass_rate_and_routing_accuracy():
     assert aggregates["pass_rate"] == 1.0
     assert aggregates["routing_accuracy"] == 1.0
     assert aggregates["latency_ms"] == 100.0
+
+
+def test_aggregate_observability_metrics_cover_run_tool_policy_budget_and_usage():
+    results = [
+        _result(
+            run_status="completed",
+            tool_call_count=2,
+            tool_success_count=1,
+            tool_failure_count=1,
+            policy_denied_count=1,
+            budget_exceeded_count=0,
+            cancelled_count=0,
+            reconnect_count=1,
+            model_call_count=1,
+            model_tokens=12,
+            estimated_cost_usd=None,
+            latency_ms=100,
+        ),
+        _result(
+            run_status="cancelled",
+            tool_call_count=1,
+            tool_success_count=0,
+            tool_failure_count=1,
+            policy_denied_count=0,
+            budget_exceeded_count=1,
+            cancelled_count=1,
+            reconnect_count=0,
+            model_call_count=1,
+            model_tokens=None,
+            estimated_cost_usd=None,
+            latency_ms=300,
+        ),
+    ]
+
+    aggregates = aggregate_observability(results)
+
+    assert aggregates["run_success_rate"] == 0.5
+    assert aggregates["tool_success_rate"] == 1 / 3
+    assert aggregates["policy_denied_count"] == 1.0
+    assert aggregates["budget_exceeded_count"] == 1.0
+    assert aggregates["cancelled_count"] == 1.0
+    assert aggregates["reconnect_count"] == 1.0
+    assert aggregates["model_tokens"] == 12.0
+    assert aggregates["estimated_cost_unknown_count"] == 2.0
+    assert aggregates["latency_ms"] == 200.0
+
+
+def test_unknown_cost_counts_each_model_call():
+    aggregates = aggregate_observability([
+        _result(
+            model_call_count=2,
+            model_tokens=None,
+            estimated_cost_usd=None,
+        )
+    ])
+
+    assert aggregates["estimated_cost_unknown_count"] == 2.0

@@ -61,16 +61,29 @@ class CaseAssertions(StrictModel):
 class ScriptEvent(StrictModel):
     type: Literal[
         "route",
+        "tool_call_start",
         "tool_call_end",
         "message_chunk",
         "structured_response",
         "recovery",
         "provider_error",
+        "policy_denied",
+        "budget_exceeded",
+        "timeout",
+        "cancelled",
+        "reconnect",
+        "model_call",
     ]
     route: str | None = None
     name: str | None = None
     content: str | None = None
     output: dict[str, Any] | None = None
+    arguments: dict[str, Any] | None = None
+    provider: str | None = None
+    model: str | None = None
+    invocation_id: str | None = None
+    usage: dict[str, Any] | None = None
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
     value: Any = None
     status: str | None = None
     duration_ms: float = Field(default=0, ge=0)
@@ -92,6 +105,22 @@ class ExecutionResult(StrictModel):
     recovered: bool = False
     latency_ms: float = Field(default=0, ge=0)
     call_count: int = Field(default=0, ge=0)
+    run_id: str | None = None
+    run_status: Literal["completed", "failed", "cancelled", "timeout"] = "completed"
+    tool_call_count: int = Field(default=0, ge=0)
+    tool_success_count: int = Field(default=0, ge=0)
+    tool_failure_count: int = Field(default=0, ge=0)
+    policy_denied_count: int = Field(default=0, ge=0)
+    budget_exceeded_count: int = Field(default=0, ge=0)
+    cancelled_count: int = Field(default=0, ge=0)
+    reconnect_count: int = Field(default=0, ge=0)
+    model_call_count: int = Field(default=0, ge=0)
+    model_tokens: int | None = Field(default=None, ge=0)
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
+    estimated_cost_unknown_count: int = Field(default=0, ge=0)
+    tool_argument_keys: list[str] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
 
 
 class EvalCase(StrictModel):
@@ -129,6 +158,8 @@ class MetricResult(StrictModel):
 
 class JudgeOutcome(StrictModel):
     status: str = "not_requested"
+    model: str | None = None
+    provider: str | None = None
     score: float | None = None
     dimensions: dict[str, float] = Field(default_factory=dict)
     explanation: str = ""
@@ -145,6 +176,11 @@ class CaseResult(StrictModel):
     metrics: list[MetricResult] = Field(default_factory=list)
     judge: JudgeOutcome = Field(default_factory=JudgeOutcome)
     error: str | None = None
+    run_id: str | None = None
+    observability: dict[str, float] = Field(default_factory=dict)
+    tool_argument_keys: list[str] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
 
 
 class AgentMetadata(StrictModel):
@@ -166,6 +202,7 @@ class EvalReport(StrictModel):
     aggregates: dict[str, float] = Field(default_factory=dict)
     gate_failures: list[str] = Field(default_factory=list)
     baseline_failures: list[str] = Field(default_factory=list)
+    evaluation_budget: dict[str, Any] = Field(default_factory=dict)
 
     @property
     def total(self) -> int:

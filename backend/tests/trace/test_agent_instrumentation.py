@@ -216,3 +216,36 @@ class TestRuntimeInstrumentation:
         ]
         assert terminal_events[-1].status == "cancelled"
         assert checkpoints.statuses[-1] == "cancelled"
+
+    @pytest.mark.asyncio
+    async def test_stream_projection_assigns_shared_run_ids_and_sequences(self):
+        class RoutingStreamAdapter:
+            async def stream(self, state, **kwargs):
+                yield {
+                    "type": "route_decision",
+                    "route": "chat",
+                    "agent": "chat",
+                    "confidence": 1.0,
+                }
+                yield {
+                    "type": "agent_result",
+                    "agent": "chat",
+                    "kind": "subagent",
+                    "result": {"status": "completed", "data": {}},
+                }
+
+        store = InMemoryTraceStore()
+        runtime = AgentRuntime(RoutingStreamAdapter(), trace_store=store)
+
+        [chunk async for chunk in runtime.stream(
+            AgentTask(user_id=1, goal="route")
+        )]
+
+        [trace] = await store.list_recent(limit=1, user_id=1)
+        events = [event for step in trace.steps for event in step.events]
+        assert events
+        assert all(event.run_id == trace.run_id for event in events)
+        assert all(event.sequence is not None for event in events)
+        assert [event.sequence for event in events] == sorted(
+            event.sequence for event in events
+        )

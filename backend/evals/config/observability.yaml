@@ -1,0 +1,24 @@
+name: observability
+dataset: evals/datasets/v1-observability.jsonl
+tags: [observability]
+report_path: .runtime/evaluation/observability.json
+agent:
+  name: deterministic-observability-fixture
+  model: offline-fixture-v1
+  provider: fixture
+thresholds:
+  pass_rate:
+    direction: min
+    value: 1.0
+  routing_accuracy:
+    direction: min
+    value: 1.0
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  latency_ms:
+    direction: max
+    value: 1000.0
+judge:
+  enabled: false
+  required: false

@@ -6,10 +6,11 @@ import json
 from pathlib import Path
 
 from app.evaluation.types import EvalReport
+from app.trace.redaction import redact
 
 
 def report_payload(report: EvalReport) -> dict:
-    payload = report.model_dump(mode="json")
+    payload = redact(report.model_dump(mode="json"))
     payload.update({
         "total": report.total,
         "passed_count": report.passed_count,

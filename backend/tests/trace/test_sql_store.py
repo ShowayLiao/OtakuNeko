@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -66,6 +67,86 @@ async def test_sql_store_round_trip_is_scoped_and_redacted(db_session):
     raw_database_payload = f"{header.goal}{header.headers_json}{event.step_json}"
     assert "private" not in raw_database_payload
     assert "sk-secret" not in raw_database_payload
+
+
+@pytest.mark.asyncio
+async def test_sql_store_drops_unsafe_payload_but_keeps_event_error_code(db_session):
+    trace = AgentTrace(user_id=7, task_id=12)
+    step = TraceStep(step_index=0, step_label="policy", agent_name="agent")
+    step.events.append(
+        TraceEvent(
+            event_type="failure",
+            data={
+                "chain_of_thought": "must not persist",
+                "error_code": "policy_denied",
+            },
+            error_code="policy_denied",
+            status="failed",
+        )
+    )
+    step.complete()
+    trace.add_step(step)
+    trace.mark_failed("policy_denied")
+
+    await SqlTraceStore(db_session).record(trace)
+
+    restored = await SqlTraceStore(db_session).query(trace.trace_id, user_id=7)
+    assert restored is not None
+    event = restored.steps[0].events[0]
+    assert event.event_type == "failure"
+    assert event.error_code == "policy_denied"
+    assert event.data == {
+        "redaction": "unsafe_payload_dropped",
+        "error_code": "policy_denied",
+    }
+    assert "must not persist" not in restored.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_sql_store_maps_records_without_schema_version_to_legacy(db_session):
+    trace_id = "legacy-trace"
+    started_at = datetime.now(timezone.utc)
+    legacy_event = {
+        "event_id": "legacy-event",
+        "event_type": "capability_call",
+        "data": {"operation": "legacy"},
+        "status": "completed",
+        "correlation_id": trace_id,
+    }
+    legacy_step = {
+        "step_index": 0,
+        "step_label": "legacy",
+        "agent_name": "agent",
+        "status": "completed",
+        "events": [legacy_event],
+    }
+    db_session.add(
+        AgentTraceModel(
+            trace_id=trace_id,
+            user_id=9,
+            agent_name="agent",
+            status="completed",
+            headers_json=json.dumps({"agent_name": "agent"}),
+            started_at=started_at,
+        )
+    )
+    db_session.add(
+        TraceEventModel(
+            trace_id=trace_id,
+            step_index=0,
+            step_label="legacy",
+            agent_name="agent",
+            status="completed",
+            step_json=json.dumps(legacy_step),
+        )
+    )
+    await db_session.commit()
+
+    restored = await SqlTraceStore(db_session).query(trace_id, user_id=9)
+
+    assert restored is not None
+    assert restored.schema_version == 1
+    assert restored.steps[0].events[0].schema_version == 1
 
 
 @pytest.mark.asyncio

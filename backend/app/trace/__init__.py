@@ -17,6 +17,10 @@ from uuid import uuid4
 from pydantic import BaseModel, Field
 
 
+TRACE_SCHEMA_VERSION = 2
+TRACE_LEGACY_SCHEMA_VERSION = 1
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -43,16 +47,25 @@ class TraceEventType(StrEnum):
 class TraceEvent(BaseModel):
     """A single event within a trace step (tool call, node entry, etc.)."""
 
+    schema_version: int = TRACE_SCHEMA_VERSION
     event_id: str = Field(default_factory=lambda: uuid4().hex)
+    run_id: str | None = None
+    sequence: int | None = Field(default=None, ge=1)
     event_type: TraceEventType
     timestamp: datetime = Field(default_factory=_utc_now)
     data: dict[str, Any] = Field(default_factory=dict)
     duration_ms: float | None = None
+    latency_ms: float | None = Field(default=None, ge=0)
     status: Literal["running", "completed", "failed", "timeout", "cancelled"] = (
         "running"
     )
     correlation_id: str = Field(default_factory=lambda: uuid4().hex)
     parent_event_id: str | None = None
+    invocation_id: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    usage: dict[str, Any] = Field(default_factory=dict)
+    error_code: str | None = None
 
 
 class TraceStep(BaseModel):
@@ -80,7 +93,9 @@ class TraceStep(BaseModel):
 class AgentTrace(BaseModel):
     """Full execution trace for one agent task."""
 
+    schema_version: int = TRACE_SCHEMA_VERSION
     trace_id: str = Field(default_factory=lambda: uuid4().hex)
+    run_id: str | None = None
     task_id: int | None = None
     user_id: int | None = None
     agent_name: str = ""

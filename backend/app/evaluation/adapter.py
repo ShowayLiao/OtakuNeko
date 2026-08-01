@@ -46,6 +46,7 @@ def normalize_events(
     events: list[dict[str, Any]],
     *,
     response_schema: str,
+    run_id: str | None = None,
 ) -> ExecutionResult:
     route = ""
     capabilities: list[str] = []
@@ -53,30 +54,125 @@ def normalize_events(
     evidence: list[str] = []
     recovered = False
     latency_ms = 0.0
-    call_count = 0
     structured: Any = None
+    run_status = "completed"
+    tool_call_count = 0
+    tool_success_count = 0
+    tool_failure_count = 0
+    policy_denied_count = 0
+    budget_exceeded_count = 0
+    cancelled_count = 0
+    reconnect_count = 0
+    model_call_count = 0
+    model_tokens = 0
+    has_model_tokens = False
+    estimated_cost_usd = 0.0
+    estimated_cost_unknown_count = 0
+    tool_argument_keys: set[str] = set()
+    providers: list[str] = []
+    models: list[str] = []
+    open_tools: set[str] = set()
 
-    for event in events:
+    def append_unique(values: list[str], value: Any) -> None:
+        if value and str(value) not in values:
+            values.append(str(value))
+
+    def event_tool_key(event: dict[str, Any], index: int) -> str:
+        return str(
+            event.get("invocation_id")
+            or event.get("id")
+            or f"{event.get('name', 'unknown')}:{index}"
+        )
+
+    def usage_tokens(usage: Any) -> int | None:
+        if not isinstance(usage, dict):
+            return None
+        total = usage.get("total_tokens")
+        if isinstance(total, int) and total >= 0:
+            return total
+        input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
+        output_tokens = usage.get(
+            "completion_tokens", usage.get("output_tokens")
+        )
+        if isinstance(input_tokens, int) and isinstance(output_tokens, int):
+            return input_tokens + output_tokens
+        return None
+
+    for index, event in enumerate(events):
         event_type = event.get("type")
         if event_type == "route":
             route = str(event.get("route") or "")
+        elif event_type == "tool_call_start":
+            tool_key = event_tool_key(event, index)
+            if tool_key not in open_tools:
+                tool_call_count += 1
+                open_tools.add(tool_key)
+            arguments = event.get("arguments", event.get("inputs"))
+            if isinstance(arguments, dict):
+                tool_argument_keys.update(str(key) for key in arguments)
         elif event_type == "tool_call_end":
             name = event.get("name")
             if name:
-                capabilities.append(str(name))
-            call_count += 1
+                append_unique(capabilities, name)
+            tool_key = event_tool_key(event, index)
+            if tool_key not in open_tools:
+                tool_call_count += 1
+            else:
+                open_tools.remove(tool_key)
+            status = str(event.get("status") or "success").lower()
+            if status in {"success", "completed", "ok"}:
+                tool_success_count += 1
+            else:
+                tool_failure_count += 1
             latency_ms += float(event.get("duration_ms") or 0)
+            arguments = event.get("arguments", event.get("inputs"))
+            if isinstance(arguments, dict):
+                tool_argument_keys.update(str(key) for key in arguments)
             output = event.get("output")
             if isinstance(output, dict):
                 raw_evidence = output.get("evidence", [])
                 if isinstance(raw_evidence, list):
                     evidence.extend(str(item) for item in raw_evidence)
+        elif event_type == "policy_denied":
+            policy_denied_count += 1
+        elif event_type == "budget_exceeded":
+            budget_exceeded_count += 1
+            run_status = "failed"
+        elif event_type == "timeout":
+            run_status = "timeout"
+            latency_ms += float(event.get("duration_ms") or 0)
+        elif event_type == "cancelled":
+            cancelled_count += 1
+            run_status = "cancelled"
+        elif event_type == "reconnect":
+            reconnect_count += 1
+        elif event_type == "provider_error":
+            run_status = "failed"
+        elif event_type == "model_call":
+            model_call_count += 1
+            append_unique(providers, event.get("provider"))
+            append_unique(models, event.get("model"))
+            tokens = usage_tokens(event.get("usage"))
+            if tokens is not None:
+                model_tokens += tokens
+                has_model_tokens = True
+            cost = event.get("estimated_cost_usd")
+            if isinstance(cost, (int, float)):
+                estimated_cost_usd += float(cost)
+            else:
+                estimated_cost_unknown_count += 1
+            latency_ms += float(event.get("duration_ms") or 0)
         elif event_type == "message_chunk":
             text_parts.append(str(event.get("content") or ""))
         elif event_type == "structured_response":
             structured = event.get("value")
         elif event_type == "recovery":
             recovered = event.get("status") == "recovered"
+            if recovered and run_status == "failed":
+                run_status = "completed"
+
+    if open_tools:
+        tool_failure_count += len(open_tools)
 
     text = "".join(text_parts)
     return ExecutionResult(
@@ -87,7 +183,27 @@ def normalize_events(
         schema_valid=_schema_valid(response_schema, text, structured),
         recovered=recovered,
         latency_ms=latency_ms,
-        call_count=call_count,
+        call_count=tool_call_count,
+        run_id=run_id,
+        run_status=run_status,
+        tool_call_count=tool_call_count,
+        tool_success_count=tool_success_count,
+        tool_failure_count=tool_failure_count,
+        policy_denied_count=policy_denied_count,
+        budget_exceeded_count=budget_exceeded_count,
+        cancelled_count=cancelled_count,
+        reconnect_count=reconnect_count,
+        model_call_count=model_call_count,
+        model_tokens=model_tokens if has_model_tokens else None,
+        estimated_cost_usd=(
+            estimated_cost_usd
+            if model_call_count and estimated_cost_unknown_count == 0
+            else None
+        ),
+        estimated_cost_unknown_count=estimated_cost_unknown_count,
+        tool_argument_keys=sorted(tool_argument_keys),
+        providers=providers,
+        models=models,
     )
 
 
@@ -107,6 +223,7 @@ class OfflineOrchestrationAdapter:
         normalized = normalize_events(
             actual_events,
             response_schema=state.task.metadata["response_schema"],
+            run_id=str(state.task.metadata["run_id"]),
         )
         return normalized.model_dump()
 
@@ -136,6 +253,7 @@ class RuntimeEvaluationTarget:
                 "memory_fixtures": [
                     fixture.model_dump() for fixture in case.memory_fixtures
                 ],
+                "run_id": f"eval-{case.id}",
             },
         )
         state = await self.runtime.execute(task)

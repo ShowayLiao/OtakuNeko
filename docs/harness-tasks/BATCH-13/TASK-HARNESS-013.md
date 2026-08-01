@@ -21,6 +21,22 @@
 - `backend/tests/evaluation/` 中对应指标/门禁测试
 - `.github/workflows/` 中新增只读测试 job（如仓库 CI 已存在）
 
+### BATCH-13 scope amendment (authorized 2026-08-01)
+
+为了闭合真实 fake Run/Event 到 Eval 的接入边界，并修复 CI 等价命令的
+既有导入阻塞，本 Batch 额外允许修改：
+
+- `backend/app/evaluation/adapter.py`
+- `backend/app/harness/__init__.py`
+- `backend/app/harness/runtime.py`
+- `backend/evals/datasets/v1-observability.jsonl`
+- `backend/evals/config/observability.yaml`
+- `backend/tests/harness/` 中对应 Runtime/导入测试
+
+上述新增范围只允许用于事件归一化、Trace 关联、CLI 导入边界和 Eval
+fixture；不得改变业务行为、模型选择、Tool schema、数据库 migration、
+前端协议或外部副作用。
+
 ## 禁止修改
 
 - 生产业务行为、模型选择、Tool schema、数据库 migration

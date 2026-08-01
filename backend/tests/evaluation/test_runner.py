@@ -12,6 +12,7 @@ from app.evaluation.adapter import (
     FixtureMemory,
     classify_route,
     normalize_production_result,
+    normalize_events,
 )
 from app.evaluation.metrics import compute_case_metrics
 from app.evaluation.runner import (
@@ -136,6 +137,54 @@ def test_production_normalizer_passes_representative_full_contract():
     )
 
 
+def test_scripted_event_normalizer_populates_observability_contract():
+    result = normalize_events(
+        [
+            {"type": "route", "route": "chat"},
+            {
+                "type": "tool_call_start",
+                "name": "search",
+                "id": "inv-1",
+                "arguments": {"query": "frieren"},
+            },
+            {
+                "type": "tool_call_end",
+                "name": "search",
+                "id": "inv-1",
+                "status": "success",
+                "duration_ms": 12,
+            },
+            {"type": "policy_denied", "code": "policy_denied"},
+            {"type": "budget_exceeded", "code": "budget_exceeded"},
+            {"type": "reconnect", "value": {"attempt": 2}},
+            {
+                "type": "model_call",
+                "provider": "fake",
+                "model": "model-v1",
+                "usage": {"total_tokens": 12},
+            },
+            {"type": "message_chunk", "content": "safe"},
+        ],
+        response_schema="text",
+        run_id="run-eval-1",
+    )
+
+    assert result.run_id == "run-eval-1"
+    assert result.tool_call_count == 1
+    assert result.tool_success_count == 1
+    assert result.tool_failure_count == 0
+    assert result.policy_denied_count == 1
+    assert result.budget_exceeded_count == 1
+    assert result.reconnect_count == 1
+    assert result.model_call_count == 1
+    assert result.model_tokens == 12
+    assert result.estimated_cost_unknown_count == 1
+    assert result.run_status == "failed"
+    assert result.tool_argument_keys == ["query"]
+    assert result.providers == ["fake"]
+    assert result.models == ["model-v1"]
+
+
 def test_unknown_config_fields_fail(tmp_path):
     path = tmp_path / "bad.yaml"
     path.write_text(
@@ -162,6 +211,29 @@ async def test_runtime_target_uses_agent_runtime_and_filters_tags():
     })
     assert report.failed_count == 0
     assert target.executed_event_count > report.total
+    assert report.evaluation_budget["judge_enabled"] is False
+    assert "run_success_rate" in report.aggregates
+    assert "observability" in report.cases[0].model_dump()
+
+
+@pytest.mark.asyncio
+async def test_observability_dataset_runs_through_fake_runtime_end_to_end():
+    config = load_config("evals/config/observability.yaml")
+    dataset = load_dataset(config.dataset)
+    target = RuntimeEvaluationTarget()
+
+    report = await run_evaluation(config, dataset, target)
+
+    assert report.dataset_version == "v1-observability"
+    assert report.failed_count == 0
+    assert report.aggregates["policy_denied_count"] == 3.0
+    assert report.aggregates["budget_exceeded_count"] == 1.0
+    assert report.aggregates["cancelled_count"] == 1.0
+    assert report.aggregates["reconnect_count"] == 1.0
+    assert report.aggregates["model_tokens"] == 12.0
+    assert report.aggregates["estimated_cost_unknown_count"] == 0.0
+    assert target.executed_event_count > report.total
+    assert all(case.run_id for case in report.cases)
 
 
 @pytest.mark.asyncio
