@@ -5,7 +5,7 @@
 > Started: `2026-08-01 Asia/Shanghai`
 > Branch: `feature-harness`
 > Starting commit: `cb0845251bcdd38795af25451eb3cf4582e09c7e`
-> Record status: `in_progress`
+> Record status: `completed`
 
 ## 1. Preflight
 
@@ -125,4 +125,42 @@ Remediation rounds: 1. The review corrected fail-closed idempotency enforcement 
 
 ## 6. Handoff
 
-Pending the local implementation commit and handoff finalization commit.
+```yaml
+batch_result:
+  batch: BATCH-10
+  status: committed
+  commit: "0c7d3be"
+  tasks_completed:
+    - "Identity-free Schedule public schemas and LangChain tool schemas"
+    - "Trusted Principal injection through CapabilityAdapter"
+    - "Default-deny side-effect policy with server-side Approval"
+    - "Durable idempotency port replay/conflict integration for Schedule writes"
+    - "Authenticated reads and Domain Service resource authorization preservation"
+  tests:
+    passed:
+      - "44 targeted BATCH-10 regression tests"
+      - "592 full backend tests"
+      - "ruff check app tests"
+      - "git diff --check"
+    failed: []
+    skipped:
+      - "1 optional full-backend test (external PostgreSQL URL not configured)"
+  review:
+    verdict: pass
+    rounds: 1
+    deferred_findings: []
+  changed_files:
+    - backend/app/capabilities/langchain_adapter.py
+    - backend/app/capabilities/schedule.py
+    - backend/app/harness/capability_adapter.py
+    - backend/app/harness/policy.py
+    - backend/tests/capabilities/test_langchain_adapter.py
+    - backend/tests/capabilities/test_schedule.py
+    - backend/tests/harness/test_capability_adapter.py
+    - backend/tests/mcp/test_policy.py
+    - docs/harness-execution/BATCH-10-execution.md
+  unresolved_risks:
+    - "Approval lifecycle persistence/revocation and production wiring remain follow-up work; this Batch accepts only trusted server-side Approval objects."
+    - "Frontend and non-Schedule write capabilities remain outside this Batch."
+  next_batch: "Re-read docs/harness-tasks/INDEX.md after handoff commit."
+```
