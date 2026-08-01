@@ -5,7 +5,7 @@
 > Started: `2026-08-01 01:35 Asia/Shanghai`
 > Branch: `feature-harness`
 > Starting commit: `92a42fb06ebacf2ecf81947189bd99b666ef4b97`
-> Record status: `in_progress` (implementation verified; awaiting local commit)
+> Record status: `completed`
 
 ## 1. Preflight
 
@@ -128,7 +128,7 @@ Remediation rounds: 1. The review pass corrected the public `IdempotencyStore` p
 batch_result:
   batch: BATCH-09
   status: committed
-  commit: "pending local implementation commit"
+  commit: "6fc15cc8bab2cd18600e942b016e82ac5a57ef61"
   tasks_completed:
     - "qB write schema idempotency keys"
     - "authenticated scoped replay/conflict persistence"
