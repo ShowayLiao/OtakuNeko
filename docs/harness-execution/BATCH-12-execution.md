@@ -5,7 +5,8 @@ Task: TASK-HARNESS-012
 Date: 2026-08-01 Asia/Shanghai
 Branch: feature-harness
 Start commit: f68a063cc324f3a524876cd08fee4c1ff89c4209
-Record status: completed_pending_commit
+Record status: completed
+Implementation commit: 7a8167b
 
 ## 1. Preflight
 
@@ -112,8 +113,8 @@ Review was performed against the complete uncommitted diff and docs/code-review.
 
     batch_result:
       batch: BATCH-12
-      status: committed_pending_handoff_finalization
-      commit: null
+      status: completed
+      commit: 7a8167b
       tasks_completed:
         - TASK-HARNESS-012
       tests:
