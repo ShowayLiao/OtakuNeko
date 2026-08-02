@@ -7,7 +7,12 @@ import pytest
 from fastapi import FastAPI
 
 from app.api.deps import get_current_user, get_session
-from app.api.v1.agent import _interactive_run_store_enabled, format_sse, router
+from app.api.v1.agent import (
+    _chat_sse_projection,
+    _interactive_run_store_enabled,
+    format_sse,
+    router,
+)
 from app.harness.contracts import RunEvent
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import RunStore
@@ -31,6 +36,17 @@ def test_format_sse_adds_replayable_id_without_changing_event_data() -> None:
 
     assert frame.startswith("id: 4\nevent: message_chunk\n")
     assert '"content": "hello"' in frame
+
+
+def test_chat_sse_projection_declares_durability_without_mutating_runtime_data() -> None:
+    runtime_event = {"type": "run_completed", "run_id": "run-1", "sequence": 4}
+
+    durable_projection = _chat_sse_projection(runtime_event, durable=True)
+    ephemeral_projection = _chat_sse_projection(runtime_event, durable=False)
+
+    assert durable_projection["durable"] is True
+    assert ephemeral_projection["durable"] is False
+    assert runtime_event == {"type": "run_completed", "run_id": "run-1", "sequence": 4}
 
 
 def test_replay_wiring_respects_disabled_interactive_store(monkeypatch) -> None:

@@ -233,6 +233,11 @@ def _serialize_run_event(event: AgentRunEvent) -> dict:
     }
 
 
+def _chat_sse_projection(data: dict[str, Any], *, durable: bool) -> dict[str, Any]:
+    """Add transport metadata without changing the Runtime event fact."""
+    return {**data, "durable": durable}
+
+
 @router.get("/runs/{run_id}")
 async def get_run_projection(
     run_id: str,
@@ -458,7 +463,10 @@ async def chat_endpoint(
             # The Runtime-owned Decision Loop emits its own canonical
             # ``thinking_start`` event, so do not duplicate it here.
             if not primary_decision_loop:
-                initial_data = {"type": "thinking_start"}
+                initial_data = _chat_sse_projection(
+                    {"type": "thinking_start"},
+                    durable=durable_run,
+                )
                 if durable_run:
                     initial_data["run_id"] = run_id
                 yield format_sse(
@@ -660,7 +668,7 @@ async def chat_endpoint(
                     # do not add diagnostics or allocate a second sequence.
                     yield format_sse(
                         event=event_type,
-                        data=chunk_data,
+                        data=_chat_sse_projection(chunk_data, durable=durable_run),
                         event_id=chunk_data.get("sequence"),
                     )
                     continue
@@ -670,13 +678,16 @@ async def chat_endpoint(
                     if durable_run
                     else None
                 )
-                diagnostic_data = {
-                    **chunk_data,
-                    "stream_sequence": sequence,
-                    "server_elapsed_ms": round(
-                        (time.perf_counter() - stream_started) * 1000, 1
-                    ),
-                }
+                diagnostic_data = _chat_sse_projection(
+                    {
+                        **chunk_data,
+                        "stream_sequence": sequence,
+                        "server_elapsed_ms": round(
+                            (time.perf_counter() - stream_started) * 1000, 1
+                        ),
+                    },
+                    durable=durable_run,
+                )
                 if thread_scope.public_id is not None:
                     diagnostic_data["thread_id"] = thread_scope.public_id
                 if durable_run:
@@ -693,13 +704,16 @@ async def chat_endpoint(
                     last_sequence = await _last_event_sequence(run_id, db)
                     yield format_sse(
                         event="run_status",
-                        data={
-                            "type": "run_status",
-                            "run_id": run_id,
-                            "status": stored_run.status,
-                            "error_code": stored_run.error_code,
-                            "last_sequence": last_sequence,
-                        },
+                        data=_chat_sse_projection(
+                            {
+                                "type": "run_status",
+                                "run_id": run_id,
+                                "status": stored_run.status,
+                                "error_code": stored_run.error_code,
+                                "last_sequence": last_sequence,
+                            },
+                            durable=True,
+                        ),
                         event_id=last_sequence or None,
                     )
 

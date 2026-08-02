@@ -20,6 +20,13 @@ interface ParsedSSEEvent {
   id?: string;
 }
 
+type TerminalStatus = 'succeeded' | 'failed' | 'cancelled' | 'timeout';
+
+interface NormalizedTerminalStatus {
+  status: TerminalStatus;
+  error_code: string | null;
+}
+
 interface ChatWithBackendOptions {
   messages: any[];
   provider: string;
@@ -49,9 +56,96 @@ interface ChatWithBackendOptions {
   }) => void;
   onComplete?: (metadata?: {
     hasDurableRun: boolean;
-    terminalStatus: string | null;
+    terminalStatus: TerminalStatus | null;
   }) => void;
 }
+
+const toSequence = (value: unknown): number | null => {
+  const numericValue = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim() !== ''
+      ? Number(value)
+      : Number.NaN;
+  return Number.isSafeInteger(numericValue) && numericValue >= 0
+    ? numericValue
+    : null;
+};
+
+const maxSequence = (...values: unknown[]): number | null => {
+  const sequences = values
+    .map(toSequence)
+    .filter((value): value is number => value !== null);
+  return sequences.length > 0 ? Math.max(...sequences) : null;
+};
+
+const normalizedString = (value: unknown): string | null => (
+  typeof value === 'string' && value.trim() !== ''
+    ? value.trim().toLowerCase()
+    : null
+);
+
+const terminalStatusFromValue = (value: unknown): TerminalStatus | null => {
+  switch (normalizedString(value)) {
+    case 'succeeded':
+    case 'success':
+    case 'completed':
+      return 'succeeded';
+    case 'cancelled':
+    case 'canceled':
+      return 'cancelled';
+    case 'timeout':
+    case 'timed_out':
+    case 'timed-out':
+      return 'timeout';
+    case 'failed':
+    case 'failure':
+    case 'error':
+      return 'failed';
+    default:
+      return null;
+  }
+};
+
+const normalizeTerminalStatus = (
+  eventType: string,
+  data: SSEData,
+): NormalizedTerminalStatus | null => {
+  const errorCode = typeof data.error_code === 'string' ? data.error_code : null;
+  const statusMarker = terminalStatusFromValue(data.status);
+  const errorMarker = terminalStatusFromValue(data.error_code);
+  let status: TerminalStatus | null = null;
+
+  switch (eventType) {
+    case 'run_completed':
+    case 'run.succeeded':
+      status = 'succeeded';
+      break;
+    case 'run_cancelled':
+    case 'run.cancelled':
+      status = 'cancelled';
+      break;
+    case 'run_timeout':
+      status = 'timeout';
+      break;
+    case 'run_failed':
+    case 'run.failed':
+      status = statusMarker === 'timeout' || errorMarker === 'timeout'
+        ? 'timeout'
+        : 'failed';
+      break;
+    case 'run_status':
+      status = statusMarker;
+      break;
+    default:
+      break;
+  }
+
+  if (!status) return null;
+  return {
+    status,
+    error_code: errorCode || (status === 'timeout' ? 'timeout' : null),
+  };
+};
 
 // 解析 SSE 事件流
 const parseSSE = (text: string): ParsedSSEEvent[] => {
@@ -123,15 +217,17 @@ export const chatWithBackend = async ({
 
   let currentRunId: string | null = null;
   let lastSequence = 0;
+  let durableRun: boolean | null = null;
+  let explicitNonDurableCompletion = false;
+  const seenSequences = new Set<number>();
   let terminalStatus: {
     run_id: string;
-    status: string;
+    status: TerminalStatus;
     error_code?: string | null;
     last_sequence?: number;
   } | null = null;
   let replayAfterDisconnect: (() => Promise<boolean>) | null = null;
-  const getTerminalStatus = () =>
-    (terminalStatus as { status: string } | null)?.status || null;
+  const getTerminalStatus = (): TerminalStatus | null => terminalStatus?.status || null;
 
   try {
     const userToken = localStorage.getItem('token');
@@ -178,27 +274,28 @@ export const chatWithBackend = async ({
     const handleFrame = (frame: ParsedSSEEvent) => {
       const data = frame.data;
       if (typeof data.run_id === 'string') currentRunId = data.run_id;
-      const frameSequence = Number(frame.id ?? data.sequence ?? data.stream_sequence);
-      if (Number.isFinite(frameSequence)) {
+      if (durableRun === null && typeof data.durable === 'boolean') {
+        durableRun = data.durable;
+      }
+      const frameSequence = maxSequence(
+        frame.id,
+        data.sequence,
+        data.stream_sequence,
+        data.last_sequence,
+      );
+      if (frameSequence !== null) {
         lastSequence = Math.max(lastSequence, frameSequence);
+        if (seenSequences.has(frameSequence)) return;
+        seenSequences.add(frameSequence);
       }
 
-      const statusFromEvent = frame.type === 'run_status'
-        ? data.status
-        : frame.type === 'run.succeeded'
-          ? 'succeeded'
-          : frame.type === 'run.failed'
-            ? 'failed'
-            : frame.type === 'run.cancelled'
-              ? 'cancelled'
-              : undefined;
-      if (typeof statusFromEvent === 'string' &&
-        ['succeeded', 'failed', 'cancelled'].includes(statusFromEvent)) {
+      const normalizedTerminal = normalizeTerminalStatus(frame.type, data);
+      if (normalizedTerminal) {
         const status = {
           run_id: currentRunId || String(data.run_id || ''),
-          status: statusFromEvent,
-          error_code: data.error_code ?? null,
-          last_sequence: Number(data.last_sequence ?? lastSequence),
+          status: normalizedTerminal.status,
+          error_code: normalizedTerminal.error_code,
+          last_sequence: maxSequence(data.last_sequence, lastSequence) || 0,
         };
         currentRunId = status.run_id || currentRunId;
         lastSequence = Math.max(lastSequence, status.last_sequence || 0);
@@ -217,6 +314,7 @@ export const chatWithBackend = async ({
           if (onMessageStart) onMessageStart();
           break;
         case 'message_end':
+          explicitNonDurableCompletion = true;
           if (onMessageEnd) onMessageEnd();
           break;
         case 'thinking_start':
@@ -329,6 +427,40 @@ export const chatWithBackend = async ({
       return terminalStatus !== null;
     };
 
+    const notifyComplete = () => {
+      if (onComplete) {
+        onComplete({
+          hasDurableRun: durableRun === true,
+          terminalStatus: getTerminalStatus(),
+        });
+      }
+    };
+
+    const finishAfterStreamEnd = async () => {
+      if (terminalStatus) {
+        notifyComplete();
+        return;
+      }
+
+      if (durableRun === true && replayAfterDisconnect) {
+        const replayed = await replayAfterDisconnect();
+        if (replayed) {
+          notifyComplete();
+          return;
+        }
+      }
+
+      const hasLegacyEphemeralCompletion = (
+        durableRun === false || (durableRun === null && currentRunId === null)
+      );
+      if (hasLegacyEphemeralCompletion && explicitNonDurableCompletion) {
+        notifyComplete();
+        return;
+      }
+
+      if (onError) onError('运行流结束但未收到终态事件');
+    };
+
     const resetTimeout = () => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
@@ -367,19 +499,14 @@ export const chatWithBackend = async ({
       }
     }
 
-    if (onComplete) {
-      onComplete({
-        hasDurableRun: currentRunId !== null,
-        terminalStatus: getTerminalStatus(),
-      });
-    }
+    await finishAfterStreamEnd();
   } catch (err: any) {
     if (err?.name === 'AbortError') {
       // A user-initiated stop is a normal terminal state. Keep any streamed
       // content instead of replacing it with an error message.
     } else {
       let replayed = false;
-      if (currentRunId && !terminalStatus && replayAfterDisconnect) {
+      if (durableRun === true && !terminalStatus && replayAfterDisconnect) {
         try {
           replayed = await replayAfterDisconnect();
         } catch (replayError: any) {
@@ -389,7 +516,14 @@ export const chatWithBackend = async ({
       if (replayed) {
         if (onComplete) {
           onComplete({
-            hasDurableRun: currentRunId !== null,
+            hasDurableRun: durableRun === true,
+            terminalStatus: getTerminalStatus(),
+          });
+        }
+      } else if (terminalStatus) {
+        if (onComplete) {
+          onComplete({
+            hasDurableRun: durableRun === true,
             terminalStatus: getTerminalStatus(),
           });
         }
