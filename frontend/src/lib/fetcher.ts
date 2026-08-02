@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- SSE payloads are provider-defined JSON. */
 import { useApiStore } from '@/store/useApiStore';
+import type { RunPhase, RunTerminalStatus, RunView } from '@/stores/useChatStore';
 
 interface PromptConfig {
   persona: string;
@@ -12,7 +13,7 @@ interface DeepSeekOptions {
   reasoning_effort: 'high' | 'max';
 }
 
-type SSEData = Record<string, any>;
+type SSEData = Record<string, unknown>;
 
 interface ParsedSSEEvent {
   type: string;
@@ -28,7 +29,7 @@ interface NormalizedTerminalStatus {
 }
 
 interface ChatWithBackendOptions {
-  messages: any[];
+  messages: unknown[];
   provider: string;
   model?: string;
   temperature?: number;
@@ -38,8 +39,15 @@ interface ChatWithBackendOptions {
   onMessageChunk?: (chunk: string) => void;
   onMessageStart?: () => void;
   onMessageEnd?: () => void;
-  onToolCallStart?: (id: string, name: string, inputs: any) => void;
-  onToolCallEnd?: (id: string, name: string, output: any, durationMs?: number, status?: string) => void;
+  onToolCallStart?: (id: string, name: string, inputs: unknown) => void;
+  onToolCallEnd?: (
+    id: string,
+    name: string,
+    output: unknown,
+    durationMs?: number,
+    status?: string,
+    errorCode?: string | null,
+  ) => void;
   onToolCallDelta?: (id: string, name: string, delta: string) => void;
   onPlanUpdate?: (plan: string) => void;
   onProgress?: (data: { tool_name: string; tool_count: number; duration_ms: number }) => void;
@@ -54,6 +62,13 @@ interface ChatWithBackendOptions {
     error_code?: string | null;
     last_sequence?: number;
   }) => void;
+  onRunView?: (view: RunView) => void;
+  resumeRun?: {
+    runId: string;
+    after?: number;
+    durable?: boolean | null;
+    threadId?: string;
+  };
   onComplete?: (metadata?: {
     hasDurableRun: boolean;
     terminalStatus: TerminalStatus | null;
@@ -147,6 +162,86 @@ const normalizeTerminalStatus = (
   };
 };
 
+const stringValue = (value: unknown): string | null => (
+  typeof value === 'string' && value.trim() !== '' ? value : null
+);
+
+const numberValue = (value: unknown, fallback = 0): number => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+};
+
+const optionalNumberValue = (value: unknown): number | undefined => {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+};
+
+const normalizeArgumentKeys = (value: unknown): string[] => {
+  const keys = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : value && typeof value === 'object'
+      ? Object.keys(value)
+      : [];
+  return keys
+    .map(key => key.trim())
+    .filter(Boolean)
+    .slice(0, 32);
+};
+
+const normalizeInvocationStatus = (status: unknown, errorCode: unknown): string => {
+  const statusMarker = normalizedString(status);
+  const errorMarker = normalizedString(errorCode);
+  if (statusMarker === 'timeout' || statusMarker === 'timed_out' || errorMarker === 'timeout') {
+    return 'timeout';
+  }
+  if (statusMarker === 'denied' || statusMarker === 'forbidden') return 'denied';
+  if (statusMarker === 'cancelled' || statusMarker === 'canceled') return 'cancelled';
+  if (statusMarker === 'succeeded' || statusMarker === 'success' || statusMarker === 'completed') {
+    return 'succeeded';
+  }
+  return 'failed';
+};
+
+const phaseForEvent = (eventType: string): RunPhase | null => {
+  switch (eventType) {
+    case 'model_decision':
+    case 'thinking_start':
+    case 'thinking_chunk':
+    case 'thinking_end':
+    case 'reasoning_chunk':
+      return 'thinking';
+    case 'tool_call_delta':
+    case 'tool_call_start':
+    case 'tool_call_end':
+    case 'tool_start':
+    case 'tool_end':
+      return 'executing';
+    case 'message_start':
+    case 'message_chunk':
+    case 'message_end':
+      return 'responding';
+    default:
+      return null;
+  }
+};
+
+const phaseForTerminalStatus = (status: RunTerminalStatus): RunPhase => {
+  switch (status) {
+    case 'succeeded': return 'completed';
+    case 'cancelled': return 'cancelled';
+    case 'timeout': return 'timeout';
+    case 'failed': return 'failed';
+  }
+};
+
 // 解析 SSE 事件流
 const parseSSE = (text: string): ParsedSSEEvent[] => {
   const events: ParsedSSEEvent[] = [];
@@ -167,7 +262,7 @@ const parseSSE = (text: string): ParsedSSEEvent[] => {
           if (typeof data === 'object' && data !== null) {
             events.push({ type: event.type, data: data as SSEData, id: event.id });
           }
-        } catch (e) {
+        } catch {
           // 忽略解析错误
         }
         event = { type: 'message', data: '' };
@@ -200,11 +295,13 @@ export const chatWithBackend = async ({
   onThinkingEnd,
   onError,
   onRunStatus,
+  onRunView,
+  resumeRun,
   onComplete
 }: ChatWithBackendOptions) => {
   const config = (useApiStore.getState().config as any)[provider];
 
-  if (!config || !config.apiKey) {
+  if (!resumeRun && (!config || !config.apiKey)) {
     throw new Error(`请先在设置中填写 ${provider} 的 API Key`);
   }
 
@@ -215,9 +312,9 @@ export const chatWithBackend = async ({
 
   if (onConnectionStatus) onConnectionStatus('connecting');
 
-  let currentRunId: string | null = null;
-  let lastSequence = 0;
-  let durableRun: boolean | null = null;
+  let currentRunId: string | null = resumeRun?.runId || null;
+  let lastSequence = resumeRun?.after || 0;
+  let durableRun: boolean | null = resumeRun?.durable ?? null;
   let explicitNonDurableCompletion = false;
   const seenSequences = new Set<number>();
   let terminalStatus: {
@@ -227,47 +324,72 @@ export const chatWithBackend = async ({
     last_sequence?: number;
   } | null = null;
   let replayAfterDisconnect: (() => Promise<boolean>) | null = null;
+  let runView: RunView = {
+    runId: currentRunId,
+    lastSequence,
+    durable: durableRun,
+    phase: 'thinking',
+    terminalStatus: null,
+    connectionStatus: 'connecting',
+    cancelling: false,
+  };
+  const emitRunView = (updates: Partial<RunView> = {}) => {
+    runView = {
+      ...runView,
+      ...updates,
+      runId: currentRunId,
+      lastSequence,
+      durable: durableRun,
+    };
+    if (onRunView) onRunView(runView);
+  };
   const getTerminalStatus = (): TerminalStatus | null => terminalStatus?.status || null;
 
   try {
     const userToken = localStorage.getItem('token');
-    const response = await fetch('/api/v1/chat', {
-      method: 'POST',
-      signal: signalSource,
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': config.apiKey,
-        'X-Provider-Endpoint': config.endpoint || '',
-        ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}),
+    const response = await fetch(
+      resumeRun
+        ? `/api/v1/runs/${encodeURIComponent(resumeRun.runId)}/events?after=${resumeRun.after || 0}`
+        : '/api/v1/chat',
+      {
+        method: resumeRun ? 'GET' : 'POST',
+        signal: signalSource,
+        headers: resumeRun
+          ? (userToken ? { Authorization: `Bearer ${userToken}` } : {})
+          : {
+              'Content-Type': 'application/json',
+              'X-Api-Key': config.apiKey,
+              'X-Provider-Endpoint': config.endpoint || '',
+              ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}),
+            },
+        ...(resumeRun ? {} : {
+          body: JSON.stringify({
+            messages,
+            model,
+            temperature,
+            prompt_config,
+            thread_id,
+            deepseek_options: provider === 'deepseek'
+              ? {
+                  thinking: config.thinking ?? true,
+                  reasoning_effort: config.reasoningEffort ?? 'high',
+                } satisfies DeepSeekOptions
+              : undefined,
+          }),
+        }),
       },
-      body: JSON.stringify({
-        messages,
-        model,
-        temperature,
-        prompt_config,
-        thread_id,
-        deepseek_options: provider === 'deepseek'
-          ? {
-              thinking: config.thinking ?? true,
-              reasoning_effort: config.reasoningEffort ?? 'high',
-            } satisfies DeepSeekOptions
-          : undefined,
-      }),
-    });
+    );
 
     if (!response.ok) {
       throw new Error(`API request failed: ${response.status}`);
     }
 
-    if (!response.body) {
+    if (!resumeRun && !response.body) {
       throw new Error('No response body');
     }
 
     if (onConnectionStatus) onConnectionStatus('connected');
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
+    emitRunView({ connectionStatus: 'connected' });
     // Per-event logging is intentionally opt-in; console I/O can dominate
     // the main thread while a model emits many small SSE frames.
     const streamDebug = process.env.NEXT_PUBLIC_CHAT_STREAM_DEBUG === '1';
@@ -284,9 +406,9 @@ export const chatWithBackend = async ({
         data.last_sequence,
       );
       if (frameSequence !== null) {
-        lastSequence = Math.max(lastSequence, frameSequence);
-        if (seenSequences.has(frameSequence)) return;
+        if (frameSequence <= lastSequence || seenSequences.has(frameSequence)) return;
         seenSequences.add(frameSequence);
+        lastSequence = frameSequence;
       }
 
       const normalizedTerminal = normalizeTerminalStatus(frame.type, data);
@@ -302,13 +424,26 @@ export const chatWithBackend = async ({
         if (!terminalStatus) {
           terminalStatus = status;
           if (onRunStatus) onRunStatus(status);
+          emitRunView({
+            phase: phaseForTerminalStatus(normalizedTerminal.status),
+            terminalStatus: normalizedTerminal.status,
+            errorCode: normalizedTerminal.error_code,
+            cancelling: false,
+          });
         }
         return;
       }
 
+      const nextPhase = phaseForEvent(frame.type);
+      if (frame.type === 'run.cancel_requested') {
+        emitRunView({ cancelling: true });
+      }
+
       switch (frame.type) {
         case 'message_chunk':
-          if (data.content && onMessageChunk) onMessageChunk(data.content);
+          if (typeof data.content === 'string' && data.content && onMessageChunk) {
+            onMessageChunk(data.content);
+          }
           break;
         case 'message_start':
           if (onMessageStart) onMessageStart();
@@ -321,65 +456,97 @@ export const chatWithBackend = async ({
           if (onThinkingStart) onThinkingStart();
           break;
         case 'thinking_chunk':
-          if (data.content && onThinkingChunk) onThinkingChunk(data.content);
+          if (typeof data.content === 'string' && data.content && onThinkingChunk) {
+            onThinkingChunk(data.content);
+          }
           break;
         case 'thinking_end':
           if (onThinkingEnd) onThinkingEnd();
           break;
         case 'tool_call_delta':
-          if (onToolCallDelta && data.id) onToolCallDelta(data.id, data.name, data.delta);
+          {
+            const invocationId = stringValue(data.invocation_id) || stringValue(data.id);
+            const capability = stringValue(data.capability) || stringValue(data.name);
+            if (onToolCallDelta && invocationId && capability && typeof data.delta === 'string') {
+              onToolCallDelta(invocationId, capability, data.delta);
+            }
+          }
           break;
         case 'tool_call_start':
-          if (data.name && onToolCallStart) {
-            onToolCallStart(data.id || data.name, data.name, data.inputs || data.argument_keys);
+          {
+            const invocationId = stringValue(data.invocation_id) || stringValue(data.id);
+            const capability = stringValue(data.capability) || stringValue(data.name);
+            if (onToolCallStart && invocationId && capability) {
+              onToolCallStart(
+                invocationId,
+                capability,
+                normalizeArgumentKeys(data.argument_keys ?? data.inputs),
+              );
+            }
           }
           break;
         case 'tool_call_end':
-          if (data.name && onToolCallEnd) {
-            onToolCallEnd(
-              data.id || data.name,
-              data.name,
-              data.output,
-              data.duration_ms,
-              data.status,
-            );
+          {
+            const invocationId = stringValue(data.invocation_id) || stringValue(data.id);
+            const capability = stringValue(data.capability) || stringValue(data.name);
+            if (onToolCallEnd && invocationId && capability) {
+              onToolCallEnd(
+                invocationId,
+                capability,
+                data.output,
+                optionalNumberValue(data.duration_ms),
+                normalizeInvocationStatus(data.status, data.error_code),
+                typeof data.error_code === 'string' ? data.error_code : null,
+              );
+            }
           }
           break;
         case 'plan_update':
-          if (data.content && onPlanUpdate) onPlanUpdate(data.content);
+          if (typeof data.content === 'string' && data.content && onPlanUpdate) {
+            onPlanUpdate(data.content);
+          }
           break;
         case 'progress':
-          if (onProgress && data.tool_name) {
+          if (onProgress && typeof data.tool_name === 'string' && data.tool_name) {
             onProgress({
               tool_name: data.tool_name,
-              tool_count: data.tool_count || 1,
-              duration_ms: data.duration_ms || 0,
+              tool_count: numberValue(data.tool_count, 1),
+              duration_ms: numberValue(data.duration_ms),
             });
           }
           break;
         case 'reasoning_chunk':
-          if (data.content && onThinkingChunk) onThinkingChunk(data.content);
+          if (typeof data.content === 'string' && data.content && onThinkingChunk) {
+            onThinkingChunk(data.content);
+          }
           break;
         case 'tool_start':
-          if (data.name && onToolCallStart) {
-            onToolCallStart(data.id || data.name, data.name, data.inputs);
+          {
+            const name = stringValue(data.name);
+            if (name && onToolCallStart) {
+              onToolCallStart(stringValue(data.id) || name, name, data.inputs);
+            }
           }
           break;
         case 'tool_end':
-          if (data.name && onToolCallEnd) {
-            onToolCallEnd(
-              data.id || data.name,
-              data.name,
-              data.output,
-              data.duration_ms,
-              data.status || 'success',
-            );
+          {
+            const name = stringValue(data.name);
+            if (name && onToolCallEnd) {
+              onToolCallEnd(
+                stringValue(data.id) || name,
+                name,
+                data.output,
+                optionalNumberValue(data.duration_ms),
+                stringValue(data.status) || 'success',
+              );
+            }
           }
           break;
         case 'error':
-          if (data.detail && onError) onError(data.detail);
+          if (typeof data.detail === 'string' && data.detail && onError) onError(data.detail);
           break;
       }
+      emitRunView(nextPhase ? { phase: nextPhase } : {});
     };
 
     replayAfterDisconnect = async (): Promise<boolean> => {
@@ -436,6 +603,33 @@ export const chatWithBackend = async ({
       }
     };
 
+    if (resumeRun) {
+      const replayPayload = await response.json();
+      const persistedEvents = Array.isArray(replayPayload.events)
+        ? replayPayload.events
+        : [];
+      for (const persistedEvent of persistedEvents) {
+        const payload = persistedEvent.payload && typeof persistedEvent.payload === 'object'
+          ? persistedEvent.payload
+          : {};
+        handleFrame({
+          type: persistedEvent.event_type,
+          id: String(persistedEvent.sequence),
+          data: {
+            ...payload,
+            run_id: persistedEvent.run_id || resumeRun.runId,
+            sequence: persistedEvent.sequence,
+          },
+        });
+      }
+      if (terminalStatus) {
+        notifyComplete();
+      } else if (onError) {
+        onError('Replay ended before a terminal run event');
+      }
+      return;
+    }
+
     const finishAfterStreamEnd = async () => {
       if (terminalStatus) {
         notifyComplete();
@@ -469,6 +663,9 @@ export const chatWithBackend = async ({
       }, timeoutMs);
     };
 
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
     resetTimeout();
 
     while (true) {
@@ -549,6 +746,22 @@ export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): 
   if (!response.ok) return [];
   const data = await response.json();
   return data.messages || [];
+};
+
+export const cancelRun = async (runId: string, threadId?: string): Promise<Record<string, unknown>> => {
+  const token = localStorage.getItem('token');
+  const query = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : '';
+  const response = await fetch(
+    `/api/v1/runs/${encodeURIComponent(runId)}/cancel${query}`,
+    {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Cancel request failed: ${response.status}`);
+  }
+  return response.json();
 };
 
 export const deleteChatHistory = async (threadId: string): Promise<void> => {

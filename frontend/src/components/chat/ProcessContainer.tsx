@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import {
-  BrainCircuit, CheckCircle2, Eye, EyeOff, LoaderCircle,
+  AlertTriangle, BrainCircuit, CheckCircle2, Eye, EyeOff, LoaderCircle,
 } from 'lucide-react';
 import type { ProcessNode } from '@/stores/useChatStore';
 import ProcessStepItem from './ProcessStepItem';
@@ -12,7 +12,7 @@ interface ProcessContainerProps {
   plan?: string;
   isStreaming: boolean;
   hasContent: boolean;
-  status?: 'idle' | 'thinking' | 'executing' | 'responding' | 'done';
+  status?: 'idle' | 'thinking' | 'executing' | 'responding' | 'recovering' | 'done' | 'failed' | 'cancelled' | 'timeout';
   isDarkMode: boolean;
   onRetryTool?: (node: ProcessNode) => void;
 }
@@ -29,7 +29,7 @@ export default function ProcessContainer({
   const [processVisible, setProcessVisible] = useState(true);
 
   const allDone = processes.length > 0 && processes.every(
-    p => p.status === 'success' || p.status === 'error'
+    p => p.status !== 'pending'
   );
   const hasRunning = processes.some(p => p.status === 'pending');
   const expandable = processes.length > 0 || Boolean(plan);
@@ -50,6 +50,8 @@ export default function ProcessContainer({
     ? '思考完毕'
     : streamingLabel || (isStreaming ? '正在思考...' : '');
 
+  const terminalFailure = status === 'failed' || status === 'cancelled' || status === 'timeout';
+
   const activeStatusLabel = isStreaming
     ? status === 'executing'
       ? '正在调用工具...'
@@ -60,12 +62,23 @@ export default function ProcessContainer({
           : '正在思考...'
     : statusLabel;
 
-  const showLabel = statusLabel || suffixParts.length > 0;
+  const terminalLabel = status === 'failed'
+    ? 'Run failed'
+    : status === 'cancelled'
+      ? 'Run cancelled'
+      : status === 'timeout'
+        ? 'Run timed out'
+        : '';
+  const recoveryLabel = status === 'recovering' ? 'Run interrupted; reconnecting' : '';
+  const showLabel = terminalLabel || recoveryLabel || statusLabel || suffixParts.length > 0;
   const summaryText = showLabel
-    ? [activeStatusLabel, ...suffixParts].filter(Boolean).join(' · ')
+    ? [terminalLabel || recoveryLabel || activeStatusLabel, ...suffixParts].filter(Boolean).join(' · ')
     : '';
 
   const statusIcon = useMemo(() => {
+    if (status === 'recovering') {
+      return <AlertTriangle size={14} style={{ color: isDarkMode ? '#fbbf24' : '#b45309' }} />;
+    }
     if (isStreaming) {
       return (
         <LoaderCircle
@@ -76,10 +89,13 @@ export default function ProcessContainer({
       );
     }
     if (allDone) {
+      if (terminalFailure) {
+        return <AlertTriangle size={14} style={{ color: isDarkMode ? '#fca5a5' : '#dc2626' }} />;
+      }
       return <CheckCircle2 size={14} style={{ color: isDarkMode ? '#86efac' : '#15803d' }} />;
     }
     return <BrainCircuit size={14} style={{ color: isDarkMode ? '#a5b4fc' : '#6366f1' }} />;
-  }, [allDone, isDarkMode, isStreaming]);
+  }, [allDone, isDarkMode, isStreaming, status, terminalFailure]);
 
   if (processes.length === 0 && !plan && !isStreaming) return null;
 
@@ -169,7 +185,7 @@ export default function ProcessContainer({
               node={node}
               stepNumber={i + 1}
               isDarkMode={isDarkMode}
-              autoExpanded={i === processes.length - 1 && (!hasContent || node.status === 'error')}
+              autoExpanded={i === processes.length - 1 && (!hasContent || node.status !== 'success')}
               onRetry={onRetryTool}
             />
           ))}

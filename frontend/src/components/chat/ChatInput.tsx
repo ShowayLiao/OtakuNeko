@@ -16,6 +16,7 @@ interface ChatInputProps {
   onSend: (text: string, contextItems: SearchResultItem[]) => void;
   onStop: () => void;
   loading: boolean;
+  cancelling?: boolean;
   selectedModel: string;
   selectedProvider: string;
   onModelChange: (modelId: string, provider: string) => void;
@@ -31,6 +32,7 @@ export const ChatInput = ({
   onSend,
   onStop,
   loading,
+  cancelling = false,
   selectedModel,
   selectedProvider,
   onModelChange,
@@ -107,6 +109,12 @@ export const ChatInput = ({
             title="取消编辑"
             onClick={onEditCancel}
           />
+        </div>
+      )}
+
+      {cancelling && (
+        <div role="status" style={{ padding: '6px 0', fontSize: 12, color: isDarkMode ? '#fbbf24' : '#b45309' }}>
+          Cancelling run… waiting for the cancellation event.
         </div>
       )}
 

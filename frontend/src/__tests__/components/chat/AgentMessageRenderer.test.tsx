@@ -7,7 +7,6 @@ vi.mock('@/components/providers/LobeProvider', () => ({
 
 import AgentMessageRenderer, {
   deriveStatus,
-  type AgentStatus,
 } from '@/components/chat/AgentMessageRenderer';
 import type { ProcessNode } from '@/stores/useChatStore';
 
@@ -27,11 +26,6 @@ const toolDone: ProcessNode = {
   title: '搜索动画', name: 'search_anime_advanced', duration: 920.39,
   details: { query: 'test' }, output: { results: [] },
 };
-const toolError: ProcessNode = {
-  id: 'tool-err', stepNumber: 2, type: 'tool_call', status: 'error',
-  title: '搜索动画', name: 'search_anime_advanced',
-};
-
 describe('deriveStatus', () => {
   it('returns "done" when isStreaming is false', () => {
     expect(deriveStatus(true, [toolPending], false)).toBe('done');
@@ -52,6 +46,30 @@ describe('deriveStatus', () => {
 
   it('returns "responding" when streaming with content', () => {
     expect(deriveStatus(true, [thoughtDone], true)).toBe('responding');
+  });
+
+  it.each([
+    ['failed', 'failed'],
+    ['cancelled', 'cancelled'],
+    ['timeout', 'timeout'],
+  ] as const)('keeps %s as a distinct terminal status', (terminalStatus, expected) => {
+    expect(deriveStatus(false, [], false, {
+      runId: 'run-terminal',
+      lastSequence: 4,
+      durable: true,
+      phase: terminalStatus,
+      terminalStatus,
+    }, undefined)).toBe(expected);
+  });
+
+  it('returns recovering while a durable run has no terminal event', () => {
+    expect(deriveStatus(false, [], false, {
+      runId: 'run-recovering',
+      lastSequence: 4,
+      durable: true,
+      phase: 'recovering',
+      terminalStatus: null,
+    }, 'recovering')).toBe('recovering');
   });
 });
 
@@ -144,5 +162,50 @@ describe('AgentMessageRenderer', () => {
     );
     const badges = document.querySelectorAll('[style*="border-radius: 10"]');
     expect(badges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('retains a partial answer with an explicit failed run presentation', () => {
+    render(
+      <AgentMessageRenderer
+        {...defaultProps}
+        hasContent
+        run={{
+          runId: 'run-partial',
+          lastSequence: 8,
+          durable: true,
+          phase: 'failed',
+          terminalStatus: 'failed',
+          errorCode: 'provider_error',
+        }}
+      >
+        <div data-testid="partial-answer">partial answer</div>
+      </AgentMessageRenderer>,
+    );
+
+    expect(screen.getByTestId('partial-answer')).toBeDefined();
+    expect(screen.getByText(/Run failed/)).toBeDefined();
+  });
+
+  it('retains a partial answer with an explicit recovery presentation', () => {
+    render(
+      <AgentMessageRenderer
+        {...defaultProps}
+        hasContent
+        messageStatus="recovering"
+        run={{
+          runId: 'run-recovering',
+          lastSequence: 8,
+          durable: true,
+          phase: 'recovering',
+          terminalStatus: null,
+          errorCode: 'stream_interrupted',
+        }}
+      >
+        <div data-testid="recovering-answer">partial answer</div>
+      </AgentMessageRenderer>,
+    );
+
+    expect(screen.getByTestId('recovering-answer')).toBeDefined();
+    expect(screen.getByText(/Run interrupted/)).toBeDefined();
   });
 });

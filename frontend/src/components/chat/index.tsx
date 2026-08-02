@@ -26,6 +26,7 @@ export default function ChatPage() {
 
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const resumedRunIdsRef = useRef(new Set<string>());
 
   const sessions = useChatStore((state) => state.sessions);
   const activeSessionId = useChatStore((state) => state.activeSessionId);
@@ -94,7 +95,15 @@ export default function ChatPage() {
     setIsApiKeyModalOpen(true);
   };
 
-  const { loading, streamingMessageId, streamingPreview, startStreaming, stopGeneration } = useChatStreaming({
+  const {
+    loading,
+    cancelling,
+    streamingMessageId,
+    streamingPreview,
+    startStreaming,
+    resumeRun,
+    stopGeneration,
+  } = useChatStreaming({
     selectedProvider,
     selectedModel,
     onConnectionStatusChange: setConnectionStatus,
@@ -110,10 +119,32 @@ export default function ChatPage() {
           processes: streamingPreview.processes,
           plan: streamingPreview.plan,
           status: streamingPreview.status,
+          run: streamingPreview.run,
         }
         : message
     ));
   }, [currentMessages, streamingPreview]);
+
+  useEffect(() => {
+    if (!activeSessionId || loading) return;
+    const resumable = currentMessages.find((message) => (
+      message.role === 'assistant'
+      && message.run?.durable === true
+      && Boolean(message.run.runId)
+      && !message.run.terminalStatus
+    ));
+    const runId = resumable?.run?.runId;
+    if (!resumable || !runId || resumedRunIdsRef.current.has(runId)) return;
+    resumedRunIdsRef.current.add(runId);
+    void resumeRun({
+      sessionId: activeSessionId,
+      messageId: resumable.id,
+      run: resumable.run!,
+      content: resumable.content,
+      processes: resumable.processes,
+      plan: resumable.plan,
+    });
+  }, [activeSessionId, currentMessages, loading, resumeRun]);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -288,6 +319,7 @@ export default function ChatPage() {
             onSend={editText ? handleEditResend : handleSend}
             onStop={stopGeneration}
             loading={loading}
+            cancelling={cancelling}
             selectedModel={selectedModel}
             selectedProvider={selectedProvider}
             onModelChange={handleModelChange}

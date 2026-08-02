@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- streaming event payloads are provider-defined. */
 import { useState, useRef, useCallback } from 'react';
-import { chatWithBackend } from '@/lib/fetcher';
+import { cancelRun, chatWithBackend } from '@/lib/fetcher';
 import {
   KeyedTextRevealQueue,
   TextRevealBuffer,
@@ -9,7 +9,7 @@ import {
 } from '@/lib/textRevealBuffer';
 import { createRafBatcher } from '@/lib/rafBatcher';
 import { selectPendingTool } from '@/lib/processDisplayState';
-import useChatStore, { ProcessNode, MessageStatus } from '@/stores/useChatStore';
+import useChatStore, { ProcessNode, MessageStatus, RunView } from '@/stores/useChatStore';
 
 const TOOL_REASONS: Record<string, string> = {
   search_anime_advanced: '根据用户查询搜索匹配的动画作品',
@@ -43,6 +43,10 @@ interface StreamingParams {
   promptConfig?: PromptConfig;
   activeSessionId: string;
   aiMessageId: string;
+  resumeRun?: RunView;
+  initialContent?: string;
+  initialProcesses?: ProcessNode[];
+  initialPlan?: string;
 }
 
 interface UseChatStreamingOptions {
@@ -57,16 +61,63 @@ export interface StreamingPreview {
   processes: ProcessNode[];
   plan?: string;
   status: MessageStatus;
+  run?: RunView;
 }
+
+const initialRunView = (): RunView => ({
+  runId: null,
+  lastSequence: 0,
+  durable: null,
+  phase: 'thinking',
+  terminalStatus: null,
+  connectionStatus: 'connecting',
+  cancelling: false,
+});
+
+function processStatusForTerminal(status: string | null): ProcessNode['status'] {
+  switch (status) {
+    case 'succeeded': return 'success';
+    case 'cancelled': return 'cancelled';
+    case 'timeout': return 'timeout';
+    default: return 'error';
+  }
+}
+
+function messageStatusForTerminal(status: string | null): MessageStatus {
+  switch (status) {
+    case 'succeeded': return 'completed';
+    case 'cancelled': return 'cancelled';
+    case 'timeout': return 'timeout';
+    default: return 'failed';
+  }
+}
+
+const PROCESS_DISPLAY_LIMIT = 4000;
 
 function formatProcessPayload(value: unknown) {
   if (value == null) return '';
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2) ?? String(value);
-  } catch {
-    return String(value);
-  }
+  const text = typeof value === 'string'
+    ? value
+    : (() => {
+        try {
+          return JSON.stringify(value, null, 2) ?? String(value);
+        } catch {
+          return '[unsafe tool data]';
+        }
+      })();
+  return text.length <= PROCESS_DISPLAY_LIMIT
+    ? text
+    : `${text.slice(0, PROCESS_DISPLAY_LIMIT)}\u2026`;
+}
+
+function normalizeProcessStatus(status?: string, errorCode?: string | null): ProcessNode['status'] {
+  const marker = String(status || '').trim().toLowerCase();
+  const errorMarker = String(errorCode || '').trim().toLowerCase();
+  if (marker === 'timeout' || marker === 'timed_out' || errorMarker === 'timeout') return 'timeout';
+  if (marker === 'denied' || marker === 'forbidden') return 'denied';
+  if (marker === 'cancelled' || marker === 'canceled') return 'cancelled';
+  if (marker === 'succeeded' || marker === 'success' || marker === 'completed') return 'success';
+  return 'error';
 }
 
 export function useChatStreaming({
@@ -77,6 +128,7 @@ export function useChatStreaming({
   const [loading, setLoading] = useState(false);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [streamingPreview, setStreamingPreview] = useState<StreamingPreview | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const accumulatedContentRef = useRef<string>('');
   const processesRef = useRef<ProcessNode[]>([]);
@@ -92,6 +144,7 @@ export function useChatStreaming({
   const networkCompleteRef = useRef(false);
   const completionStatusRef = useRef<MessageStatus>('completed');
   const terminalStatusRef = useRef<string | null>(null);
+  const runViewRef = useRef<RunView>(initialRunView());
   const streamTargetRef = useRef<{ sessionId: string; messageId: string } | null>(null);
   const runIdRef = useRef(0);
   const terminalRef = useRef(false);
@@ -115,6 +168,7 @@ export function useChatStreaming({
       processes: processes ?? processesRef.current,
       plan: plan || undefined,
       status,
+      run: runViewRef.current,
     });
   }, []);
 
@@ -137,13 +191,33 @@ export function useChatStreaming({
       processesRef.current,
       planRef.current || undefined,
       completionStatusRef.current,
+      runViewRef.current,
     );
     setStreamingPreview(null);
     networkCompleteRef.current = false;
     streamTargetRef.current = null;
     setLoading(false);
     setStreamingMessageId(null);
+    setCancelling(false);
   }, [flushUpdates, updateMessage]);
+
+  const publishRunView = useCallback((view: RunView) => {
+    runViewRef.current = view;
+    setCancelling(Boolean(view.cancelling));
+    setStreamingPreview((preview) => preview ? { ...preview, run: view } : preview);
+    const target = streamTargetRef.current;
+    if (target) {
+      updateMessage(
+        target.sessionId,
+        accumulatedContentRef.current,
+        target.messageId,
+        processesRef.current,
+        planRef.current || undefined,
+        undefined,
+        view,
+      );
+    }
+  }, [updateMessage]);
 
   const scheduleContentReveal = useCallback((sessionId: string, messageId: string) => {
     if (revealRafIdRef.current !== null) return;
@@ -185,6 +259,8 @@ export function useChatStreaming({
     networkCompleteRef.current = false;
     completionStatusRef.current = 'completed';
     terminalStatusRef.current = null;
+    runViewRef.current = initialRunView();
+    setCancelling(false);
     if (revealRafIdRef.current !== null) {
       cancelAnimationFrame(revealRafIdRef.current);
       revealRafIdRef.current = null;
@@ -267,12 +343,13 @@ export function useChatStreaming({
     return true;
   }, [scheduleProcessReveal]);
 
-  const findPendingTool = useCallback((name: string, sourceId?: string) => {
-    return selectPendingTool(
-      processesRef.current.filter((node) => node.type === 'tool_call'),
-      name,
-      sourceId,
-    );
+  const findTool = useCallback((name: string, sourceId?: string, includeTerminal = false) => {
+    const tools = processesRef.current.filter((node) => node.type === 'tool_call');
+    if (sourceId) {
+      const exact = [...tools].reverse().find((tool) => tool.sourceId === sourceId);
+      if (exact && (includeTerminal || exact.status === 'pending')) return exact;
+    }
+    return selectPendingTool(tools, name, sourceId);
   }, []);
 
   const findPendingThought = useCallback(() => {
@@ -284,8 +361,27 @@ export function useChatStreaming({
   }, []);
 
   const stopGeneration = useCallback(() => {
+    const target = streamTargetRef.current;
+    const runView = runViewRef.current;
+    if (target && runView.durable === true && runView.runId && !runView.terminalStatus) {
+      const cancellingView: RunView = {
+        ...runView,
+        cancelling: true,
+        connectionStatus: 'connected',
+      };
+      publishRunView(cancellingView);
+      void cancelRun(runView.runId).catch(() => {
+        publishRunView({
+          ...runViewRef.current,
+          cancelling: false,
+          errorCode: 'cancel_request_failed',
+        });
+      });
+      return;
+    }
+
     terminalRef.current = true;
-    completionStatusRef.current = 'error';
+    completionStatusRef.current = 'failed';
     contentBufferRef.current.clear();
     processRevealQueueRef.current.clear();
     processCompletionsRef.current.clear();
@@ -301,7 +397,6 @@ export function useChatStreaming({
       abortRef.current.abort();
       abortRef.current = null;
     }
-    const target = streamTargetRef.current;
     if (target) {
       const stoppedProcesses = processesRef.current.map((node) =>
         node.status === 'pending' ? { ...node, status: 'error' as const } : node
@@ -314,17 +409,34 @@ export function useChatStreaming({
         target.messageId,
         stoppedProcesses,
         planRef.current || undefined,
-        'error',
+        'failed',
+        {
+          ...runViewRef.current,
+          phase: 'failed',
+          connectionStatus: 'disconnected',
+          errorCode: 'client_stopped',
+        },
       );
       setStreamingPreview(null);
     }
     streamTargetRef.current = null;
     setLoading(false);
     setStreamingMessageId(null);
-  }, [updateMessage]);
+    setCancelling(false);
+  }, [publishRunView, updateMessage]);
 
   const startStreaming = useCallback(async (params: StreamingParams) => {
-    const { messages, temperature, promptConfig, activeSessionId, aiMessageId } = params;
+    const {
+      messages,
+      temperature,
+      promptConfig,
+      activeSessionId,
+      aiMessageId,
+      resumeRun,
+      initialContent,
+      initialProcesses,
+      initialPlan,
+    } = params;
     abortRef.current?.abort();
     const runId = runIdRef.current + 1;
     runIdRef.current = runId;
@@ -334,7 +446,26 @@ export function useChatStreaming({
 
     setLoading(true);
     setStreamingMessageId(aiMessageId);
-    resetInternal();
+    if (resumeRun) {
+      runViewRef.current = {
+        ...resumeRun,
+        connectionStatus: 'connecting',
+        cancelling: false,
+      };
+      processesRef.current = initialProcesses || [];
+      pendingProcessesRef.current = processesRef.current;
+      accumulatedContentRef.current = initialContent || '';
+      pendingContentRef.current = accumulatedContentRef.current;
+      planRef.current = initialPlan || '';
+      contentBufferRef.current.clear();
+      processRevealQueueRef.current.clear();
+      processCompletionsRef.current.clear();
+      networkCompleteRef.current = false;
+      terminalStatusRef.current = resumeRun.terminalStatus;
+      setCancelling(false);
+    } else {
+      resetInternal();
+    }
     streamTargetRef.current = { sessionId: activeSessionId, messageId: aiMessageId };
 
     const abortController = new AbortController();
@@ -351,6 +482,14 @@ export function useChatStreaming({
         prompt_config: promptConfig,
         thread_id: activeSessionId,
         abortSignal: abortController.signal,
+        resumeRun: resumeRun?.runId
+          ? {
+              runId: resumeRun.runId,
+              after: resumeRun.lastSequence,
+              durable: resumeRun.durable,
+              threadId: activeSessionId,
+            }
+          : undefined,
         onMessageChunk: (chunk) => {
           if (!acceptsStreamEvent()) return;
           accumulatedContentRef.current += chunk;
@@ -421,7 +560,7 @@ export function useChatStreaming({
         },
         onToolCallDelta: (sourceId, name, delta) => {
           if (!acceptsStreamEvent()) return;
-          let tool = findPendingTool(name, sourceId);
+          let tool = findTool(name, sourceId);
           if (!tool) {
             stepCounterRef.current += 1;
             tool = {
@@ -445,7 +584,7 @@ export function useChatStreaming({
           if (!acceptsStreamEvent()) return;
           // Models usually emit argument deltas before the tool runtime emits a
           // start event. Merge that live node instead of showing two calls.
-          const existing = findPendingTool(name, sourceId) || findPendingTool(name);
+          const existing = findTool(name, sourceId, true);
           if (existing) {
             updateProcessNode(existing.id, {
               title: TOOL_LABELS[name] || name,
@@ -469,13 +608,15 @@ export function useChatStreaming({
               reason: TOOL_REASONS[name],
             };
             addProcessNode(tool);
-            tool.details = formatProcessPayload(inputs);
+            updateProcessNode(tool.id, {
+              details: formatProcessPayload(inputs),
+            });
           }
           updateNow(activeSessionId, aiMessageId);
         },
-        onToolCallEnd: (sourceId, name, output, durationMs, status) => {
+        onToolCallEnd: (sourceId, name, output, durationMs, status, errorCode) => {
           if (!acceptsStreamEvent()) return;
-          let tool = findPendingTool(name, sourceId) || findPendingTool(name);
+          let tool = findTool(name, sourceId, true);
           if (!tool) {
             stepCounterRef.current += 1;
             tool = {
@@ -490,11 +631,14 @@ export function useChatStreaming({
             };
             addProcessNode(tool);
           }
-          updateProcessNode(tool.id, {
+          if (tool.status !== 'pending') return;
+          const endUpdates: Partial<ProcessNode> = {
             output: formatProcessPayload(output),
-            status: (status || 'success') as ProcessNode['status'],
-            duration: durationMs || 0,
-          });
+            status: normalizeProcessStatus(status, errorCode),
+            errorCode: errorCode || undefined,
+          };
+          if (durationMs != null) endUpdates.duration = durationMs;
+          updateProcessNode(tool.id, endUpdates);
           updateNow(activeSessionId, aiMessageId);
         },
         onPlanUpdate: (planText) => {
@@ -505,13 +649,23 @@ export function useChatStreaming({
         onProgress: () => {
         },
         onConnectionStatus: (status) => {
-          if (isCurrentRun()) onConnectionStatusChange(status);
+          if (!isCurrentRun()) return;
+          onConnectionStatusChange(status);
+          publishRunView({ ...runViewRef.current, connectionStatus: status });
         },
         onRunStatus: (status) => {
-          if (!isCurrentRun()) return;
+          if (!acceptsStreamEvent()) return;
           terminalStatusRef.current = status.status;
         },
-        onError: (error) => {
+        onRunView: (view) => {
+          if (!acceptsStreamEvent()) return;
+          const mergedView = view.terminalStatus
+            ? { ...view, cancelling: false }
+            : { ...view, cancelling: runViewRef.current.cancelling || view.cancelling };
+          terminalStatusRef.current = mergedView.terminalStatus;
+          publishRunView(mergedView);
+        },
+        onError: () => {
           if (!acceptsStreamEvent()) return;
           terminalRef.current = true;
           contentBufferRef.current.clear();
@@ -521,20 +675,30 @@ export function useChatStreaming({
             cancelAnimationFrame(processRevealRafIdRef.current);
             processRevealRafIdRef.current = null;
           }
-          const processes = processesRef.current.map(p => ({
-            ...p,
-            status: p.status === 'pending' ? 'error' as const : p.status,
-          }));
+          const isDurableRun = runViewRef.current.durable === true;
+          const processes = isDurableRun
+            ? processesRef.current
+            : processesRef.current.map(p => ({
+              ...p,
+              status: p.status === 'pending' ? 'error' as const : p.status,
+            }));
           pendingProcessesRef.current = processes;
           processesRef.current = processes;
-          accumulatedContentRef.current = `Error: ${error}`;
           pendingContentRef.current = accumulatedContentRef.current;
-          completionStatusRef.current = 'error';
+          completionStatusRef.current = isDurableRun ? 'recovering' : 'failed';
+          publishRunView({
+            ...runViewRef.current,
+            phase: isDurableRun ? 'recovering' : 'failed',
+            connectionStatus: 'disconnected',
+            errorCode: isDurableRun ? 'stream_interrupted' : 'stream_error',
+            terminalStatus: null,
+            cancelling: false,
+          });
           networkCompleteRef.current = true;
           finalizeDisplay(activeSessionId, aiMessageId);
         },
         onComplete: (metadata) => {
-          if (!acceptsStreamEvent()) return;
+          if (!isCurrentRun() || terminalRef.current) return;
           const terminalStatus = terminalStatusRef.current;
           if (!terminalStatus) {
             if (!metadata?.hasDurableRun) {
@@ -546,18 +710,27 @@ export function useChatStreaming({
               }
               applyReadyProcessCompletions();
               completionStatusRef.current = 'completed';
+              publishRunView({
+                ...runViewRef.current,
+                phase: 'completed',
+                terminalStatus: null,
+                cancelling: false,
+              });
               networkCompleteRef.current = true;
               finalizeDisplay(activeSessionId, aiMessageId);
               return;
             }
             terminalRef.current = true;
-            completionStatusRef.current = 'error';
-            for (const node of processesRef.current) {
-              if (node.status === 'pending') {
-                processCompletionsRef.current.set(node.id, { status: 'error' });
-              }
-            }
-            applyReadyProcessCompletions();
+            completionStatusRef.current = 'recovering';
+            pendingProcessesRef.current = processesRef.current;
+            publishRunView({
+              ...runViewRef.current,
+              phase: 'recovering',
+              connectionStatus: 'disconnected',
+              errorCode: 'missing_terminal_event',
+              terminalStatus: null,
+              cancelling: false,
+            });
             networkCompleteRef.current = true;
             finalizeDisplay(activeSessionId, aiMessageId);
             return;
@@ -566,20 +739,31 @@ export function useChatStreaming({
           for (const node of processesRef.current) {
             if (node.status === 'pending' && !processCompletionsRef.current.has(node.id)) {
               processCompletionsRef.current.set(node.id, {
-                status: terminalStatus === 'succeeded' ? 'success' : 'error',
+                status: processStatusForTerminal(terminalStatus),
               });
             }
           }
           applyReadyProcessCompletions();
-          completionStatusRef.current = terminalStatus === 'succeeded' ? 'completed' : 'error';
+          completionStatusRef.current = messageStatusForTerminal(terminalStatus);
+          publishRunView({
+            ...runViewRef.current,
+            terminalStatus: terminalStatus as RunView['terminalStatus'],
+            phase: terminalStatus === 'succeeded'
+              ? 'completed'
+              : terminalStatus === 'cancelled'
+                ? 'cancelled'
+                : terminalStatus === 'timeout'
+                  ? 'timeout'
+                  : 'failed',
+            cancelling: false,
+          });
           networkCompleteRef.current = true;
           finalizeDisplay(activeSessionId, aiMessageId);
         },
       });
-    } catch (error) {
+    } catch {
       if (!isCurrentRun()) return;
       terminalRef.current = true;
-      console.error('Error streaming:', error);
       contentBufferRef.current.clear();
       processRevealQueueRef.current.clear();
       processCompletionsRef.current.clear();
@@ -591,16 +775,26 @@ export function useChatStreaming({
         cancelAnimationFrame(processRevealRafIdRef.current);
         processRevealRafIdRef.current = null;
       }
-      const errorContent = `Error: ${error instanceof Error ? error.message : 'Unknown error'}`;
-      accumulatedContentRef.current = errorContent;
+      const isDurableRun = runViewRef.current.durable === true;
+      const errorContent = accumulatedContentRef.current;
       pendingContentRef.current = errorContent;
+      completionStatusRef.current = isDurableRun ? 'recovering' : 'failed';
+      publishRunView({
+        ...runViewRef.current,
+        phase: isDurableRun ? 'recovering' : 'failed',
+        connectionStatus: 'disconnected',
+        errorCode: isDurableRun ? 'stream_interrupted' : 'stream_error',
+        terminalStatus: null,
+        cancelling: false,
+      });
       store.updateMessage(
         activeSessionId,
         errorContent,
         aiMessageId,
         processesRef.current,
         planRef.current || undefined,
-        'error',
+        completionStatusRef.current,
+        runViewRef.current,
       );
       setStreamingPreview(null);
       streamTargetRef.current = null;
@@ -609,7 +803,27 @@ export function useChatStreaming({
     } finally {
       if (abortRef.current === abortController) abortRef.current = null;
     }
-  }, [selectedProvider, selectedModel, resetInternal, addProcessNode, findPendingThought, findPendingTool, applyReadyProcessCompletions, updateProcessNode, updateNow, finalizeDisplay, onConnectionStatusChange, scheduleProcessReveal]);
+  }, [selectedProvider, selectedModel, resetInternal, addProcessNode, findPendingThought, findTool, applyReadyProcessCompletions, updateProcessNode, updateNow, finalizeDisplay, onConnectionStatusChange, scheduleProcessReveal, publishRunView]);
 
-  return { loading, streamingMessageId, streamingPreview, startStreaming, stopGeneration };
+  const resumeRun = useCallback(async ({
+    sessionId,
+    messageId,
+    run,
+    content = '',
+    processes = [],
+    plan = '',
+  }: { sessionId: string; messageId: string; run: RunView; content?: string; processes?: ProcessNode[]; plan?: string }) => {
+    await startStreaming({
+      messages: [],
+      temperature: 0.7,
+      activeSessionId: sessionId,
+      aiMessageId: messageId,
+      resumeRun: run,
+      initialContent: content,
+      initialProcesses: processes,
+      initialPlan: plan,
+    });
+  }, [startStreaming]);
+
+  return { loading, cancelling, streamingMessageId, streamingPreview, startStreaming, resumeRun, stopGeneration };
 }

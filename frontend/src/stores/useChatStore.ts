@@ -3,7 +3,21 @@ import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export type ProcessNodeType = 'thought' | 'tool_call';
-export type ProcessNodeStatus = 'pending' | 'success' | 'error';
+export type ProcessNodeStatus = 'pending' | 'success' | 'error' | 'denied' | 'cancelled' | 'timeout';
+
+export type RunPhase = 'thinking' | 'executing' | 'responding' | 'recovering' | 'completed' | 'failed' | 'cancelled' | 'timeout';
+export type RunTerminalStatus = 'succeeded' | 'failed' | 'cancelled' | 'timeout';
+
+export interface RunView {
+  runId: string | null;
+  lastSequence: number;
+  durable: boolean | null;
+  phase: RunPhase;
+  terminalStatus: RunTerminalStatus | null;
+  errorCode?: string | null;
+  connectionStatus?: 'connected' | 'connecting' | 'disconnected';
+  cancelling?: boolean;
+}
 
 export interface ProcessNode {
   id: string;
@@ -16,6 +30,7 @@ export interface ProcessNode {
   duration?: number;
   details?: unknown;
   output?: unknown;
+  errorCode?: string;
   name?: string;
   reason?: string;
 }
@@ -36,7 +51,7 @@ export interface ProgressStep {
   durationMs: number;
 }
 
-export type MessageStatus = 'thinking' | 'generating' | 'completed' | 'error';
+export type MessageStatus = 'thinking' | 'generating' | 'recovering' | 'completed' | 'failed' | 'cancelled' | 'timeout' | 'error';
 
 export interface Message {
   id: string;
@@ -47,6 +62,7 @@ export interface Message {
   processes?: ProcessNode[];
   status?: MessageStatus;
   plan?: string;
+  run?: RunView;
 }
 
 export interface Session {
@@ -69,7 +85,7 @@ interface ChatStore {
 
   createSession: () => string;
   sendMessage: (sessionId: string, content: string | Message) => void;
-  updateMessage: (sessionId: string, content: string, messageId?: string, processes?: ProcessNode[], plan?: string, status?: MessageStatus) => void;
+  updateMessage: (sessionId: string, content: string, messageId?: string, processes?: ProcessNode[], plan?: string, status?: MessageStatus, run?: RunView) => void;
   switchSession: (sessionId: string) => void;
   deleteSession: (sessionId: string) => void;
   updateSessionTitle: (sessionId: string, title: string) => void;
@@ -131,7 +147,7 @@ const useChatStore = create<ChatStore>()(
         });
       },
 
-      updateMessage: (sessionId: string, content: string, messageId?: string, processes?: ProcessNode[], plan?: string, status?: MessageStatus) => {
+      updateMessage: (sessionId: string, content: string, messageId?: string, processes?: ProcessNode[], plan?: string, status?: MessageStatus, run?: RunView) => {
         set((state) => {
           const currentMessages = state.chatMessages[sessionId] || [];
           const updatedMessages = [...currentMessages];
@@ -141,6 +157,7 @@ const useChatStore = create<ChatStore>()(
             if (processes !== undefined) result.processes = processes;
             if (plan !== undefined) result.plan = plan;
             if (status !== undefined) result.status = status;
+            if (run !== undefined) result.run = run;
             return result;
           };
 

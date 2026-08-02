@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { chatWithBackend } from './fetcher';
+import { cancelRun, chatWithBackend } from './fetcher';
 
 vi.mock('@/store/useApiStore', () => ({
   useApiStore: {
@@ -20,6 +20,28 @@ describe('chatWithBackend authentication', () => {
     localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it('requests durable cancellation without aborting or resubmitting chat', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ run_id: 'run-cancel', cancellation_requested: true }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    localStorage.setItem('token', 'user-access-token');
+
+    await expect(cancelRun('run-cancel', 'thread-1')).resolves.toEqual({
+      run_id: 'run-cancel',
+      cancellation_requested: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/runs/run-cancel/cancel?thread_id=thread-1',
+      expect.objectContaining({
+        method: 'POST',
+        headers: { Authorization: 'Bearer user-access-token' },
+      }),
+    );
   });
 
   it('forwards the logged-in user token to the chat request', async () => {
@@ -82,6 +104,197 @@ describe('chatWithBackend authentication', () => {
       'message_end',
       'complete',
     ]);
+  });
+
+  it('normalizes primary invocation fields without creating a process from model_decision', async () => {
+    const frames = [
+      ['model_decision', {
+        run_id: 'run-invocation',
+        durable: true,
+        sequence: 1,
+        action: 'invoke',
+        capability: 'library.search',
+        argument_keys: ['query', 'limit'],
+      }],
+      ['tool_call_start', {
+        run_id: 'run-invocation',
+        durable: true,
+        sequence: 2,
+        invocation_id: 'inv-1',
+        capability: 'library.search',
+        argument_keys: ['query', 'limit'],
+        inputs: { query: 'secret value', limit: 5 },
+      }],
+      ['tool_call_end', {
+        run_id: 'run-invocation',
+        durable: true,
+        sequence: 3,
+        invocation_id: 'inv-1',
+        capability: 'library.search',
+        status: 'denied',
+        error_code: 'permission_denied',
+        output: { safe: true },
+      }],
+      ['run_completed', { run_id: 'run-invocation', durable: true, sequence: 4 }],
+    ]
+      .map(([type, data]) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`)
+      .join('');
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(frames));
+        controller.close();
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+    ));
+    const starts: unknown[] = [];
+    const ends: unknown[] = [];
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      onToolCallStart: (...args) => starts.push(args),
+      onToolCallEnd: (...args) => ends.push(args),
+    });
+
+    expect(starts).toEqual([['inv-1', 'library.search', ['query', 'limit']]]);
+    expect(ends).toEqual([[
+      'inv-1',
+      'library.search',
+      { safe: true },
+      undefined,
+      'denied',
+      'permission_denied',
+    ]]);
+  });
+
+  it('replays a durable run through GET without resubmitting the chat request', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        events: [
+          {
+            event_id: 'evt-thinking',
+            run_id: 'run-refresh',
+            sequence: 3,
+            event_type: 'thinking_start',
+            payload: {},
+          },
+          {
+            event_id: 'evt-answer',
+            run_id: 'run-refresh',
+            sequence: 4,
+            event_type: 'message_chunk',
+            payload: { content: 'partial answer' },
+          },
+          {
+            event_id: 'evt-failed',
+            run_id: 'run-refresh',
+            sequence: 5,
+            event_type: 'run.failed',
+            payload: { error_code: 'provider_error' },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    const views: Array<{ phase: string; lastSequence: number; terminalStatus: string | null }> = [];
+    const chunks: string[] = [];
+    const completions: unknown[] = [];
+    const errors: string[] = [];
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      resumeRun: { runId: 'run-refresh', after: 2, durable: true },
+      onRunView: view => views.push({
+        phase: view.phase,
+        lastSequence: view.lastSequence,
+        terminalStatus: view.terminalStatus,
+      }),
+      onMessageChunk: chunk => chunks.push(chunk),
+      onComplete: metadata => completions.push(metadata),
+      onError: error => errors.push(error),
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/runs/run-refresh/events?after=2');
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).method).toBe('GET');
+    expect(chunks).toEqual(['partial answer']);
+    expect(views.at(-1)).toEqual({ phase: 'failed', lastSequence: 5, terminalStatus: 'failed' });
+    expect(completions).toEqual([{ hasDurableRun: true, terminalStatus: 'failed' }]);
+    expect(errors).toEqual([]);
+  });
+
+  it('ignores replay events at or before the resume cursor', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        events: [
+          {
+            event_id: 'evt-duplicate',
+            run_id: 'run-stale-replay',
+            sequence: 2,
+            event_type: 'message_chunk',
+            payload: { content: 'duplicate' },
+          },
+          {
+            event_id: 'evt-new',
+            run_id: 'run-stale-replay',
+            sequence: 3,
+            event_type: 'message_chunk',
+            payload: { content: 'new' },
+          },
+          {
+            event_id: 'evt-failed',
+            run_id: 'run-stale-replay',
+            sequence: 4,
+            event_type: 'run.failed',
+            payload: { error_code: 'provider_error' },
+          },
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+    const chunks: string[] = [];
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      resumeRun: { runId: 'run-stale-replay', after: 2, durable: true },
+      onMessageChunk: chunk => chunks.push(chunk),
+    });
+
+    expect(chunks).toEqual(['new']);
+  });
+
+  it('does not treat a replay response without a terminal event as success', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        events: [{
+          event_id: 'evt-thinking',
+          run_id: 'run-incomplete',
+          sequence: 2,
+          event_type: 'thinking_start',
+          payload: {},
+        }],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )));
+    const completions: unknown[] = [];
+    const errors: string[] = [];
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      resumeRun: { runId: 'run-incomplete', after: 1, durable: true },
+      onComplete: metadata => completions.push(metadata),
+      onError: error => errors.push(error),
+    });
+
+    expect(completions).toEqual([]);
+    expect(errors).toHaveLength(1);
   });
 
   it.each([
@@ -405,16 +618,19 @@ describe('chatWithBackend authentication', () => {
     vi.stubGlobal('fetch', fetchMock);
     const chunks: string[] = [];
     const statuses: string[] = [];
+    const views: Array<{ terminalStatus: string | null }> = [];
 
     await chatWithBackend({
       messages: [],
       provider: 'deepseek',
       onMessageChunk: chunk => chunks.push(chunk),
       onRunStatus: status => statuses.push(status.status),
+      onRunView: view => views.push({ terminalStatus: view.terminalStatus }),
     });
 
     expect(chunks).toEqual(['once']);
     expect(statuses).toEqual(['succeeded']);
+    expect(views.filter(view => view.terminalStatus !== null)).toEqual([{ terminalStatus: 'succeeded' }]);
   });
 
   it('reports recovery instead of treating a durable EOF without terminal as success', async () => {

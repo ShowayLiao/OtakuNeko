@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import {
   Loader2, CheckCircle2, XCircle, ChevronRight, Wrench,
-  BrainCircuit, RotateCcw, Clock,
+  BrainCircuit, RotateCcw, Clock, Ban, Timer,
 } from 'lucide-react';
 import type { ProcessNode } from '@/stores/useChatStore';
 import { resolveStepExpanded } from '@/lib/processDisplayState';
@@ -29,9 +29,21 @@ export default function ProcessStepItem({
   onRetry,
 }: ProcessStepItemProps) {
   const isPending = node.status === 'pending';
-  const isError = node.status === 'error';
+  const isError = node.status === 'error'
+    || node.status === 'denied'
+    || node.status === 'cancelled'
+    || node.status === 'timeout';
   const isSuccess = node.status === 'success';
   const isThought = node.type === 'thought';
+  const terminalLabel = node.status === 'pending'
+    ? undefined
+    : {
+        success: 'Succeeded',
+        error: 'Failed',
+        denied: 'Denied',
+        cancelled: 'Cancelled',
+        timeout: 'Timed out',
+      }[node.status];
 
   const hasBody =
     (node.details != null) ||
@@ -127,7 +139,11 @@ export default function ProcessStepItem({
             ) : isSuccess ? (
               <CheckCircle2 size={14} style={{ color: isDarkMode ? '#86efac' : '#15803d' }} />
             ) : isError ? (
-              <XCircle size={14} style={{ color: isDarkMode ? '#fca5a5' : '#ef4444' }} />
+              node.status === 'denied'
+                ? <Ban size={14} style={{ color: isDarkMode ? '#fca5a5' : '#ef4444' }} />
+                : node.status === 'timeout'
+                  ? <Timer size={14} style={{ color: isDarkMode ? '#fbbf24' : '#d97706' }} />
+                  : <XCircle size={14} style={{ color: isDarkMode ? '#fca5a5' : '#ef4444' }} />
             ) : (
               isThought
                 ? <BrainCircuit size={14} style={{ color: isDarkMode ? '#a78bfa' : '#7c3aed' }} />
@@ -144,6 +160,18 @@ export default function ProcessStepItem({
                 ? (isThought ? '正在思考...' : `正在调用 ${node.title}...`)
                 : node.title}
             </span>
+
+            {!isPending && terminalLabel && (
+              <span style={{
+                fontSize: 10,
+                color: isError
+                  ? (isDarkMode ? '#fca5a5' : '#dc2626')
+                  : (isDarkMode ? '#86efac' : '#15803d'),
+                flexShrink: 0,
+              }}>
+                {terminalLabel}
+              </span>
+            )}
 
             {node.duration != null && node.duration > 0 && (
               <span style={{
@@ -206,7 +234,7 @@ export default function ProcessStepItem({
                     lineHeight: 1.6,
                     whiteSpace: 'pre-wrap',
                   }}>
-                    {typeof node.details === 'string' ? node.details : JSON.stringify(node.details, null, 2)}
+                    {formatDisplayValue(node.details)}
                   </div>
                 </div>
               )}
@@ -229,13 +257,16 @@ export default function ProcessStepItem({
                     maxHeight: 120,
                     overflowY: 'auto',
                   }}>
-                    {typeof node.details === 'string' ? node.details : JSON.stringify(node.details, null, 2)}
+                    {formatDisplayValue(node.details)}
                   </pre>
                 </div>
               )}
 
               {!isThought && node.output != null && (
                 <div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: isDarkMode ? '#9ca3af' : '#6b7280', marginBottom: 4 }}>
+                    External tool output · untrusted data / 外部工具输出，仅供参考
+                  </div>
                   <div style={{ fontSize: 10, fontWeight: 600, color: isDarkMode ? '#9ca3af' : '#6b7280', marginBottom: 4 }}>
                     返回结果
                   </div>
@@ -252,7 +283,7 @@ export default function ProcessStepItem({
                     maxHeight: 200,
                     overflowY: 'auto',
                   }}>
-                    {typeof node.output === 'string' ? node.output : JSON.stringify(node.output, null, 2)}
+                    {formatDisplayValue(node.output)}
                   </pre>
                 </div>
               )}
@@ -262,4 +293,21 @@ export default function ProcessStepItem({
       </div>
     </div>
   );
+}
+
+const DISPLAY_LIMIT = 4000;
+
+function formatDisplayValue(value: unknown): string {
+  const text = typeof value === 'string'
+    ? value
+    : (() => {
+        try {
+          return JSON.stringify(value, null, 2) ?? String(value);
+        } catch {
+          return '[unsafe tool data]';
+        }
+      })();
+  return text.length <= DISPLAY_LIMIT
+    ? text
+    : `${text.slice(0, DISPLAY_LIMIT)}\u2026`;
 }

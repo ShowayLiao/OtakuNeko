@@ -59,7 +59,10 @@ export default function MessageList({
         const isStreaming = msg.role === 'assistant' && msg.id === streamingMessageId;
         const showUserActions = msg.role === 'user';
         const streamVersion = isStreaming
-          ? (msg.processes || []).map((process) => `${process.id}:${process.status}:${String(process.details || '').length}`).join('|')
+          ? [
+              msg.run ? `${msg.run.phase}:${msg.run.terminalStatus || ''}:${msg.run.lastSequence}` : '',
+              ...(msg.processes || []).map((process) => `${process.id}:${process.status}:${String(process.details || '').length}`),
+            ].join('|')
           : '';
         const streamSignal = isStreaming
           ? <span aria-hidden="true" style={{ display: 'none' }}>{streamVersion}</span>
@@ -104,6 +107,8 @@ export default function MessageList({
                   isStreaming={isStreaming}
                   hasContent={!!msg.content}
                   isDarkMode={isDarkMode}
+                  run={msg.run}
+                  messageStatus={msg.status}
                   actions={
                     <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
                       {!isStreaming && msg.role === 'assistant' && msg.content && (
