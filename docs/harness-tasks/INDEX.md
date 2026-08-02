@@ -112,6 +112,19 @@ POST-AUDIT-001～005 已建立基础边界，BATCH-19 / TASK-POST-AUDIT-006 已�
 
 统一执行计划：[`docs/harness-execution/TARGET-ARCHITECTURE-CLOSURE-EXECUTION-PLAN.md`](../harness-execution/TARGET-ARCHITECTURE-CLOSURE-EXECUTION-PLAN.md)
 
+## Chat Rendering Closure 规划
+
+基于 [`docs/harness-audit/15-chat-rendering-audit.md`](../harness-audit/15-chat-rendering-audit.md)，新增任务只处理前端 chat 页面对 Runtime Event 的归一化、Capability 过程投影、Run 终态渲染和 SSE replay；不代表已有 Batch，也不创建 execution record。
+
+任务包：[`CHAT-RENDERING/README.md`](CHAT-RENDERING/README.md)
+
+| 任务 | 目标 | 依赖 | 状态 |
+|---|---|---|---|
+| [TASK-CHAT-RENDERING-001](CHAT-RENDERING/TASK-CHAT-RENDERING-001.md) | Runtime Event 归一化与终态契约 | 当前 primary event fixture | planned |
+| [TASK-CHAT-RENDERING-002](CHAT-RENDERING/TASK-CHAT-RENDERING-002.md) | Capability Invocation 过程投影与安全展示 | 001 | planned |
+| [TASK-CHAT-RENDERING-003](CHAT-RENDERING/TASK-CHAT-RENDERING-003.md) | Run 生命周期、取消、断线 replay 与消息状态 | 001、002 | planned |
+| [TASK-CHAT-RENDERING-004](CHAT-RENDERING/TASK-CHAT-RENDERING-004.md) | 主路径 Chat Contract 回归与发布门禁 | 001～003 | planned |
+
 ## 所有批次的共同约束
 
 - 先添加失败测试或契约测试，再实现最小 adapter；不直接重写 LangGraph、全部 Tool 或业务 Service。
