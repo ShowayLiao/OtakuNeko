@@ -37,7 +37,9 @@ class AgentRouter:
         router = AgentRouter(registry)
         decision = router.route(task_goal, messages)
         agent = router.select(decision)
-        result = await agent.execute(...)
+
+    ``select`` is discovery only.  Execution belongs to the Runtime and its
+    Dispatcher; callers must not invoke the returned specialist directly.
     """
 
     def __init__(

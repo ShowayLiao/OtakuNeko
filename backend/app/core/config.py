@@ -24,7 +24,18 @@ class Settings(BaseSettings):
     # an adapter with equivalent persistence semantics.
     CHECKPOINT_DB_PATH: str = "data/checkpoints.db"
     HARNESS_CHECKPOINT_ADAPTER: str = "sqlite"
+    HARNESS_CHECKPOINT_SINGLE_WORKER: bool = True
+    HARNESS_WORKER_COUNT: int = 1
     CHECKPOINT_LEASE_SECONDS: int = 3600
+
+    # Provider egress policy. Local development can opt out of DNS checks;
+    # cloud deployments should enable resolution and configure the egress
+    # allowlist at the network boundary as well.
+    PROVIDER_RESOLVE_DNS: bool = False
+    PROVIDER_ALLOWED_HOSTS: str = ""
+    PROVIDER_ALLOWED_PORTS: str = "80,443"
+    MODEL_CHECK_RATE_LIMIT: int = 5
+    MODEL_CHECK_RATE_WINDOW_SECONDS: int = 60
 
     # 2. 读取 Local 模式配置
     SQLITE_FILE: str = "./local.db"

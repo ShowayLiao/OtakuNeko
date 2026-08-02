@@ -26,6 +26,7 @@ class FakeWorkflow:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_streams_through_harness(monkeypatch) -> None:
+    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
     monkeypatch.setattr(agent_api, "ChatWorkflow", FakeWorkflow)
     request = ChatRequest(
         model="test-model",

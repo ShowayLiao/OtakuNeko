@@ -65,29 +65,34 @@ class PolicyEngine:
         ):
             return PolicyDecision(False, "unauthorized", "Authenticated principal required")
 
-        if not descriptor.is_side_effect:
-            return PolicyDecision(True)
-
-        if not self.allow_side_effects:
+        if descriptor.is_side_effect and not self.allow_side_effects:
             return PolicyDecision(
                 False,
                 "policy_denied",
                 "Side effects are disabled by policy",
             )
 
-        if approval is None or not isinstance(approval, Approval) or not approval.approved:
+        if descriptor.approval_required and (
+            approval is None or not isinstance(approval, Approval) or not approval.approved
+        ):
             return PolicyDecision(
                 False,
                 "policy_denied",
                 "Trusted approval is required",
             )
-        if (
+        if descriptor.approval_required and (
             principal is not None
+            and isinstance(approval, Approval)
             and approval.principal_id is not None
             and approval.principal_id != principal.principal_id
         ):
             return PolicyDecision(False, "policy_denied", "Approval principal mismatch")
-        if approval.action is not None and approval.action != descriptor.name:
+        if (
+            descriptor.approval_required
+            and isinstance(approval, Approval)
+            and approval.action is not None
+            and approval.action != descriptor.name
+        ):
             return PolicyDecision(False, "policy_denied", "Approval action mismatch")
 
         if descriptor.is_side_effect and not (

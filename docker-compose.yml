@@ -75,7 +75,12 @@ services:
       # 4. 其他配置保持默认或按需覆盖
       - PROJECT_NAME=OtakuNeko
       - CHECKPOINT_DB_PATH=/app/data/checkpoints.db
-      - HARNESS_CHECKPOINT_ADAPTER=sqlite
+      # Mounted SQLite checkpoints are explicitly single-worker only.
+      - HARNESS_CHECKPOINT_ADAPTER=sqlite-single-worker
+      - HARNESS_CHECKPOINT_SINGLE_WORKER=true
+      - HARNESS_WORKER_COUNT=1
+      - PROVIDER_RESOLVE_DNS=true
+      - PROVIDER_ALLOWED_HOSTS=api.openai.com,api.deepseek.com
       
       # 5. QBittorrent 配置
       - ENABLE_QB_PROXY=false

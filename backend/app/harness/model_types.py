@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 from typing import Any, AsyncIterator, Literal, Protocol
+from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -16,6 +17,8 @@ ProviderErrorCode = Literal[
     "transient",
     "permanent",
     "cancelled",
+    "dns",
+    "ssrf",
 ]
 ModelCallStatus = Literal["completed", "degraded", "failed", "cancelled"]
 
@@ -52,8 +55,15 @@ class ModelCallResult(BaseModel):
     provider: str
     model: str
     operation: str
+    call_id: str = Field(default_factory=lambda: uuid4().hex)
+    trace_id: str | None = None
     status: ModelCallStatus
     text: str = ""
+    # Provider adapters normalize tool calls without exposing provider objects.
+    # ``decision`` is the canonical structured payload when the provider can
+    # return one directly; both remain data-only at this boundary.
+    decision: dict[str, Any] | None = None
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     usage: ModelUsage = Field(default_factory=ModelUsage)
     finish_reason: str | None = None
     error_code: ProviderErrorCode | None = None

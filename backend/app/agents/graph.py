@@ -3,9 +3,12 @@ import operator
 import asyncio
 import html
 import os
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import AsyncGenerator, Dict, Any, List, Optional, Annotated, TypedDict, TYPE_CHECKING
+from uuid import uuid4
 from langchain_core.messages import BaseMessage, trim_messages, filter_messages
+from langchain_core.tools import StructuredTool
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
@@ -16,6 +19,7 @@ from app.agents.tools import ALL_TOOLS
 from app.core.logging import get_logger
 from app.harness.model_gateway import LangChainModelAdapter, safe_provider_detail
 from app.harness.budget import CancellationToken
+from app.harness.checkpoint import run_checkpoint_config
 from app.trace import TraceEventType
 from app.trace.recorder import current_trace_recorder
 from app.memory.interfaces import ContextCompiler
@@ -77,7 +81,8 @@ class ChatWorkflow:
                  checkpoint_store: Any = None,
                  run_id: Optional[str] = None,
                  thread_id: Optional[str] = None,
-                 cancellation: Optional[CancellationToken] = None):
+                 cancellation: Optional[CancellationToken] = None,
+                 proposal_handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]] | None = None):
         self.api_key = api_key
         self.base_url = base_url
         self.memory = memory_manager
@@ -89,6 +94,7 @@ class ChatWorkflow:
         self.run_id = run_id
         self.thread_id = thread_id
         self.cancellation = cancellation
+        self._proposal_handler = proposal_handler
         self._checkpoint_adapter = (
             checkpoint_adapter
             if checkpoint_adapter is not None
@@ -113,6 +119,51 @@ class ChatWorkflow:
     def _get_tools(self):
         return self._runtime_tools or self.registry.get_all()
 
+    def _proposal_tools(self, tools):
+        """Wrap legacy tool schemas as non-executing model proposals.
+
+        The graph still owns message/checkpoint mechanics, but the callable
+        bound to the model never reaches a domain service. Runtime/Dispatcher
+        is the only layer allowed to turn this proposal into an invocation.
+        """
+        proposal_tools = []
+        for source_tool in tools:
+            # ALL_TOOLS and the MCP catalog expose the same v1 public action
+            # contract here. Canonical Registry/version validation happens in
+            # DecisionParser/Dispatcher after this proposal leaves Graph.
+            capability_version = "v1"
+
+            async def propose(_source=source_tool, _version=capability_version, **kwargs):
+                public_arguments = {
+                    key: value
+                    for key, value in kwargs.items()
+                    if key not in {"user_id", "principal_id", "tenant_id", "db", "token"}
+                }
+                proposal = {
+                    "schema_version": "v1",
+                    "decision_id": uuid4().hex,
+                    "run_id": self.run_id or "unbound",
+                    "action": "invoke",
+                    "capability": _source.name,
+                    "capability_version": _version,
+                    "arguments": public_arguments,
+                }
+                if self._proposal_handler is not None:
+                    return await self._proposal_handler(proposal)
+                return proposal
+
+            proposal_tools.append(
+                StructuredTool.from_function(
+                    coroutine=propose,
+                    name=source_tool.name,
+                    description=(
+                        f"Proposal only: {source_tool.description or source_tool.name}"
+                    ),
+                    args_schema=getattr(source_tool, "args_schema", None),
+                )
+            )
+        return proposal_tools
+
     async def _ensure_checkpointer(self):
         self._raise_if_cancelled()
         async with self._checkpointer_lock:
@@ -128,7 +179,11 @@ class ChatWorkflow:
                 self.checkpointer = AsyncSqliteSaver(conn)
             # Resolve local and MCP tools once per workflow instance so the
             # graph, model binding and ToolNode share the same tool set.
-            self._runtime_tools = await self.registry.get_runtime_tools()
+            # Legacy tools/MCP definitions remain a compatibility catalog, but
+            # the graph receives proposal-only wrappers. No ToolNode callback
+            # in the primary path can call a domain Capability directly.
+            catalog_tools = await self.registry.get_runtime_tools()
+            self._runtime_tools = self._proposal_tools(catalog_tools)
             self.app = self._compile_graph()
 
     async def close(self) -> None:
@@ -161,15 +216,9 @@ class ChatWorkflow:
         run_id: Optional[str] = None,
     ) -> dict[str, Any]:
         resolved_run_id = self._resolve_run_id(run_id)
-        config: dict[str, Any] = {
-            "configurable": {
-                "thread_id": self._resolve_thread_id(thread_id),
-                # AsyncSqliteSaver scopes records by thread_id and namespace;
-                # metadata alone would not isolate concurrent Runs on one chat
-                # thread.
-                "checkpoint_ns": resolved_run_id or "",
-            }
-        }
+        config: dict[str, Any] = run_checkpoint_config(
+            self._resolve_thread_id(thread_id), resolved_run_id
+        )
         if resolved_run_id is not None:
             config["metadata"] = {"run_id": resolved_run_id}
         return config
@@ -617,6 +666,35 @@ class ChatWorkflow:
                         output_data = raw_output
                     else:
                         output_data = str(raw_output)
+
+                    proposal_data = (
+                        output_data.get("decision")
+                        if isinstance(output_data, dict)
+                        and isinstance(output_data.get("decision"), dict)
+                        else output_data
+                    )
+                    if isinstance(proposal_data, dict) and proposal_data.get("action") == "invoke":
+                        # This is a proposal event, not proof that an
+                        # invocation occurred. The Runtime must parse it and
+                        # ask Dispatcher before any capability executes.
+                        yield _emit(
+                            "model_decision",
+                            decision={
+                                key: value
+                                for key, value in proposal_data.items()
+                                if key != "arguments"
+                            },
+                            argument_keys=sorted(
+                                proposal_data.get("arguments", {})
+                                if isinstance(proposal_data.get("arguments"), dict)
+                                else {}
+                            ),
+                        )
+                        yield _emit(
+                            "tool_requested",
+                            name=tool_name,
+                            capability=proposal_data.get("capability", tool_name),
+                        )
 
                     tool_status = "success"
                     if isinstance(output_data, dict) and not output_data.get(

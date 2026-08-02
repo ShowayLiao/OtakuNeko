@@ -7,8 +7,11 @@ import json
 from typing import Any
 
 from app.harness.policy import ProactivePolicy
-from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
+
+SUPPORTED_SCHEDULED_TASK_TYPES = frozenset(
+    {"weekly_recommendation", "seasonal_scan"}
+)
 
 
 def build_agent_task(task_def: Any, run: Any) -> AgentTask:
@@ -34,14 +37,6 @@ def build_agent_task(task_def: Any, run: Any) -> AgentTask:
     )
 
 
-class _SpecialistAdapter:
-    def __init__(self, agent: Any) -> None:
-        self.agent = agent
-
-    async def run(self, state: Any) -> Any:
-        return await self.agent.execute(state.task)
-
-
 async def handle_task_def(
     task_def: Any,
     run: Any,
@@ -63,6 +58,32 @@ async def handle_task_def(
                 run, success=False, error_category="invalid_policy", lease_id=lease_id
             )
         raise
+    if task_def.task_type not in SUPPORTED_SCHEDULED_TASK_TYPES:
+        run.status = "failed"
+        run.error_category = "unsupported_task"
+        if repository is not None:
+            await repository.finish(
+                run,
+                success=False,
+                error_category="unsupported_task",
+                lease_id=lease_id,
+            )
+        raise PermissionError(
+            f"scheduled task type {task_def.task_type!r} is not registered"
+        )
+    if runtime is None:
+        run.status = "failed"
+        run.error_category = "scheduler_unavailable"
+        if repository is not None:
+            await repository.finish(
+                run,
+                success=False,
+                error_category="scheduler_unavailable",
+                lease_id=lease_id,
+            )
+        raise PermissionError(
+            "scheduled execution requires a dispatcher-backed Runtime"
+        )
     agent_task = build_agent_task(task_def, run)
     agent_task.metadata["policy"] = json.loads(getattr(task_def, "policy", "{}") or "{}")
     run.trace_id = agent_task.metadata["trace_id"]
@@ -70,14 +91,17 @@ async def handle_task_def(
     agent = router.select(decision) if decision is not None else None
     selected_runtime = runtime
     if agent is not None:
-        if policy.extra.get("requires_side_effect") and not policy.allows("agent.execute"):
-            run.status = "failed"
-            run.error_category = "policy_denied"
-            if repository is not None:
-                await repository.finish(run, success=False, error_category="policy_denied", lease_id=lease_id)
-            raise PermissionError("scheduled policy does not allow side effects")
-        selected_runtime = AgentRuntime(
-            _SpecialistAdapter(agent), trace_store=getattr(runtime, "trace_store", None)
+        run.status = "failed"
+        run.error_category = "policy_denied"
+        if repository is not None:
+            await repository.finish(
+                run,
+                success=False,
+                error_category="policy_denied",
+                lease_id=lease_id,
+            )
+        raise PermissionError(
+            "scheduled specialist execution requires a Runtime Dispatcher boundary"
         )
 
     for attempt in range(policy.max_retries + 1):
@@ -109,6 +133,19 @@ async def handle_task_def(
                 await repository.finish(run, success=False, error_category=category, lease_id=lease_id)
             raise
         else:
+            terminal = getattr(state, "terminal_result", None)
+            terminal_status = (
+                getattr(terminal, "status", None)
+                or getattr(state, "status", "failed")
+            )
+            terminal_code = getattr(terminal, "error_code", None)
+            category = (
+                terminal_code.value
+                if hasattr(terminal_code, "value")
+                else str(terminal_code)
+                if terminal_code is not None
+                else "permanent"
+            )
             result = getattr(state, "result", None)
             if isinstance(result, dict) and result.get("evidence", {}).get("reason") == "policy_denied":
                 run.status = "failed"
@@ -118,9 +155,28 @@ async def handle_task_def(
                         run, success=False, error_category="policy_denied", lease_id=lease_id
                     )
                 raise PermissionError("scheduled policy denied capability")
-            run.status = "success"
+            if terminal_status == "completed":
+                run.status = "success"
+                if repository is not None:
+                    await repository.finish(run, success=True, lease_id=lease_id)
+                return state
+
+            if terminal_status == "cancelled":
+                category = "cancelled"
+            elif terminal_status == "timeout":
+                category = "timeout"
+            run.status = "failed"
+            run.error_category = category
+            if category == "transient" and attempt < policy.max_retries:
+                await asyncio.sleep(min(2**attempt, 30))
+                continue
             if repository is not None:
-                await repository.finish(run, success=True, lease_id=lease_id)
+                await repository.finish(
+                    run,
+                    success=False,
+                    error_category=category,
+                    lease_id=lease_id,
+                )
             return state
 
     raise RuntimeError("scheduled execution exhausted retries")

@@ -23,6 +23,8 @@ _ADAPTABLE_EVENT_TYPES = {
     "message_start",
     "message_chunk",
     "message_end",
+    "model_decision",
+    "tool_requested",
     "error",
 }
 
@@ -57,6 +59,21 @@ def adapt_langgraph_event(
         payload = {"content": str(event.get("content", ""))}
     elif event_type == "error":
         payload = {"error_code": "permanent"}
+    elif event_type == "model_decision":
+        decision = event.get("decision")
+        payload = {
+            "action": decision.get("action") if isinstance(decision, dict) else "unknown",
+            "capability": decision.get("capability") if isinstance(decision, dict) else None,
+            "capability_version": (
+                decision.get("capability_version") if isinstance(decision, dict) else None
+            ),
+            "argument_keys": sorted(event.get("argument_keys", [])),
+        }
+    elif event_type == "tool_requested":
+        payload = {
+            "name": str(event.get("name", "unknown")),
+            "capability": str(event.get("capability", "unknown")),
+        }
 
     return RunEvent(
         run_id=run_id,

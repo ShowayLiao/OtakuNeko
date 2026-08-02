@@ -19,7 +19,7 @@ from app.harness.budget import (
 from app.harness.contracts import ErrorCode, RunEvent, RunResult
 from app.harness.model_gateway import ModelGateway
 from app.harness.persistence.event_store import EventStore
-from app.harness.persistence.run_store import RunStore
+from app.harness.persistence.run_store import InvalidRunTransition, RunStore
 from app.harness.result import AgentResult
 from app.harness.state import AgentState
 from app.harness.task import AgentTask
@@ -91,6 +91,7 @@ class RunCoordinator:
         self._terminal_persisted = False
         self.persistence_failure: BaseException | None = None
         self._active_invocations: dict[str, list[str]] = {}
+        self._existing_run_status: str | None = None
 
     async def stream(
         self,
@@ -109,6 +110,7 @@ class RunCoordinator:
         self._persist_sequence = 0
         self._terminal_persisted = False
         self._active_invocations = {}
+        self._existing_run_status = None
         self.budget = budget or RunBudget()
         self.cancellation = cancellation or CancellationToken()
         run_id = str((task.metadata or {}).get("run_id") or task.task_id or uuid4().hex)
@@ -142,13 +144,29 @@ class RunCoordinator:
             while self.terminal_result is None:
                 self.cancellation.raise_if_cancelled()
                 self.budget.check_deadline()
+                next_task = asyncio.create_task(iterator.__anext__())
+                cancellation_task = asyncio.create_task(self.cancellation.wait())
                 try:
-                    chunk = await asyncio.wait_for(
-                        iterator.__anext__(),
+                    done, _ = await asyncio.wait(
+                        {next_task, cancellation_task},
                         timeout=self.budget.remaining_seconds(),
+                        return_when=asyncio.FIRST_COMPLETED,
                     )
+                    if not done:
+                        raise DeadlineExceededError("run deadline exceeded")
+                    if cancellation_task in done:
+                        raise RunCancellationError()
+                    chunk = next_task.result()
                 except StopAsyncIteration:
                     break
+                finally:
+                    if not next_task.done():
+                        next_task.cancel()
+                    if not cancellation_task.done():
+                        cancellation_task.cancel()
+                    for pending in (next_task, cancellation_task):
+                        with suppress(asyncio.CancelledError, Exception):
+                            await pending
 
                 if not isinstance(chunk, dict):
                     chunk = {"type": "message_chunk", "content": str(chunk)}
@@ -270,6 +288,110 @@ class RunCoordinator:
         # duplicate or contradictory terminal chunk.
         yield self.terminal_result
 
+    async def execute(
+        self,
+        task: AgentTask,
+        context: dict[str, Any] | None = None,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+        *,
+        state: AgentState | None = None,
+    ) -> AgentState:
+        """Execute a non-streaming adapter under the same Run owner."""
+        self.events = []
+        self.terminal_result = None
+        self.failure = None
+        self.persistence_failure = None
+        self._persist_sequence = 0
+        self._terminal_persisted = False
+        self._active_invocations = {}
+        self._existing_run_status = None
+        self.budget = budget or RunBudget()
+        self.cancellation = cancellation or CancellationToken()
+        run_id = str((task.metadata or {}).get("run_id") or task.task_id or uuid4().hex)
+        self._run_id = run_id
+        execution_state = state or AgentState(
+            task=task,
+            status="running",
+            context=dict(context or {}),
+        )
+        execution_state.status = "running"
+        if context:
+            execution_state.context.update(context)
+
+        adapter_task: asyncio.Task[Any] | None = None
+        cancellation_task: asyncio.Task[None] | None = None
+        try:
+            await self._persist_run_start(task, execution_state.context, run_id)
+            self._finish_from_existing_run()
+            if self.terminal_result is not None:
+                execution_state.terminal_result = self.terminal_result
+                execution_state.status = self.terminal_result.status
+                execution_state.budget = self.budget.snapshot()
+                self._terminal_persisted = True
+                return execution_state
+            self.cancellation.raise_if_cancelled()
+            self.budget.check_deadline()
+            adapter_run = getattr(self.adapter, "run", None)
+            if adapter_run is None:
+                raise TypeError("The configured adapter does not support execution")
+            adapter_task = asyncio.create_task(adapter_run(execution_state))
+            cancellation_task = asyncio.create_task(self.cancellation.wait())
+            done, _ = await asyncio.wait(
+                {adapter_task, cancellation_task},
+                timeout=self.budget.remaining_seconds(),
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                raise DeadlineExceededError("run deadline exceeded")
+            if cancellation_task in done:
+                raise RunCancellationError()
+            execution_state.result = adapter_task.result()
+            self._finish("completed", None, self._result_content(execution_state.result))
+        except RunCancellationError:
+            self._finish("cancelled", ErrorCode.CANCELLED)
+        except DeadlineExceededError:
+            self._finish("timeout", ErrorCode.TIMEOUT)
+        except asyncio.TimeoutError:
+            self._finish("timeout", ErrorCode.TIMEOUT)
+        except asyncio.CancelledError:
+            self._finish("cancelled", ErrorCode.CANCELLED)
+            raise
+        except Exception as exc:
+            self.failure = exc
+            self._finish("failed", self._exception_code(exc))
+        finally:
+            if adapter_task is not None and not adapter_task.done():
+                adapter_task.cancel()
+            if cancellation_task is not None and not cancellation_task.done():
+                cancellation_task.cancel()
+            for pending in (adapter_task, cancellation_task):
+                if pending is not None:
+                    with suppress(asyncio.CancelledError, Exception):
+                        await pending
+            if self.terminal_result is None:
+                self._finish("failed", ErrorCode.PERMANENT)
+            with suppress(Exception):
+                await self._persist_terminal()
+
+        execution_state.terminal_result = self.terminal_result
+        execution_state.status = (
+            self.terminal_result.status if self.terminal_result is not None else "failed"
+        )
+        execution_state.budget = self.budget.snapshot()
+        return execution_state
+
+    @staticmethod
+    def _result_content(result: Any) -> str | None:
+        if isinstance(result, str):
+            return result
+        if isinstance(result, dict):
+            for key in ("content", "text", "answer"):
+                value = result.get(key)
+                if isinstance(value, str):
+                    return value
+        return None
+
     async def _synthesize(
         self,
         task: AgentTask,
@@ -299,6 +421,9 @@ class RunCoordinator:
                     messages=context.get("messages") or task.metadata.get("messages", []),
                     results=execution_results,
                     model_calls_used=synthesis_used + 1,
+                    cancellation=self.cancellation,
+                    deadline=self.budget.remaining_seconds(),
+                    budget=self.budget.snapshot(),
                 )
                 gateway_result = getattr(self.model_gateway, "last_result", None)
                 self.budget.record_model_usage(
@@ -484,17 +609,36 @@ class RunCoordinator:
                 model=str(context.get("model", "")),
             )
         )
+        self._existing_run_status = run.status if run.status != "queued" else None
         if run.status == "queued":
             await self.run_store.transition(run_id, "running")
-        self._persist_sequence = 1
-        await self.event_store.append(
-            RunEvent(
-                run_id=run_id,
-                sequence=self._persist_sequence,
-                event_type="run.started",
-                payload={"model": str(context.get("model", ""))},
+            self._persist_sequence = 1
+            await self.event_store.append(
+                RunEvent(
+                    run_id=run_id,
+                    sequence=self._persist_sequence,
+                    event_type="run.started",
+                    payload={"model": str(context.get("model", ""))},
+                )
             )
-        )
+            return
+        list_after = getattr(self.event_store, "list_after", None)
+        if callable(list_after):
+            existing_events = await list_after(run_id, after_sequence=0)
+            self._persist_sequence = max(
+                (int(event.sequence) for event in existing_events),
+                default=0,
+            )
+
+    def _finish_from_existing_run(self) -> None:
+        if self._existing_run_status == "cancelled":
+            self._finish("cancelled", ErrorCode.CANCELLED)
+        elif self._existing_run_status == "succeeded":
+            self._finish("completed", None)
+        elif self._existing_run_status == "failed":
+            self._finish("failed", ErrorCode.PERMANENT)
+        elif self._existing_run_status == "abandoned":
+            self._finish("failed", ErrorCode.PERMANENT)
 
     async def _persist_event(self, event: RunEvent) -> None:
         if self.event_store is None or self.run_store is None:
@@ -582,11 +726,16 @@ class RunCoordinator:
                     },
                 )
             )
-            await self.run_store.transition(
-                result.run_id,
-                status,
-                error_code=result.error_code.value if result.error_code else None,
-            )
+            try:
+                await self.run_store.transition(
+                    result.run_id,
+                    status,
+                    error_code=result.error_code.value if result.error_code else None,
+                )
+            except InvalidRunTransition:
+                current = await self.run_store.get(result.run_id)
+                if current is None or current.status != status:
+                    raise
         except Exception as exc:
             self.persistence_failure = exc
             if result.status != "failed" or result.error_code != ErrorCode.PERMANENT:

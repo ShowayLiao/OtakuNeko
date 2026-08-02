@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime, timezone
 from uuid import uuid4
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import httpx
@@ -20,10 +20,20 @@ from app.agents.recommendation_agent import RecommendationAgent
 from app.agents.router import AgentRouter
 from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.anime import AnimeCapability
+from app.capabilities.factory import build_capability_registry
 from app.harness.runtime import AgentRuntime
-from app.harness.budget import CancellationToken
+from app.harness.budget import CancellationToken, RunBudget
+from app.harness.cancellation_store import cancellation_store
 from app.harness.checkpoint import SqliteCheckpointStore
-from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
+from app.harness.contracts import ErrorCode, ExecutionContext, RunEvent
+from app.harness.decision_parser import DecisionParseError, DecisionParser
+from app.harness.dispatcher import Dispatcher
+from app.harness.model_gateway import (
+    OpenAICompatibleModelAdapter,
+    OpenAIModelGateway,
+    safe_provider_detail,
+)
+from app.harness.model_types import ModelCallResult
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import InvalidRunTransition, RunStore
 from app.harness.routing_adapter import FeatureFlagRoutingAdapter
@@ -41,7 +51,12 @@ from app.agents.thread_scope import (
     user_thread_prefix,
 )
 from app.agents.provider_endpoint import (
+    ProviderEndpointError,
+    ProviderEndpointPolicy,
+    create_provider_http_client,
     is_local_endpoint,
+    make_provider_endpoint_policy,
+    parse_provider_allowlists,
     validate_provider_endpoint,
 )
 from app.core.config import settings
@@ -56,10 +71,26 @@ _store = InMemoryStore()
 
 _TERMINAL_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
 _MAX_REPLAY_CURSOR = 1_000_000_000
+_MODEL_CHECK_ATTEMPTS: dict[int, list[float]] = {}
 
 
 def _interactive_run_store_enabled() -> bool:
     return os.getenv("INTERACTIVE_RUN_STORE_ENABLED", "true").lower() not in {
+        "0",
+        "false",
+        "off",
+        "no",
+    }
+
+
+def _primary_decision_loop_enabled() -> bool:
+    """Enable the Runtime-owned chat loop by default.
+
+    An explicit false value is retained as the narrowly-scoped rollback to the
+    previously verified compatibility adapter.  It is never the production
+    default and does not grant legacy code a new execution capability.
+    """
+    return os.getenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "true").lower() not in {
         "0",
         "false",
         "off",
@@ -131,17 +162,30 @@ async def _recover_stale_run(run, db: AsyncSession):
     production shared-worker coordination remains an adapter concern.
     """
     lease_seconds = settings.CHECKPOINT_LEASE_SECONDS
+    lease_recovered = False
+    if run.status == "running" and _checkpoint_adapter_enabled():
+        checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
+        try:
+            lease_recovered = await checkpoint_store.recover_expired(
+                run.run_id,
+                "checkpoint lease expired during service recovery",
+            )
+        finally:
+            await checkpoint_store.close()
     started_at = run.started_at
     if (
         run.status != "running"
-        or started_at is None
+        or (started_at is None and not lease_recovered)
         or lease_seconds <= 0
     ):
         return run
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=timezone.utc)
-    age_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
-    if age_seconds <= lease_seconds:
+    if lease_recovered:
+        age_seconds = lease_seconds + 1
+    else:
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=timezone.utc)
+        age_seconds = (datetime.now(timezone.utc) - started_at).total_seconds()
+    if not lease_recovered and age_seconds <= lease_seconds:
         return run
 
     run_store = RunStore(db)
@@ -158,10 +202,13 @@ async def _recover_stale_run(run, db: AsyncSession):
         return recovered
     if _checkpoint_adapter_enabled():
         checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
-        await checkpoint_store.mark_abandoned(
-            run.run_id,
-            "checkpoint lease expired during service recovery",
-        )
+        try:
+            await checkpoint_store.mark_abandoned(
+                run.run_id,
+                "checkpoint lease expired during service recovery",
+            )
+        finally:
+            await checkpoint_store.close()
     return recovered
 
 
@@ -223,6 +270,55 @@ async def get_run_events_projection(
     }
 
 
+@router.post("/runs/{run_id}/cancel")
+async def cancel_run(
+    run_id: str,
+    thread_id: Optional[str] = Query(None),
+    user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
+):
+    """Request owner-scoped cancellation and persist the cancellation fact."""
+    run = await _get_scoped_run(run_id, user, thread_id, db)
+    if run.status in _TERMINAL_RUN_STATUSES or run.status == "abandoned":
+        return {
+            "run_id": run.run_id,
+            "status": run.status,
+            "error_code": run.error_code,
+            "idempotent": True,
+        }
+    if run.status not in {"queued", "running", "paused"}:
+        raise HTTPException(status_code=409, detail="Run is not cancellable")
+
+    if _checkpoint_adapter_enabled():
+        checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
+        try:
+            await checkpoint_store.request_cancellation(
+                run_id,
+                requester=f"user:{user.id}",
+                reason="client requested cancellation",
+            )
+        finally:
+            await checkpoint_store.close()
+    cancellation_store.cancel(run_id)
+    event_store = EventStore(db)
+    sequence = await _last_event_sequence(run_id, db) + 1
+    await event_store.append(
+        RunEvent(
+            run_id=run_id,
+            sequence=sequence,
+            event_type="run.cancel_requested",
+            payload={},
+        )
+    )
+    return {
+        "run_id": run.run_id,
+        "status": run.status,
+        "error_code": run.error_code,
+        "cancellation_requested": True,
+        "last_sequence": await _last_event_sequence(run_id, db),
+    }
+
+
 def _resolve_chat_thread(user: Optional[UserRead], requested_id: Optional[str]):
     """Resolve a public thread id to an owner-scoped checkpointer key."""
     if user is None:
@@ -244,18 +340,65 @@ def _resolve_user_thread(user: UserRead, requested_id: str):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+def _provider_endpoint_policy() -> ProviderEndpointPolicy:
+    try:
+        allowed_hosts, allowed_ports = parse_provider_allowlists(
+            settings.PROVIDER_ALLOWED_HOSTS,
+            settings.PROVIDER_ALLOWED_PORTS,
+        )
+        return make_provider_endpoint_policy(
+            deploy_mode=settings.DEPLOY_MODE,
+            resolve_dns=settings.PROVIDER_RESOLVE_DNS,
+            allowed_hosts=allowed_hosts,
+            allowed_ports=allowed_ports,
+        )
+    except ProviderEndpointError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Provider endpoint policy is not configured",
+        ) from exc
+
+
 def _resolve_provider_base_url(value: Optional[str]) -> str:
+    policy = _provider_endpoint_policy()
     try:
         base_url = validate_provider_endpoint(
             value or "https://api.openai.com/v1",
-            allow_local=settings.DEPLOY_MODE == "local",
+            allow_local=policy.allow_local,
+            resolve_dns=policy.resolve_dns,
+            allowed_hosts=policy.allowed_hosts or None,
+            allowed_ports=policy.allowed_ports or None,
+            allowed_schemes=policy.allowed_schemes,
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ProviderEndpointError as exc:
+        detail = (
+            "Provider endpoint DNS resolution failed"
+            if exc.provider_error_code == "dns"
+            else "Provider endpoint is not allowed"
+        )
+        raise HTTPException(status_code=422, detail=detail) from exc
     assert base_url is not None
     if base_url.rstrip("/") == "https://api.deepseek.com/v1":
         return "https://api.deepseek.com"
     return base_url
+
+
+def _consume_model_check_rate_limit(user: UserRead) -> bool:
+    """Apply a bounded per-owner check budget before opening a provider socket."""
+    limit = max(1, int(settings.MODEL_CHECK_RATE_LIMIT))
+    window = max(1, int(settings.MODEL_CHECK_RATE_WINDOW_SECONDS))
+    now = time.monotonic()
+    attempts = [
+        timestamp
+        for timestamp in _MODEL_CHECK_ATTEMPTS.get(user.id, [])
+        if now - timestamp < window
+    ]
+    if len(attempts) >= limit:
+        _MODEL_CHECK_ATTEMPTS[user.id] = attempts
+        return False
+    attempts.append(now)
+    _MODEL_CHECK_ATTEMPTS[user.id] = attempts
+    return True
 
 
 @router.post("/chat")
@@ -289,54 +432,143 @@ async def chat_endpoint(
 
     thread_scope = _resolve_chat_thread(user, request.thread_id)
     run_id = uuid4().hex
+    goal = next(
+        (
+            message.get("content", "")
+            for message in reversed(formatted_messages)
+            if message.get("role") == "user"
+        ),
+        "",
+    )
     durable_run = user is not None and _interactive_run_store_enabled()
     cancellation = CancellationToken()
+    cancellation_store.register(run_id, cancellation)
 
     async def stream_generator():
         stream_started = time.perf_counter()
         sequence = 0
+        primary_decision_loop = _primary_decision_loop_enabled()
         workflow: Optional[ChatWorkflow] = None
+        checkpointer = None
         checkpoint_store: Optional[SqliteCheckpointStore] = None
+        dispatcher: Optional[Dispatcher] = None
+        model_gateway: Optional[OpenAIModelGateway] = None
         try:
-            # Send a first SSE frame before workflow setup or the model request.
-            # This flushes the response immediately and prevents the client from
-            # looking frozen while an upstream provider is connecting.
-            initial_data = {"type": "thinking_start"}
-            if durable_run:
-                initial_data["run_id"] = run_id
-            yield format_sse(
-                event="thinking_start",
-                data=initial_data,
-                event_id=1 if durable_run else None,
-            )
-            workflow = ChatWorkflow(
-                api_key=api_key,
-                base_url=base_url,
-                store=_store,
-                checkpoint_path=settings.CHECKPOINT_DB_PATH,
+            # The legacy adapter needs an early flush before workflow setup.
+            # The Runtime-owned Decision Loop emits its own canonical
+            # ``thinking_start`` event, so do not duplicate it here.
+            if not primary_decision_loop:
+                initial_data = {"type": "thinking_start"}
+                if durable_run:
+                    initial_data["run_id"] = run_id
+                yield format_sse(
+                    event="thinking_start",
+                    data=initial_data,
+                    event_id=1 if durable_run else None,
+                )
+            capability_registry = build_capability_registry()
+            dispatcher = Dispatcher(capability_registry)
+            execution_context = ExecutionContext(
+                principal_id=user.id if user is not None else None,
                 run_id=run_id,
-                thread_id=thread_scope.internal_id,
-                cancellation=cancellation,
+                trace_id=run_id,
+                capability_allowlist=frozenset(
+                    definition.public_name
+                    for definition in capability_registry.allowed_public_definitions()
+                ),
             )
+            decision_parser = DecisionParser()
 
-            await workflow._ensure_checkpointer()
-            checkpointer = workflow.checkpointer
+            if not primary_decision_loop:
+                async def dispatch_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
+                    try:
+                        decision = decision_parser.parse(
+                            ModelCallResult(
+                                provider="langgraph",
+                                model=request.model,
+                                operation="decision",
+                                status="completed",
+                                decision=proposal,
+                            ),
+                            expected_run_id=run_id,
+                        )
+                        invocation = await dispatcher.dispatch(
+                            decision,
+                            execution_context,
+                            cancellation=cancellation,
+                        )
+                        return {
+                            "success": invocation.status == "succeeded",
+                            "decision": proposal,
+                            "invocation_id": invocation.invocation_id,
+                            "status": invocation.status,
+                            "output": invocation.output,
+                            "error_type": (
+                                invocation.error_code.value
+                                if isinstance(invocation.error_code, ErrorCode)
+                                else invocation.error_code
+                            ),
+                        }
+                    except DecisionParseError as exc:
+                        return {
+                            "success": False,
+                            "decision": proposal,
+                            "status": "denied",
+                            "error_type": exc.error_code.value,
+                            "message": "Model decision was invalid",
+                        }
+
+                workflow = ChatWorkflow(
+                    api_key=api_key,
+                    base_url=base_url,
+                    store=_store,
+                    checkpoint_path=settings.CHECKPOINT_DB_PATH,
+                    run_id=run_id,
+                    thread_id=thread_scope.internal_id,
+                    cancellation=cancellation,
+                    proposal_handler=dispatch_proposal,
+                )
+                await workflow._ensure_checkpointer()
+                checkpointer = workflow.checkpointer
 
             memory = None
+            memory_context = None
             collections: list = []
+            model_gateway = OpenAIModelGateway(
+                api_key=api_key,
+                base_url=base_url,
+                model=request.model,
+                temperature=request.temperature,
+                endpoint_policy=_provider_endpoint_policy(),
+                deepseek_options=(
+                    request.deepseek_options.model_dump()
+                    if request.deepseek_options
+                    else None
+                ),
+            )
             if user is not None:
                 memory = MemoryServiceImpl(
                     repository=SqlMemoryRepository(db),
                     extractor=LLMFactExtractor(
                         api_key=api_key,
                         base_url=base_url,
+                        model_gateway=model_gateway,
                     ),
                     api_key=api_key,
                     base_url=base_url,
                     checkpointer=checkpointer,
                     default_user_id=user.id,
+                    run_id=run_id,
                 )
-                workflow.memory = memory
+                if workflow is not None:
+                    workflow.memory = memory
+                if primary_decision_loop:
+                    memory_context = await memory.retrieve_context(
+                        thread_scope.internal_id,
+                        goal,
+                        user_id=user.id,
+                        run_id=run_id,
+                    )
                 if settings.ENABLE_MULTI_AGENT_ROUTING:
                     try:
                         collection_list = await get_user_collections(
@@ -347,53 +579,47 @@ async def chat_endpoint(
                     except Exception:
                         collections = []
 
-            fallback_adapter = LangGraphAdapter(workflow)
-            registry = AgentRegistry()
-            registry.register(
-                "recommendation",
-                RecommendationAgent(
-                    RecommendationCapability(),
-                    anime_capability=AnimeCapability(),
-                    memory_service=memory,
-                ),
-            )
-            adapter = FeatureFlagRoutingAdapter(
-                fallback_adapter,
-                AgentRouter(registry),
-                enabled=settings.ENABLE_MULTI_AGENT_ROUTING,
-            )
+            if workflow is not None:
+                fallback_adapter = LangGraphAdapter(workflow)
+                registry = AgentRegistry()
+                registry.register(
+                    "recommendation",
+                    RecommendationAgent(
+                        RecommendationCapability(),
+                        anime_capability=AnimeCapability(),
+                        memory_service=memory,
+                    ),
+                )
+                adapter = FeatureFlagRoutingAdapter(
+                    fallback_adapter,
+                    AgentRouter(registry),
+                    # The compatibility route remains explicitly disabled;
+                    # enabled specialist execution fails closed until it has
+                    # a Dispatcher-backed subagent contract.
+                    enabled=False,
+                )
+            else:
+                # stream_decision is Runtime-owned and never consults the
+                # compatibility adapter.  Keep the constructor explicit for
+                # tracing while avoiding any LangGraph graph compilation.
+                adapter = object()
             checkpoint_store = (
                 SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
                 if durable_run and _checkpoint_adapter_enabled()
                 else None
             )
-            model_gateway = OpenAIModelGateway(
-                api_key=api_key,
-                base_url=base_url,
-                model=request.model,
-                temperature=request.temperature,
-                deepseek_options=(
-                    request.deepseek_options.model_dump()
-                    if request.deepseek_options
-                    else None
-                ),
-            )
+            run_budget = RunBudget()
             runtime = AgentRuntime(
                 adapter,
                 checkpoint_store=checkpoint_store,
                 trace_store=SqlTraceStore(db),
                 model_gateway=model_gateway,
+                dispatcher=dispatcher,
                 run_store=RunStore(db) if durable_run else None,
                 event_store=EventStore(db) if durable_run else None,
-            )
-
-            goal = next(
-                (
-                    message.get("content", "")
-                    for message in reversed(formatted_messages)
-                    if message.get("role") == "user"
-                ),
-                "",
+                memory_context=memory_context,
+                memory_service=memory,
+                checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
             )
             task = AgentTask(
                 user_id=user.id if user is not None else 0,
@@ -406,17 +632,38 @@ async def chat_endpoint(
                 },
             )
 
-            async for chunk_data in runtime.stream(
-                task,
-                model=request.model,
-                messages=formatted_messages,
-                temperature=request.temperature,
-                thread_id=thread_scope.internal_id,
-                speak_prompt=speak_prompt,
-                deepseek_options=request.deepseek_options.model_dump() if request.deepseek_options else None,
-                cancellation=cancellation,
-            ):
+            if primary_decision_loop:
+                stream_iterator = runtime.stream_decision(
+                    task,
+                    context=execution_context,
+                    budget=run_budget,
+                    cancellation=cancellation,
+                )
+            else:
+                stream_iterator = runtime.stream(
+                    task,
+                    model=request.model,
+                    messages=formatted_messages,
+                    temperature=request.temperature,
+                    thread_id=thread_scope.internal_id,
+                    speak_prompt=speak_prompt,
+                    deepseek_options=request.deepseek_options.model_dump() if request.deepseek_options else None,
+                    budget=run_budget,
+                    cancellation=cancellation,
+                )
+
+            async for chunk_data in stream_iterator:
                 event_type = chunk_data.get("type", "message")
+                if durable_run and primary_decision_loop:
+                    # The primary Runtime has already committed this exact
+                    # event to EventStore.  SSE is only its safe projection;
+                    # do not add diagnostics or allocate a second sequence.
+                    yield format_sse(
+                        event=event_type,
+                        data=chunk_data,
+                        event_id=chunk_data.get("sequence"),
+                    )
+                    continue
                 sequence += 1
                 durable_sequence = (
                     await _last_event_sequence(run_id, db)
@@ -440,7 +687,7 @@ async def chat_endpoint(
                     event_id=durable_sequence if durable_run else None,
                 )
 
-            if durable_run:
+            if durable_run and not primary_decision_loop:
                 stored_run = await RunStore(db).get(run_id, user_id=user.id)
                 if stored_run is not None and stored_run.status in _TERMINAL_RUN_STATUSES:
                     last_sequence = await _last_event_sequence(run_id, db)
@@ -456,19 +703,22 @@ async def chat_endpoint(
                         event_id=last_sequence or None,
                     )
 
-            if memory is not None and user is not None:
-                await memory.extract_and_store_facts(
-                    thread_scope.internal_id,
-                    user_id=user.id,
-                )
-
-        except Exception as e:
-            yield format_sse(event="error", data={"detail": str(e)})
+        except Exception:
+            yield format_sse(
+                event="error",
+                data={
+                    "error_code": "internal_error",
+                    "detail": "Agent run failed",
+                },
+            )
         finally:
+            cancellation_store.unregister(run_id, cancellation)
             if workflow is not None:
                 await workflow.close()
             if checkpoint_store is not None:
                 await checkpoint_store.close()
+            if model_gateway is not None:
+                await model_gateway.close()
 
     return StreamingResponse(
         stream_generator(),
@@ -585,6 +835,13 @@ async def resume_chat(
     db: AsyncSession = Depends(get_session),
 ):
     thread_scope = _resolve_user_thread(user, thread_id)
+
+    if _primary_decision_loop_enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="Runtime-owned approval resume is not available through the legacy Workflow adapter",
+        )
+
     api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
     base_url = _resolve_provider_base_url(x_base_url)
 
@@ -653,8 +910,14 @@ async def resume_chat(
                     if node_name in ("speak", None):
                         yield format_sse(event="message_end", data={"type": "message_end"})
 
-        except Exception as e:
-            yield format_sse(event="error", data={"detail": str(e)})
+        except Exception:
+            yield format_sse(
+                event="error",
+                data={
+                    "error_code": "internal_error",
+                    "detail": "Agent run failed",
+                },
+            )
         finally:
             await workflow.close()
 
@@ -696,25 +959,51 @@ async def list_chat_threads(
 async def check_connection(
     provider: str,
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
-    x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint")
+    x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
+    user: UserRead = Depends(get_current_user),
 ):
+    if not _consume_model_check_rate_limit(user):
+        raise HTTPException(
+            status_code=429,
+            detail="Provider check rate limit reached",
+            headers={"Retry-After": str(settings.MODEL_CHECK_RATE_WINDOW_SECONDS)},
+        )
+    if provider not in {"ollama", "openai-compatible", "deepseek"}:
+        raise HTTPException(status_code=422, detail="Unsupported provider")
+
     try:
         base_url = _resolve_provider_base_url(x_base_url)
+        policy = _provider_endpoint_policy()
         if provider == "ollama":
-            if not base_url:
-                raise HTTPException(status_code=422, detail="Ollama endpoint is required")
-            async with httpx.AsyncClient() as client:
+            async with create_provider_http_client(policy, timeout=5.0) as client:
                 resp = await client.get(f"{base_url}/api/tags", timeout=5.0)
                 if resp.status_code == 200:
                     return {"status": "ok"}
+                if resp.status_code in {401, 403}:
+                    detail = "Provider authentication failed"
+                elif resp.status_code == 429:
+                    detail = "Provider rate limit reached"
+                elif resp.status_code >= 500:
+                    detail = "Provider temporarily unavailable"
+                else:
+                    detail = "Provider connection failed"
+                raise HTTPException(status_code=400, detail=detail)
 
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(api_key=x_api_key, base_url=base_url)
-        result = await OpenAICompatibleModelAdapter(
-            client,
-            provider="openai-compatible",
-        ).check_connection()
+        client = AsyncOpenAI(
+            api_key=x_api_key or settings.OPENAI_API_KEY or "local",
+            base_url=base_url,
+            timeout=5.0,
+            http_client=create_provider_http_client(policy, timeout=5.0),
+        )
+        try:
+            result = await OpenAICompatibleModelAdapter(
+                client,
+                provider=provider,
+            ).check_connection()
+        finally:
+            await client.close()
         if result.status == "completed":
             return {"status": "ok", "message": "Connection successful"}
         detail = {
@@ -724,10 +1013,22 @@ async def check_connection(
             "invalid_request": "Provider request was invalid",
             "transient": "Provider temporarily unavailable",
             "cancelled": "Provider request was cancelled",
+            "dns": "Provider DNS resolution failed",
+            "ssrf": "Provider endpoint is not allowed",
         }.get(result.error_code, "Provider connection failed")
         raise HTTPException(status_code=400, detail=detail)
 
     except HTTPException:
         raise
-    except Exception:
-        raise HTTPException(status_code=400, detail="Provider connection failed")
+    except ProviderEndpointError as exc:
+        detail = (
+            "Provider endpoint DNS resolution failed"
+            if exc.provider_error_code == "dns"
+            else "Provider endpoint is not allowed"
+        )
+        raise HTTPException(status_code=422, detail=detail) from exc
+    except (httpx.TimeoutException, TimeoutError):
+        raise HTTPException(status_code=400, detail="Provider request timed out")
+    except Exception as exc:
+        # Do not return raw provider/client exception details to the caller.
+        raise HTTPException(status_code=400, detail=safe_provider_detail(exc)) from exc

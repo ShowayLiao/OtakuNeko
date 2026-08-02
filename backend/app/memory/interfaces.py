@@ -270,6 +270,19 @@ class MemoryExtractor(ABC):
         ``{"content": str, "importance": float}``.
         """
 
+    async def extract_for_run(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        run_id: str | None = None,
+        trace_id: str | None = None,
+        budget: Any = None,
+        cancellation: Any = None,
+        call_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Run-aware extraction hook with a backward-compatible default."""
+        return await self.extract(messages)
+
 
 class MemoryService(ABC):
     """Stable interface for memory operations.
@@ -305,11 +318,23 @@ class MemoryService(ABC):
         top_k: int = 5,
         user_id: int | None = None,
         kind: str | None = None,
+        run_id: str | None = None,
     ) -> MemoryContext:
         """Retrieve relevant memory context for the current query."""
 
     @abstractmethod
-    async def extract_and_store_facts(self, thread_id: str, user_id: int | None = None) -> int:
+    async def extract_and_store_facts(
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        *,
+        run_id: str | None = None,
+        budget: Any = None,
+        cancellation: Any = None,
+        trace_id: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        call_id: str | None = None,
+    ) -> int:
         """Extract facts from recent conversation and persist them.
 
         Returns the number of new facts stored.

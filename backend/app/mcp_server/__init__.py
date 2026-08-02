@@ -19,6 +19,14 @@ from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
 from app.core.logging import get_logger
+from app.harness.capability_adapter import CapabilityAdapter
+from app.harness.authority import strip_runtime_owned_fields
+from app.harness.authority import reject_runtime_owned_fields
+from app.harness.contracts import AgentDecision, ExecutionContext
+from app.harness.dispatcher import Dispatcher
+from app.harness.persistence.idempotency import InMemoryIdempotencyStore
+from app.harness.policy import Approval, PolicyEngine
+from app.harness.normalizer import SchemaContractError, validate_input
 from app.mcp_server.context import MCPContext
 from app.mcp_server.policy import Policy
 from app.trace import TraceEventType
@@ -117,15 +125,7 @@ def _validate_input_schema(schema: dict[str, Any], public_name: str) -> None:
 
 
 def _public_input_schema(descriptor: ActionDescriptor) -> dict[str, Any]:
-    schema = deepcopy(descriptor.input_schema)
-    if descriptor.requires_auth:
-        properties = schema.get("properties", {})
-        if isinstance(properties, dict):
-            properties.pop("user_id", None)
-        required = schema.get("required", [])
-        if isinstance(required, list):
-            schema["required"] = [name for name in required if name != "user_id"]
-    return schema
+    return strip_runtime_owned_fields(deepcopy(descriptor.input_schema))
 
 
 def _validate_exposure_map(
@@ -258,6 +258,7 @@ class MCPServer:
     ) -> None:
         self._registry = registry
         self._exposure = exposure or ExposureMap({})
+        self._adapter_idempotency_store = InMemoryIdempotencyStore()
         _validate_exposure_map(registry, self._exposure)
         self._completed_writes: dict[
             tuple[int, str, str], tuple[str, dict[str, Any], float]
@@ -337,6 +338,15 @@ class MCPServer:
         validation_error = _argument_error(arguments, public_schema, "arguments")
         if validation_error:
             return self._denied(tool_name, validation_error, "invalid_args")
+        try:
+            reject_runtime_owned_fields(arguments, label="MCP arguments")
+            validate_input(arguments, action)
+        except (SchemaContractError, ValueError):
+            return self._denied(
+                tool_name,
+                "Tool arguments did not match the declared input contract",
+                "invalid_args",
+            )
 
         public_arguments = dict(arguments)
         public_arguments.pop("user_id", None)
@@ -344,13 +354,9 @@ class MCPServer:
             return await self._call_idempotent(
                 capability, action.name, tool_name, public_arguments, ctx, pol
             )
-        async with self._dependency_scope(ctx) as dependencies:
-            exec_kwargs = {**public_arguments, **dependencies}
-            if ctx.user_id is not None:
-                exec_kwargs["user_id"] = ctx.user_id
-            return await self._execute(
-                capability, action.name, tool_name, exec_kwargs
-            )
+        return await self._execute(
+            capability, action.name, tool_name, public_arguments, ctx, pol
+        )
 
     @staticmethod
     @asynccontextmanager
@@ -396,6 +402,8 @@ class MCPServer:
         action_name: str,
         tool_name: str,
         arguments: dict[str, Any],
+        context: MCPContext,
+        policy: Policy,
     ) -> dict[str, Any]:
         async with trace_span(
             TraceEventType.MCP_CALL,
@@ -403,7 +411,82 @@ class MCPServer:
             {"argument_shape": safe_argument_shape(arguments)},
         ) as event:
             try:
-                result = await capability.execute(action_name, **arguments)
+                approval = (
+                    Approval(
+                        approval_id=f"mcp:{context.user_id}:{policy.idempotency_key}",
+                        principal_id=context.user_id,
+                        action=action_name,
+                    )
+                    if policy.allow_side_effects
+                    else None
+                )
+                async with self._dependency_scope(context) as dependencies:
+                    execution_context = ExecutionContext(
+                        principal_id=context.user_id,
+                        run_id=f"mcp:{tool_name}",
+                        trace_id=f"mcp:{tool_name}",
+                        capability_allowlist=frozenset(
+                            {capability.name, action_name, tool_name}
+                        ),
+                    )
+                    dispatcher = Dispatcher(
+                        self._registry,
+                        policy_engine=PolicyEngine(
+                            allow_side_effects=policy.allow_side_effects
+                        ),
+                        approval=approval,
+                        idempotency_store=self._adapter_idempotency_store,
+                        adapter_factory=lambda target: CapabilityAdapter(
+                            target,
+                            policy_engine=PolicyEngine(
+                                allow_side_effects=policy.allow_side_effects
+                            ),
+                            approval=approval,
+                            idempotency_store=self._adapter_idempotency_store,
+                            trusted_args=dependencies,
+                        ),
+                    )
+                    decision_id = (
+                        f"mcp:{tool_name}:{policy.idempotency_key or 'read'}"
+                    )
+                    decision = AgentDecision(
+                        decision_id=decision_id,
+                        run_id=execution_context.run_id,
+                        action="invoke",
+                        capability=next(
+                            (
+                                item.public_name or item.name
+                                for item in capability.actions()
+                                if item.name == action_name
+                            ),
+                            action_name,
+                        ),
+                        capability_version=next(
+                            (
+                                item.version
+                                for item in capability.actions()
+                                if item.name == action_name
+                            ),
+                            "v1",
+                        ),
+                        arguments=arguments,
+                    )
+                    invocation = await dispatcher.dispatch(
+                        decision,
+                        execution_context,
+                        idempotency_key=policy.idempotency_key,
+                    )
+                    # MCP v1 keeps its structured ``data`` envelope as an
+                    # explicit compatibility projection.  It is derived from
+                    # the Dispatcher's normalized model projection and never
+                    # exposes raw provider/capability output.
+                    result = {
+                        "success": invocation.status == "succeeded",
+                        "data": invocation.model_output.get("safe_output", {}),
+                    }
+                    if invocation.error_code is not None:
+                        result["error_type"] = str(invocation.error_code)
+                        result["error"] = "Tool execution failed"
             except asyncio.TimeoutError:
                 if event is not None:
                     event.status = "timeout"
@@ -480,14 +563,18 @@ class MCPServer:
             return deepcopy(await asyncio.shield(future))
 
         try:
-            async with self._dependency_scope(context) as dependencies:
-                exec_kwargs = {**arguments, **dependencies}
-                if context.user_id is not None:
-                    exec_kwargs["user_id"] = context.user_id
-                exec_kwargs["idempotency_key"] = policy.idempotency_key
-                result = await self._execute(
-                    capability, action_name, tool_name, exec_kwargs
-                )
+            execution_arguments = {
+                **arguments,
+                "idempotency_key": policy.idempotency_key,
+            }
+            result = await self._execute(
+                capability,
+                action_name,
+                tool_name,
+                execution_arguments,
+                context,
+                policy,
+            )
         except BaseException:
             async with self._write_lock:
                 current = self._inflight_writes.get(key)

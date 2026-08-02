@@ -82,6 +82,7 @@ async def test_delete_user_memory_removes_only_authenticated_users_rows(
 async def test_authenticated_chat_uses_request_scoped_sql_repository(
     monkeypatch, db_session
 ):
+    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
     _CapturingMemoryService.instances.clear()
     monkeypatch.setattr(agent_api, "ChatWorkflow", _FakeWorkflow)
     monkeypatch.setattr(
@@ -113,6 +114,7 @@ async def test_authenticated_chat_uses_request_scoped_sql_repository(
 async def test_anonymous_chat_does_not_construct_durable_memory(
     monkeypatch, db_session
 ):
+    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
     _CapturingMemoryService.instances.clear()
     monkeypatch.setattr(agent_api, "ChatWorkflow", _FakeWorkflow)
     monkeypatch.setattr(

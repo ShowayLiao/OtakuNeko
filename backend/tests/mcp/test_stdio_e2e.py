@@ -125,7 +125,7 @@ async def test_tools_call_anime_search():
         assert isinstance(content["success"], bool)
         assert resp["result"]["isError"] is (content["success"] is False)
         if content["success"]:
-            assert "results" in content
+            assert "results" in content["data"]
         else:
             assert "error_type" in content
 

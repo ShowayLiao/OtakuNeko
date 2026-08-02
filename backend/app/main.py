@@ -10,17 +10,12 @@ from app.harness.scheduler.repository import SqlTaskRepository
 from app.harness.scheduler import Scheduler
 from app.harness.scheduler.execution import handle_task_def
 from app.db.database import AsyncSessionLocal
-from app.agents.agent_registry import AgentRegistry
-from app.agents.router import AgentRouter
-from app.agents.recommendation_agent import RecommendationAgent
-from app.capabilities.recommendation import RecommendationCapability
-from app.harness.runtime import AgentRuntime
-from app.trace.store import InMemoryTraceStore
+from app.harness.checkpoint import validate_checkpoint_configuration
+from app.agents.provider_endpoint import (
+    parse_provider_allowlists,
+    validate_provider_configuration,
+)
 
-
-class _ScheduledAdapter:
-    async def run(self, state):
-        return {"status": "completed", "task_id": state.task.task_id}
 
 # 缓存相关导入
 from fastapi_cache import FastAPICache  # noqa: E402
@@ -39,21 +34,36 @@ async def lifespan(app: FastAPI):
     # 1. 数据库初始化
     # 如果是本地 SQLite，这一步会自动生成 .db 文件并建表
     # Never log credentials embedded in a database URL.
-    logger.info("Initializing database connection")
-    await init_db()
-    logger.info("Database initialized successfully")
+    if settings.DEPLOY_MODE == "local":
+        logger.info("Initializing local database schema")
+        await init_db()
+        logger.info("Local database initialized successfully")
+    else:
+        logger.info("Cloud database schema is managed by Alembic before startup")
+
+    validate_checkpoint_configuration(
+        deploy_mode=settings.DEPLOY_MODE,
+        adapter=settings.HARNESS_CHECKPOINT_ADAPTER,
+        single_worker=settings.HARNESS_CHECKPOINT_SINGLE_WORKER,
+        worker_count=settings.HARNESS_WORKER_COUNT,
+    )
+    allowed_hosts, allowed_ports = parse_provider_allowlists(
+        settings.PROVIDER_ALLOWED_HOSTS,
+        settings.PROVIDER_ALLOWED_PORTS,
+    )
+    validate_provider_configuration(
+        deploy_mode=settings.DEPLOY_MODE,
+        resolve_dns=settings.PROVIDER_RESOLVE_DNS,
+        allowed_hosts=allowed_hosts,
+        allowed_ports=allowed_ports,
+    )
     app.state.proactive_repository = SqlTaskRepository(AsyncSessionLocal)
     app.state.proactive_scheduler = None
     if settings.ENABLE_PROACTIVE_SCHEDULER:
-        # Wiring is explicit and isolated; deployments provide claim/handler
-        # dependencies without changing the interactive API path.
-        registry = AgentRegistry()
-        registry.register("recommendation", RecommendationAgent(RecommendationCapability()))
-        app.state.proactive_router = AgentRouter(registry)
-        app.state.proactive_trace_store = InMemoryTraceStore()
-        app.state.proactive_runtime = AgentRuntime(
-            _ScheduledAdapter(), trace_store=app.state.proactive_trace_store
-        )
+        # Scheduler startup is intentionally fail-closed until a real
+        # dispatcher-backed Runtime is injected by the deployment.
+        app.state.proactive_router = None
+        app.state.proactive_runtime = None
 
         async def scheduled_handler(task_def, run):
             return await handle_task_def(

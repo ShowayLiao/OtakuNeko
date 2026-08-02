@@ -1,5 +1,5 @@
 from typing import List, Optional, Any, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from enum import StrEnum
 
 
@@ -54,7 +54,7 @@ class DeepSeekOptions(BaseModel):
 
 class ChatRequest(BaseModel):
     model: str
-    messages: List[Message]
+    messages: List[Message] = Field(..., min_length=1)
     temperature: float = 0.6
     prompt_config: Optional[PromptConfig] = None
     thread_id: Optional[str] = None

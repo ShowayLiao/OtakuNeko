@@ -7,6 +7,7 @@ from app.memory.retrievers.bm25_retriever import BM25Retriever
 from app.memory.retrievers.vector_retriever import VectorRetriever
 from app.memory.retrievers.hybrid_retriever import HybridRetriever
 from app.core.logging import get_logger
+from app.harness.checkpoint import run_checkpoint_config
 
 if TYPE_CHECKING:
     from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
@@ -26,11 +27,13 @@ class MemoryManager:
                  checkpointer: Optional["AsyncSqliteSaver"] = None,
                  store=None,
                  max_facts: int = 500,
-                 fact_model: str = "gpt-3.5-turbo"):
+                 fact_model: str = "gpt-3.5-turbo",
+                 run_id: str | None = None):
         self.checkpointer = checkpointer
         self._store = store
         self.max_facts = max_facts
         self.fact_model = fact_model
+        self.run_id = run_id
         self.bm25 = BM25Retriever()
         self.vector = VectorRetriever(api_key, base_url)
         self.hybrid = HybridRetriever(self.bm25, self.vector)
@@ -97,12 +100,13 @@ class MemoryManager:
         return fact_id
 
     async def load_context(self, thread_id: str, current_query: str,
-                           top_k: int = 5) -> MemoryContext:
+                           top_k: int = 5,
+                           run_id: str | None = None) -> MemoryContext:
         short = []
         completed_steps = []
         terminal_output = ""
         if self.checkpointer:
-            config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+            config = run_checkpoint_config(thread_id, run_id or self.run_id)
             cp = await self.checkpointer.aget_tuple(config)
             if cp:
                 short = self._messages_from_checkpoint(cp.checkpoint)
@@ -144,13 +148,17 @@ class MemoryManager:
             summary="\n".join(parts) if parts else "",
         )
 
-    async def extract_and_store_facts(self, thread_id: str) -> int:
+    async def extract_and_store_facts(
+        self,
+        thread_id: str,
+        run_id: str | None = None,
+    ) -> int:
         if not self._store:
             return 0
 
         messages = []
         if self.checkpointer:
-            config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
+            config = run_checkpoint_config(thread_id, run_id or self.run_id)
             cp = await self.checkpointer.aget_tuple(config)
             if cp:
                 messages = self._messages_from_checkpoint(cp.checkpoint)[-20:]

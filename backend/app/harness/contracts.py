@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.harness.authority import reject_runtime_owned_fields
+
 
 CONTRACT_VERSION = "v1"
 
@@ -23,9 +25,10 @@ class ErrorCode(str, Enum):
 
 
 def _reject_model_owned_identity(arguments: dict[str, Any]) -> dict[str, Any]:
-    if "user_id" in arguments or "principal_id" in arguments:
-        raise ValueError("identity fields are injected by the runtime")
-    return arguments
+    try:
+        return reject_runtime_owned_fields(arguments)
+    except ValueError as exc:
+        raise ValueError("authority fields are injected by the runtime") from exc
 
 
 class ContractModel(BaseModel):
@@ -47,6 +50,10 @@ class ExecutionContext(ContractModel):
     run_id: str
     trace_id: str
     capability_allowlist: frozenset[str] = frozenset()
+    tenant_id: int | str | None = None
+    role: str | None = None
+    scope: frozenset[str] = frozenset()
+    thread_id: str | None = None
 
 
 class AgentDecision(ContractModel):
@@ -54,7 +61,9 @@ class AgentDecision(ContractModel):
     run_id: str
     action: Literal["invoke", "respond", "finish"]
     capability: str | None = None
+    capability_version: str | None = None
     arguments: dict[str, Any] = Field(default_factory=dict)
+    content: str | None = None
 
     _identity_guard = field_validator("arguments")(_reject_model_owned_identity)
 
@@ -72,10 +81,23 @@ class InvocationRequest(ContractModel):
 
 class InvocationResult(ContractModel):
     invocation_id: str
-    status: Literal["succeeded", "failed", "denied", "cancelled"]
+    status: Literal["succeeded", "failed", "denied", "cancelled", "timeout"]
     output: dict[str, Any] = Field(default_factory=dict)
-    error_code: ErrorCode | None = None
+    # ``not_configured`` and adapter-specific safe categories are intentionally
+    # represented as strings until the cross-batch error vocabulary is frozen.
+    error_code: ErrorCode | str | None = None
     retryable: bool = False
+    run_id: str | None = None
+    decision_id: str | None = None
+    trace_id: str | None = None
+    sequence: int | None = Field(default=None, ge=1)
+    capability: str | None = None
+    capability_version: str | None = None
+    artifacts: list[dict[str, Any]] = Field(default_factory=list)
+    usage: dict[str, Any] = Field(default_factory=dict)
+    latency_ms: int | None = Field(default=None, ge=0)
+    provenance: dict[str, Any] = Field(default_factory=dict)
+    model_output: dict[str, Any] = Field(default_factory=dict)
 
 
 class RunEvent(ContractModel):

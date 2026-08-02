@@ -23,6 +23,7 @@ from app.harness.capability_adapter import CapabilityAdapter
 logger = get_logger(__name__)
 
 _DEFAULT_ACTIVE_CAPABILITIES = frozenset({"anime", "system", "recommendation"})
+_MODEL_OWNED_FIELDS = frozenset({"user_id", "principal_id", "db", "token"})
 
 
 def build_capability_registry() -> CapabilityRegistry:
@@ -102,13 +103,11 @@ def _public_schema(schema: dict[str, Any]) -> dict[str, Any]:
         copied["properties"] = {
             name: _public_schema(value) if isinstance(value, dict) else value
             for name, value in properties.items()
-            if name not in {"user_id", "principal_id"}
+            if name not in _MODEL_OWNED_FIELDS
         }
     required = copied.get("required")
     if isinstance(required, list):
-        copied["required"] = [
-            name for name in required if name not in {"user_id", "principal_id"}
-        ]
+        copied["required"] = [name for name in required if name not in _MODEL_OWNED_FIELDS]
     for key in ("items", "additionalProperties"):
         value = copied.get(key)
         if isinstance(value, dict):

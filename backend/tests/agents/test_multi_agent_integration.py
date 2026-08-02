@@ -58,7 +58,7 @@ class TestRouterIntegration:
         assert "根据你的偏好" in result.get("content", "")
 
     @pytest.mark.asyncio
-    async def test_feature_flag_adapter_routes_and_preserves_fallback(self):
+    async def test_feature_flag_adapter_rejects_direct_specialist_execution(self):
         class Fallback:
             async def stream(self, state, **kwargs):
                 yield {"type": "message_chunk", "content": "legacy"}
@@ -78,12 +78,8 @@ class TestRouterIntegration:
         task = AgentTask(user_id=1, goal="推荐动漫")
         state = AgentState(task=task)
         adapter = FeatureFlagRoutingAdapter(Fallback(), router, enabled=True)
-        chunks = [chunk async for chunk in adapter.stream(state, messages=[])]
-
-        assert chunks[0]["type"] == "route_decision"
-        assert chunks[1] == {"type": "message_start"}
-        assert chunks[2] == {"type": "message_chunk", "content": "specialist"}
-        assert chunks[3] == {"type": "message_end"}
+        with pytest.raises(RuntimeError, match="Dispatcher"):
+            [chunk async for chunk in adapter.stream(state, messages=[])]
 
         off = FeatureFlagRoutingAdapter(Fallback(), router, enabled=False)
         assert [chunk async for chunk in off.stream(state)] == [
@@ -91,7 +87,7 @@ class TestRouterIntegration:
         ]
 
     @pytest.mark.asyncio
-    async def test_feature_flag_adapter_returns_structured_result_for_runtime(self):
+    async def test_feature_flag_adapter_requires_dispatcher_for_specialist(self):
         class Fallback:
             async def stream(self, state, **kwargs):
                 yield {"type": "message_chunk", "content": "legacy"}
@@ -113,10 +109,8 @@ class TestRouterIntegration:
             Fallback(), AgentRouter(Registry()), enabled=True
         )
 
-        chunks = [chunk async for chunk in adapter.stream(state, messages=[])]
-
-        assert chunks[1]["type"] == "agent_result"
-        assert chunks[1]["result"]["data"]["candidates"] == [{"name": "X"}]
+        with pytest.raises(RuntimeError, match="Dispatcher"):
+            [chunk async for chunk in adapter.stream(state, messages=[])]
 
     @pytest.mark.asyncio
     async def test_runtime_executes_recommendation_agent(self):

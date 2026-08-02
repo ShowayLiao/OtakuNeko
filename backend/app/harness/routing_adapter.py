@@ -6,12 +6,11 @@ from typing import Any, AsyncIterator
 
 from app.agents.router import AgentRouter
 from app.agents.routing import validate_handoff
-from app.harness.result import AgentResult
 from app.harness.state import AgentState
 
 
 class FeatureFlagRoutingAdapter:
-    """Route supported tasks while preserving the legacy adapter fallback."""
+    """Compatibility router with a fail-closed specialist boundary."""
 
     def __init__(self, fallback: Any, router: AgentRouter, *, enabled: bool) -> None:
         self._fallback = fallback
@@ -40,32 +39,6 @@ class FeatureFlagRoutingAdapter:
                 yield chunk
             return
 
-        result = await specialist.execute(state.task)
-        normalized = AgentResult.from_raw(
-            result,
-            kind="subagent",
-            name=decision.selected_agent,
+        raise RuntimeError(
+            "specialist execution requires a Runtime Dispatcher boundary"
         )
-        if state.context.get("orchestrate_results"):
-            yield {
-                "type": "agent_result",
-                "kind": normalized.kind,
-                "agent": normalized.name,
-                "result": normalized.model_dump(),
-            }
-            return
-
-        legacy_content = normalized.content or ""
-        candidates = normalized.data.get("candidates", [])
-        yield {"type": "message_start"}
-        yield {
-            "type": "message_chunk",
-            "content": legacy_content,
-        }
-        yield {"type": "message_end"}
-        yield {
-            "type": "agent_complete",
-            "agent": decision.selected_agent,
-            "candidates": candidates,
-            "evidence": normalized.evidence,
-        }

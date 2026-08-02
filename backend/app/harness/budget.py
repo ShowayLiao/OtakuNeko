@@ -176,6 +176,10 @@ class CancellationToken:
     def is_cancelled(self) -> bool:
         return self._event.is_set()
 
+    async def wait(self) -> None:
+        """Wait until cooperative cancellation is requested."""
+        await self._event.wait()
+
     def raise_if_cancelled(self) -> None:
         if self.is_cancelled():
             raise RunCancellationError()

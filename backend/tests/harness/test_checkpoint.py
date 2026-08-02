@@ -1,13 +1,85 @@
 """Tests for the run-scoped checkpoint port and adapters."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 
-from app.harness.checkpoint import InMemoryCheckpointStore, SqliteCheckpointStore
+from app.harness.checkpoint import (
+    CheckpointLeaseLost,
+    InMemoryCheckpointStore,
+    SqliteCheckpointStore,
+    validate_checkpoint_configuration,
+)
 from app.harness.task import AgentTask
 from app.harness.state import AgentState
 
 
 class TestInMemoryCheckpointStore:
+    def test_shared_deployment_rejects_sqlite_multi_worker_configuration(self) -> None:
+        with pytest.raises(RuntimeError, match="SQLite checkpoints"):
+            validate_checkpoint_configuration(
+                deploy_mode="cloud",
+                adapter="sqlite",
+                single_worker=True,
+                worker_count=2,
+            )
+
+        validate_checkpoint_configuration(
+            deploy_mode="local",
+            adapter="sqlite",
+            single_worker=False,
+            worker_count=2,
+        )
+
+    async def test_single_worker_lease_uses_fencing_and_rejects_stale_writer(self) -> None:
+        now = [datetime.now(timezone.utc)]
+        store = InMemoryCheckpointStore(clock=lambda: now[0])
+        first = await store.claim_lease("run-lease", "thread-1", "worker-a", 10)
+        assert first is not None
+        assert await store.claim_lease("run-lease", "thread-1", "worker-b", 10) is None
+
+        now[0] += timedelta(seconds=11)
+        second = await store.claim_lease("run-lease", "thread-1", "worker-b", 10)
+        assert second is not None
+        assert second.fencing_token > first.fencing_token
+
+        state = AgentState(
+            task=AgentTask(user_id=7, goal="fenced"),
+            status="running",
+        )
+        with pytest.raises(CheckpointLeaseLost):
+            await store.save(
+                "run-lease",
+                "thread-1",
+                state,
+                worker_id="worker-a",
+                fencing_token=first.fencing_token,
+            )
+
+        await store.save(
+            "run-lease",
+            "thread-1",
+            state,
+            worker_id="worker-b",
+            fencing_token=second.fencing_token,
+        )
+
+    async def test_durable_cancellation_survives_store_reopen(self, tmp_path) -> None:
+        path = str(tmp_path / "cancel" / "checkpoints.db")
+        first = SqliteCheckpointStore(path)
+        request = await first.request_cancellation(
+            "run-cancel",
+            requester="user:7",
+            reason="client requested cancellation",
+        )
+        assert request.reason == "client requested cancellation"
+        await first.close()
+
+        second = SqliteCheckpointStore(path)
+        assert await second.is_cancellation_requested("run-cancel") is True
+        assert (await second.get_cancellation("run-cancel")).requester == "user:7"
+        await second.close()
+
     async def test_save_and_load_state(self) -> None:
         store = InMemoryCheckpointStore()
         task = AgentTask(task_id=1, user_id=42, goal="test")
@@ -81,6 +153,36 @@ class TestInMemoryCheckpointStore:
 
 
 class TestSqliteCheckpointStore:
+    async def test_sqlite_lease_fencing_survives_worker_restart(self, tmp_path) -> None:
+        path = str(tmp_path / "leases" / "checkpoints.db")
+        now = [datetime.now(timezone.utc)]
+        first_store = SqliteCheckpointStore(path, clock=lambda: now[0])
+        first = await first_store.claim_lease("run-sqlite-lease", "thread-1", "worker-a", 10)
+        assert first is not None
+        second_store = SqliteCheckpointStore(path, clock=lambda: now[0])
+        assert (
+            await second_store.claim_lease(
+                "run-sqlite-lease", "thread-1", "worker-b", 10
+            )
+            is None
+        )
+
+        now[0] += timedelta(seconds=11)
+        second = await second_store.claim_lease(
+            "run-sqlite-lease", "thread-1", "worker-b", 10
+        )
+        assert second is not None
+        with pytest.raises(CheckpointLeaseLost):
+            await first_store.save(
+                "run-sqlite-lease",
+                "thread-1",
+                AgentState(task=AgentTask(user_id=7, goal="stale"), status="running"),
+                worker_id="worker-a",
+                fencing_token=first.fencing_token,
+            )
+        await first_store.close()
+        await second_store.close()
+
     async def test_runtime_compatibility_uses_run_metadata_without_task_id(
         self, tmp_path
     ) -> None:

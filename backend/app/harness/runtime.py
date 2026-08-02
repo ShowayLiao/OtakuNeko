@@ -1,16 +1,29 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import inspect
+import json
 import os
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 from uuid import uuid4
 
 from app.harness.checkpoint import CheckpointStore
-from app.harness.budget import CancellationToken, RunBudget
+from app.harness.checkpoint import CheckpointLease, CheckpointLeaseLost
+from app.harness.budget import (
+    BudgetExceededError,
+    CancellationToken,
+    DeadlineExceededError,
+    RunBudget,
+    RunCancellationError,
+)
 from app.harness.coordinator import RunCoordinator
-from app.harness.contracts import RunResult
+from app.harness.context_manager import ContextManager
+from app.harness.contracts import ErrorCode, ExecutionContext, RunEvent, RunResult
+from app.harness.decision_parser import DecisionParseError, DecisionParser
+from app.harness.dispatcher import Dispatcher
 from app.harness.model_gateway import ModelGateway
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import RunStore
@@ -22,12 +35,20 @@ from app.trace.redaction import sanitize_trace
 from app.trace.recorder import bind_trace, current_trace_recorder
 from app.trace.store import TraceStore
 from app.core.logging import get_logger
+from app.models.agent_run import AgentRun
+
+if TYPE_CHECKING:
+    from app.memory.interfaces import MemoryContext
 
 logger = get_logger(__name__)
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class CanonicalPersistenceError(RuntimeError):
+    """The primary Runtime could not commit a canonical fact."""
 
 
 class AgentAdapter(Protocol):
@@ -68,17 +89,30 @@ class AgentRuntime:
         *,
         trace_store: TraceStore | None = None,
         model_gateway: ModelGateway | None = None,
+        dispatcher: Dispatcher | None = None,
         max_model_calls: int = 1,
         run_store: RunStore | None = None,
         event_store: EventStore | None = None,
+        memory_context: MemoryContext | None = None,
+        memory_service: Any | None = None,
+        checkpoint_lease_seconds: int = 3600,
+        worker_id: str | None = None,
     ):
         self.adapter = adapter
         self.checkpoint_store = checkpoint_store
         self.trace_store = trace_store
         self.model_gateway = model_gateway
+        self.dispatcher = dispatcher
         self.max_model_calls = max_model_calls
         self.run_store = run_store
         self.event_store = event_store
+        self.memory_context = memory_context
+        self.memory_service = memory_service
+        self.checkpoint_lease_seconds = checkpoint_lease_seconds
+        self.worker_id = worker_id or f"runtime:{uuid4().hex}"
+        self._checkpoint_lease: CheckpointLease | None = None
+        self._canonical_sequence = 0
+        self._canonical_invocations: set[str] = set()
 
     @property
     def adapter_name(self) -> str:
@@ -89,6 +123,34 @@ class AgentRuntime:
         return type(self.adapter).__name__
 
     @staticmethod
+    def _model_terminal(
+        run_id: str,
+        model_result: Any,
+    ) -> RunResult | None:
+        """Map provider terminal states before DecisionParser can run."""
+        status = getattr(model_result, "status", None)
+        error_code = getattr(model_result, "error_code", None)
+        if status == "cancelled" or error_code == "cancelled":
+            return RunResult(
+                run_id=run_id,
+                status="cancelled",
+                error_code=ErrorCode.CANCELLED,
+            )
+        if error_code == "timeout":
+            return RunResult(
+                run_id=run_id,
+                status="timeout",
+                error_code=ErrorCode.TIMEOUT,
+            )
+        if status == "failed":
+            return RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.PROVIDER_ERROR,
+            )
+        return None
+
+    @staticmethod
     def _ensure_run_id(task: AgentTask) -> str:
         current = (task.metadata or {}).get("run_id")
         if current:
@@ -97,9 +159,259 @@ class AgentRuntime:
         task.metadata["run_id"] = run_id
         return run_id
 
-    async def _save_checkpoint(self, state: AgentState) -> None:
+    async def _acquire_checkpoint_lease(self, task: AgentTask) -> None:
+        self._checkpoint_lease = None
+        if self.checkpoint_store is None:
+            return
+        run_id = (task.metadata or {}).get("run_id")
+        thread_id = (task.metadata or {}).get("thread_id")
+        if run_id is None or thread_id is None:
+            return
+        lease = await self.checkpoint_store.claim_lease(
+            str(run_id),
+            str(thread_id),
+            self.worker_id,
+            self.checkpoint_lease_seconds,
+        )
+        if lease is None:
+            raise CheckpointLeaseLost(
+                f"Run {run_id} is leased by another worker"
+            )
+        self._checkpoint_lease = lease
+
+    async def _observe_checkpoint_controls(
+        self,
+        run_id: str,
+        cancellation: CancellationToken,
+    ) -> None:
         if self.checkpoint_store is not None:
+            if await self.checkpoint_store.is_cancellation_requested(run_id):
+                cancellation.cancel()
+            if self._checkpoint_lease is not None:
+                renewed = await self.checkpoint_store.renew_lease(
+                    self._checkpoint_lease,
+                    self.checkpoint_lease_seconds,
+                )
+                if renewed is None:
+                    raise CheckpointLeaseLost(
+                        f"Run {run_id} checkpoint lease was fenced"
+                    )
+                self._checkpoint_lease = renewed
+        cancellation.raise_if_cancelled()
+
+    async def _save_checkpoint(self, state: AgentState) -> None:
+        if self.checkpoint_store is None:
+            return
+        run_id = (state.task.metadata or {}).get("run_id")
+        thread_id = (state.task.metadata or {}).get("thread_id")
+        if run_id is None or thread_id is None:
             await self.checkpoint_store.save_state(state)
+            return
+        lease = self._checkpoint_lease
+        await self.checkpoint_store.save(
+            str(run_id),
+            str(thread_id),
+            state,
+            worker_id=lease.worker_id if lease is not None else None,
+            fencing_token=lease.fencing_token if lease is not None else None,
+        )
+
+    async def _release_checkpoint_lease(self) -> None:
+        lease = self._checkpoint_lease
+        self._checkpoint_lease = None
+        if self.checkpoint_store is not None and lease is not None:
+            await self.checkpoint_store.release_lease(lease)
+
+    async def _canonical_start(
+        self,
+        task: AgentTask,
+        context: ExecutionContext,
+        run_id: str,
+    ) -> str | None:
+        """Create or resume the durable Run header and its first fact."""
+        self._canonical_sequence = 0
+        self._canonical_invocations = set()
+        if self.run_store is None or self.event_store is None:
+            return None
+        try:
+            run = await self.run_store.create(
+                AgentRun(
+                    run_id=run_id,
+                    user_id=task.user_id,
+                    thread_id=(
+                        str(task.metadata.get("thread_id"))
+                        if task.metadata.get("thread_id") is not None
+                        else None
+                    ),
+                    status="queued",
+                    goal_hash=hashlib.sha256(task.goal.encode("utf-8")).hexdigest(),
+                    model=str(task.metadata.get("model") or ""),
+                )
+            )
+            existing_events = await self.event_store.list_after(
+                run_id, after_sequence=0
+            )
+            self._canonical_sequence = max(
+                (int(event.sequence) for event in existing_events),
+                default=0,
+            )
+            if run.status == "queued":
+                await self.run_store.transition(run_id, "running")
+                self._canonical_sequence = 1
+                await self.event_store.append(
+                    RunEvent(
+                        run_id=run_id,
+                        sequence=1,
+                        event_type="run.started",
+                        payload={"model": str(task.metadata.get("model") or "")},
+                    )
+                )
+                return None
+            return run.status
+        except Exception as exc:
+            raise CanonicalPersistenceError("failed to persist Run start") from exc
+
+    async def _canonical_append(
+        self,
+        event: dict[str, Any],
+        *,
+        sequence: int,
+    ) -> int:
+        if self.run_store is None or self.event_store is None:
+            return sequence
+        event_type = str(event.get("type", "unknown"))
+        invocation_id = event.get("invocation_id")
+        payload = {
+            key: value
+            for key, value in event.items()
+            if key not in {"type", "run_id", "sequence"}
+        }
+        canonical_type = {
+            "run_completed": "run.succeeded",
+            "run_cancelled": "run.cancelled",
+            "run_timeout": "run.failed",
+            "run_failed": "run.failed",
+        }.get(event_type, event_type)
+        if event_type == "run_timeout":
+            payload.setdefault("status", "timeout")
+        try:
+            if event_type == "tool_call_start" and invocation_id:
+                await self.run_store.create_invocation(
+                    run_id=str(event["run_id"]),
+                    invocation_id=str(invocation_id),
+                    sequence=sequence,
+                    capability=str(event.get("capability") or "unknown"),
+                    capability_version=str(event.get("capability_version") or "v1"),
+                    input_payload={"argument_keys": payload.get("argument_keys", [])},
+                    idempotency_key=None,
+                )
+                self._canonical_invocations.add(str(invocation_id))
+            stored_sequence = sequence
+            existing_events = await self.event_store.list_after(
+                str(event["run_id"]), after_sequence=max(0, sequence - 1), limit=2
+            )
+            if existing_events and int(existing_events[0].sequence) == sequence:
+                existing = existing_events[0]
+                if (
+                    existing.event_type != canonical_type
+                    or existing.invocation_id != (
+                        str(invocation_id) if invocation_id else None
+                    )
+                ):
+                    stored_sequence = max(
+                        int(item.sequence)
+                        for item in await self.event_store.list_after(
+                            str(event["run_id"]), after_sequence=0
+                        )
+                    ) + 1
+            if stored_sequence != sequence:
+                event["sequence"] = stored_sequence
+            await self.event_store.append(
+                RunEvent(
+                    run_id=str(event["run_id"]),
+                    sequence=stored_sequence,
+                    event_type=canonical_type,
+                    invocation_id=str(invocation_id) if invocation_id else None,
+                    payload=payload,
+                )
+            )
+            if (
+                event_type == "tool_call_end"
+                and invocation_id in self._canonical_invocations
+            ):
+                status = str(event.get("status") or "failed")
+                mapped_status = (
+                    "succeeded"
+                    if status in {"succeeded", "success", "completed"}
+                    else "timed_out"
+                    if status in {"timeout", "timed_out"}
+                    else "denied"
+                    if status in {"denied", "policy_denied"}
+                    else "cancelled"
+                    if status == "cancelled"
+                    else "failed"
+                )
+                await self.run_store.finish_invocation(
+                    str(invocation_id),
+                    mapped_status,
+                    error_code=None if mapped_status == "succeeded" else mapped_status,
+                )
+            if event_type in {
+                "run_completed",
+                "run_cancelled",
+                "run_timeout",
+                "run_failed",
+            }:
+                run_status = (
+                    "succeeded"
+                    if event_type == "run_completed"
+                    else "cancelled"
+                    if event_type == "run_cancelled"
+                    else "failed"
+                )
+                current_run = await self.run_store.get(str(event["run_id"]))
+                if current_run is None:
+                    raise CanonicalPersistenceError(
+                        f"Run {event['run_id']} disappeared before terminal transition"
+                    )
+                if current_run.status in {
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                    "abandoned",
+                }:
+                    if current_run.status != run_status:
+                        raise CanonicalPersistenceError(
+                            f"Run {event['run_id']} already ended as {current_run.status}"
+                        )
+                else:
+                    await self.run_store.transition(
+                        str(event["run_id"]),
+                        run_status,
+                        error_code=payload.get("error_code"),
+                    )
+            return stored_sequence
+        except Exception as exc:
+            raise CanonicalPersistenceError(
+                f"failed to persist canonical event {canonical_type}"
+            ) from exc
+
+    async def _canonical_mark_failed(self, run_id: str) -> None:
+        if self.run_store is None:
+            return
+        try:
+            current = await self.run_store.get(run_id)
+            if current is not None and current.status in {"queued", "running", "paused"}:
+                await self.run_store.transition(
+                    run_id,
+                    "failed",
+                    error_code=ErrorCode.PERMANENT.value,
+                )
+        except Exception:
+            logger.exception(
+                "canonical_run_failure_transition_failed",
+                extra={"run_id": run_id},
+            )
 
     async def _record_trace(self, trace: AgentTrace) -> None:
         if self.trace_store is None:
@@ -112,7 +424,54 @@ class AgentRuntime:
                 extra={"trace_id": trace.trace_id},
             )
 
-    async def execute(self, task: AgentTask) -> AgentState:
+    async def _extract_memory_facts(
+        self,
+        task: AgentTask,
+        *,
+        messages: list[dict[str, Any]],
+        run_id: str,
+        trace_id: str,
+        budget: RunBudget,
+        cancellation: CancellationToken,
+    ) -> Any | None:
+        """Run memory extraction as an explicit child model invocation."""
+        service = self.memory_service
+        thread_id = task.metadata.get("thread_id")
+        extract = getattr(service, "extract_and_store_facts", None)
+        if task.user_id <= 0 or not thread_id or not callable(extract):
+            return None
+
+        call_id = uuid4().hex
+        parameters = inspect.signature(extract).parameters
+        accepts_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        )
+        optional_arguments = {
+            "user_id": task.user_id,
+            "run_id": run_id,
+            "trace_id": trace_id,
+            "budget": budget,
+            "cancellation": cancellation,
+            "messages": messages,
+            "call_id": call_id,
+        }
+        extraction_kwargs = {
+            name: value
+            for name, value in optional_arguments.items()
+            if accepts_kwargs or name in parameters
+        }
+        await extract(thread_id, **extraction_kwargs)
+        return getattr(service, "last_model_call", None)
+
+    async def execute(
+        self,
+        task: AgentTask,
+        *,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+        _state: AgentState | None = None,
+    ) -> AgentState:
         trace: AgentTrace | None = None
         run_id = self._ensure_run_id(task)
         if self.trace_store is not None:
@@ -140,8 +499,56 @@ class AgentRuntime:
             scheduled_step.complete()
             trace.steps.append(scheduled_step)
 
-        state = AgentState(task=task, status="running")
-        await self._save_checkpoint(state)
+        state = _state or AgentState(task=task, status="running")
+        state.task = task
+        state.status = "running"
+        run_budget = budget or self._build_run_budget(task, state.context)
+        if not isinstance(run_budget, RunBudget):
+            raise TypeError("budget must be a RunBudget")
+        run_cancellation = cancellation or CancellationToken()
+        if not isinstance(run_cancellation, CancellationToken):
+            raise TypeError("cancellation must be a CancellationToken")
+        try:
+            await self._acquire_checkpoint_lease(task)
+            await self._observe_checkpoint_controls(run_id, run_cancellation)
+            await self._save_checkpoint(state)
+        except CheckpointLeaseLost:
+            state.status = "failed"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.PERMANENT,
+            )
+            await self._release_checkpoint_lease()
+            return state
+        except RunCancellationError:
+            state.status = "cancelled"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="cancelled",
+                error_code=ErrorCode.CANCELLED,
+            )
+            await self._save_checkpoint(state)
+            await self._release_checkpoint_lease()
+            return state
+        coordinator = RunCoordinator(
+            self.adapter,
+            model_gateway=self.model_gateway,
+            max_model_calls=self.max_model_calls,
+            fallback_from_result=self._fallback_from_result,
+            run_store=(
+                self.run_store
+                if os.getenv("INTERACTIVE_RUN_STORE_ENABLED", "true").lower()
+                not in {"0", "false", "off", "no"}
+                else None
+            ),
+            event_store=(
+                self.event_store
+                if os.getenv("INTERACTIVE_RUN_STORE_ENABLED", "true").lower()
+                not in {"0", "false", "off", "no"}
+                else None
+            ),
+        )
         try:
             trace_context = (
                 bind_trace(trace, run_id=run_id)
@@ -156,7 +563,15 @@ class AgentRuntime:
                         {"agent": self.adapter_name},
                     )
                 try:
-                    state.result = await self.adapter.run(state)
+                    state = await coordinator.execute(
+                        task,
+                        state.context,
+                        budget=run_budget,
+                        cancellation=run_cancellation,
+                        state=state,
+                    )
+                    if coordinator.failure is not None:
+                        raise coordinator.failure
                 except BaseException as exc:
                     if recorder is not None:
                         status = (
@@ -181,19 +596,39 @@ class AgentRuntime:
                     recorder.record(
                         TraceEventType.NODE_END,
                         "agent.execute",
-                        {"outcome": "completed"},
+                        {"outcome": state.status},
+                        status=(
+                            state.status
+                            if state.status in {"cancelled", "timeout"}
+                            else "failed"
+                            if state.status == "failed"
+                            else "completed"
+                        ),
                     )
-            state.status = "completed"
-            if trace is not None:
+            if trace is not None and state.status == "completed":
                 trace.mark_completed()
+            elif trace is not None and state.status == "cancelled":
+                trace.mark_cancelled()
+            elif trace is not None:
+                trace.mark_failed(
+                    state.terminal_result.error_code.value
+                    if state.terminal_result and state.terminal_result.error_code
+                    else state.status
+                )
         except (asyncio.CancelledError, GeneratorExit):
             state.status = "cancelled"
+            state.terminal_result = coordinator.terminal_result
             if trace is not None:
                 trace.mark_cancelled()
             await self._save_checkpoint(state)
             raise
         except Exception:
-            state.status = "failed"
+            state.status = (
+                coordinator.terminal_result.status
+                if coordinator.terminal_result is not None
+                else "failed"
+            )
+            state.terminal_result = coordinator.terminal_result
             if trace is not None:
                 trace.mark_failed("execute() raised an exception")
             await self._save_checkpoint(state)
@@ -201,8 +636,532 @@ class AgentRuntime:
         finally:
             if trace is not None and self.trace_store is not None:
                 await self._record_trace(trace)
+            await self._release_checkpoint_lease()
         await self._save_checkpoint(state)
         return state
+
+    async def resume(
+        self,
+        task: AgentTask,
+        *,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+    ) -> AgentState | None:
+        """Resume one owner-scoped non-terminal checkpoint exactly once."""
+        if self.checkpoint_store is None:
+            return None
+        run_id = (task.metadata or {}).get("run_id")
+        thread_id = (task.metadata or {}).get("thread_id")
+        if run_id is None or thread_id is None:
+            return None
+        state = await self.checkpoint_store.load(str(run_id), str(thread_id))
+        if state is None:
+            return None
+        if state.status in {
+            "completed",
+            "succeeded",
+            "failed",
+            "cancelled",
+            "timeout",
+            "abandoned",
+        }:
+            return state
+        state.task = task
+        return await self.execute(
+            task,
+            budget=budget,
+            cancellation=cancellation,
+            _state=state,
+        )
+
+    async def execute_decision(
+        self,
+        task: AgentTask,
+        *,
+        capability_allowlist: set[str] | frozenset[str] | None = None,
+        context: ExecutionContext | None = None,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+    ) -> RunResult:
+        """Drive the structured primary Decision path under Runtime ownership.
+
+        This is deliberately separate from the legacy ``execute`` facade while
+        the Graph adapter migrates. It still uses the same trusted run id,
+        budget, cancellation and terminal result contracts; the model never
+        receives a capability object or an execution dependency.
+        """
+        if self.model_gateway is None or self.dispatcher is None:
+            return RunResult(
+                run_id=self._ensure_run_id(task),
+                status="failed",
+                error_code=ErrorCode.PERMANENT,
+            )
+        run_id = self._ensure_run_id(task)
+        trusted_context = context or ExecutionContext(
+            principal_id=task.user_id if task.user_id > 0 else None,
+            run_id=run_id,
+            trace_id=str(task.metadata.get("trace_id") or uuid4().hex),
+            capability_allowlist=frozenset(capability_allowlist or ()),
+        )
+        if trusted_context.run_id != run_id:
+            return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.INVALID_REQUEST)
+        run_budget = budget or self._build_run_budget(task, {})
+        run_cancellation = cancellation or CancellationToken()
+        parser = DecisionParser()
+        messages = list(task.metadata.get("messages") or [])
+        model_context = ContextManager(trusted_context).build_snapshot(
+            run_state="running",
+            memory_context=self.memory_context,
+        ).model_dump(mode="json")
+        try:
+            for _ in range(run_budget.max_model_calls):
+                run_cancellation.raise_if_cancelled()
+                run_budget.check_deadline()
+                run_budget.reserve_model_call()
+                model_result = await self.model_gateway.infer(
+                    goal=task.goal,
+                    messages=messages,
+                    run_id=run_id,
+                    context=model_context,
+                    cancellation=run_cancellation,
+                    deadline=run_budget.remaining_seconds(),
+                    budget=run_budget.snapshot(),
+                )
+                run_budget.record_model_usage(getattr(model_result, "usage", None))
+                model_terminal = self._model_terminal(run_id, model_result)
+                if model_terminal is not None:
+                    return model_terminal
+                try:
+                    decision = parser.parse(model_result, expected_run_id=run_id)
+                except DecisionParseError as exc:
+                    return RunResult(run_id=run_id, status="failed", error_code=exc.error_code)
+
+                if decision.run_id != run_id:
+                    return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.INVALID_REQUEST)
+                if decision.action in {"respond", "finish"}:
+                    return RunResult(run_id=run_id, status="completed", content=decision.content or "")
+
+                invocation = await self.dispatcher.dispatch(
+                    decision,
+                    trusted_context,
+                    budget=run_budget,
+                    cancellation=run_cancellation,
+                )
+                if invocation.status != "succeeded":
+                    status = (
+                        "cancelled"
+                        if invocation.status == "cancelled"
+                        else "timeout"
+                        if invocation.status == "timeout"
+                        else "failed"
+                    )
+                    error_code = invocation.error_code
+                    safe_code = (
+                        error_code
+                        if isinstance(error_code, ErrorCode)
+                        else ErrorCode.TOOL_ERROR
+                    )
+                    return RunResult(run_id=run_id, status=status, error_code=safe_code)
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(
+                            invocation.model_output or invocation.output,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    }
+                )
+            return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED)
+        except asyncio.CancelledError:
+            return RunResult(run_id=run_id, status="cancelled", error_code=ErrorCode.CANCELLED)
+        except (DeadlineExceededError, asyncio.TimeoutError):
+            return RunResult(run_id=run_id, status="timeout", error_code=ErrorCode.TIMEOUT)
+        except BudgetExceededError:
+            return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED)
+        except RunCancellationError:
+            return RunResult(run_id=run_id, status="cancelled", error_code=ErrorCode.CANCELLED)
+
+    async def stream_decision(
+        self,
+        task: AgentTask,
+        *,
+        context: ExecutionContext | None = None,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Run the primary structured Decision loop under Runtime ownership.
+
+        Unlike ``stream()``, this path does not invoke an agent adapter.  Each
+        model result is parsed, dispatched and fed back by Runtime itself. The
+        event vocabulary intentionally remains compatible with the chat SSE
+        projection; when durable stores are configured, every yielded event is
+        committed as the canonical fact before it is exposed to the caller.
+        """
+        run_id = self._ensure_run_id(task)
+        if self.model_gateway is None or self.dispatcher is None:
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "error_code": ErrorCode.PERMANENT.value,
+            }
+            return
+
+        trusted_context = context or ExecutionContext(
+            principal_id=task.user_id if task.user_id > 0 else None,
+            run_id=run_id,
+            trace_id=str(task.metadata.get("trace_id") or uuid4().hex),
+            capability_allowlist=frozenset(
+                task.metadata.get("capability_allowlist") or ()
+            ),
+        )
+        if trusted_context.run_id != run_id:
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "error_code": ErrorCode.INVALID_REQUEST.value,
+            }
+            return
+
+        run_budget = budget or self._build_run_budget(task, {})
+        run_cancellation = cancellation or CancellationToken()
+        parser = DecisionParser()
+        messages = list(task.metadata.get("messages") or [])
+        model_context = ContextManager(trusted_context).build_snapshot(
+            run_state="running",
+            memory_context=self.memory_context,
+        ).model_dump(mode="json")
+        sequence = 0
+        state = AgentState(
+            task=task,
+            status="running",
+            context={"run_id": run_id, "trace_id": trusted_context.trace_id},
+        )
+        try:
+            await self._acquire_checkpoint_lease(task)
+            await self._save_checkpoint(state)
+        except CheckpointLeaseLost:
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "error_code": "checkpoint_lease_lost",
+            }
+            return
+
+        try:
+            existing_status = await self._canonical_start(
+                task, trusted_context, run_id
+            )
+        except CanonicalPersistenceError:
+            state.status = "failed"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.PERMANENT,
+            )
+            await self._canonical_mark_failed(run_id)
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "sequence": 1,
+                "error_code": ErrorCode.PERMANENT.value,
+            }
+            return
+        sequence = self._canonical_sequence
+        if existing_status in {"succeeded", "failed", "cancelled", "abandoned"}:
+            terminal_type = (
+                "run_completed"
+                if existing_status == "succeeded"
+                else "run_cancelled"
+                if existing_status == "cancelled"
+                else "run_failed"
+            )
+            yield {
+                "type": terminal_type,
+                "run_id": run_id,
+                "sequence": self._canonical_sequence,
+                "error_code": (
+                    None if terminal_type == "run_completed" else ErrorCode.PERMANENT.value
+                ),
+            }
+            return
+
+        async def emit(event_type: str, **payload: Any) -> dict[str, Any]:
+            nonlocal sequence
+            sequence += 1
+            event = {
+                "type": event_type,
+                "run_id": run_id,
+                "sequence": sequence,
+                **payload,
+            }
+            sequence = await self._canonical_append(event, sequence=sequence)
+            event["sequence"] = sequence
+            return event
+
+        try:
+            yield await emit("thinking_start")
+            while True:
+                await self._observe_checkpoint_controls(run_id, run_cancellation)
+                run_budget.check_deadline()
+                run_budget.consume_step()
+                run_budget.reserve_model_call()
+                model_result = await self.model_gateway.infer(
+                    goal=task.goal,
+                    messages=messages,
+                    run_id=run_id,
+                    trace_id=trusted_context.trace_id,
+                    context=model_context,
+                    cancellation=run_cancellation,
+                    deadline=run_budget.remaining_seconds(),
+                    budget=run_budget.snapshot(),
+                )
+                await self._observe_checkpoint_controls(run_id, run_cancellation)
+                run_budget.record_model_usage(getattr(model_result, "usage", None))
+                yield await emit(
+                    "model_call",
+                    call_id=model_result.call_id,
+                    trace_id=model_result.trace_id or trusted_context.trace_id,
+                    provider=model_result.provider,
+                    model=model_result.model,
+                    usage=model_result.usage.model_dump(mode="json"),
+                    status=model_result.status,
+                    error_code=model_result.error_code,
+                )
+
+                model_terminal = self._model_terminal(run_id, model_result)
+                if model_terminal is not None:
+                    state.status = model_terminal.status
+                    state.terminal_result = model_terminal
+                    await self._save_checkpoint(state)
+                    terminal_type = {
+                        "cancelled": "run_cancelled",
+                        "timeout": "run_timeout",
+                        "failed": "run_failed",
+                    }[model_terminal.status]
+                    yield await emit(
+                        terminal_type,
+                        error_code=model_terminal.error_code.value
+                        if model_terminal.error_code
+                        else None,
+                    )
+                    return
+
+                try:
+                    decision = parser.parse(model_result, expected_run_id=run_id)
+                except DecisionParseError as exc:
+                    state.status = "failed"
+                    state.terminal_result = RunResult(
+                        run_id=run_id,
+                        status="failed",
+                        error_code=exc.error_code,
+                    )
+                    await self._save_checkpoint(state)
+                    yield await emit(
+                        "run_failed",
+                        error_code=exc.error_code.value,
+                    )
+                    return
+
+                yield await emit(
+                    "model_decision",
+                    decision_id=decision.decision_id,
+                    action=decision.action,
+                    capability=decision.capability,
+                    capability_version=decision.capability_version,
+                    argument_keys=sorted(decision.arguments),
+                )
+                if decision.action in {"respond", "finish"}:
+                    content = decision.content or ""
+                    memory_result = await self._extract_memory_facts(
+                        task,
+                        messages=messages,
+                        run_id=run_id,
+                        trace_id=trusted_context.trace_id,
+                        budget=run_budget,
+                        cancellation=run_cancellation,
+                    )
+                    if memory_result is not None:
+                        yield await emit(
+                            "model_call",
+                            call_id=memory_result.call_id,
+                            trace_id=memory_result.trace_id or trusted_context.trace_id,
+                            provider=memory_result.provider,
+                            model=memory_result.model,
+                            operation=memory_result.operation,
+                            usage=memory_result.usage.model_dump(mode="json"),
+                            status=memory_result.status,
+                            error_code=memory_result.error_code,
+                        )
+                    yield await emit("message_start")
+                    if content:
+                        yield await emit("message_chunk", content=content)
+                    yield await emit("message_end")
+                    state.status = "completed"
+                    state.result = content
+                    state.terminal_result = RunResult(
+                        run_id=run_id,
+                        status="completed",
+                        content=content,
+                    )
+                    await self._save_checkpoint(state)
+                    yield await emit("run_completed", content=content)
+                    return
+
+                yield await emit(
+                    "tool_call_start",
+                    invocation_id=decision.decision_id,
+                    capability=decision.capability,
+                    argument_keys=sorted(decision.arguments),
+                )
+                await self._observe_checkpoint_controls(run_id, run_cancellation)
+                invocation = await self.dispatcher.dispatch(
+                    decision,
+                    trusted_context,
+                    budget=run_budget,
+                    cancellation=run_cancellation,
+                )
+                await self._observe_checkpoint_controls(run_id, run_cancellation)
+                yield await emit(
+                    "tool_call_end",
+                    invocation_id=invocation.invocation_id,
+                    capability=decision.capability,
+                    status=invocation.status,
+                    error_code=(
+                        invocation.error_code.value
+                        if isinstance(invocation.error_code, ErrorCode)
+                        else invocation.error_code
+                    ),
+                    output=invocation.output,
+                )
+                if invocation.status != "succeeded":
+                    error_code = invocation.error_code
+                    if invocation.status == "cancelled":
+                        safe_code = ErrorCode.CANCELLED
+                    elif invocation.status == "timeout":
+                        safe_code = ErrorCode.TIMEOUT
+                    else:
+                        safe_code = (
+                            error_code
+                            if isinstance(error_code, ErrorCode)
+                            else ErrorCode.TOOL_ERROR
+                        )
+                    terminal_type = (
+                        "run_cancelled"
+                        if invocation.status == "cancelled"
+                        else "run_timeout"
+                        if invocation.status == "timeout"
+                        else "run_failed"
+                    )
+                    state.status = (
+                        "cancelled"
+                        if terminal_type == "run_cancelled"
+                        else "timeout"
+                        if terminal_type == "run_timeout"
+                        else "failed"
+                    )
+                    state.terminal_result = RunResult(
+                        run_id=run_id,
+                        status=(
+                            "cancelled"
+                            if state.status == "cancelled"
+                            else "timeout"
+                            if state.status == "timeout"
+                            else "failed"
+                        ),
+                        error_code=safe_code,
+                    )
+                    await self._save_checkpoint(state)
+                    yield await emit(terminal_type, error_code=safe_code.value)
+                    return
+
+                messages.append(
+                    {
+                        "role": "tool",
+                        "content": json.dumps(
+                            invocation.model_output or invocation.output,
+                            ensure_ascii=False,
+                            default=str,
+                        ),
+                    }
+                )
+        except RunCancellationError:
+            state.status = "cancelled"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="cancelled",
+                error_code=ErrorCode.CANCELLED,
+            )
+            await self._save_checkpoint(state)
+            yield await emit("run_cancelled", error_code=ErrorCode.CANCELLED.value)
+        except (DeadlineExceededError, asyncio.TimeoutError):
+            state.status = "timeout"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="timeout",
+                error_code=ErrorCode.TIMEOUT,
+            )
+            await self._save_checkpoint(state)
+            yield await emit("run_timeout", error_code=ErrorCode.TIMEOUT.value)
+        except BudgetExceededError:
+            state.status = "failed"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.BUDGET_EXCEEDED,
+            )
+            await self._save_checkpoint(state)
+            yield await emit("run_failed", error_code=ErrorCode.BUDGET_EXCEEDED.value)
+        except CheckpointLeaseLost:
+            logger.warning("runtime_checkpoint_lease_lost", extra={"run_id": run_id})
+            state.status = "failed"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.PERMANENT,
+            )
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "sequence": sequence + 1,
+                "error_code": "checkpoint_lease_lost",
+            }
+        except (asyncio.CancelledError, GeneratorExit):
+            state.status = "cancelled"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="cancelled",
+                error_code=ErrorCode.CANCELLED,
+            )
+            await self._save_checkpoint(state)
+            raise
+        except CanonicalPersistenceError:
+            logger.exception("runtime_canonical_persistence_failed", extra={"run_id": run_id})
+            state.status = "failed"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.PERMANENT,
+            )
+            await self._canonical_mark_failed(run_id)
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "sequence": sequence + 1,
+                "error_code": ErrorCode.PERMANENT.value,
+            }
+        except Exception:
+            logger.exception("runtime_decision_loop_failed", extra={"run_id": run_id})
+            state.status = "failed"
+            state.terminal_result = RunResult(
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.PROVIDER_ERROR,
+            )
+            await self._save_checkpoint(state)
+            yield await emit("run_failed", error_code=ErrorCode.PROVIDER_ERROR.value)
+        finally:
+            await self._release_checkpoint_lease()
 
     async def stream(self, task: AgentTask, **kwargs: Any) -> AsyncIterator[Any]:
         """Stream through the single Run Coordinator while preserving chunks."""
@@ -289,6 +1248,33 @@ class AgentRuntime:
                         raise RuntimeError("Coordinator ended without a terminal result")
                     if coordinator.failure is not None:
                         raise coordinator.failure
+                    if terminal.status == "completed":
+                        memory_result = await self._extract_memory_facts(
+                            task,
+                            messages=list(
+                                stream_kwargs.get("messages")
+                                or task.metadata.get("messages")
+                                or []
+                            ),
+                            run_id=run_id,
+                            trace_id=str(task.metadata.get("trace_id") or run_id),
+                            budget=budget,
+                            cancellation=cancellation,
+                        )
+                        if memory_result is not None:
+                            yield {
+                                "type": "model_call",
+                                "call_id": memory_result.call_id,
+                                "trace_id": memory_result.trace_id or str(
+                                    task.metadata.get("trace_id") or run_id
+                                ),
+                                "provider": memory_result.provider,
+                                "model": memory_result.model,
+                                "operation": memory_result.operation,
+                                "usage": memory_result.usage.model_dump(mode="json"),
+                                "status": memory_result.status,
+                                "error_code": memory_result.error_code,
+                            }
                     if terminal.status == "completed":
                         stream_completed = True
                     if recorder is not None:

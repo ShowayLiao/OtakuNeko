@@ -9,7 +9,11 @@ from app.harness.model_gateway import (
     LangChainModelAdapter,
     OpenAICompatibleModelAdapter,
     OpenAIModelGateway,
+    provider_error_code,
+    safe_provider_detail,
 )
+from app.harness.context_manager import ContextManager
+from app.harness.contracts import ExecutionContext
 from app.harness.model_types import ModelCallResult, ModelUsage
 from app.trace import AgentTrace, TraceEventType
 from app.trace.recorder import bind_trace
@@ -126,6 +130,14 @@ async def test_provider_error_is_classified_and_does_not_expose_raw_detail():
     assert result.error_code == "rate_limited"
     assert result.retryable is True
     assert "sensitive provider detail" not in str(result.model_dump())
+
+
+def test_provider_endpoint_failures_have_safe_ssrf_category():
+    error = ValueError("provider endpoint resolved address is not public: 169.254.169.254")
+
+    assert provider_error_code(error) == ("ssrf", False)
+    assert safe_provider_detail(error) == "Provider endpoint is not allowed"
+    assert "169.254.169.254" not in safe_provider_detail(error)
 
 
 class AsyncChunkStream:
@@ -246,6 +258,41 @@ async def test_gateway_keeps_synthesize_signature_and_records_safe_result():
     assert model_events[0].data["provider"] == "openai-compatible"
     assert "test-key" not in str(model_events[0].data)
     assert "hello" not in str(model_events[0].data)
+
+
+@pytest.mark.asyncio
+async def test_gateway_accepts_only_provider_neutral_context_snapshot():
+    completions = FakeCompletions(response=response(content='{"action":"finish"}'))
+    gateway = OpenAIModelGateway(
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        model="test-model",
+        client=FakeClient(completions),
+    )
+    snapshot = ContextManager(
+        ExecutionContext(
+            principal_id=42,
+            tenant_id="tenant-a",
+            role="admin",
+            scope=frozenset({"tenant:read"}),
+            run_id="run-1",
+            trace_id="trace-1",
+            capability_allowlist=frozenset({"catalog.search"}),
+        )
+    ).build_snapshot()
+
+    await gateway.infer(
+        goal="goal",
+        messages=[{"role": "user", "content": "hello"}],
+        context=snapshot.model_dump(mode="json"),
+    )
+
+    provider_messages = completions.calls[0]["messages"]
+    serialized = str(provider_messages)
+    assert "principal_id" not in serialized
+    assert "tenant_id" not in serialized
+    assert "catalog.search" in serialized
+    assert "snapshot_hash" in serialized
 
 
 class FakeLangChainModel:

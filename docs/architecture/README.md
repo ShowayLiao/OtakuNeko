@@ -1,5 +1,13 @@
 # Architecture Documentation
 
+## Target architecture
+
+- [`agent-runtime-target-architecture.md`](agent-runtime-target-architecture.md): the persisted AgentRuntime-only target topology, contracts, ownership rules, current implementation gap, and migration exit criteria.
+
+- [`../harness-audit/13-unified-runtime-consolidation-audit.md`](../harness-audit/13-unified-runtime-consolidation-audit.md): current gap audit after the first unified-runtime task package.
+- [`../harness-audit/14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md): target exit criteria matrix and remaining architecture closure gaps.
+- [`../harness-tasks/UNIFIED-RUNTIME-CONSOLIDATION/`](../harness-tasks/UNIFIED-RUNTIME-CONSOLIDATION/): follow-up tasks for migrating the primary chat loop and retiring legacy control paths.
+
 本目录保存 OtakuNeko Agent Harness 的稳定架构约束和边界说明。
 
 ## 文档职责
@@ -12,6 +20,6 @@
 
 ## 当前成熟度
 
-审计结论为 Level 1.5：LangGraph Agent Loop 已可运行，`backend/app/harness` 已具备局部 Runtime、Capability、Model Gateway、Policy、Checkpoint 和 Trace 能力，但聊天主路径尚未形成统一的 durable Run Coordinator。
+当前审计结论为 Level 4：启用的主聊天路径已由 AgentRuntime 控制，并通过 ModelGateway、DecisionParser、Policy/Approval、Dispatcher 和 canonical Run/Event 持久化；LangGraph 兼容回滚、未迁移 specialist 和 SQLite 单 worker 边界仍明确保留。详细证据见 [`14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md) 与 BATCH-20～26 execution records。
 
 当前重构批次按 [`../harness-tasks/INDEX.md`](../harness-tasks/INDEX.md) 顺序推进，一次只实施一个 Batch。

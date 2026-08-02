@@ -15,14 +15,15 @@ from app.capabilities.types import (
     CapabilityResult,
     PublicActionDefinition,
 )
+from app.harness.authority import RUNTIME_OWNED_FIELDS, strip_runtime_owned_fields
 
 
-_AUTHORITY_FIELDS = {"user_id", "principal_id"}
+_AUTHORITY_FIELDS = RUNTIME_OWNED_FIELDS
 
 
 def _public_schema(schema: dict) -> dict:
     """Copy a schema while removing model-owned identity fields."""
-    copied = deepcopy(schema)
+    copied = strip_runtime_owned_fields(deepcopy(schema))
     if not isinstance(copied, dict):
         return {"type": "object", "additionalProperties": True}
     properties = copied.get("properties")

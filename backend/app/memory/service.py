@@ -30,6 +30,8 @@ from app.memory.retrievers.bm25_retriever import BM25Retriever
 from app.memory.retrievers.vector_retriever import VectorRetriever
 from app.memory.retrievers.hybrid_retriever import HybridRetriever
 from app.core.logging import get_logger
+from app.harness.budget import CancellationToken, RunBudget
+from app.harness.checkpoint import run_checkpoint_config
 
 logger = get_logger(__name__)
 
@@ -75,12 +77,15 @@ class MemoryServiceImpl(MemoryService):
         checkpointer: Any = None,
         max_facts: int = 500,
         default_user_id: int | None = None,
+        run_id: str | None = None,
     ) -> None:
         self._repo = repository
         self._extractor = extractor
         self.checkpointer = checkpointer
         self.max_facts = max_facts
         self.default_user_id = default_user_id
+        self.run_id = run_id
+        self.last_model_call = None
 
         self._bm25 = BM25Retriever()
         self._vector = VectorRetriever(api_key, base_url)
@@ -209,6 +214,7 @@ class MemoryServiceImpl(MemoryService):
         top_k: int = 5,
         user_id: int | None = None,
         kind: str | None = None,
+        run_id: str | None = None,
     ) -> MemoryContext:
         """Retrieve short-term and long-term context for a query."""
         short: list[dict[str, Any]] = []
@@ -216,9 +222,7 @@ class MemoryServiceImpl(MemoryService):
         terminal_output: str = ""
 
         if self.checkpointer:
-            config = {
-                "configurable": {"thread_id": thread_id, "checkpoint_ns": ""}
-            }
+            config = run_checkpoint_config(thread_id, run_id or self.run_id)
             cp = await self.checkpointer.aget_tuple(config)
             if cp:
                 short = self._messages_from_checkpoint(cp.checkpoint)
@@ -303,32 +307,56 @@ class MemoryServiceImpl(MemoryService):
         )
 
     async def extract_and_store_facts(
-        self, thread_id: str, user_id: int | None = None
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        *,
+        run_id: str | None = None,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+        trace_id: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        call_id: str | None = None,
     ) -> int:
         """Extract facts from recent conversation and persist them.
 
         Returns the number of new facts stored.  Extraction failure
         returns 0 (does not fail the calling operation).
         """
-        messages: list[dict[str, Any]] = []
-        if self.checkpointer:
-            config = {
-                "configurable": {"thread_id": thread_id, "checkpoint_ns": ""}
-            }
+        self.last_model_call = None
+        recent_messages = list(messages or [])
+        if messages is None and self.checkpointer:
+            config = run_checkpoint_config(thread_id, run_id or self.run_id)
             cp = await self.checkpointer.aget_tuple(config)
             if cp:
-                messages = self._messages_from_checkpoint(cp.checkpoint)[-20:]
+                recent_messages = self._messages_from_checkpoint(cp.checkpoint)[-20:]
 
         owner_id = user_id if user_id is not None else self.default_user_id
         if owner_id is None:
             return 0
 
         user_messages = [
-            message for message in messages
+            message for message in recent_messages[-20:]
             if message.get("role") in {"user", "human"}
         ]
         try:
-            facts = await self._extractor.extract(user_messages)
+            if budget is not None:
+                budget.check_deadline()
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            run_extractor = getattr(self._extractor, "extract_for_run", None)
+            if run_extractor is None:
+                facts = await self._extractor.extract(user_messages)
+            else:
+                facts = await run_extractor(
+                    user_messages,
+                    run_id=run_id or self.run_id,
+                    trace_id=trace_id,
+                    budget=budget,
+                    cancellation=cancellation,
+                    call_id=call_id,
+                )
+            self.last_model_call = getattr(self._extractor, "last_model_call", None)
         except Exception:
             logger.exception("extract_and_store_facts failed")
             return 0
@@ -506,13 +534,14 @@ class LegacyMemoryServiceAdapter(MemoryService):
         top_k: int = 5,
         user_id: int | None = None,
         kind: str | None = None,
+        run_id: str | None = None,
     ) -> MemoryContext:
         self._deprecated()
         scoped = self._scope(thread_id, user_id, kind)
         if not scoped:
             return MemoryContext()
         legacy_context = await self._manager.load_context(
-            scoped, query, top_k=top_k
+            scoped, query, top_k=top_k, run_id=run_id
         )
         facts = []
         for raw_fact in legacy_context.long_term_facts:
@@ -537,13 +566,20 @@ class LegacyMemoryServiceAdapter(MemoryService):
         )
 
     async def extract_and_store_facts(
-        self, thread_id: str, user_id: int | None = None
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        *,
+        run_id: str | None = None,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+        trace_id: str | None = None,
     ) -> int:
         self._deprecated()
         scoped = self._scope(thread_id, user_id, "semantic")
         if not scoped:
             return 0
-        return await self._manager.extract_and_store_facts(scoped)
+        return await self._manager.extract_and_store_facts(scoped, run_id=run_id)
 
     async def search_facts(
         self,

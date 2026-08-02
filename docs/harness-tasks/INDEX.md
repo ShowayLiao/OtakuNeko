@@ -70,6 +70,48 @@ BATCH-06 Run / Invocation / Event 持久化
 | BATCH-12 | [TASK-HARNESS-012](BATCH-12/TASK-HARNESS-012.md) | Context/Memory 信任治理 | Memory adapter、provenance、injection tests |
 | BATCH-13 | [TASK-HARNESS-013](BATCH-13/TASK-HARNESS-013.md) | Observability/Eval 门禁 | Trace projection、metrics、回归门禁 |
 
+## Post-BATCH-13 统一 Runtime 规划
+
+当前 BATCH-00～26 均已有实际 execution record；状态以对应记录和源码为准，不代表当前存在活动 Batch。
+
+审计基线：[`docs/harness-audit/12-post-batch13-current-audit.md`](../harness-audit/12-post-batch13-current-audit.md)
+
+任务包：[`POST-AUDIT-UNIFIED-RUNTIME/README.md`](POST-AUDIT-UNIFIED-RUNTIME/README.md)
+
+| 规划任务 | 目标 | 依赖 |
+|---|---|---|
+| [TASK-POST-AUDIT-001](POST-AUDIT-UNIFIED-RUNTIME/TASK-POST-AUDIT-001.md) | 主聊天接入 Decision / Dispatcher | 当前 contracts、Registry、Policy |
+| [TASK-POST-AUDIT-002](POST-AUDIT-UNIFIED-RUNTIME/TASK-POST-AUDIT-002.md) | Runtime 唯一控制、取消与恢复 | 001 |
+| [TASK-POST-AUDIT-003](POST-AUDIT-UNIFIED-RUNTIME/TASK-POST-AUDIT-003.md) | Capability、Tool、MCP 与副作用收口 | 001、002 |
+| [TASK-POST-AUDIT-004](POST-AUDIT-UNIFIED-RUNTIME/TASK-POST-AUDIT-004.md) | Model、Memory、Checkpoint 与部署一致性 | 001、002、003 |
+| [TASK-POST-AUDIT-005](POST-AUDIT-UNIFIED-RUNTIME/TASK-POST-AUDIT-005.md) | 主路径 Acceptance、Review 与 Hardening | 001～004 |
+
+## Unified Runtime Consolidation 规划
+
+POST-AUDIT-001～005 已建立基础边界，BATCH-19 / TASK-POST-AUDIT-006 已完成 Runtime-owned Decision Loop canary；严格目标架构仍要求完成后续 canonical persistence、ContextManager、shared recovery 和 legacy 退役。后续任务见 [`UNIFIED-RUNTIME-CONSOLIDATION/README.md`](UNIFIED-RUNTIME-CONSOLIDATION/README.md)，只有 execution record 标记为 started/completed 才代表活动 Batch。
+
+| 任务 | 目标 | 依赖 | 状态 |
+|---|---|---|---|
+| [TASK-POST-AUDIT-006](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-006.md) | 主聊天 Runtime-owned Decision Loop | POST-AUDIT-001～005 | BATCH-19 canary completed |
+| [TASK-POST-AUDIT-007](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-007.md) | Canonical Invocation / Result / Event pipeline | 006 | BATCH-22 completed |
+| [TASK-POST-AUDIT-008](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-008.md) | ContextManager 与 Memory/Provider trust boundary | 006、007 | BATCH-23 completed |
+| [TASK-POST-AUDIT-009](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-009.md) | Shared checkpoint、durable cancellation 与 worker recovery | 007、008 | BATCH-24 completed |
+| [TASK-POST-AUDIT-010](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-010.md) | Legacy bypass 退役、真实主 API Eval 与最终 hardening | 006～009 | BATCH-26 completed |
+
+执行 runbook：[`docs/harness-execution/POST-AUDIT-EXECUTION-PLAN.md`](../harness-execution/POST-AUDIT-EXECUTION-PLAN.md)
+
+## Target Architecture Closure 补充任务
+
+基于 [`docs/harness-audit/14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md)，TASK-POST-AUDIT-011～013 用于补齐当前源码审计中尚未被 TASK-006～010 充分验收的模型取消、结果契约和 Provider 网络安全边界；对应的 BATCH-20、BATCH-21、BATCH-25 execution record 已存在，状态以记录和源码为准。
+
+| 任务 | 目标 | 依赖 | 状态 |
+|---|---|---|---|
+| [TASK-POST-AUDIT-011](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-011.md) | ModelGateway cancellation、timeout 与 provider error hardening | 006 | BATCH-20 completed |
+| [TASK-POST-AUDIT-012](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-012.md) | ResultNormalizer、schema、safe output 与 authority contract | 006、011 | BATCH-21 completed |
+| [TASK-POST-AUDIT-013](UNIFIED-RUNTIME-CONSOLIDATION/TASK-POST-AUDIT-013.md) | Provider SSRF、egress allowlist 与 endpoint authorization | 011 | BATCH-25 completed |
+
+统一执行计划：[`docs/harness-execution/TARGET-ARCHITECTURE-CLOSURE-EXECUTION-PLAN.md`](../harness-execution/TARGET-ARCHITECTURE-CLOSURE-EXECUTION-PLAN.md)
+
 ## 所有批次的共同约束
 
 - 先添加失败测试或契约测试，再实现最小 adapter；不直接重写 LangGraph、全部 Tool 或业务 Service。

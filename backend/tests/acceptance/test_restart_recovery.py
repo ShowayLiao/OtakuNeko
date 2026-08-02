@@ -72,6 +72,7 @@ async def test_restart_reopens_checkpoint_and_marks_stale_run_abandoned(
 
 @pytest.mark.asyncio
 async def test_resume_requires_owner_thread_and_run_scope(db_session, monkeypatch) -> None:
+    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
     run_store = RunStore(db_session)
     await run_store.create(
         run_id="run-approval",

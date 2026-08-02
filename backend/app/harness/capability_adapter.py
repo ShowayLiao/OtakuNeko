@@ -8,13 +8,15 @@ from typing import Any
 from app.agents.base import BaseAgent
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.contracts import ExecutionContext
+from app.harness.authority import contains_runtime_owned_field
 from app.harness.policy import Approval, PolicyEngine, Principal
 from app.harness.result import AgentResult
 from app.trace import TraceEventType
 from app.trace.recorder import safe_argument_shape, trace_span
 
 
-_MODEL_FORBIDDEN_FIELDS = frozenset({"user_id", "principal_id", "db"})
+def _contains_model_forbidden_field(value: Any) -> bool:
+    return contains_runtime_owned_field(value)
 
 
 def _payload_hash(arguments: dict[str, Any]) -> str:
@@ -58,7 +60,7 @@ class CapabilityAdapter:
         public_args: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         public = dict(public_args or {})
-        if _MODEL_FORBIDDEN_FIELDS.intersection(public):
+        if _contains_model_forbidden_field(public):
             return CapabilityResult.fail(
                 "Identity and runtime dependency fields are not accepted as model arguments",
                 error_type="identity_spoofing",
@@ -78,7 +80,12 @@ class CapabilityAdapter:
                 "Authenticated principal required", error_type="unauthorized"
             ).to_dict()
         if context is not None and context.capability_allowlist:
-            if self._capability.name not in context.capability_allowlist and action not in context.capability_allowlist:
+            public_name = descriptor.public_name or ""
+            if not {
+                self._capability.name,
+                action,
+                public_name,
+            }.intersection(context.capability_allowlist):
                 return CapabilityResult.fail(
                     "Capability is not allowed for this run", error_type="policy_denied"
                 ).to_dict()
@@ -149,7 +156,7 @@ class CapabilityAdapter:
 
     def _find_descriptor(self, action: str) -> ActionDescriptor | None:
         for descriptor in self._capability.actions():
-            if descriptor.name == action:
+            if action in {descriptor.name, descriptor.public_name}:
                 return descriptor
         return None
 
@@ -192,14 +199,30 @@ class CapabilityAgent(BaseAgent):
         capability: Any,
         action: str,
         input_builder: Callable[[Any], dict[str, Any]] | None = None,
+        adapter: CapabilityAdapter | None = None,
+        context: ExecutionContext | None = None,
     ) -> None:
         self.name = name
         self._capability = capability
         self._action = action
         self._input_builder = input_builder or (lambda task: {})
+        self._adapter = adapter
+        self._context = context
 
     async def execute(self, task: Any) -> AgentResult:
         arguments = self._input_builder(task)
+        actions = getattr(self._capability, "actions", None)
+        descriptors = actions() if callable(actions) else ()
+        descriptor = next((item for item in descriptors if item.name == self._action), None)
+        if descriptor is not None and descriptor.is_side_effect and (
+            self._adapter is None or self._context is None
+        ):
+            return AgentResult(
+                kind="capability",
+                name=self.name,
+                status="failed",
+                error_code="dispatcher_required",
+            )
         async with trace_span(
             TraceEventType.CAPABILITY_CALL,
             f"capability.{self.name}",
@@ -208,7 +231,11 @@ class CapabilityAgent(BaseAgent):
                 "argument_shape": safe_argument_shape(arguments),
             },
         ):
-            raw = await self._capability.execute(self._action, **arguments)
+            raw = (
+                await self._adapter.execute(self._context, self._action, arguments)
+                if self._adapter is not None and self._context is not None
+                else await self._capability.execute(self._action, **arguments)
+            )
 
         if isinstance(raw, AgentResult):
             return raw
