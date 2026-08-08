@@ -295,6 +295,63 @@ async def test_gateway_accepts_only_provider_neutral_context_snapshot():
     assert "snapshot_hash" in serialized
 
 
+@pytest.mark.asyncio
+async def test_gateway_infer_prompt_describes_required_decision_fields():
+    completions = FakeCompletions(response=response(content='{"action":"respond","content":"done"}'))
+    gateway = OpenAIModelGateway(
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        model="test-model",
+        client=FakeClient(completions),
+    )
+
+    await gateway.infer(
+        goal="goal",
+        messages=[{"role": "user", "content": "hello"}],
+    )
+
+    instruction = completions.calls[0]["messages"][-1]["content"]
+    assert "decision_id" in instruction
+    assert "content" in instruction
+    assert completions.calls[0]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+async def test_gateway_infer_prompt_includes_public_capability_catalog():
+    completions = FakeCompletions(
+        response=response(
+            content='{"action":"invoke","capability":"search_anime_advanced"}'
+        )
+    )
+    gateway = OpenAIModelGateway(
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        model="test-model",
+        client=FakeClient(completions),
+    )
+
+    await gateway.infer(
+        goal="search anime",
+        messages=[{"role": "user", "content": "search anime"}],
+        capability_catalog=[
+            {
+                "public_name": "search_anime_advanced",
+                "version": "v1",
+                "description": "Search anime by keyword",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"keyword": {"type": "string"}},
+                    "required": ["keyword"],
+                },
+            }
+        ],
+    )
+
+    serialized_messages = str(completions.calls[0]["messages"])
+    assert "search_anime_advanced" in serialized_messages
+    assert '"keyword"' in serialized_messages
+
+
 class FakeLangChainModel:
     async def ainvoke(self, _messages):
         return SimpleNamespace(

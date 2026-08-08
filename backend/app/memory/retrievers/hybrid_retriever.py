@@ -3,7 +3,12 @@ from app.memory.retrievers.vector_retriever import VectorRetriever
 
 
 class HybridRetriever:
-    def __init__(self, bm25: BM25Retriever, vector: VectorRetriever, alpha: float = 0.3):
+    def __init__(
+        self,
+        bm25: BM25Retriever,
+        vector: VectorRetriever | None,
+        alpha: float = 0.3,
+    ):
         self.bm25 = bm25
         self.vector = vector
         self.alpha = alpha
@@ -11,11 +16,16 @@ class HybridRetriever:
     async def retrieve(self, query: str, facts: list[dict], top_k: int = 5) -> list[dict]:
         facts_text = [f["content"] for f in facts]
         bm25_results = self.bm25.search(query, top_k=len(facts), facts=facts_text)
-        vector_results = await self.vector.search(query, facts, top_k=len(facts))
+        vector_results = []
+        if self.vector is not None:
+            vector_results = await self.vector.search(
+                query, facts, top_k=len(facts)
+            )
 
         scores: dict[int, float] = {}
+        bm25_weight = self.alpha if self.vector is not None else 1.0
         for i, s in bm25_results:
-            scores[i] = self.alpha * s
+            scores[i] = bm25_weight * s
         for i, s in vector_results:
             scores[i] = scores.get(i, 0) + (1 - self.alpha) * s
 

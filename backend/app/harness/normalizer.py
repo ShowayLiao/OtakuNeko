@@ -201,13 +201,198 @@ def _safe_value(value: Any, *, max_depth: int, max_string_bytes: int) -> Any:
             for child in value
         ]
     if isinstance(value, str):
-        encoded = value.encode("utf-8")
-        if len(encoded) > max_string_bytes:
-            return encoded[:max_string_bytes].decode("utf-8", errors="ignore") + "...[TRUNCATED]"
+        if len(value.encode("utf-8")) > max_string_bytes:
+            return _truncate_text(value, max_string_bytes)
         return value
     if isinstance(value, (str, int, float, bool)) or value is None:
         return value
     return str(type(value).__name__)
+
+
+_OMIT = object()
+
+
+def _truncate_text(value: str, max_bytes: int) -> str:
+    """Truncate text without exceeding the byte budget."""
+    if max_bytes <= 0:
+        return ""
+    marker = "...[TRUNCATED]"
+    marker_bytes = len(marker.encode("utf-8"))
+    if max_bytes <= marker_bytes:
+        return marker.encode("utf-8")[:max_bytes].decode("utf-8", errors="ignore")
+    prefix = value.encode("utf-8")[: max_bytes - marker_bytes].decode(
+        "utf-8", errors="ignore"
+    )
+    return prefix + marker
+
+
+@dataclass
+class _BoundedProjection:
+    value: Any
+    reasons: set[str] = field(default_factory=set)
+
+
+def _schema_child(schema: dict[str, Any] | None, key: str | int) -> dict[str, Any] | None:
+    if not isinstance(schema, dict):
+        return None
+    if isinstance(key, int):
+        child = schema.get("items")
+        return child if isinstance(child, dict) else None
+    properties = schema.get("properties")
+    if isinstance(properties, dict) and isinstance(properties.get(key), dict):
+        return properties[key]
+    additional = schema.get("additionalProperties")
+    return additional if isinstance(additional, dict) else None
+
+
+def _bounded_safe_value(
+    value: Any,
+    *,
+    max_depth: int,
+    max_fields: int,
+    max_string_bytes: int,
+    schema: dict[str, Any] | None,
+) -> _BoundedProjection:
+    """Create a redacted projection that stays within structural limits."""
+    fields = 0
+    reasons: set[str] = set()
+
+    def visit(item: Any, depth: int, item_schema: dict[str, Any] | None) -> Any:
+        nonlocal fields
+        if depth > max_depth:
+            reasons.add("depth")
+            return _OMIT
+        if isinstance(item, dict):
+            safe: dict[str, Any] = {}
+            required = (
+                set(item_schema.get("required", []))
+                if isinstance(item_schema, dict)
+                else set()
+            )
+            keys = [key for key in item if key in required]
+            keys.extend(key for key in item if key not in required)
+            for key in keys:
+                if fields >= max_fields:
+                    reasons.add("field_count")
+                    break
+                fields += 1
+                key_text = str(key)
+                if any(part in key_text.lower() for part in _SENSITIVE_KEY_PARTS):
+                    safe[key_text] = "[REDACTED]"
+                    continue
+                child = visit(item[key], depth + 1, _schema_child(item_schema, key_text))
+                if child is not _OMIT:
+                    safe[key_text] = child
+            return safe
+        if isinstance(item, list):
+            safe_list: list[Any] = []
+            child_schema = _schema_child(item_schema, 0)
+            for child_item in item:
+                if fields >= max_fields:
+                    reasons.add("field_count")
+                    break
+                fields += 1
+                child = visit(child_item, depth + 1, child_schema)
+                if child is not _OMIT:
+                    safe_list.append(child)
+            return safe_list
+        if isinstance(item, str):
+            if len(item.encode("utf-8")) > max_string_bytes:
+                reasons.add("string_bytes")
+                return _truncate_text(item, max_string_bytes)
+            return item
+        if isinstance(item, (int, float, bool)) or item is None:
+            return item
+        return str(type(item).__name__)
+
+    bounded = visit(value, 0, schema)
+    return _BoundedProjection({} if bounded is _OMIT else bounded, reasons)
+
+
+def _json_size(value: Any) -> int | None:
+    try:
+        return len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+    except (TypeError, ValueError):
+        return None
+
+
+def _remove_one_list_item(value: Any, schema: dict[str, Any] | None) -> bool:
+    if isinstance(value, list):
+        minimum = schema.get("minItems", 0) if isinstance(schema, dict) else 0
+        if len(value) > minimum:
+            value.pop()
+            return True
+        child_schema = _schema_child(schema, 0)
+        return any(_remove_one_list_item(child, child_schema) for child in value)
+    if isinstance(value, dict):
+        return any(
+            _remove_one_list_item(child, _schema_child(schema, key))
+            for key, child in value.items()
+        )
+    return False
+
+
+def _truncate_one_string(value: Any) -> bool:
+    if isinstance(value, str):
+        encoded_size = len(value.encode("utf-8"))
+        return encoded_size > 1
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if isinstance(child, str) and len(child.encode("utf-8")) > 1:
+                value[key] = _truncate_text(child, max(1, len(child.encode("utf-8")) // 2))
+                return True
+            if _truncate_one_string(child):
+                return True
+        return False
+    if isinstance(value, list):
+        for index, child in enumerate(value):
+            if isinstance(child, str) and len(child.encode("utf-8")) > 1:
+                value[index] = _truncate_text(child, max(1, len(child.encode("utf-8")) // 2))
+                return True
+            if _truncate_one_string(child):
+                return True
+        return False
+    return False
+
+
+def _remove_one_optional_field(value: Any, schema: dict[str, Any] | None) -> bool:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if _remove_one_optional_field(child, _schema_child(schema, key)):
+                return True
+        required = set(schema.get("required", [])) if isinstance(schema, dict) else set()
+        candidates = [key for key in value if key not in required]
+        if candidates:
+            key = max(candidates, key=lambda item: _json_size(value[item]) or 0)
+            del value[key]
+            return True
+        return False
+    if isinstance(value, list):
+        child_schema = _schema_child(schema, 0)
+        return any(_remove_one_optional_field(child, child_schema) for child in value)
+    return False
+
+
+def _compact_payload(
+    value: Any,
+    *,
+    max_payload_bytes: int,
+    schema: dict[str, Any],
+) -> bool:
+    """Trim a safe projection until its JSON payload fits the public limit."""
+    for _ in range(DEFAULT_MAX_OUTPUT_FIELDS * 4):
+        size = _json_size(value)
+        if size is not None and size <= max_payload_bytes:
+            return True
+        if _remove_one_list_item(value, schema):
+            continue
+        if _truncate_one_string(value):
+            continue
+        if _remove_one_optional_field(value, schema):
+            continue
+        break
+    size = _json_size(value)
+    return size is not None and size <= max_payload_bytes
 
 
 @dataclass(frozen=True)
@@ -327,12 +512,68 @@ class ResultNormalizer:
             )
         except OutputBoundsError as exc:
             digest = hashlib.sha256(repr(raw).encode("utf-8", errors="replace")).hexdigest()
+            projection = _bounded_safe_value(
+                data,
+                max_depth=DEFAULT_MAX_OUTPUT_DEPTH,
+                max_fields=DEFAULT_MAX_OUTPUT_FIELDS,
+                max_string_bytes=DEFAULT_MAX_OUTPUT_STRING_BYTES,
+                schema=descriptor.output_schema,
+            )
+            bounded_data = projection.value
+            fits_payload = _compact_payload(
+                bounded_data,
+                max_payload_bytes=descriptor.max_payload_bytes,
+                schema=descriptor.output_schema,
+            )
+            bounded_error = _schema_error(
+                bounded_data,
+                descriptor.output_schema,
+                "output",
+            )
+            if fits_payload and bounded_error is None:
+                bounded_size = _json_size(raw)
+                reasons = projection.reasons or {"payload_bytes"}
+                artifact = {
+                    "artifact_id": digest,
+                    "kind": "bounded_output",
+                    "size_bytes": exc.payload_bytes or bounded_size,
+                    "reasons": sorted(reasons),
+                }
+                safe_data = bounded_data if isinstance(bounded_data, dict) else {"value": bounded_data}
+                if not success:
+                    safe_data = {
+                        "error_type": error_code or "tool_error",
+                        "message": "Capability execution failed",
+                    }
+                return NormalizedResult(
+                    status="succeeded" if success else "failed",
+                    error_code=error_code,
+                    retryable=retryable,
+                    safe_output=safe_data,
+                    artifacts=[artifact],
+                    latency_ms=latency_ms,
+                    provenance=self._provenance("capability", bounded=True),
+                    run_id=run_id,
+                    decision_id=decision_id,
+                    invocation_id=invocation_id,
+                    trace_id=trace_id,
+                    sequence=sequence,
+                    capability=descriptor.name,
+                    capability_version=descriptor.version,
+                )
             return NormalizedResult(
                 status="failed",
                 error_code="payload_too_large",
                 retryable=False,
                 safe_output={"error_type": "payload_too_large", "message": "Capability output was bounded"},
-                artifacts=[{"artifact_id": digest, "kind": "bounded_output", "size_bytes": exc.payload_bytes}],
+                artifacts=[
+                    {
+                        "artifact_id": digest,
+                        "kind": "bounded_output",
+                        "size_bytes": exc.payload_bytes or _json_size(raw),
+                        "reasons": sorted(projection.reasons or {"payload_bytes"}),
+                    }
+                ],
                 latency_ms=latency_ms,
                 provenance=self._provenance("capability", bounded=True),
                 run_id=run_id,

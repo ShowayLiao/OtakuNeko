@@ -27,7 +27,6 @@ from app.memory.interfaces import (
 )
 from app.memory.types import MemoryFact, MemorySourceType
 from app.memory.retrievers.bm25_retriever import BM25Retriever
-from app.memory.retrievers.vector_retriever import VectorRetriever
 from app.memory.retrievers.hybrid_retriever import HybridRetriever
 from app.core.logging import get_logger
 from app.harness.budget import CancellationToken, RunBudget
@@ -60,12 +59,17 @@ def _write_lock(user_id: int | None, thread_id: str, kind: str) -> asyncio.Lock:
     return locks[index]
 
 
+def _normalized_fact_content(content: str) -> str:
+    return " ".join(content.split()).casefold()
+
+
 class MemoryServiceImpl(MemoryService):
     """Memory service backed by a repository and extractor.
 
     Coordinates fact storage, retrieval, and extraction through
-    the abstract repository and extractor layers. The hybrid
-    retriever (BM25 + vector) is used for semantic search.
+    the abstract repository and extractor layers. Retrieval uses
+    local BM25 keyword search until a separate embedding provider
+    is configured.
     """
 
     def __init__(
@@ -88,7 +92,7 @@ class MemoryServiceImpl(MemoryService):
         self.last_model_call = None
 
         self._bm25 = BM25Retriever()
-        self._vector = VectorRetriever(api_key, base_url)
+        self._vector = None
         self._hybrid = HybridRetriever(self._bm25, self._vector)
         self._compiler = ContextCompiler()
 
@@ -136,21 +140,14 @@ class MemoryServiceImpl(MemoryService):
                     limit=1000,
                 )
 
-                if existing:
-                    all_contents = [f["content"] for f in existing] + [content]
-                    vecs = await self._vector.embed(all_contents)
-                    new_vec = vecs[-1]
-                    for existing_vec in vecs[:-1]:
-                        if (
-                            VectorRetriever.cosine_similarity(
-                                new_vec, existing_vec
-                            )
-                            > 0.9
-                        ):
-                            await self._repo.commit()
-                            return None
-                else:
-                    await self._vector.embed([content])
+                normalized_content = _normalized_fact_content(content)
+                if any(
+                    _normalized_fact_content(str(fact.get("content", "")))
+                    == normalized_content
+                    for fact in existing
+                ):
+                    await self._repo.commit()
+                    return None
 
                 fact_id = str(uuid.uuid4())
                 fact = MemoryFact(

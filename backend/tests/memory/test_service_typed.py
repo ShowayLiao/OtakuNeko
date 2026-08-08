@@ -10,23 +10,6 @@ from app.memory.interfaces import MemoryContext, MemoryRepository, MemoryService
 from app.memory.service import MemoryServiceImpl
 
 
-def _make_unique_embed():
-    """Return an embed function that produces orthogonal vectors per text."""
-    seen = {}
-
-    async def _embed(texts):
-        results = []
-        for text in texts:
-            if text not in seen:
-                seen[text] = len(seen)
-            v = [0.0] * max(seen[text] + 1, 2)
-            v[seen[text]] = 1.0
-            results.append(v)
-        return results
-
-    return _embed
-
-
 class FakeRepository(MemoryRepository):
     """Dict-backed fake that supports user_id and kind filtering."""
 
@@ -124,11 +107,6 @@ class TestServiceKindAware:
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
 
-        async def fake_embed(texts):
-            return [[0.5] * 10 for _ in texts]
-
-        svc._vector.embed = fake_embed
-
         await svc.store_fact("th1", "episodic fact", kind="episodic", user_id=1)
         await svc.store_fact("th1", "semantic fact", kind="semantic", user_id=1)
 
@@ -145,16 +123,11 @@ class TestServiceKindAware:
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
 
-        async def fake_embed(texts):
-            return [[0.5] * 10 for _ in texts]
-
-        svc._vector.embed = fake_embed
-
         await svc.store_fact("th1", "episodic", kind="episodic", user_id=1)
         await svc.store_fact("th1", "semantic", kind="semantic", user_id=1)
 
-        ctx_epi = await svc.retrieve_context("th1", "query", kind="episodic", user_id=1)
-        ctx_sem = await svc.retrieve_context("th1", "query", kind="semantic", user_id=1)
+        ctx_epi = await svc.retrieve_context("th1", "episodic", kind="episodic", user_id=1)
+        ctx_sem = await svc.retrieve_context("th1", "semantic", kind="semantic", user_id=1)
 
         assert len(ctx_epi.long_term_facts) == 1
         assert ctx_epi.long_term_facts[0]["content"] == "episodic"
@@ -166,16 +139,11 @@ class TestServiceKindAware:
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
 
-        async def fake_embed(texts):
-            return [[0.5] * 10 for _ in texts]
-
-        svc._vector.embed = fake_embed
-
         await svc.store_fact("th1", "alice's fact", user_id=1)
         await svc.store_fact("th1", "bob's fact", user_id=2)
 
-        alice = await svc.search_facts("th1", "fact", user_id=1)
-        bob = await svc.search_facts("th1", "fact", user_id=2)
+        alice = await svc.search_facts("th1", "alice", user_id=1)
+        bob = await svc.search_facts("th1", "bob", user_id=2)
 
         assert len(alice) == 1
         assert alice[0]["content"] == "alice's fact"
@@ -191,8 +159,6 @@ class TestRetention:
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
         svc.max_facts = 2
-        _unique_embed = _make_unique_embed()
-        svc._vector.embed = _unique_embed
 
         for i in range(3):
             await svc.store_fact("th1", f"fact-{i}", importance=0.1, user_id=1)
@@ -219,7 +185,6 @@ class TestRetention:
                 {"content": "likes science fiction", "importance": 0.8}
             ]),
         )
-        svc._vector.embed = _make_unique_embed()
 
         count = await svc.extract_and_store_facts("th1", user_id=7)
 
@@ -240,7 +205,6 @@ class TestRetention:
             repo=repo,
             extractor=FakeExtractor([{"content": untrusted_text, "importance": 0.2}]),
         )
-        svc._vector.embed = _make_unique_embed()
 
         count = await svc.extract_and_store_facts("th-untrusted", user_id=7)
 
@@ -274,7 +238,6 @@ class TestRetention:
         repo = DelayedRepository()
         svc = _make_svc(repo=repo)
         svc.max_facts = 1
-        svc._vector.embed = _make_unique_embed()
 
         await asyncio.gather(
             svc.store_fact("th1", "first", user_id=1),
@@ -290,7 +253,6 @@ class TestProvenance:
     async def test_store_fact_persists_provenance_in_existing_metadata(self):
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
-        svc._vector.embed = _make_unique_embed()
 
         await svc.store_fact(
             "thread-provenance",
@@ -314,7 +276,6 @@ class TestProvenance:
     async def test_retrieval_preserves_provenance_after_hybrid_ranking(self):
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
-        svc._vector.embed = _make_unique_embed()
 
         await svc.store_fact(
             "thread-ranked",

@@ -57,6 +57,43 @@ def test_terminal_decisions_do_not_become_invocations(action: str) -> None:
     assert DecisionParser.to_invocation(decision) is None
 
 
+@pytest.mark.parametrize("action", ["respond", "finish"])
+def test_terminal_decision_without_id_gets_runtime_correlation_id(action: str) -> None:
+    decision = DecisionParser().parse(
+        _result(
+            {
+                "schema_version": "v1",
+                "action": action,
+                "content": "done",
+            }
+        ),
+        expected_run_id="run-1",
+    )
+
+    assert decision.run_id == "run-1"
+    assert decision.decision_id
+    assert decision.action == action
+
+
+def test_invoke_decision_without_id_gets_runtime_correlation_id() -> None:
+    decision = DecisionParser().parse(
+        _result(
+            {
+                "schema_version": "v1",
+                "action": "invoke",
+                "capability": "catalog.search",
+                "capability_version": "v1",
+                "arguments": {"query": "anime"},
+            }
+        ),
+        expected_run_id="run-1",
+    )
+
+    assert decision.action == "invoke"
+    assert decision.decision_id
+    assert decision.run_id == "run-1"
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -86,8 +123,11 @@ def test_model_owned_authority_fields_are_rejected(field: str) -> None:
         "arguments": {field: "forged"},
     }
 
-    with pytest.raises(DecisionParseError):
+    with pytest.raises(DecisionParseError) as exc_info:
         DecisionParser().parse(_result(payload))
+
+    assert exc_info.value.error_code == ErrorCode.INVALID_REQUEST
+    assert exc_info.value.retryable is False
 
 
 def test_provider_json_and_multiple_tool_calls_fail_closed() -> None:
@@ -114,6 +154,22 @@ def test_provider_json_and_multiple_tool_calls_fail_closed() -> None:
     )
     with pytest.raises(DecisionParseError):
         DecisionParser().parse(multiple)
+
+
+def test_provider_json_wrapped_in_markdown_fence_is_parsed() -> None:
+    result = ModelCallResult(
+        provider="fake",
+        model="fake-model",
+        operation="infer",
+        status="completed",
+        text='```json\n{"schema_version":"v1","action":"finish","content":"done"}\n```',
+    )
+
+    decision = DecisionParser().parse(result, expected_run_id="run-1")
+
+    assert decision.action == "finish"
+    assert decision.content == "done"
+    assert decision.run_id == "run-1"
 
 
 def test_oversized_arguments_are_rejected_and_error_is_safe() -> None:

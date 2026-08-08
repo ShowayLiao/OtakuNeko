@@ -10,23 +10,6 @@ from app.memory.repository import StoreMemoryRepository
 from app.memory.service import MemoryServiceImpl
 
 
-def _make_unique_embed():
-    """Return an embed function that produces orthogonal vectors per text."""
-    seen = {}
-
-    async def _embed(texts):
-        results = []
-        for text in texts:
-            if text not in seen:
-                seen[text] = len(seen)
-            v = [0.0] * max(seen[text] + 1, 2)
-            v[seen[text]] = 1.0
-            results.append(v)
-        return results
-
-    return _embed
-
-
 class FakeRepository(MemoryRepository):
     """Fake repository backed by a simple dict (no Store dependency)."""
 
@@ -225,10 +208,6 @@ class TestMemoryServiceContract:
             max_facts=1,
         )
 
-        # Return orthogonal vectors per unique text so no false dedup.
-        _unique_embed = _make_unique_embed()
-
-        svc._vector.embed = _unique_embed
         await svc.store_fact("th1", "first")
         await svc.store_fact("th1", "second")
 

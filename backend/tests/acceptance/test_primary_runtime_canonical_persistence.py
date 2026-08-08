@@ -229,6 +229,38 @@ async def test_primary_runtime_replay_of_terminal_run_does_not_invoke_gateway_ag
 
 
 @pytest.mark.asyncio
+async def test_primary_runtime_replay_preserves_persisted_terminal_error_code() -> None:
+    run_store = _MemoryRunStore()
+    run_store.runs["run-failed"] = AgentRun(
+        run_id="run-failed",
+        status="failed",
+        error_code="invalid_request",
+    )
+    gateway = _Gateway("run-failed")
+    runtime = _runtime(run_store, _MemoryEventStore(), gateway)
+
+    events = [
+        event
+        async for event in runtime.stream_decision(
+            AgentTask(
+                user_id=7,
+                goal="search",
+                metadata={"run_id": "run-failed", "messages": []},
+            ),
+            context=ExecutionContext(
+                principal_id=7,
+                run_id="run-failed",
+                trace_id="trace-failed-replay",
+            ),
+        )
+    ]
+
+    assert events[-1]["type"] == "run_failed"
+    assert events[-1]["error_code"] == "invalid_request"
+    assert gateway.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_primary_runtime_writes_sql_canonical_facts(db_session) -> None:
     runtime = _runtime(
         RunStore(db_session),

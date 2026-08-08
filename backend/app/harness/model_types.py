@@ -59,6 +59,7 @@ class ModelCallResult(BaseModel):
     trace_id: str | None = None
     status: ModelCallStatus
     text: str = ""
+    reasoning: str = ""
     # Provider adapters normalize tool calls without exposing provider objects.
     # ``decision`` is the canonical structured payload when the provider can
     # return one directly; both remain data-only at this boundary.

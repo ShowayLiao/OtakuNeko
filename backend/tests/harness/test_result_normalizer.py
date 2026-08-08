@@ -115,10 +115,50 @@ async def test_oversize_output_is_bounded_with_audit_reference() -> None:
 
     result = await Dispatcher(registry).dispatch(_decision({}), _context())
 
-    assert result.status == "failed"
-    assert result.error_code == "payload_too_large"
+    assert result.status == "succeeded"
+    assert result.error_code is None
     assert result.artifacts and result.artifacts[0]["kind"] == "bounded_output"
     assert "x" * 200 not in str(result.model_dump())
+
+
+def test_oversize_search_result_returns_bounded_success() -> None:
+    descriptor = ActionDescriptor(
+        name="search",
+        public_name="anime.search",
+        description="search",
+        input_schema={"type": "object"},
+        max_payload_bytes=1024,
+    )
+    raw = {
+        "success": True,
+        "total": 10,
+        "results": [
+            {
+                "id": index,
+                "name": f"Anime {index}",
+                "summary": "summary " * 200,
+                "images": {"large": "https://example.test/image.jpg"},
+                "tags": [f"tag-{tag}" for tag in range(20)],
+            }
+            for index in range(10)
+        ],
+    }
+
+    result = ResultNormalizer().normalize(
+        raw,
+        descriptor=descriptor,
+        run_id="run-search",
+        decision_id="decision-search",
+        invocation_id="invocation-search",
+        trace_id="trace-search",
+    )
+
+    assert result.status == "succeeded"
+    assert result.error_code is None
+    assert result.provenance["bounded"] is True
+    assert result.artifacts and result.artifacts[0]["kind"] == "bounded_output"
+    assert "field_count" in result.artifacts[0]["reasons"]
+    assert len(str(result.model_projection()).encode("utf-8")) <= 1024
 
 
 @pytest.mark.asyncio

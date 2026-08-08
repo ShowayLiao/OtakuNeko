@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from tests.memory.test_service_typed import (
-    FakeRepository, _make_unique_embed, _make_svc,
+    FakeRepository, _make_svc,
 )
 
 
@@ -17,8 +17,6 @@ class TestRetentionEnforcement:
         """Episodic retention does not evict profile memory."""
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
-        _unique_embed = _make_unique_embed()
-        svc._vector.embed = _unique_embed
 
         # Set limits small: override kind-specific + global
         svc.max_facts = 2  # episodic retains max 2
@@ -43,8 +41,6 @@ class TestRetentionEnforcement:
         """Profile records survive when episodic retention fires."""
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
-        _unique_embed = _make_unique_embed()
-        svc._vector.embed = _unique_embed
         svc.max_facts = 1
 
         # profile stored first
@@ -62,7 +58,6 @@ class TestRetentionEnforcement:
     async def test_profile_memory_requires_explicit_deletion(self):
         repo = FakeRepository()
         svc = _make_svc(repo=repo)
-        svc._vector.embed = _make_unique_embed()
         svc.max_facts = 1
 
         await svc.store_fact(
