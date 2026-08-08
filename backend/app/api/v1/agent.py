@@ -7,36 +7,27 @@ from typing import Any, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import httpx
-from langgraph.store.memory import InMemoryStore
 from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.schemas.agent import ChatRequest
 from app.schemas.collection import CollectionSearchBase
 from app.schemas.user import UserRead
-from app.agents.graph import ChatWorkflow
-from app.agents.langgraph_adapter import LangGraphAdapter
-from app.agents.agent_registry import AgentRegistry
-from app.agents.recommendation_agent import RecommendationAgent
-from app.agents.router import AgentRouter
-from app.capabilities.recommendation import RecommendationCapability
-from app.capabilities.anime import AnimeCapability
 from app.capabilities.factory import build_capability_registry
 from app.harness.runtime import AgentRuntime
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.cancellation_store import cancellation_store
 from app.harness.checkpoint import SqliteCheckpointStore
-from app.harness.contracts import ErrorCode, ExecutionContext, RunEvent
-from app.harness.decision_parser import DecisionParseError, DecisionParser
+from app.harness.contracts import ExecutionContext, RunEvent
 from app.harness.dispatcher import Dispatcher
+from app.harness.persistence.idempotency import SqlIdempotencyStore
 from app.harness.model_gateway import (
     OpenAICompatibleModelAdapter,
     OpenAIModelGateway,
     safe_provider_detail,
 )
-from app.harness.model_types import ModelCallResult
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import InvalidRunTransition, RunStore
-from app.harness.routing_adapter import FeatureFlagRoutingAdapter
+from app.harness.policy import Approval, PolicyEngine
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
 from app.memory.sql_repository import SqlMemoryRepository
@@ -44,11 +35,13 @@ from app.memory.extractor import LLMFactExtractor
 from app.services.collection_service import get_user_collections
 from app.api.deps import get_current_user, get_optional_user
 from app.db.database import get_session
+from app.agents.agent_registry import AgentRegistry
+from app.agents.recommendation_agent import RecommendationAgent
+from app.agents.router import AgentRouter
 from app.agents.thread_scope import (
     make_anonymous_thread,
     make_user_thread,
     public_thread_id,
-    user_thread_prefix,
 )
 from app.agents.provider_endpoint import (
     ProviderEndpointError,
@@ -66,8 +59,6 @@ from app.models.agent_run import AgentRunEvent
 
 router = APIRouter()
 
-_store = InMemoryStore()
-
 
 _TERMINAL_RUN_STATUSES = {"succeeded", "failed", "cancelled"}
 _MAX_REPLAY_CURSOR = 1_000_000_000
@@ -83,35 +74,12 @@ def _interactive_run_store_enabled() -> bool:
     }
 
 
-def _primary_decision_loop_enabled() -> bool:
-    """Enable the Runtime-owned chat loop by default.
-
-    An explicit false value is retained as the narrowly-scoped rollback to the
-    previously verified compatibility adapter.  It is never the production
-    default and does not grant legacy code a new execution capability.
-    """
-    return os.getenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "true").lower() not in {
-        "0",
-        "false",
-        "off",
-        "no",
-    }
-
-
 def _checkpoint_adapter_enabled() -> bool:
     return settings.HARNESS_CHECKPOINT_ADAPTER.lower() not in {
         "legacy",
         "off",
         "disabled",
     }
-
-
-async def _latest_thread_checkpoint(checkpointer, thread_id: str):
-    """Read the newest checkpoint across legacy and run-scoped namespaces."""
-    config = {"configurable": {"thread_id": thread_id}}
-    async for checkpoint in checkpointer.alist(config, limit=1):
-        return checkpoint
-    return None
 
 
 def format_sse(event: str, data: dict, *, event_id: int | str | None = None) -> str:
@@ -434,6 +402,8 @@ async def chat_endpoint(
     for msg in request.messages:
         if msg.role != "system":
             formatted_messages.append(msg.model_dump())
+    if speak_prompt:
+        formatted_messages.insert(0, {"role": "system", "content": speak_prompt})
 
     thread_scope = _resolve_chat_thread(user, request.thread_id)
     run_id = uuid4().hex
@@ -450,32 +420,18 @@ async def chat_endpoint(
     cancellation_store.register(run_id, cancellation)
 
     async def stream_generator():
-        stream_started = time.perf_counter()
-        sequence = 0
-        primary_decision_loop = _primary_decision_loop_enabled()
-        workflow: Optional[ChatWorkflow] = None
-        checkpointer = None
         checkpoint_store: Optional[SqliteCheckpointStore] = None
         dispatcher: Optional[Dispatcher] = None
         model_gateway: Optional[OpenAIModelGateway] = None
         try:
-            # The legacy adapter needs an early flush before workflow setup.
-            # The Runtime-owned Decision Loop emits its own canonical
-            # ``thinking_start`` event, so do not duplicate it here.
-            if not primary_decision_loop:
-                initial_data = _chat_sse_projection(
-                    {"type": "thinking_start"},
-                    durable=durable_run,
-                )
-                if durable_run:
-                    initial_data["run_id"] = run_id
-                yield format_sse(
-                    event="thinking_start",
-                    data=initial_data,
-                    event_id=1 if durable_run else None,
-                )
             capability_registry = build_capability_registry()
-            dispatcher = Dispatcher(capability_registry)
+            dispatcher = Dispatcher(
+                capability_registry,
+                policy_engine=PolicyEngine(allow_side_effects=True),
+                idempotency_store=(
+                    SqlIdempotencyStore(db) if durable_run else None
+                ),
+            )
             execution_context = ExecutionContext(
                 principal_id=user.id if user is not None else None,
                 run_id=run_id,
@@ -484,60 +440,8 @@ async def chat_endpoint(
                     definition.public_name
                     for definition in capability_registry.allowed_public_definitions()
                 ),
+                thread_id=thread_scope.internal_id,
             )
-            decision_parser = DecisionParser()
-
-            if not primary_decision_loop:
-                async def dispatch_proposal(proposal: dict[str, Any]) -> dict[str, Any]:
-                    try:
-                        decision = decision_parser.parse(
-                            ModelCallResult(
-                                provider="langgraph",
-                                model=request.model,
-                                operation="decision",
-                                status="completed",
-                                decision=proposal,
-                            ),
-                            expected_run_id=run_id,
-                        )
-                        invocation = await dispatcher.dispatch(
-                            decision,
-                            execution_context,
-                            cancellation=cancellation,
-                        )
-                        return {
-                            "success": invocation.status == "succeeded",
-                            "decision": proposal,
-                            "invocation_id": invocation.invocation_id,
-                            "status": invocation.status,
-                            "output": invocation.output,
-                            "error_type": (
-                                invocation.error_code.value
-                                if isinstance(invocation.error_code, ErrorCode)
-                                else invocation.error_code
-                            ),
-                        }
-                    except DecisionParseError as exc:
-                        return {
-                            "success": False,
-                            "decision": proposal,
-                            "status": "denied",
-                            "error_type": exc.error_code.value,
-                            "message": "Model decision was invalid",
-                        }
-
-                workflow = ChatWorkflow(
-                    api_key=api_key,
-                    base_url=base_url,
-                    store=_store,
-                    checkpoint_path=settings.CHECKPOINT_DB_PATH,
-                    run_id=run_id,
-                    thread_id=thread_scope.internal_id,
-                    cancellation=cancellation,
-                    proposal_handler=dispatch_proposal,
-                )
-                await workflow._ensure_checkpointer()
-                checkpointer = workflow.checkpointer
 
             memory = None
             memory_context = None
@@ -564,19 +468,15 @@ async def chat_endpoint(
                     ),
                     api_key=api_key,
                     base_url=base_url,
-                    checkpointer=checkpointer,
                     default_user_id=user.id,
                     run_id=run_id,
                 )
-                if workflow is not None:
-                    workflow.memory = memory
-                if primary_decision_loop:
-                    memory_context = await memory.retrieve_context(
-                        thread_scope.internal_id,
-                        goal,
-                        user_id=user.id,
-                        run_id=run_id,
-                    )
+                memory_context = await memory.retrieve_context(
+                    thread_scope.internal_id,
+                    goal,
+                    user_id=user.id,
+                    run_id=run_id,
+                )
                 if settings.ENABLE_MULTI_AGENT_ROUTING:
                     try:
                         collection_list = await get_user_collections(
@@ -587,30 +487,26 @@ async def chat_endpoint(
                     except Exception:
                         collections = []
 
-            if workflow is not None:
-                fallback_adapter = LangGraphAdapter(workflow)
-                registry = AgentRegistry()
-                registry.register(
-                    "recommendation",
-                    RecommendationAgent(
-                        RecommendationCapability(),
-                        anime_capability=AnimeCapability(),
-                        memory_service=memory,
-                    ),
+            specialist_router: AgentRouter | None = None
+            if settings.ENABLE_MULTI_AGENT_ROUTING:
+                recommendation_owner = capability_registry.find_action(
+                    "generate_user_profile_tool"
                 )
-                adapter = FeatureFlagRoutingAdapter(
-                    fallback_adapter,
-                    AgentRouter(registry),
-                    # The compatibility route remains explicitly disabled;
-                    # enabled specialist execution fails closed until it has
-                    # a Dispatcher-backed subagent contract.
-                    enabled=False,
-                )
-            else:
-                # stream_decision is Runtime-owned and never consults the
-                # compatibility adapter.  Keep the constructor explicit for
-                # tracing while avoiding any LangGraph graph compilation.
-                adapter = object()
+                anime_owner = capability_registry.find_action("search_anime_advanced")
+                if recommendation_owner is not None and anime_owner is not None:
+                    agent_registry = AgentRegistry()
+                    agent_registry.register(
+                        "recommendation",
+                        RecommendationAgent(
+                            recommendation_owner[0],
+                            anime_capability=anime_owner[0],
+                            memory_service=memory,
+                        ),
+                    )
+                    specialist_router = AgentRouter(agent_registry)
+
+            # The structured Decision loop is controlled by AgentRuntime and
+            # does not require a separate adapter or graph object.
             checkpoint_store = (
                 SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
                 if durable_run and _checkpoint_adapter_enabled()
@@ -618,11 +514,11 @@ async def chat_endpoint(
             )
             run_budget = RunBudget()
             runtime = AgentRuntime(
-                adapter,
                 checkpoint_store=checkpoint_store,
                 trace_store=SqlTraceStore(db),
                 model_gateway=model_gateway,
                 dispatcher=dispatcher,
+                specialist_router=specialist_router,
                 run_store=RunStore(db) if durable_run else None,
                 event_store=EventStore(db) if durable_run else None,
                 memory_context=memory_context,
@@ -637,57 +533,20 @@ async def chat_endpoint(
                     "messages": formatted_messages,
                     "collections": collections,
                     "run_id": run_id,
+                    "model": request.model,
                 },
             )
 
-            if primary_decision_loop:
-                stream_iterator = runtime.stream_decision(
-                    task,
-                    context=execution_context,
-                    budget=run_budget,
-                    cancellation=cancellation,
-                )
-            else:
-                stream_iterator = runtime.stream(
-                    task,
-                    model=request.model,
-                    messages=formatted_messages,
-                    temperature=request.temperature,
-                    thread_id=thread_scope.internal_id,
-                    speak_prompt=speak_prompt,
-                    deepseek_options=request.deepseek_options.model_dump() if request.deepseek_options else None,
-                    budget=run_budget,
-                    cancellation=cancellation,
-                )
+            stream_iterator = runtime.stream_decision(
+                task,
+                context=execution_context,
+                budget=run_budget,
+                cancellation=cancellation,
+            )
 
             async for chunk_data in stream_iterator:
                 event_type = chunk_data.get("type", "message")
-                if durable_run and primary_decision_loop:
-                    # The primary Runtime has already committed this exact
-                    # event to EventStore.  SSE is only its safe projection;
-                    # do not add diagnostics or allocate a second sequence.
-                    yield format_sse(
-                        event=event_type,
-                        data=_chat_sse_projection(chunk_data, durable=durable_run),
-                        event_id=chunk_data.get("sequence"),
-                    )
-                    continue
-                sequence += 1
-                durable_sequence = (
-                    await _last_event_sequence(run_id, db)
-                    if durable_run
-                    else None
-                )
-                diagnostic_data = _chat_sse_projection(
-                    {
-                        **chunk_data,
-                        "stream_sequence": sequence,
-                        "server_elapsed_ms": round(
-                            (time.perf_counter() - stream_started) * 1000, 1
-                        ),
-                    },
-                    durable=durable_run,
-                )
+                diagnostic_data = _chat_sse_projection(chunk_data, durable=durable_run)
                 if thread_scope.public_id is not None:
                     diagnostic_data["thread_id"] = thread_scope.public_id
                 if durable_run:
@@ -695,27 +554,8 @@ async def chat_endpoint(
                 yield format_sse(
                     event=event_type,
                     data=diagnostic_data,
-                    event_id=durable_sequence if durable_run else None,
+                    event_id=chunk_data.get("sequence") if durable_run else None,
                 )
-
-            if durable_run and not primary_decision_loop:
-                stored_run = await RunStore(db).get(run_id, user_id=user.id)
-                if stored_run is not None and stored_run.status in _TERMINAL_RUN_STATUSES:
-                    last_sequence = await _last_event_sequence(run_id, db)
-                    yield format_sse(
-                        event="run_status",
-                        data=_chat_sse_projection(
-                            {
-                                "type": "run_status",
-                                "run_id": run_id,
-                                "status": stored_run.status,
-                                "error_code": stored_run.error_code,
-                                "last_sequence": last_sequence,
-                            },
-                            durable=True,
-                        ),
-                        event_id=last_sequence or None,
-                    )
 
         except Exception:
             yield format_sse(
@@ -727,8 +567,6 @@ async def chat_endpoint(
             )
         finally:
             cancellation_store.unregister(run_id, cancellation)
-            if workflow is not None:
-                await workflow.close()
             if checkpoint_store is not None:
                 await checkpoint_store.close()
             if model_gateway is not None:
@@ -747,37 +585,29 @@ async def get_chat_history(
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
     user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     thread_scope = _resolve_user_thread(user, thread_id)
-    api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
-    base_url = _resolve_provider_base_url(x_base_url)
-
-    workflow = ChatWorkflow(
-        api_key=api_key,
-        base_url=base_url,
-        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    runs = await RunStore(db).list_for_thread(
+        thread_scope.internal_id,
+        user_id=user.id,
     )
-    try:
-        await workflow._ensure_checkpointer()
-        cp = await _latest_thread_checkpoint(
-            workflow.checkpointer,
-            thread_scope.internal_id,
-        )
-
-        messages = []
-        if cp:
-            channel_values = cp.checkpoint.get("channel_values", {})
-            raw = channel_values.get("messages", [])
-            for m in raw:
-                if hasattr(m, "type") and hasattr(m, "content"):
-                    messages.append({
-                        "role": m.type,
-                        "content": str(m.content),
-                    })
-
-        return {"messages": messages}
-    finally:
-        await workflow.close()
+    events = await EventStore(db).list_for_runs([run.run_id for run in runs])
+    messages: list[dict[str, str]] = []
+    for event in events:
+        if event.event_type == "message_input":
+            content = event.payload.get("content")
+            if isinstance(content, str):
+                messages.append({"role": "user", "content": content})
+        elif event.event_type == "message_chunk":
+            content = event.payload.get("content")
+            if not isinstance(content, str):
+                continue
+            if messages and messages[-1]["role"] == "assistant":
+                messages[-1]["content"] += content
+            else:
+                messages.append({"role": "assistant", "content": content})
+    return {"messages": messages}
 
 
 @router.get("/chat/reasoning/{thread_id}")
@@ -786,32 +616,23 @@ async def get_chat_reasoning(
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
     user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     thread_scope = _resolve_user_thread(user, thread_id)
-    api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
-    base_url = _resolve_provider_base_url(x_base_url)
-
-    workflow = ChatWorkflow(
-        api_key=api_key,
-        base_url=base_url,
-        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    runs = await RunStore(db).list_for_thread(
+        thread_scope.internal_id,
+        user_id=user.id,
     )
-    try:
-        await workflow._ensure_checkpointer()
-        cp = await _latest_thread_checkpoint(
-            workflow.checkpointer,
-            thread_scope.internal_id,
-        )
-
-        if not cp:
-            raise HTTPException(status_code=404, detail="Thread not found")
-
-        channel_values = cp.checkpoint.get("channel_values", {})
-        reasoning = channel_values.get("reasoning_trace", "")
-
-        return {"thread_id": thread_id, "reasoning_trace": reasoning}
-    finally:
-        await workflow.close()
+    if not runs:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    events = await EventStore(db).list_for_runs([runs[-1].run_id])
+    reasoning = "".join(
+        str(event.payload.get("content", ""))
+        for event in events
+        if event.event_type == "thinking_chunk"
+        and isinstance(event.payload.get("content", ""), str)
+    )
+    return {"thread_id": thread_id, "reasoning_trace": reasoning}
 
 
 @router.delete("/chat/history/{thread_id}")
@@ -820,22 +641,18 @@ async def delete_chat_history(
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
     user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     thread_scope = _resolve_user_thread(user, thread_id)
-    api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
-    base_url = _resolve_provider_base_url(x_base_url)
-
-    workflow = ChatWorkflow(
-        api_key=api_key,
-        base_url=base_url,
-        checkpoint_path=settings.CHECKPOINT_DB_PATH,
+    deleted_runs = await RunStore(db).delete_thread(
+        thread_scope.internal_id,
+        user_id=user.id,
     )
-    try:
-        await workflow._ensure_checkpointer()
-        await workflow.checkpointer.adelete_thread(thread_scope.internal_id)
-        return {"status": "deleted", "thread_id": thread_id}
-    finally:
-        await workflow.close()
+    return {
+        "status": "deleted",
+        "thread_id": thread_id,
+        "deleted_runs": deleted_runs,
+    }
 
 
 @router.post("/chat/resume")
@@ -850,80 +667,114 @@ async def resume_chat(
 ):
     thread_scope = _resolve_user_thread(user, thread_id)
 
-    if _primary_decision_loop_enabled():
-        raise HTTPException(
-            status_code=409,
-            detail="Runtime-owned approval resume is not available through the legacy Workflow adapter",
-        )
-
-    api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
-    base_url = _resolve_provider_base_url(x_base_url)
-
     if decision not in ("approve", "reject"):
         raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
 
-    if run_id is not None:
-        run = await RunStore(db).get(run_id, user_id=user.id)
-        if run is None or run.thread_id != thread_scope.internal_id:
-            raise HTTPException(status_code=404, detail="Run not found")
-        run = await _recover_stale_run(run, db)
-        if run.status not in {"running", "paused"}:
-            raise HTTPException(status_code=409, detail="Run is not resumable")
+    if not isinstance(run_id, str) or not run_id.strip():
+        raise HTTPException(status_code=400, detail="run_id is required")
+    run = await RunStore(db).get(run_id, user_id=user.id)
+    if run is None or run.thread_id != thread_scope.internal_id:
+        raise HTTPException(status_code=404, detail="Run not found")
+    run = await _recover_stale_run(run, db)
+    if run.status not in {"running", "paused"}:
+        raise HTTPException(status_code=409, detail="Run is not resumable")
+    if not _checkpoint_adapter_enabled():
+        raise HTTPException(
+            status_code=409,
+            detail="Checkpoint recovery is not configured for this Run",
+        )
 
-    workflow = ChatWorkflow(
-        api_key=api_key,
-        base_url=base_url,
-        checkpoint_path=settings.CHECKPOINT_DB_PATH,
-        run_id=run_id,
-        thread_id=thread_scope.internal_id,
-        cancellation=CancellationToken(),
-        enable_interrupt=True,
+    checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
+    state = await checkpoint_store.load(run_id, thread_scope.internal_id)
+    if state is None:
+        await checkpoint_store.close()
+        raise HTTPException(status_code=409, detail="Run checkpoint is not resumable")
+    pending = state.context.get("pending_decision")
+    if not isinstance(pending, dict):
+        await checkpoint_store.close()
+        raise HTTPException(status_code=409, detail="Run has no pending approval")
+
+    capability_registry = build_capability_registry()
+    capability_name = pending.get("capability")
+    owner = capability_registry.find_action(str(capability_name or ""))
+    if owner is None or not owner[1].approval_required:
+        await checkpoint_store.close()
+        raise HTTPException(status_code=409, detail="Run approval target is no longer configured")
+
+    approval = Approval(
+        approval_id=f"approval:{run_id}:{pending.get('decision_id', 'pending')}",
+        approved=decision == "approve",
+        principal_id=user.id,
+        action=owner[1].name,
     )
-    try:
-        await workflow._ensure_checkpointer()
-    except Exception:
-        await workflow.close()
-        raise
-    if hasattr(workflow, "_checkpoint_config"):
-        config = workflow._checkpoint_config(thread_scope.internal_id, run_id)
-        if run_id is None and hasattr(workflow.checkpointer, "alist"):
-            latest = await _latest_thread_checkpoint(
-                workflow.checkpointer,
-                thread_scope.internal_id,
-            )
-            if latest is not None:
-                config = latest.config
-    else:
-        config = {
-            "configurable": {
-                "thread_id": thread_scope.internal_id,
-                "checkpoint_ns": "",
-            }
-        }
-        if run_id is not None:
-            config["metadata"] = {"run_id": run_id}
+    api_key = x_api_key or os.getenv("OPENAI_API_KEY")
+    base_url = _resolve_provider_base_url(x_base_url)
+    if not api_key and not (
+        settings.DEPLOY_MODE == "local" and is_local_endpoint(base_url)
+    ):
+        await checkpoint_store.close()
+        raise HTTPException(status_code=401, detail="Missing API Key")
 
-    from langgraph.types import Command
+    task = state.task.model_copy(deep=True)
+    task.metadata["run_id"] = run_id
+    task.metadata["thread_id"] = thread_scope.internal_id
+    task.metadata.setdefault("model", run.model)
+    trace_id = str(state.context.get("trace_id") or run_id)
+    execution_context = ExecutionContext(
+        principal_id=user.id,
+        run_id=run_id,
+        trace_id=trace_id,
+        capability_allowlist=frozenset(
+            definition.public_name
+            for definition in capability_registry.allowed_public_definitions()
+        ),
+        thread_id=thread_scope.internal_id,
+    )
+    cancellation = CancellationToken()
+    cancellation_store.register(run_id, cancellation)
 
-    async def resume_generator():
+    async def stream_generator():
+        model_gateway: Optional[OpenAIModelGateway] = None
         try:
-            async for event in workflow.app.astream_events(
-                Command(resume=decision),
-                config=config,
-                version="v2",
+            model_gateway = OpenAIModelGateway(
+                api_key=api_key,
+                base_url=base_url,
+                model=str(task.metadata.get("model") or run.model),
+                temperature=0.6,
+                endpoint_policy=_provider_endpoint_policy(),
+            )
+            runtime = AgentRuntime(
+                checkpoint_store=checkpoint_store,
+                trace_store=SqlTraceStore(db),
+                model_gateway=model_gateway,
+                dispatcher=Dispatcher(
+                    capability_registry,
+                    policy_engine=PolicyEngine(allow_side_effects=True),
+                    approval=approval,
+                    idempotency_store=SqlIdempotencyStore(db),
+                ),
+                run_store=RunStore(db),
+                event_store=EventStore(db),
+                checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
+            )
+            async for chunk_data in runtime.stream_decision(
+                task,
+                context=execution_context,
+                cancellation=cancellation,
+                approval=approval,
             ):
-                kind = event["event"]
-                node_name = event.get("metadata", {}).get("langgraph_node")
-
-                if kind == "on_chat_model_stream":
-                    chunk = event["data"]["chunk"]
-                    if hasattr(chunk, "content") and isinstance(chunk.content, str) and chunk.content:
-                        yield format_sse(event="message_chunk", data={"type": "message_chunk", "content": chunk.content})
-
-                elif kind == "on_chat_model_end":
-                    if node_name in ("speak", None):
-                        yield format_sse(event="message_end", data={"type": "message_end"})
-
+                event_type = chunk_data.get("type", "message")
+                diagnostic_data = _chat_sse_projection(
+                    chunk_data,
+                    durable=True,
+                )
+                diagnostic_data["thread_id"] = thread_scope.public_id
+                diagnostic_data["run_id"] = run_id
+                yield format_sse(
+                    event=event_type,
+                    data=diagnostic_data,
+                    event_id=chunk_data.get("sequence"),
+                )
         except Exception:
             yield format_sse(
                 event="error",
@@ -933,9 +784,12 @@ async def resume_chat(
                 },
             )
         finally:
-            await workflow.close()
+            cancellation_store.unregister(run_id, cancellation)
+            await checkpoint_store.close()
+            if model_gateway is not None:
+                await model_gateway.close()
 
-    return StreamingResponse(resume_generator(), media_type="text/event-stream")
+    return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
 
 @router.get("/chat/threads")
@@ -943,30 +797,15 @@ async def list_chat_threads(
     x_api_key: Optional[str] = Header(None, alias="X-Api-Key"),
     x_base_url: Optional[str] = Header(None, alias="X-Provider-Endpoint"),
     user: UserRead = Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
-    api_key = x_api_key or os.getenv("OPENAI_API_KEY") or ""
-    base_url = _resolve_provider_base_url(x_base_url)
-
-    workflow = ChatWorkflow(
-        api_key=api_key,
-        base_url=base_url,
-        checkpoint_path=settings.CHECKPOINT_DB_PATH,
-    )
-    try:
-        await workflow._ensure_checkpointer()
-        checkpoints = [c async for c in workflow.checkpointer.alist(None)]
-        prefix = user_thread_prefix(user.id)
-        thread_ids = list(dict.fromkeys(
-            public_id
-            for c in checkpoints
-            for internal_id in [c.config["configurable"].get("thread_id", "")]
-            if internal_id.startswith(prefix)
-            for public_id in [public_thread_id(user.id, internal_id)]
-            if public_id is not None
-        ))
-        return {"threads": thread_ids}
-    finally:
-        await workflow.close()
+    internal_ids = await RunStore(db).list_threads(user_id=user.id)
+    thread_ids = [
+        public_id
+        for internal_id in internal_ids
+        if (public_id := public_thread_id(user.id, internal_id)) is not None
+    ]
+    return {"threads": thread_ids}
 
 
 @router.get("/models/check")

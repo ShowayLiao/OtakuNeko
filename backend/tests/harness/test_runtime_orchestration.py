@@ -1,5 +1,8 @@
 import pytest
 
+from app.agents.agent_registry import AgentRegistry
+from app.agents.recommendation_agent import RecommendationAgent
+from app.agents.router import AgentRouter
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
@@ -9,6 +12,96 @@ from app.harness.model_types import ModelCallResult
 from app.harness.result import AgentResult
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
+
+
+class RuntimeRecommendationCapability(BaseCapability):
+    @property
+    def name(self):
+        return "recommendation"
+
+    @property
+    def description(self):
+        return "Runtime recommendation profile"
+
+    def actions(self):
+        return [
+            ActionDescriptor(
+                name="generate_profile",
+                public_name="generate_user_profile_tool",
+                description="Generate a recommendation profile",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "collections": {
+                            "type": "array",
+                            "items": {"type": "object"},
+                        }
+                    },
+                    "required": ["collections"],
+                },
+                requires_auth=True,
+            )
+        ]
+
+    async def execute(self, action, **kwargs):
+        return {
+            "success": True,
+            "profile": {
+                "llm_summary": {
+                    "total_rated": 1,
+                    "favorite_tags": ["science-fiction"],
+                    "strong_avoid_tags": [],
+                },
+                "watched_ids": [],
+            },
+            "evidence": {"source": "runtime-test"},
+        }
+
+
+class RuntimeAnimeCapability(BaseCapability):
+    @property
+    def name(self):
+        return "anime"
+
+    @property
+    def description(self):
+        return "Runtime anime search"
+
+    def actions(self):
+        return [
+            ActionDescriptor(
+                name="search",
+                public_name="search_anime_advanced",
+                description="Search anime",
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "keyword": {"type": "string"},
+                        "tags": {"type": "array", "items": {"type": "string"}},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["keyword"],
+                },
+            )
+        ]
+
+    async def execute(self, action, **kwargs):
+        return {
+            "success": True,
+            "results": [
+                {
+                    "id": 1,
+                    "name": "Runtime recommendation",
+                    "score": 9,
+                    "tags": ["science-fiction"],
+                }
+            ],
+        }
+
+
+class NoModelGateway:
+    async def infer(self, **kwargs):
+        raise AssertionError("recommendation specialist must not call the primary model")
 
 
 class CatalogCapability(BaseCapability):
@@ -326,3 +419,66 @@ async def test_primary_decision_loop_uses_provider_compatible_tool_feedback():
     feedback = gateway.calls[1]["messages"][-1]
     assert feedback["role"] == "user"
     assert "untrusted capability result data" in feedback["content"]
+
+
+@pytest.mark.asyncio
+async def test_primary_runtime_executes_recommendation_specialist_through_dispatcher():
+    profile_capability = RuntimeRecommendationCapability()
+    anime_capability = RuntimeAnimeCapability()
+    capability_registry = CapabilityRegistry()
+    capability_registry.register(profile_capability)
+    capability_registry.register(anime_capability)
+
+    agent_registry = AgentRegistry()
+    agent_registry.register(
+        "recommendation",
+        RecommendationAgent(
+            profile_capability,
+            anime_capability=anime_capability,
+        ),
+    )
+    gateway = NoModelGateway()
+    dispatcher = Dispatcher(capability_registry)
+    runtime = AgentRuntime(
+        object(),
+        model_gateway=gateway,
+        dispatcher=dispatcher,
+        specialist_router=AgentRouter(agent_registry),
+    )
+    task = AgentTask(
+        user_id=7,
+        goal="推荐动漫",
+        metadata={
+            "run_id": "run-recommendation-specialist",
+            "messages": [{"role": "user", "content": "推荐动漫"}],
+            "collections": [{"id": 1}],
+        },
+    )
+    context = ExecutionContext(
+        principal_id=7,
+        run_id="run-recommendation-specialist",
+        trace_id="trace-recommendation-specialist",
+        capability_allowlist=frozenset(
+            {"generate_user_profile_tool", "search_anime_advanced"}
+        ),
+    )
+
+    chunks = [
+        chunk
+        async for chunk in runtime.stream_decision(task, context=context)
+    ]
+
+    assert not gateway.__dict__.get("calls")
+    assert [event.event_type for event in dispatcher.events] == [
+        "invocation_start",
+        "invocation_end",
+        "invocation_start",
+        "invocation_end",
+    ]
+    assert any(chunk["type"] == "route_decision" for chunk in chunks)
+    assert any(chunk["type"] == "agent_result" for chunk in chunks)
+    assert any(
+        chunk["type"] == "message_chunk" and chunk["content"]
+        for chunk in chunks
+    )
+    assert chunks[-1]["type"] == "run_completed"

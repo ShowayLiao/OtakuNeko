@@ -17,7 +17,7 @@ class AgentState(BaseModel):
     result: Any = Field(default=None, description="Final result produced by the agent")
     status: str = Field(
         default="pending",
-        description="Execution status: pending | running | completed | failed | cancelled | timeout",
+        description="Execution status: pending | running | paused | completed | failed | cancelled | timeout",
     )
     terminal_result: RunResult | None = Field(
         default=None,

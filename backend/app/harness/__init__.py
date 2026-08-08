@@ -8,7 +8,6 @@ __all__ = [
     "AgentAdapter",
     "AgentRuntime",
     "StreamingAgentAdapter",
-    "ChatWorkflowAdapter",
     "CheckpointStore",
     "InMemoryCheckpointStore",
 ]
@@ -28,8 +27,4 @@ def __getattr__(name: str):
             "AgentRuntime": AgentRuntime,
             "StreamingAgentAdapter": StreamingAgentAdapter,
         }[name]
-    if name == "ChatWorkflowAdapter":
-        from app.harness.adapter import ChatWorkflowAdapter
-
-        return ChatWorkflowAdapter
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

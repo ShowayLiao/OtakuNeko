@@ -9,9 +9,14 @@ from typing import Any
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import delete, select
 
-from app.models.agent_run import AgentInvocation, AgentRun, RUN_STATUSES
+from app.models.agent_run import (
+    AgentInvocation,
+    AgentRun,
+    AgentRunEvent,
+    RUN_STATUSES,
+)
 
 
 class RunStoreError(RuntimeError):
@@ -102,6 +107,66 @@ class RunStore:
         if user_id is not None and run.user_id != user_id:
             return None
         return run.model_copy(deep=True)
+
+    async def list_for_thread(
+        self,
+        thread_id: str,
+        *,
+        user_id: int,
+        limit: int = 100,
+    ) -> list[AgentRun]:
+        """Return owner-scoped Runs for one canonical conversation thread."""
+        bounded_limit = max(1, min(limit, 1000))
+        statement = (
+            select(AgentRun)
+            .where(
+                AgentRun.thread_id == str(thread_id),
+                AgentRun.user_id == user_id,
+            )
+            .order_by(AgentRun.created_at, AgentRun.run_id)
+            .limit(bounded_limit)
+        )
+        runs = (await self._session.execute(statement)).scalars().all()
+        return [run.model_copy(deep=True) for run in runs]
+
+    async def list_threads(
+        self,
+        *,
+        user_id: int,
+        limit: int = 1000,
+    ) -> list[str]:
+        """Return distinct owner-scoped canonical thread ids."""
+        bounded_limit = max(1, min(limit, 10000))
+        statement = (
+            select(AgentRun.thread_id)
+            .where(
+                AgentRun.user_id == user_id,
+                AgentRun.thread_id.is_not(None),
+            )
+            .distinct()
+            .order_by(AgentRun.thread_id)
+            .limit(bounded_limit)
+        )
+        return [str(thread_id) for thread_id in (await self._session.execute(statement)).scalars().all()]
+
+    async def delete_thread(self, thread_id: str, *, user_id: int) -> int:
+        """Delete one owner-scoped canonical thread and its dependent facts."""
+        runs_statement = select(AgentRun.run_id).where(
+            AgentRun.thread_id == str(thread_id),
+            AgentRun.user_id == user_id,
+        )
+        run_ids = list((await self._session.execute(runs_statement)).scalars().all())
+        if not run_ids:
+            return 0
+        await self._session.execute(
+            delete(AgentRunEvent).where(AgentRunEvent.run_id.in_(run_ids))
+        )
+        await self._session.execute(
+            delete(AgentInvocation).where(AgentInvocation.run_id.in_(run_ids))
+        )
+        await self._session.execute(delete(AgentRun).where(AgentRun.run_id.in_(run_ids)))
+        await self._session.commit()
+        return len(run_ids)
 
     async def transition(
         self,

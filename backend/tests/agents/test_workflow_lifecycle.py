@@ -1,78 +1,58 @@
+"""Lifecycle coverage for the Runtime-owned Decision loop."""
+
 import pytest
 
-from app.agents.graph import ChatWorkflow
-from app.harness.budget import CancellationToken, RunCancellationError
+from app.capabilities.registry import CapabilityRegistry
+from app.harness.contracts import ExecutionContext
+from app.harness.model_types import ModelCallResult
+from app.harness.runtime import AgentRuntime
+from app.harness.task import AgentTask
+from app.harness.dispatcher import Dispatcher
 
 
-@pytest.mark.asyncio
-async def test_workflow_close_releases_checkpointer_connection(temp_db_path):
-    workflow = ChatWorkflow(
-        api_key="test-key",
-        base_url="https://provider.example/v1",
-        db_path=temp_db_path,
-    )
-
-    await workflow._ensure_checkpointer()
-    try:
-        connection = workflow._db_connection
-        assert connection is not None
-        assert workflow.app is not None
-
-        await workflow.close()
-
-        assert workflow._db_connection is None
-        assert workflow.checkpointer is None
-        assert workflow.app is None
-
-        with pytest.raises(Exception):
-            await connection.execute("SELECT 1")
-    finally:
-        # Keep the red phase from leaving the old implementation's connection
-        # alive and hanging the pytest worker.
-        if workflow.checkpointer is not None:
-            await workflow.checkpointer.conn.close()
-
-
-@pytest.mark.asyncio
-async def test_workflow_binds_checkpoint_path_and_run_thread_identity(temp_db_path):
-    workflow = ChatWorkflow(
-        api_key="test-key",
-        base_url="https://provider.example/v1",
-        checkpoint_path=temp_db_path,
-        run_id="run-identity",
-        thread_id="thread-identity",
-    )
-
-    config = workflow._checkpoint_config()
-
-    assert workflow._db_path == temp_db_path
-    assert config["configurable"]["thread_id"] == "thread-identity"
-    assert config["configurable"]["checkpoint_ns"] == "run-identity"
-    assert config["metadata"]["run_id"] == "run-identity"
-
-    await workflow.close()
-
-
-@pytest.mark.asyncio
-async def test_workflow_cancel_token_stops_before_opening_provider(temp_db_path):
-    token = CancellationToken()
-    token.cancel()
-    workflow = ChatWorkflow(
-        api_key="test-key",
-        base_url="https://provider.example/v1",
-        checkpoint_path=temp_db_path,
-        run_id="run-cancel",
-        thread_id="thread-cancel",
-        cancellation=token,
-    )
-
-    with pytest.raises(RunCancellationError):
-        await anext(
-            workflow.stream_chat(
-                model="test-model",
-                messages=[],
-                temperature=0.1,
-            )
+class _Gateway:
+    async def infer(self, **kwargs):
+        return ModelCallResult(
+            provider="fake",
+            model="fake",
+            operation="infer",
+            status="completed",
+            decision={
+                "schema_version": "v1",
+                "decision_id": "answer-1",
+                "action": "respond",
+                "content": "ok",
+            },
         )
 
-    assert workflow.checkpointer is None
+
+@pytest.mark.asyncio
+async def test_runtime_decision_loop_emits_input_and_terminal_events():
+    runtime = AgentRuntime(
+        object(),
+        model_gateway=_Gateway(),
+        dispatcher=Dispatcher(CapabilityRegistry()),
+    )
+    events = [
+        event
+        async for event in runtime.stream_decision(
+            AgentTask(
+                user_id=1,
+                goal="hello",
+                metadata={
+                    "run_id": "run-1",
+                    "thread_id": "thread-1",
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+            ),
+            context=ExecutionContext(
+                principal_id=1,
+                run_id="run-1",
+                trace_id="trace-1",
+            ),
+        )
+    ]
+
+    assert events[0]["type"] == "message_input"
+    assert events[0]["content"] == "hello"
+    assert events[-1]["type"] == "run_completed"

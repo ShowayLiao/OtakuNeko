@@ -16,6 +16,8 @@ from app.api.deps import get_current_user
 from app.db.database import get_session
 from app.main import app
 from app.memory.sql_repository import SqlMemoryRepository
+from app.memory.interfaces import MemoryContext
+from app.harness.model_types import ModelCallResult
 from app.schemas.agent import ChatRequest, Message
 from app.schemas.user import UserRead
 
@@ -28,18 +30,25 @@ def _user(user_id: int = 1) -> UserRead:
     )
 
 
-class _FakeWorkflow:
+class _FakeGateway:
     def __init__(self, **kwargs):
-        self.checkpointer = object()
-        self.memory = None
+        self.model = kwargs["model"]
 
-    async def _ensure_checkpointer(self) -> None:
-        return None
+    async def infer(self, **kwargs):
+        return ModelCallResult(
+            provider="fake",
+            model=self.model,
+            operation="infer",
+            status="completed",
+            decision={
+                "schema_version": "v1",
+                "decision_id": "memory-answer",
+                "action": "respond",
+                "content": "ok",
+            },
+        )
 
-    async def stream_chat(self, **kwargs):
-        yield {"type": "message_chunk", "content": "ok"}
-
-    async def close(self) -> None:
+    async def close(self):
         return None
 
 
@@ -51,6 +60,9 @@ class _CapturingMemoryService:
         self.checkpointer = None
         self.extractions: list[tuple[str, int | None]] = []
         self.instances.append(self)
+
+    async def retrieve_context(self, *args, **kwargs):
+        return MemoryContext()
 
     async def extract_and_store_facts(
         self, thread_id: str, user_id: int | None = None
@@ -82,9 +94,8 @@ async def test_delete_user_memory_removes_only_authenticated_users_rows(
 async def test_authenticated_chat_uses_request_scoped_sql_repository(
     monkeypatch, db_session
 ):
-    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
     _CapturingMemoryService.instances.clear()
-    monkeypatch.setattr(agent_api, "ChatWorkflow", _FakeWorkflow)
+    monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeGateway)
     monkeypatch.setattr(
         agent_api, "MemoryServiceImpl", _CapturingMemoryService
     )
@@ -114,9 +125,8 @@ async def test_authenticated_chat_uses_request_scoped_sql_repository(
 async def test_anonymous_chat_does_not_construct_durable_memory(
     monkeypatch, db_session
 ):
-    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
     _CapturingMemoryService.instances.clear()
-    monkeypatch.setattr(agent_api, "ChatWorkflow", _FakeWorkflow)
+    monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeGateway)
     monkeypatch.setattr(
         agent_api, "MemoryServiceImpl", _CapturingMemoryService
     )

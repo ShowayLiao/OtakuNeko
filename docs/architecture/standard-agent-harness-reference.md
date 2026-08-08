@@ -1,7 +1,7 @@
 # OtakuNeko Standard Agent Harness Reference
 
-> 版本：1.0
-> 日期：2026-07-31
+> 版本：1.1
+> 日期：2026-08-08
 > 适用范围：`backend/app/agents`、`backend/app/harness`、`backend/app/capabilities`、`backend/app/mcp_server`、`backend/app/memory`、`backend/app/trace` 及其 API、前端事件投影和测试。
 
 本文档是 OtakuNeko 的项目级 Harness 规范入口。通用术语、完整架构模型、审计输出格式和成熟度定义见 [`../standard-agent-harness-reference-and-codex-audit-guide.md`](../standard-agent-harness-reference-and-codex-audit-guide.md)。当前源码审计证据见 [`../harness-audit/`](../harness-audit/)。
@@ -23,7 +23,7 @@
 
 一次 Agent Run MUST 只有一个控制面。Runtime 负责创建和推进 Run、预算、取消、终止、重试决策、状态持久化和 terminal result。HTTP Controller、LangGraph、Tool、MCP Server 和 Subagent 不得各自维护一套互不知情的 Agent Loop。
 
-在 OtakuNeko 当前实现中，`backend/app/harness/runtime.py::AgentRuntime` 是迁移目标；`backend/app/agents/graph.py::ChatWorkflow` 当前仍实际拥有 `think -> tools -> think -> speak` 图循环，因此只能作为事实记录或 adapter 演进，不能在任务中直接宣称已满足唯一 Runtime。
+在 OtakuNeko 当前实现中，`backend/app/harness/runtime.py::AgentRuntime` 已拥有主聊天的 Decision loop；旧的 `graph.py`、`langgraph_adapter.py` 和单数 `tools.py` 已移除。LangGraph 仍可能作为 Memory 迁移边界的底层依赖存在，但不再拥有聊天 Run 控制权。
 
 ### 2.2 LLM 只能提出 Decision
 
@@ -59,7 +59,7 @@ qBittorrent 是当前最高风险边界：`backend/app/api/v1/rss.py` 的写路�
 
 SSE/WebSocket MUST 作为 Run Event 的订阅或投影，不能作为 Run 状态唯一存储。断线、浏览器 Abort、代理重连和服务重启不得被默认为成功或直接丢弃 Run。恢复语义需要稳定的 `run_id`、`event_id`、单调 sequence、Invocation 状态和可查询的 terminal result。
 
-当前 `backend/app/api/v1/agent.py`、`backend/app/agents/langgraph_adapter.py` 和 `frontend/src/lib/fetcher.ts` 的 SSE 行为属于兼容边界；新任务必须先保留现有事件消费能力，再逐步接入 durable Run/Event。
+当前 `backend/app/api/v1/agent.py` 与 `frontend/src/lib/fetcher.ts` 的 SSE 行为是 Runtime canonical Event 的兼容投影；SSE 断开不改变 Run/Event 真值。
 
 ### 2.6 契约必须结构化、可版本化
 
@@ -92,8 +92,9 @@ Tool output、RSS、Bangumi、MCP、网页内容、用户上传文本和历史 M
 |---|---|---|
 | `backend/app/api/v1/agent.py` | 组装请求、Thread Scope、Memory、Trace、Runtime 和 SSE | Ingress 与事件投影，不拥有完整 Agent Loop |
 | `backend/app/harness/runtime.py` | 已有 AgentRuntime、状态/结果/Trace 包装 | 唯一 Run Coordinator |
-| `backend/app/agents/graph.py` | LangGraph 图、模型、ToolNode 和循环 | 受控 Loop adapter，不是第二个 Run 控制面 |
-| `backend/app/agents/langgraph_adapter.py` | 将图事件转换为 Runtime/Trace/SSE 可消费事件 | Decision/Invocation/Result adapter |
+| `backend/app/agents/graph.py` | 已删除；旧 LangGraph 图不再是运行时入口 | 不得恢复为第二个 Run 控制面 |
+| `backend/app/agents/langgraph_adapter.py` | 已删除；事件投影由 Runtime/Coordinator 的 provider-neutral 边界承担 | Decision/Invocation/Result 的 canonical 投影 |
+| `backend/app/agents/tools.py` | 已删除；工具能力由 Capability Registry 和 `agents/tools/` 领域实现提供 | Registry/Schema/Allowlist/Dispatcher 边界 |
 | `backend/app/capabilities/` | ActionDescriptor、Registry、业务能力和 LangChain adapter | 能力定义、Schema、Allowlist 和 Dispatcher 边界 |
 | `backend/app/mcp_server/` | MCP Exposure、Policy、可信上下文和局部幂等 | 与 HTTP/LangGraph 共用策略和结果归一化 |
 | `backend/app/memory/` | SQL Memory 与 LangGraph Store 两条路径 | 明确 Memory、Context、Artifact 的来源和生命周期 |
@@ -109,11 +110,11 @@ Run 至少应能经历：`queued -> running -> waiting/paused -> completed | fai
 持久化演进顺序为：
 
 1. 先冻结 Run/Decision/Invocation/Event/Result 错误契约；
-2. 再接入 Runtime 和 LangGraph adapter；
+2. 再由 Runtime 接管 Decision、Dispatcher 和 specialist 调用；
 3. 再持久化 Run、Invocation、Event、Checkpoint 和幂等记录；
-4. 最后把 SSE 改为 durable Event projection，并验证重连、重启和取消。
+4. 最后把 SSE、History 和 Reasoning 改为 durable Event projection，并验证重连、重启和取消。
 
-当前 `data/checkpoints.db`、SQLite/PostgreSQL、Alembic 与 Docker volume 的真实恢复语义尚需按任务验证，不得仅凭存在 checkpoint 类或 SSE sequence 宣称已支持 Durable Harness。
+当前启用的主路径已通过 checkpoint 重启恢复、approval pause/resume、canonical Run/Event 和 SSE replay 测试；SQLite 仍明确限制为单 Worker。不得据此宣称支持未验证的多 Worker 恢复或仅凭存在 checkpoint 类/SSE sequence 推断更强语义。
 
 ## 5. 批次、范围和完成门槛
 

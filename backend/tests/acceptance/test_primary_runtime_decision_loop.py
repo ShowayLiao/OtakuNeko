@@ -6,7 +6,6 @@ import pytest
 
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
-from app.api.v1.agent import _primary_decision_loop_enabled
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.contracts import ErrorCode, ExecutionContext, InvocationResult
 from app.harness.dispatcher import Dispatcher
@@ -105,17 +104,6 @@ class _MemoryChildService:
             status="completed",
         )
         return 0
-
-
-def test_primary_chat_loop_has_an_explicit_legacy_rollback_flag(monkeypatch) -> None:
-    monkeypatch.delenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", raising=False)
-    assert _primary_decision_loop_enabled() is True
-
-    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "true")
-    assert _primary_decision_loop_enabled() is True
-
-    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
-    assert _primary_decision_loop_enabled() is False
 
 
 @pytest.mark.asyncio

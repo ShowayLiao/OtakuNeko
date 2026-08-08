@@ -6,7 +6,9 @@ from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.contracts import ExecutionContext, RunEvent
 from app.harness.dispatcher import Dispatcher
+from app.harness.checkpoint import InMemoryCheckpointStore
 from app.harness.model_types import ModelCallResult
+from app.harness.policy import Approval
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import RunStore
 from app.harness.runtime import AgentRuntime
@@ -82,6 +84,28 @@ class _Catalog:
         return CapabilityResult.ok(items=["anime-a"]).to_dict()
 
 
+class _ApprovalCatalog:
+    name = "approval-catalog"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def actions(self):
+        return [
+            ActionDescriptor(
+                name="write",
+                public_name="approval-catalog.write",
+                description="write",
+                input_schema={"type": "object"},
+                approval_required=True,
+            )
+        ]
+
+    async def execute(self, action: str, **kwargs):
+        self.calls += 1
+        return CapabilityResult.ok(written=True).to_dict()
+
+
 class _Gateway:
     def __init__(self, run_id: str = "run-canonical") -> None:
         self.calls = 0
@@ -117,6 +141,22 @@ class _Gateway:
         )
 
 
+class _ResumeGateway:
+    def __init__(self, decisions: list[dict]) -> None:
+        self.decisions = list(decisions)
+        self.calls = 0
+
+    async def infer(self, **kwargs):
+        self.calls += 1
+        return ModelCallResult(
+            provider="fake",
+            model="fake-model",
+            operation="infer",
+            status="completed",
+            decision=self.decisions.pop(0),
+        )
+
+
 def _runtime(run_store=None, event_store=None, gateway=None):
     registry = CapabilityRegistry()
     registry.register(_Catalog())
@@ -124,6 +164,27 @@ def _runtime(run_store=None, event_store=None, gateway=None):
         object(),
         model_gateway=gateway or _Gateway(),
         dispatcher=Dispatcher(registry),
+        run_store=run_store,
+        event_store=event_store,
+    )
+
+
+def _approval_runtime(
+    run_store,
+    event_store,
+    checkpoint_store,
+    gateway,
+    capability,
+    *,
+    approval: Approval | None = None,
+):
+    registry = CapabilityRegistry()
+    registry.register(capability)
+    return AgentRuntime(
+        object(),
+        checkpoint_store=checkpoint_store,
+        model_gateway=gateway,
+        dispatcher=Dispatcher(registry, approval=approval),
         run_store=run_store,
         event_store=event_store,
     )
@@ -290,3 +351,122 @@ async def test_primary_runtime_writes_sql_canonical_facts(db_session) -> None:
     assert {event.invocation_id for event in persisted if event.invocation_id} == {
         "decision-canonical"
     }
+
+
+@pytest.mark.asyncio
+async def test_primary_runtime_rehydrates_pending_approval_after_restart() -> None:
+    run_store = _MemoryRunStore()
+    event_store = _MemoryEventStore()
+    checkpoint_store = InMemoryCheckpointStore()
+    capability = _ApprovalCatalog()
+    task = AgentTask(
+        user_id=7,
+        goal="write",
+        metadata={
+            "run_id": "run-approval-recovery",
+            "thread_id": "thread-approval-recovery",
+            "messages": [],
+        },
+    )
+    context = ExecutionContext(
+        principal_id=7,
+        run_id="run-approval-recovery",
+        trace_id="trace-approval-recovery",
+        capability_allowlist=frozenset({"approval-catalog.write"}),
+    )
+
+    first_gateway = _ResumeGateway(
+        [
+            {
+                "schema_version": "v1",
+                "decision_id": "decision-approval-recovery",
+                "run_id": "run-approval-recovery",
+                "action": "invoke",
+                "capability": "approval-catalog.write",
+                "capability_version": "v1",
+                "arguments": {},
+            }
+        ]
+    )
+    first_events = [
+        event
+        async for event in _approval_runtime(
+            run_store,
+            event_store,
+            checkpoint_store,
+            first_gateway,
+            capability,
+        ).stream_decision(task, context=context)
+    ]
+
+    assert first_events[-1]["type"] == "approval_required"
+    assert run_store.runs["run-approval-recovery"].status == "paused"
+    assert capability.calls == 0
+
+    second_gateway = _ResumeGateway(
+        [
+            {
+                "schema_version": "v1",
+                "decision_id": "decision-approval-answer",
+                "run_id": "run-approval-recovery",
+                "action": "respond",
+                "content": "approved",
+            }
+        ]
+    )
+    second_events = [
+        event
+        async for event in _approval_runtime(
+            run_store,
+            event_store,
+            checkpoint_store,
+            second_gateway,
+            capability,
+            approval=Approval(
+                approval_id="approval-run-approval-recovery",
+                principal_id=7,
+                action="write",
+            ),
+        ).stream_decision(task, context=context, approval=Approval(
+            approval_id="approval-run-approval-recovery",
+            principal_id=7,
+            action="write",
+        ))
+    ]
+
+    assert second_events[-1]["type"] == "run_completed"
+    assert second_gateway.calls == 1
+    assert capability.calls == 1
+    assert run_store.runs["run-approval-recovery"].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_primary_runtime_persists_terminal_state_when_checkpoint_lease_is_lost() -> None:
+    class _LeaseLostCheckpointStore(InMemoryCheckpointStore):
+        async def renew_lease(self, lease, lease_seconds):
+            return None
+
+    run_store = _MemoryRunStore()
+    event_store = _MemoryEventStore()
+    runtime = _runtime(
+        run_store,
+        event_store,
+        _ResumeGateway([]),
+    )
+    runtime.checkpoint_store = _LeaseLostCheckpointStore()
+    task = AgentTask(
+        user_id=7,
+        goal="lease loss",
+        metadata={
+            "run_id": "run-lease-loss",
+            "thread_id": "thread-lease-loss",
+            "messages": [],
+        },
+    )
+
+    events = [event async for event in runtime.stream_decision(task)]
+
+    assert events[-1]["type"] == "run_failed"
+    assert events[-1]["error_code"] == "checkpoint_lease_lost"
+    assert run_store.runs["run-lease-loss"].status == "failed"
+    assert event_store.events[-1].event_type == "run.failed"

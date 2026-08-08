@@ -7,7 +7,6 @@ import pytest
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
-from app.agents.langgraph_adapter import LangGraphAdapter
 from app.agents.mcp.connection_pool import MCPConnectionPool
 from app.mcp_server import ExposureMap, MCPServer
 from app.trace import AgentTrace
@@ -112,56 +111,6 @@ async def test_failed_capability_result_marks_step_failed():
 
 
 @pytest.mark.asyncio
-async def test_langgraph_real_chunk_contract_records_nodes_and_tools_safely():
-    class Workflow:
-        async def stream_chat(self, **kwargs):
-            yield {"type": "thinking_start"}
-            yield {"type": "thinking_end"}
-            yield {
-                "type": "tool_call_start",
-                "id": "call-1",
-                "name": "search",
-                "inputs": {"query": "private prompt"},
-            }
-            yield {
-                "type": "tool_call_end",
-                "id": "call-1",
-                "name": "search",
-                "status": "success",
-                "duration_ms": 2.5,
-                "output": {"content": "private result"},
-            }
-            yield {"type": "message_start"}
-            yield {"type": "message_chunk", "content": "private answer"}
-            yield {"type": "message_end"}
-
-    trace = AgentTrace(user_id=1, agent_name="LangGraphAdapter")
-    with bind_trace(trace):
-        chunks = [
-            chunk
-            async for chunk in LangGraphAdapter(Workflow()).stream(object())
-        ]
-
-    assert len(chunks) == 7
-    events = _events(trace)
-    event_types = [event.event_type for event in events]
-    assert "model_call" in event_types
-    assert event_types.count("node_start") == 2
-    assert event_types.count("node_end") == 2
-    tool_start = next(
-        event for event in events if event.event_type == "tool_call_start"
-    )
-    tool_end = next(
-        event for event in events if event.event_type == "tool_call_end"
-    )
-    assert tool_end.parent_event_id == tool_start.event_id
-    serialized = trace.model_dump_json()
-    assert "private prompt" not in serialized
-    assert "private result" not in serialized
-    assert "private answer" not in serialized
-
-
-@pytest.mark.asyncio
 async def test_mcp_connection_retry_emits_safe_retry_event():
     class Transport:
         server_name = "local"
@@ -186,38 +135,3 @@ async def test_mcp_connection_retry_emits_safe_retry_event():
     assert retry.data["attempt"] == 2
     assert retry.data["error_category"] == "ConnectionError"
     assert "credential must not be traced" not in trace.model_dump_json()
-
-
-@pytest.mark.asyncio
-async def test_langgraph_close_balances_open_node_and_tool_spans():
-    class Workflow:
-        async def stream_chat(self, **kwargs):
-            yield {"type": "thinking_start"}
-            yield {
-                "type": "tool_call_start",
-                "id": "call-1",
-                "name": "search",
-                "inputs": {"query": "private"},
-            }
-            await asyncio.sleep(60)
-
-    trace = AgentTrace(user_id=1, agent_name="LangGraphAdapter")
-    with bind_trace(trace):
-        stream = LangGraphAdapter(Workflow()).stream(object())
-        await anext(stream)
-        await anext(stream)
-        await stream.aclose()
-
-    events = _events(trace)
-    node_start = next(event for event in events if event.event_type == "node_start")
-    node_end = next(event for event in events if event.event_type == "node_end")
-    tool_start = next(
-        event for event in events if event.event_type == "tool_call_start"
-    )
-    tool_end = next(
-        event for event in events if event.event_type == "tool_call_end"
-    )
-    assert node_end.parent_event_id == node_start.event_id
-    assert node_end.status == "cancelled"
-    assert tool_end.parent_event_id == tool_start.event_id
-    assert tool_end.status == "cancelled"

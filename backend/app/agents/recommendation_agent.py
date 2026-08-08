@@ -6,9 +6,11 @@ and MemoryService.  Enforces candidate and model-call budgets.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from app.agents.base import BaseAgent
+from app.harness.authority import strip_runtime_owned_fields
 from app.core.logging import get_logger
 from app.trace import TraceEventType
 from app.trace.recorder import current_trace_recorder
@@ -20,6 +22,8 @@ _MAX_MODEL_CALLS = 3
 _MAX_PREFERENCE_TAGS = 3
 _RECALL_MULTIPLIER = 5
 _MIN_RECALL_LIMIT = 20
+
+CapabilityInvoker = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
 
 class RecommendationAgent(BaseAgent):
@@ -37,13 +41,27 @@ class RecommendationAgent(BaseAgent):
         response_generator: Any = None,
         max_candidates: int = _MAX_CANDIDATES,
         max_model_calls: int = _MAX_MODEL_CALLS,
+        capability_invoker: CapabilityInvoker | None = None,
     ) -> None:
         self._capability = recommendation_capability
         self._anime_capability = anime_capability
         self._memory = memory_service
         self._response_generator = response_generator
+        self._capability_invoker = capability_invoker
         self.max_candidates = max_candidates
         self.max_model_calls = max_model_calls
+
+    def bind_runtime(self, *, capability_invoker: CapabilityInvoker) -> RecommendationAgent:
+        """Return a copy that executes capabilities through the Runtime."""
+        return RecommendationAgent(
+            self._capability,
+            anime_capability=self._anime_capability,
+            memory_service=self._memory,
+            response_generator=self._response_generator,
+            max_candidates=self.max_candidates,
+            max_model_calls=self.max_model_calls,
+            capability_invoker=capability_invoker,
+        )
 
     async def execute(self, task: Any) -> dict[str, Any]:
         """Generate a structured recommendation for the given task."""
@@ -68,8 +86,9 @@ class RecommendationAgent(BaseAgent):
                 user_id=getattr(task, "user_id", None),
             )
 
-        result = await self._capability.execute(
+        result = await self._execute_capability(
             "generate_profile",
+            public_action="generate_user_profile_tool",
             collections=collections,
             memory_context=memory_context,
         )
@@ -151,6 +170,40 @@ class RecommendationAgent(BaseAgent):
         metadata = getattr(task, "metadata", None) or {}
         return metadata.get("collections", [])
 
+    async def _execute_capability(
+        self,
+        action: str,
+        *,
+        public_action: str,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        if self._capability_invoker is not None:
+            public_arguments = {
+                key: value
+                for key, value in kwargs.items()
+                if key != "memory_context"
+            }
+            return await self._capability_invoker(
+                public_action,
+                self._public_runtime_value(public_arguments),
+            )
+
+        capability = (
+            self._capability
+            if action == "generate_profile"
+            else self._anime_capability
+        )
+        if capability is None:
+            return {"success": False, "error_type": "not_configured"}
+        return await capability.execute(action, **kwargs)
+
+    @staticmethod
+    def _public_runtime_value(value: Any) -> Any:
+        """Convert trusted domain objects into public, non-authority data."""
+        if hasattr(value, "model_dump"):
+            value = value.model_dump(mode="json")
+        return strip_runtime_owned_fields(value)
+
     @staticmethod
     def _public_profile_summary(profile: dict[str, Any]) -> dict[str, Any]:
         summary = profile.get("llm_summary", {}) or {}
@@ -231,8 +284,9 @@ class RecommendationAgent(BaseAgent):
         raw_candidates: list[dict[str, Any]] = []
         for taste in tastes:
             stats["search_calls"] += 1
-            search = await self._anime_capability.execute(
+            search = await self._execute_capability(
                 "search",
+                public_action="search_anime_advanced",
                 keyword="",
                 tags=[taste],
                 limit=recall_limit,

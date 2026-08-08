@@ -6,28 +6,35 @@ import pytest
 
 os.environ["DEBUG"] = "false"
 from app.api.v1 import agent as agent_api
+from app.harness.model_types import ModelCallResult
 from app.schemas.agent import ChatRequest, Message
 
 
-class FakeWorkflow:
+class FakeGateway:
     def __init__(self, **kwargs):
-        self.checkpointer = object()
-        self.memory = None
+        self.model = kwargs["model"]
 
-    async def _ensure_checkpointer(self) -> None:
-        return None
+    async def infer(self, **kwargs):
+        return ModelCallResult(
+            provider="fake",
+            model=self.model,
+            operation="infer",
+            status="completed",
+            decision={
+                "schema_version": "v1",
+                "decision_id": "api-answer",
+                "action": "respond",
+                "content": "ok",
+            },
+        )
 
-    async def stream_chat(self, **kwargs):
-        yield {"type": "message_chunk", "content": "ok"}
-
-    async def close(self) -> None:
+    async def close(self):
         return None
 
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_streams_through_harness(monkeypatch) -> None:
-    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
-    monkeypatch.setattr(agent_api, "ChatWorkflow", FakeWorkflow)
+    monkeypatch.setattr(agent_api, "OpenAIModelGateway", FakeGateway)
     request = ChatRequest(
         model="test-model",
         messages=[Message(role="user", content="hello")],

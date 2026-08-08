@@ -20,6 +20,6 @@
 
 ## 当前成熟度
 
-当前审计结论为 Level 4：启用的主聊天路径已由 AgentRuntime 控制，并通过 ModelGateway、DecisionParser、Policy/Approval、Dispatcher 和 canonical Run/Event 持久化；LangGraph 兼容回滚、未迁移 specialist 和 SQLite 单 worker 边界仍明确保留。详细证据见 [`14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md) 与 BATCH-20～26 execution records。
+当前审计结论为 Level 4：主聊天路径已由 AgentRuntime 控制，并通过 ModelGateway、DecisionParser、Dispatcher 和 canonical Run/Event 持久化；旧 Graph/adapter 已移除，specialist 已通过 Runtime 注入 Dispatcher，审批恢复契约和 SQLite 单 worker 边界仍明确保留。详细历史证据见 [`14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md) 与 BATCH-20～26 execution records。
 
 当前重构批次按 [`../harness-tasks/INDEX.md`](../harness-tasks/INDEX.md) 顺序推进，一次只实施一个 Batch。

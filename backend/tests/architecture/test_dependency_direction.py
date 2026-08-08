@@ -32,8 +32,6 @@ LEGACY_API_SERVICE_IMPORTS = {
 
 LEGACY_API_AGENT_IMPORTS = {
     ("app.api.v1.agent", "app.agents.agent_registry"),
-    ("app.api.v1.agent", "app.agents.graph"),
-    ("app.api.v1.agent", "app.agents.langgraph_adapter"),
     ("app.api.v1.agent", "app.agents.provider_endpoint"),
     ("app.api.v1.agent", "app.agents.recommendation_agent"),
     ("app.api.v1.agent", "app.agents.router"),

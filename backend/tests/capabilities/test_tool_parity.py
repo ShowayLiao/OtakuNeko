@@ -1,10 +1,9 @@
-"""Parity coverage for the legacy LangChain tool catalog."""
+"""Parity coverage for the canonical capability catalog."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.agents.tools import ALL_TOOLS
 from app.capabilities.base import BaseCapability
 from app.capabilities.factory import build_capability_registry
 from app.capabilities.registry import CapabilityRegistry
@@ -12,20 +11,23 @@ from app.capabilities.types import ActionDescriptor
 from app.harness.contracts import ExecutionContext
 
 
-def _legacy_public_names() -> list[str]:
-    return [tool.name for tool in ALL_TOOLS]
+def _public_names() -> list[str]:
+    return [
+        definition.public_name
+        for definition in build_capability_registry().allowed_public_definitions()
+    ]
 
 
-def test_every_legacy_tool_has_one_explicit_capability_action():
+def test_every_public_action_has_one_explicit_capability_owner():
     registry = build_capability_registry()
-    legacy_names = _legacy_public_names()
+    public_names = _public_names()
 
-    assert len(legacy_names) == len(set(legacy_names))
+    assert len(public_names) == len(set(public_names))
 
     owners = []
-    for public_name in legacy_names:
+    for public_name in public_names:
         owner = registry.find_action(public_name)
-        assert owner is not None, f"Legacy tool '{public_name}' has no owning action"
+        assert owner is not None, f"Public action '{public_name}' has no owner"
         capability, descriptor = owner
         assert descriptor.public_name == public_name
         owners.append((capability.name, descriptor.name))
@@ -33,14 +35,14 @@ def test_every_legacy_tool_has_one_explicit_capability_action():
     assert len(owners) == len(set(owners))
 
 
-def test_derived_tools_preserve_all_legacy_public_names():
+def test_derived_tools_preserve_all_public_action_names():
     from app.capabilities.langchain_adapter import derive_tools
 
     derived_names = {
         tool.name for tool in derive_tools(build_capability_registry())
     }
 
-    assert set(_legacy_public_names()) <= derived_names
+    assert derived_names <= set(_public_names())
 
 
 def test_derived_tools_do_not_activate_side_effecting_actions():

@@ -18,7 +18,7 @@ class TestTraceModels:
         trace = AgentTrace(
             task_id=1,
             user_id=42,
-            agent_name="LangGraphAdapter",
+            agent_name="AgentRuntime",
             goal="Find me an anime",
         )
         assert trace.trace_id is not None

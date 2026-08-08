@@ -223,6 +223,30 @@ class EventStore:
         )
         return list((await self._session.execute(statement)).scalars().all())
 
+    async def list_for_runs(
+        self,
+        run_ids: list[str],
+        *,
+        limit: int = 5000,
+    ) -> list[AgentRunEvent]:
+        """List canonical events for an owner-scoped set of Runs.
+
+        Run sequence numbers are only unique within one Run, so projections
+        that span a conversation must order by the durable occurrence time and
+        then by the per-Run sequence.
+        """
+        normalized_ids = [str(run_id).strip() for run_id in run_ids if str(run_id).strip()]
+        if not normalized_ids:
+            return []
+        bounded_limit = max(1, min(limit, 10000))
+        statement = (
+            select(AgentRunEvent)
+            .where(AgentRunEvent.run_id.in_(normalized_ids))
+            .order_by(AgentRunEvent.occurred_at, AgentRunEvent.run_id, AgentRunEvent.sequence)
+            .limit(bounded_limit)
+        )
+        return list((await self._session.execute(statement)).scalars().all())
+
     async def _get_by_id(self, event_id: str) -> AgentRunEvent | None:
         return await self._session.get(AgentRunEvent, event_id)
 

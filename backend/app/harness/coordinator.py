@@ -8,7 +8,6 @@ from contextlib import suppress
 from typing import Any, AsyncIterator, Callable
 from uuid import uuid4
 
-from app.agents.langgraph_adapter import adapt_langgraph_event
 from app.harness.budget import (
     BudgetExceededError,
     CancellationToken,
@@ -47,6 +46,92 @@ _COORDINATOR_ONLY_CONTEXT = {
     "max_total_tokens",
     "max_cost_usd",
 }
+
+_PERSISTED_STREAM_EVENTS = {
+    "thinking_start",
+    "thinking_end",
+    "tool_call_start",
+    "tool_call_end",
+    "message_input",
+    "message_start",
+    "message_chunk",
+    "message_end",
+    "model_decision",
+    "tool_requested",
+    "error",
+}
+
+
+def _adapt_stream_event(
+    event: dict[str, Any],
+    *,
+    run_id: str,
+    sequence: int,
+) -> RunEvent | None:
+    """Project a provider-neutral stream event into a safe Run fact."""
+    event_type = event.get("type")
+    if event_type not in _PERSISTED_STREAM_EVENTS:
+        return None
+
+    invocation_id = event.get("invocation_id", event.get("id"))
+    payload: dict[str, Any] = {}
+    if event_type == "tool_call_start":
+        inputs = event.get("inputs", event.get("arguments"))
+        payload = {
+            "name": str(event.get("name") or event.get("capability") or "unknown"),
+            "argument_keys": sorted(
+                event.get("argument_keys", inputs.keys() if isinstance(inputs, dict) else [])
+            ),
+        }
+    elif event_type == "tool_call_end":
+        payload = {
+            "name": str(event.get("name") or event.get("capability") or "unknown"),
+            "status": str(event.get("status", "unknown")),
+        }
+        if isinstance(event.get("duration_ms"), (int, float)):
+            payload["duration_ms"] = event["duration_ms"]
+    elif event_type == "message_input":
+        payload = {
+            "role": "user",
+            "content": str(event.get("content", "")),
+        }
+    elif event_type == "message_chunk":
+        payload = {"content": str(event.get("content", ""))}
+    elif event_type == "error":
+        payload = {"error_code": str(event.get("error_code", "permanent"))}
+    elif event_type == "model_decision":
+        decision = event.get("decision")
+        payload = {
+            "action": (
+                decision.get("action")
+                if isinstance(decision, dict)
+                else event.get("action", "unknown")
+            ),
+            "capability": (
+                decision.get("capability")
+                if isinstance(decision, dict)
+                else event.get("capability")
+            ),
+            "capability_version": (
+                decision.get("capability_version")
+                if isinstance(decision, dict)
+                else event.get("capability_version")
+            ),
+            "argument_keys": sorted(event.get("argument_keys", [])),
+        }
+    elif event_type == "tool_requested":
+        payload = {
+            "name": str(event.get("name", "unknown")),
+            "capability": str(event.get("capability", "unknown")),
+        }
+
+    return RunEvent(
+        run_id=run_id,
+        sequence=sequence,
+        event_type=str(event_type),
+        invocation_id=str(invocation_id) if invocation_id is not None else None,
+        payload=payload,
+    )
 
 
 class PersistenceHalt(RuntimeError):
@@ -494,11 +579,7 @@ class RunCoordinator:
 
     def _record_event(self, chunk: dict[str, Any], run_id: str) -> RunEvent | None:
         sequence = len(self.events) + 1
-        converted = adapt_langgraph_event(
-            chunk,
-            run_id=run_id,
-            sequence=sequence,
-        )
+        converted = _adapt_stream_event(chunk, run_id=run_id, sequence=sequence)
         if converted is None:
             event_type = str(chunk.get("type", "unknown"))
             payload: dict[str, Any] = {}

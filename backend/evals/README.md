@@ -10,7 +10,7 @@ The command executes fixtures through `AgentRuntime`, requires no network or
 secrets, writes a machine-readable report under `.runtime/evaluation/`, and
 returns non-zero when a configured threshold or baseline regresses.
 
-`full.yaml` explicitly loads the production `ChatWorkflow` target and an
+`full.yaml` explicitly loads the production `ProductionRuntimeTarget` and an
 OpenAI-compatible Judge through configured factories. It requires provider
 credentials, runs sequentially within the configured concurrency ceiling, and
 enforces both a per-call cost reservation and a total Judge budget. Provider

@@ -368,9 +368,9 @@ class SqliteCheckpointStore:
     """Small file-backed checkpoint adapter for one-worker local persistence.
 
     It stores only the harness state contract. LangGraph's native checkpoint
-    object remains behind ``ChatWorkflow`` and is never exposed through this
-    port. A shared multi-worker deployment requires a separately verified
-    adapter implementing this port.
+    provider-specific checkpoint objects are not exposed through this port. A
+    shared multi-worker deployment requires a separately verified adapter
+    implementing this port.
     """
 
     def __init__(self, path: str, *, clock: Callable[[], datetime] | None = None):

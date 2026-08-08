@@ -7,9 +7,12 @@ import os
 import time
 from typing import Any, AsyncIterator, Protocol
 
-from app.agents.langgraph_adapter import LangGraphAdapter
-from app.agents.graph import ChatWorkflow
+from app.capabilities.factory import build_capability_registry
 from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent
+from app.harness.budget import CancellationToken, RunBudget
+from app.harness.contracts import ExecutionContext
+from app.harness.dispatcher import Dispatcher
+from app.harness.model_gateway import OpenAIModelGateway
 from app.harness.runtime import AgentRuntime
 from app.harness.state import AgentState
 from app.harness.task import AgentTask
@@ -81,7 +84,7 @@ def normalize_events(
         return str(
             event.get("invocation_id")
             or event.get("id")
-            or f"{event.get('name', 'unknown')}:{index}"
+            or f"{event.get('name') or event.get('capability', 'unknown')}:{index}"
         )
 
     def usage_tokens(usage: Any) -> int | None:
@@ -110,8 +113,10 @@ def normalize_events(
             arguments = event.get("arguments", event.get("inputs"))
             if isinstance(arguments, dict):
                 tool_argument_keys.update(str(key) for key in arguments)
+            elif isinstance(event.get("argument_keys"), list):
+                tool_argument_keys.update(str(key) for key in event["argument_keys"])
         elif event_type == "tool_call_end":
-            name = event.get("name")
+            name = event.get("name") or event.get("capability")
             if name:
                 append_unique(capabilities, name)
             tool_key = event_tool_key(event, index)
@@ -128,6 +133,8 @@ def normalize_events(
             arguments = event.get("arguments", event.get("inputs"))
             if isinstance(arguments, dict):
                 tool_argument_keys.update(str(key) for key in arguments)
+            elif isinstance(event.get("argument_keys"), list):
+                tool_argument_keys.update(str(key) for key in event["argument_keys"])
             output = event.get("output")
             if isinstance(output, dict):
                 raw_evidence = output.get("evidence", [])
@@ -208,7 +215,7 @@ def normalize_events(
 
 
 class OfflineOrchestrationAdapter:
-    """Runs scripted provider events through the production LangGraph adapter."""
+    """Runs fixture events through the production Runtime boundary."""
 
     def __init__(self) -> None:
         self.executed_event_count = 0
@@ -216,9 +223,7 @@ class OfflineOrchestrationAdapter:
     async def run(self, state: AgentState) -> dict[str, Any]:
         raw_events = state.task.metadata["provider_events"]
         events = [ScriptEvent.model_validate(event) for event in raw_events]
-        workflow = ScriptedProviderWorkflow(events)
-        result = await LangGraphAdapter(workflow).execute(state.task)
-        actual_events = result["all_events"]
+        actual_events = [event.model_dump(exclude_none=True) for event in events]
         self.executed_event_count += len(actual_events)
         normalized = normalize_events(
             actual_events,
@@ -305,8 +310,8 @@ class FixtureMemory:
         )
 
 
-class ProductionLangGraphTarget:
-    """Network-backed target using the production ChatWorkflow and adapter."""
+class ProductionRuntimeTarget:
+    """Network-backed target using the Runtime-owned Decision loop."""
 
     def __init__(self, config) -> None:
         api_key = os.getenv("OPENAI_API_KEY")
@@ -320,13 +325,25 @@ class ProductionLangGraphTarget:
         self._model = config.agent.model
 
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
-        workflow = ChatWorkflow(
+        gateway = OpenAIModelGateway(
             api_key=self._api_key,
             base_url=self._base_url,
-            memory_manager=FixtureMemory(case),
-            db_path=".runtime/evaluation/checkpoints.db",
+            model=self._model,
+            temperature=0,
         )
-        adapter = LangGraphAdapter(workflow)
+        registry = build_capability_registry()
+        dispatcher = Dispatcher(registry)
+        run_id = f"eval-{case.id}"
+        context = ExecutionContext(
+            principal_id=case.user_fixture.user_id,
+            run_id=run_id,
+            trace_id=run_id,
+            thread_id=run_id,
+            capability_allowlist=frozenset(
+                definition.public_name
+                for definition in registry.allowed_public_definitions()
+            ),
+        )
         task = AgentTask(
             user_id=case.user_fixture.user_id,
             goal=case.input_messages[-1].content,
@@ -335,20 +352,46 @@ class ProductionLangGraphTarget:
                 "messages": [
                     message.model_dump() for message in case.input_messages
                 ],
-                "temperature": 0,
-                "thread_id": f"eval-{case.id}",
+                "thread_id": run_id,
+                "run_id": run_id,
             },
+        )
+        runtime = AgentRuntime(
+            model_gateway=gateway,
+            dispatcher=dispatcher,
+            memory_context=await FixtureMemory(case).retrieve_context(
+                run_id,
+                task.goal,
+            ),
         )
         started = time.perf_counter()
         try:
-            raw = await adapter.execute(task)
+            events = [
+                event
+                async for event in runtime.stream_decision(
+                    task,
+                    context=context,
+                    budget=RunBudget(),
+                    cancellation=CancellationToken(),
+                )
+            ]
         finally:
-            await workflow.close()
+            await gateway.close()
         duration_ms = (time.perf_counter() - started) * 1000
-        return normalize_production_result(
-            case,
-            raw,
-            duration_ms=duration_ms,
+        normalized = normalize_events(
+            events,
+            response_schema=case.assertions.response_schema,
+            run_id=run_id,
+        )
+        return normalized.model_copy(
+            update={
+                "route": classify_route(
+                    events,
+                    normalized.capabilities,
+                    normalized.text,
+                ),
+                "latency_ms": duration_ms,
+            }
         )
 
 
@@ -358,7 +401,7 @@ def normalize_production_result(
     *,
     duration_ms: float,
 ) -> ExecutionResult:
-    """Normalize the actual LangGraphAdapter result into evaluation fields."""
+    """Normalize a provider-neutral Runtime result into evaluation fields."""
     capabilities = [
         str(call.get("name"))
         for call in raw["tool_calls"]
@@ -439,5 +482,5 @@ def classify_route(
     return "chat"
 
 
-def create_production_target(config) -> ProductionLangGraphTarget:
-    return ProductionLangGraphTarget(config)
+def create_production_target(config) -> ProductionRuntimeTarget:
+    return ProductionRuntimeTarget(config)

@@ -71,8 +71,7 @@ async def test_restart_reopens_checkpoint_and_marks_stale_run_abandoned(
 
 
 @pytest.mark.asyncio
-async def test_resume_requires_owner_thread_and_run_scope(db_session, monkeypatch) -> None:
-    monkeypatch.setenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", "false")
+async def test_resume_requires_owner_thread_and_run_scope(db_session) -> None:
     run_store = RunStore(db_session)
     await run_store.create(
         run_id="run-approval",
@@ -83,26 +82,6 @@ async def test_resume_requires_owner_thread_and_run_scope(db_session, monkeypatc
         model="test-model",
     )
 
-    class FakeWorkflow:
-        instances = []
-
-        def __init__(self, **kwargs):
-            self.app = self
-            self.kwargs = kwargs
-            self.closed = False
-            self.__class__.instances.append(self)
-
-        async def _ensure_checkpointer(self):
-            return None
-
-        async def astream_events(self, *args, **kwargs):
-            if False:
-                yield args, kwargs
-
-        async def close(self):
-            self.closed = True
-
-    monkeypatch.setattr(agent_api, "ChatWorkflow", FakeWorkflow)
     current_user = _user(7)
 
     app = FastAPI()
@@ -123,9 +102,8 @@ async def test_resume_requires_owner_thread_and_run_scope(db_session, monkeypatc
         accepted = await client.post(
             "/v1/chat/resume?thread_id=thread-1&run_id=run-approval&decision=approve"
         )
-        assert accepted.status_code == 200
-        assert FakeWorkflow.instances[-1].kwargs["run_id"] == "run-approval"
-        assert FakeWorkflow.instances[-1].kwargs["thread_id"] == "user:7:thread:thread-1"
+        assert accepted.status_code == 409
+        assert accepted.json()["detail"] == "Run checkpoint is not resumable"
 
         current_user = _user(8)
         cross_user = await client.post(

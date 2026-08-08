@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +15,11 @@ from app.api.v1 import agent as agent_api
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.model_types import ModelCallResult
+from app.harness.checkpoint import SqliteCheckpointStore
+from app.harness.persistence.run_store import RunStore
+from app.harness.state import AgentState
+from app.harness.task import AgentTask
+from app.schemas.user import UserRead
 from app.schemas.agent import ChatRequest, Message
 
 
@@ -121,12 +128,6 @@ async def _body(response) -> str:
 
 @pytest.mark.asyncio
 async def test_default_chat_does_not_construct_legacy_langgraph_loop(monkeypatch) -> None:
-    monkeypatch.delenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", raising=False)
-
-    class _ExplodingWorkflow:
-        def __init__(self, **kwargs):
-            raise AssertionError("default chat must not construct ChatWorkflow")
-
     _FakeModelGateway.instances.clear()
     _FakeModelGateway.decisions = [
         {
@@ -136,7 +137,6 @@ async def test_default_chat_does_not_construct_legacy_langgraph_loop(monkeypatch
             "content": "runtime answer",
         }
     ]
-    monkeypatch.setattr(agent_api, "ChatWorkflow", _ExplodingWorkflow)
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
@@ -157,7 +157,6 @@ async def test_default_chat_does_not_construct_legacy_langgraph_loop(monkeypatch
 
 @pytest.mark.asyncio
 async def test_default_chat_routes_tool_execution_through_dispatcher(monkeypatch) -> None:
-    monkeypatch.delenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", raising=False)
     capability = _CatalogCapability()
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -178,7 +177,6 @@ async def test_default_chat_routes_tool_execution_through_dispatcher(monkeypatch
             "content": "found anime-a",
         },
     ]
-    monkeypatch.setattr(agent_api, "ChatWorkflow", lambda **kwargs: (_ for _ in ()).throw(AssertionError("legacy loop")))
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
     monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
@@ -268,8 +266,107 @@ async def test_main_api_eval_requires_trusted_approval(monkeypatch) -> None:
     )
 
     assert capability.calls == []
-    assert "event: run_failed" in body
-    assert '"error_code": "policy_denied"' in body
+    assert "event: approval_required" in body
+    assert "event: run_failed" not in body
+
+
+@pytest.mark.asyncio
+async def test_main_api_resume_approval_rehydrates_runtime(
+    db_session, tmp_path, monkeypatch
+) -> None:
+    run_id = "run-api-approval"
+    public_thread_id = "approval-thread"
+    internal_thread_id = "user:7:thread:approval-thread"
+    checkpoint_path = str(tmp_path / "api-approval" / "checkpoints.db")
+    monkeypatch.setattr(agent_api.settings, "CHECKPOINT_DB_PATH", checkpoint_path)
+    monkeypatch.setattr(
+        agent_api,
+        "OpenAIModelGateway",
+        _FakeModelGateway,
+    )
+    monkeypatch.setattr(
+        agent_api,
+        "_resolve_provider_base_url",
+        lambda value: "https://api.openai.com",
+    )
+    monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
+
+    capability = _CatalogCapability(approval_required=True)
+    registry = CapabilityRegistry()
+    registry.register(capability)
+    monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
+
+    await RunStore(db_session).create(
+        run_id=run_id,
+        user_id=7,
+        thread_id=internal_thread_id,
+        status="paused",
+        goal_hash=hashlib.sha256("find anime".encode("utf-8")).hexdigest(),
+        model="fake-model",
+    )
+    checkpoint = SqliteCheckpointStore(checkpoint_path)
+    await checkpoint.save(
+        run_id,
+        internal_thread_id,
+        AgentState(
+            task=AgentTask(
+                user_id=7,
+                goal="find anime",
+                metadata={
+                    "run_id": run_id,
+                    "thread_id": internal_thread_id,
+                    "model": "fake-model",
+                    "messages": [],
+                },
+            ),
+            status="paused",
+            context={
+                "run_id": run_id,
+                "trace_id": "trace-api-approval",
+                "decision_messages": [],
+                "pending_decision": {
+                    "schema_version": "v1",
+                    "decision_id": "decision-api-approval",
+                    "run_id": run_id,
+                    "action": "invoke",
+                    "capability": "catalog.search",
+                    "capability_version": "v1",
+                    "arguments": {"query": "approved"},
+                },
+                "pending_invocation_started": False,
+            },
+        ),
+    )
+    await checkpoint.close()
+
+    _FakeModelGateway.instances.clear()
+    _FakeModelGateway.decisions = [
+        {
+            "schema_version": "v1",
+            "decision_id": "decision-api-answer",
+            "action": "respond",
+            "content": "approved answer",
+        }
+    ]
+    response = await agent_api.resume_chat(
+        thread_id=public_thread_id,
+        run_id=run_id,
+        decision="approve",
+        x_api_key="fake-key",
+        x_base_url="https://api.openai.com/v1",
+        user=UserRead(
+            id=7,
+            username="user-7",
+            created_at=datetime.now(timezone.utc),
+        ),
+        db=db_session,
+    )
+    body = await _body(response)
+
+    assert "event: run_completed" in body
+    assert capability.calls == [{"action": "search", "query": "approved"}]
+    stored = await RunStore(db_session).get(run_id, user_id=7)
+    assert stored is not None and stored.status == "succeeded"
 
 
 @pytest.mark.asyncio
@@ -426,18 +523,17 @@ async def test_main_api_eval_rejects_prompt_injection_authority_fields(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_primary_resume_rejects_legacy_workflow_bypass(monkeypatch) -> None:
-    monkeypatch.delenv("HARNESS_PRIMARY_DECISION_LOOP_ENABLED", raising=False)
-
+async def test_resume_requires_a_canonical_run_id() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await agent_api.resume_chat(
             thread_id="thread-1",
+            decision="approve",
             user=SimpleNamespace(id=7),
             db=object(),
         )
 
-    assert exc_info.value.status_code == 409
-    assert "legacy Workflow" in str(exc_info.value.detail)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "run_id is required"
 
 
 def test_chat_request_rejects_empty_messages() -> None:

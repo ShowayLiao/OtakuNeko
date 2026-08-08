@@ -16,7 +16,7 @@ Use the following status vocabulary when comparing the target with source:
 - **Partial**: a compatible boundary exists, but the primary path still has a legacy owner or incomplete durability semantics.
 - **Target**: required by this document but not yet proven by the current primary path.
 
-The source of truth for current behavior remains the code and the audit documents. The enabled primary `/chat` path is Runtime-owned and does not construct `ChatWorkflow`; `backend/app/agents/graph.py::ChatWorkflow` still contains a LangGraph `think -> tools -> think -> speak` compatibility loop reachable only through the explicit rollback flag. The existence of a compatibility class does not by itself make it an enabled production controller.
+The source of truth for current behavior remains the code and the audit documents. The primary `/chat` path is Runtime-owned and does not construct `ChatWorkflow`; `backend/app/agents/graph.py`, `langgraph_adapter.py`, and the singular `tools.py` shim have been removed. LangGraph remains only where the Memory migration boundary still requires it, not as a chat Run controller.
 
 ## 2. Target topology
 
@@ -187,23 +187,23 @@ The target contracts are versioned and safe to persist:
 
 | Concern | Target owner | Current source boundary |
 |---|---|---|
-| Run lifecycle | `AgentRuntime` | `AgentRuntime` owns the enabled primary loop; the legacy LangGraph loop is an explicit rollback adapter |
-| Model call | `ModelGateway` | Enabled primary inference goes through `ModelGateway`; the compatibility flag retains the provider-specific LangChain adapter |
+| Run lifecycle | `AgentRuntime` | `AgentRuntime` owns the primary loop; there is no legacy chat rollback controller |
+| Model call | `ModelGateway` | Primary inference goes through `ModelGateway`; provider-specific objects remain behind the gateway |
 | Decision validation | `DecisionParser` | Implemented for Dispatcher proposals and structured Runtime path |
 | Invocation authorization/execution | `Dispatcher` | Implemented through `CapabilityRegistry` and `CapabilityAdapter` |
 | Trusted identity/scope | API/Runtime/Domain Service | Enabled primary `ExecutionContext` and ContextManager inject identity, scope and model-safe context; compatibility services remain request-scoped |
 | Run/Event persistence | Run/Event stores and Runtime | Enabled primary durable runs write canonical Run/Event facts before SSE projection |
-| SSE | API projection | Enabled primary SSE is a projection of canonical Runtime EventStore facts; legacy SSE remains compatibility output |
+| SSE | API projection | SSE, history and reasoning are projections of canonical Runtime EventStore facts |
 | Multi-worker recovery | Durable shared adapter | Not complete; current SQLite deployment is explicitly single-worker |
 
 ## 6. Current implementation gap
 
 The following facts are intentionally recorded so this target cannot be mistaken for current behavior:
 
-1. `backend/app/api/v1/agent.py` defaults to `AgentRuntime.stream_decision()`. `HARNESS_PRIMARY_DECISION_LOOP_ENABLED=false` is the explicit compatibility rollback.
-2. `backend/app/agents/graph.py::ChatWorkflow` still compiles `think -> tools -> think -> speak` only for that rollback. Its ToolNode receives proposal-only wrappers, and the enabled primary API does not instantiate the graph.
+1. `backend/app/api/v1/agent.py` enters `AgentRuntime.stream_decision()` for the primary chat path.
+2. The deleted `graph.py`, `langgraph_adapter.py`, and singular `tools.py` files are no longer importable runtime entrypoints; the remaining `agents/tools/` package contains domain-level tool implementations only.
 3. `backend/app/harness/runtime.py::AgentRuntime.stream_decision()` owns `ModelGateway -> DecisionParser -> Dispatcher -> Result`, canonical Run/Event persistence, continuation, cancellation, timeout and terminal state for the enabled primary path.
-4. The enabled primary model call is provider-neutral through `ModelGateway`; provider-specific LangChain construction remains isolated behind the compatibility adapter.
+4. The primary model call is provider-neutral through `ModelGateway`; provider-specific construction remains isolated behind the gateway.
 5. `Dispatcher` and `ResultNormalizer` provide the canonical invocation/result boundary used by primary capability execution and the MCP adapter; SSE/history/replay use the canonical primary stores.
 6. Shared multi-worker coordination is not claimed; deployment validation explicitly requires the configured SQLite single-worker adapter.
 
@@ -219,6 +219,6 @@ The target architecture is considered reached only when all of the following are
 - Side effects have verified authorization, approval, timeout, cancellation, retry, idempotency, audit and compensation/unknown-outcome semantics.
 - State, Run, Event, Invocation and terminal Result survive SSE disconnect and worker restart according to the declared deployment adapter.
 - Acceptance tests exercise the real primary API or Runtime entrypoint and prove the invariants above.
-- No enabled legacy direct specialist, ToolNode or MCP path can bypass Dispatcher; un-migrated specialist and scheduler entrypoints fail closed, while the explicit compatibility rollback remains Dispatcher-constrained for tool proposals.
+- No enabled legacy direct specialist, ToolNode or MCP path can bypass Dispatcher; specialist execution is bound to Runtime-provided capability invocation, and approval pause/resume is owned by Runtime through the persisted pending Decision contract.
 
-The enabled primary path satisfies these criteria for the declared single-worker deployment adapter. Documentation must continue to identify the compatibility rollback and unavailable specialist migration as explicit boundaries rather than claiming every legacy class has been deleted or every deployment is multi-worker.
+The enabled primary path satisfies these criteria for the declared single-worker deployment adapter. Documentation must continue to identify the single-worker boundary; multi-worker recovery remains unavailable, while approval continuation is covered by the Runtime checkpoint and canonical Run/Event path.

@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 from uuid import uuid4
 
+from app.agents.router import AgentRouter
+from app.agents.routing import validate_handoff
 from app.harness.checkpoint import CheckpointStore
 from app.harness.checkpoint import CheckpointLease, CheckpointLeaseLost
 from app.harness.budget import (
@@ -21,12 +23,19 @@ from app.harness.budget import (
 )
 from app.harness.coordinator import RunCoordinator
 from app.harness.context_manager import ContextManager
-from app.harness.contracts import ErrorCode, ExecutionContext, RunEvent, RunResult
+from app.harness.contracts import (
+    AgentDecision,
+    ErrorCode,
+    ExecutionContext,
+    RunEvent,
+    RunResult,
+)
 from app.harness.decision_parser import DecisionParseError, DecisionParser
 from app.harness.dispatcher import Dispatcher
 from app.harness.model_gateway import ModelGateway
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import RunStore
+from app.harness.policy import Approval
 from app.harness.result import AgentResult
 from app.harness.task import AgentTask
 from app.harness.state import AgentState
@@ -112,12 +121,13 @@ class AgentRuntime:
 
     def __init__(
         self,
-        adapter: AgentAdapter | StreamingAgentAdapter,
+        adapter: AgentAdapter | StreamingAgentAdapter | None = None,
         checkpoint_store: CheckpointStore | None = None,
         *,
         trace_store: TraceStore | None = None,
         model_gateway: ModelGateway | None = None,
         dispatcher: Dispatcher | None = None,
+        specialist_router: AgentRouter | None = None,
         max_model_calls: int = 1,
         run_store: RunStore | None = None,
         event_store: EventStore | None = None,
@@ -131,6 +141,7 @@ class AgentRuntime:
         self.trace_store = trace_store
         self.model_gateway = model_gateway
         self.dispatcher = dispatcher
+        self.specialist_router = specialist_router
         self.max_model_calls = max_model_calls
         self.run_store = run_store
         self.event_store = event_store
@@ -146,6 +157,8 @@ class AgentRuntime:
     @property
     def adapter_name(self) -> str:
         """Human-readable identifier for the wrapped adapter."""
+        if self.adapter is None:
+            return type(self).__name__
         cls = getattr(self.adapter, "__class__", None)
         if cls is not None:
             return cls.__name__
@@ -302,6 +315,11 @@ class AgentRuntime:
                 (int(event.sequence) for event in existing_events),
                 default=0,
             )
+            self._canonical_invocations = {
+                str(event.invocation_id)
+                for event in existing_events
+                if event.event_type == "tool_call_start" and event.invocation_id
+            }
             if run.status == "queued":
                 await self.run_store.transition(run_id, "running")
                 self._canonical_sequence = 1
@@ -338,6 +356,7 @@ class AgentRuntime:
             "run_cancelled": "run.cancelled",
             "run_timeout": "run.failed",
             "run_failed": "run.failed",
+            "approval_required": "run.paused",
         }.get(event_type, event_type)
         if event_type == "run_timeout":
             payload.setdefault("status", "timeout")
@@ -404,12 +423,16 @@ class AgentRuntime:
                     error_code=None if mapped_status == "succeeded" else mapped_status,
                 )
             if event_type in {
+                "approval_required",
                 "run_completed",
                 "run_cancelled",
                 "run_timeout",
                 "run_failed",
             }:
                 run_status = (
+                    "paused"
+                    if event_type == "approval_required"
+                    else
                     "succeeded"
                     if event_type == "run_completed"
                     else "cancelled"
@@ -431,7 +454,7 @@ class AgentRuntime:
                         raise CanonicalPersistenceError(
                             f"Run {event['run_id']} already ended as {current_run.status}"
                         )
-                else:
+                elif current_run.status != run_status:
                     await self.run_store.transition(
                         str(event["run_id"]),
                         run_status,
@@ -443,7 +466,12 @@ class AgentRuntime:
                 f"failed to persist canonical event {canonical_type}"
             ) from exc
 
-    async def _canonical_mark_failed(self, run_id: str) -> None:
+    async def _canonical_mark_failed(
+        self,
+        run_id: str,
+        *,
+        error_code: str = ErrorCode.PERMANENT.value,
+    ) -> None:
         if self.run_store is None:
             return
         try:
@@ -452,7 +480,7 @@ class AgentRuntime:
                 await self.run_store.transition(
                     run_id,
                     "failed",
-                    error_code=ErrorCode.PERMANENT.value,
+                    error_code=error_code,
                 )
         except Exception:
             logger.exception(
@@ -839,6 +867,7 @@ class AgentRuntime:
         context: ExecutionContext | None = None,
         budget: RunBudget | None = None,
         cancellation: CancellationToken | None = None,
+        approval: Approval | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
         """Run the primary structured Decision loop under Runtime ownership.
 
@@ -887,10 +916,48 @@ class AgentRuntime:
             status="running",
             context={"run_id": run_id, "trace_id": trusted_context.trace_id},
         )
+        pending_decision: AgentDecision | None = None
+        pending_invocation_started = False
         parse_recovery_attempted = False
         try:
             await self._acquire_checkpoint_lease(task)
-            await self._save_checkpoint(state)
+            restored_state = None
+            if self.checkpoint_store is not None:
+                thread_id = (task.metadata or {}).get("thread_id")
+                if thread_id is not None:
+                    restored_state = await self.checkpoint_store.load(
+                        run_id,
+                        str(thread_id),
+                    )
+            if restored_state is not None and restored_state.status not in {
+                "completed",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "timeout",
+                "abandoned",
+            }:
+                state = restored_state
+                state.task = task
+                state.context = {
+                    **state.context,
+                    "run_id": run_id,
+                    "trace_id": trusted_context.trace_id,
+                }
+                messages = list(
+                    state.context.get("decision_messages") or messages
+                )
+                raw_pending_decision = state.context.get("pending_decision")
+                if isinstance(raw_pending_decision, dict):
+                    pending_decision = AgentDecision.model_validate(
+                        raw_pending_decision
+                    )
+                    pending_invocation_started = bool(
+                        state.context.get("pending_invocation_started")
+                    )
+            else:
+                state.context["decision_messages"] = messages
+                await self._save_checkpoint(state)
         except CheckpointLeaseLost:
             yield {
                 "type": "run_failed",
@@ -919,6 +986,22 @@ class AgentRuntime:
             }
             return
         sequence = self._canonical_sequence
+        if pending_decision is not None and approval is not None:
+            if existing_status == "paused" and self.run_store is not None:
+                await self.run_store.transition(run_id, "running")
+            state.status = "running"
+            await self._save_checkpoint(state)
+        elif existing_status == "paused" and pending_decision is not None:
+            if approval is None:
+                yield {
+                    "type": "approval_required",
+                    "run_id": run_id,
+                    "sequence": sequence,
+                    "approval_id": f"approval:{run_id}:{pending_decision.decision_id}",
+                    "capability": pending_decision.capability,
+                    "invocation_id": pending_decision.decision_id,
+                }
+                return
         if existing_status in {"succeeded", "failed", "cancelled", "abandoned"}:
             terminal_type = (
                 "run_completed"
@@ -954,98 +1037,264 @@ class AgentRuntime:
             return event
 
         try:
-            yield await emit("thinking_start")
+            if pending_decision is None:
+                input_message = next(
+                    (
+                        message
+                        for message in reversed(messages)
+                        if isinstance(message, dict)
+                        and message.get("role") == "user"
+                        and isinstance(message.get("content"), str)
+                    ),
+                    None,
+                )
+                if input_message is not None:
+                    yield await emit(
+                        "message_input",
+                        role="user",
+                        content=input_message["content"],
+                    )
+                yield await emit("thinking_start")
+
+            if pending_decision is None and self.specialist_router is not None:
+                route = self.specialist_router.route(task.goal, messages)
+                validate_handoff(route)
+                if route.selected_agent != "fallback":
+                    yield await emit(
+                        "route_decision",
+                        route=route.intent.value,
+                        agent=route.selected_agent,
+                        confidence=route.confidence,
+                        rationale=route.rationale,
+                    )
+                    specialist = self.specialist_router.select(route)
+                    binder = getattr(specialist, "bind_runtime", None)
+                    if specialist is None or not callable(binder):
+                        state.status = "failed"
+                        state.terminal_result = RunResult(
+                            run_id=run_id,
+                            status="failed",
+                            error_code=ErrorCode.PERMANENT,
+                        )
+                        await self._save_checkpoint(state)
+                        yield await emit(
+                            "run_failed",
+                            error_code="dispatcher_required",
+                        )
+                        return
+
+                    specialist_call_index = 0
+
+                    async def invoke_specialist_capability(
+                        capability: str,
+                        arguments: dict[str, Any],
+                    ) -> dict[str, Any]:
+                        nonlocal specialist_call_index
+                        specialist_call_index += 1
+                        decision_id = (
+                            f"specialist-{route.selected_agent}-"
+                            f"{specialist_call_index}"
+                        )
+                        decision = AgentDecision(
+                            decision_id=decision_id,
+                            run_id=run_id,
+                            action="invoke",
+                            capability=capability,
+                            capability_version="v1",
+                            arguments=arguments,
+                        )
+                        await emit(
+                            "tool_call_start",
+                            invocation_id=decision.decision_id,
+                            capability=decision.capability,
+                            capability_version=decision.capability_version,
+                            argument_keys=sorted(decision.arguments),
+                        )
+                        await self._observe_checkpoint_controls(
+                            run_id, run_cancellation
+                        )
+                        run_budget.check_deadline()
+                        invocation = await self.dispatcher.dispatch(
+                            decision,
+                            trusted_context,
+                            budget=run_budget,
+                            cancellation=run_cancellation,
+                        )
+                        await self._observe_checkpoint_controls(
+                            run_id, run_cancellation
+                        )
+                        await emit(
+                            "tool_call_end",
+                            invocation_id=invocation.invocation_id,
+                            capability=decision.capability,
+                            status=invocation.status,
+                            error_code=(
+                                invocation.error_code.value
+                                if isinstance(invocation.error_code, ErrorCode)
+                                else invocation.error_code
+                            ),
+                            output=invocation.output,
+                        )
+                        if invocation.status != "succeeded":
+                            return {
+                                "success": False,
+                                "error_type": str(
+                                    invocation.error_code or "tool_error"
+                                ),
+                            }
+                        return {"success": True, **invocation.output}
+
+                    bound_specialist = binder(
+                        capability_invoker=invoke_specialist_capability
+                    )
+                    run_budget.check_deadline()
+                    run_budget.consume_step()
+                    specialist_raw = await bound_specialist.execute(task)
+                    specialist_result = AgentResult.from_raw(
+                        specialist_raw,
+                        kind="subagent",
+                        name=route.selected_agent,
+                    )
+                    yield await emit(
+                        "agent_result",
+                        agent=route.selected_agent,
+                        kind=specialist_result.kind,
+                        result=specialist_result.model_dump(mode="json"),
+                    )
+                    if specialist_result.status == "failed":
+                        state.status = "failed"
+                        state.terminal_result = RunResult(
+                            run_id=run_id,
+                            status="failed",
+                            error_code=ErrorCode.TOOL_ERROR,
+                        )
+                        await self._save_checkpoint(state)
+                        yield await emit(
+                            "run_failed",
+                            error_code=ErrorCode.TOOL_ERROR.value,
+                        )
+                        return
+
+                    content = specialist_result.content or ""
+                    yield await emit("message_start")
+                    if content:
+                        yield await emit("message_chunk", content=content)
+                    yield await emit("message_end")
+                    state.status = "completed"
+                    state.result = content
+                    state.terminal_result = RunResult(
+                        run_id=run_id,
+                        status="completed",
+                        content=content,
+                    )
+                    await self._save_checkpoint(state)
+                    yield await emit("run_completed", content=content)
+                    return
+
             while True:
                 await self._observe_checkpoint_controls(run_id, run_cancellation)
                 run_budget.check_deadline()
                 run_budget.consume_step()
-                run_budget.reserve_model_call()
-                model_result = await self.model_gateway.infer(
-                    goal=task.goal,
-                    messages=messages,
-                    run_id=run_id,
-                    trace_id=trusted_context.trace_id,
-                    context=model_context,
-                    capability_catalog=self._capability_catalog(trusted_context),
-                    cancellation=run_cancellation,
-                    deadline=run_budget.remaining_seconds(),
-                    budget=run_budget.snapshot(),
-                )
-                await self._observe_checkpoint_controls(run_id, run_cancellation)
-                run_budget.record_model_usage(getattr(model_result, "usage", None))
-                yield await emit(
-                    "model_call",
-                    call_id=model_result.call_id,
-                    trace_id=model_result.trace_id or trusted_context.trace_id,
-                    provider=model_result.provider,
-                    model=model_result.model,
-                    usage=model_result.usage.model_dump(mode="json"),
-                    status=model_result.status,
-                    error_code=model_result.error_code,
-                )
-                reasoning = getattr(model_result, "reasoning", "")
-                if reasoning:
-                    yield await emit(
-                        "thinking_chunk",
-                        content=reasoning,
-                    )
-                    yield await emit("thinking_end")
-
-                model_terminal = self._model_terminal(run_id, model_result)
-                if model_terminal is not None:
-                    state.status = model_terminal.status
-                    state.terminal_result = model_terminal
-                    await self._save_checkpoint(state)
-                    terminal_type = {
-                        "cancelled": "run_cancelled",
-                        "timeout": "run_timeout",
-                        "failed": "run_failed",
-                    }[model_terminal.status]
-                    yield await emit(
-                        terminal_type,
-                        error_code=model_terminal.error_code.value
-                        if model_terminal.error_code
-                        else None,
-                    )
-                    return
-
-                try:
-                    decision = parser.parse(model_result, expected_run_id=run_id)
-                except DecisionParseError as exc:
-                    if (
-                        exc.retryable
-                        and not parse_recovery_attempted
-                        and run_budget.model_calls_used < run_budget.max_model_calls
-                    ):
-                        parse_recovery_attempted = True
-                        messages.append(
-                            {
-                                "role": "system",
-                                "content": _DECISION_REPAIR_PROMPT,
-                            }
-                        )
-                        continue
-                    state.status = "failed"
-                    state.terminal_result = RunResult(
+                if pending_decision is None:
+                    run_budget.reserve_model_call()
+                    model_result = await self.model_gateway.infer(
+                        goal=task.goal,
+                        messages=messages,
                         run_id=run_id,
-                        status="failed",
-                        error_code=exc.error_code,
+                        trace_id=trusted_context.trace_id,
+                        context=model_context,
+                        capability_catalog=self._capability_catalog(trusted_context),
+                        cancellation=run_cancellation,
+                        deadline=run_budget.remaining_seconds(),
+                        budget=run_budget.snapshot(),
                     )
-                    await self._save_checkpoint(state)
+                    await self._observe_checkpoint_controls(run_id, run_cancellation)
+                    run_budget.record_model_usage(getattr(model_result, "usage", None))
                     yield await emit(
-                        "run_failed",
-                        error_code=exc.error_code.value,
+                        "model_call",
+                        call_id=model_result.call_id,
+                        trace_id=model_result.trace_id or trusted_context.trace_id,
+                        provider=model_result.provider,
+                        model=model_result.model,
+                        usage=model_result.usage.model_dump(mode="json"),
+                        status=model_result.status,
+                        error_code=model_result.error_code,
                     )
-                    return
+                    reasoning = getattr(model_result, "reasoning", "")
+                    if reasoning:
+                        yield await emit(
+                            "thinking_chunk",
+                            content=reasoning,
+                        )
+                        yield await emit("thinking_end")
 
-                yield await emit(
-                    "model_decision",
-                    decision_id=decision.decision_id,
-                    action=decision.action,
-                    capability=decision.capability,
-                    capability_version=decision.capability_version,
-                    argument_keys=sorted(decision.arguments),
-                )
+                    model_terminal = self._model_terminal(run_id, model_result)
+                    if model_terminal is not None:
+                        state.status = model_terminal.status
+                        state.terminal_result = model_terminal
+                        await self._save_checkpoint(state)
+                        terminal_type = {
+                            "cancelled": "run_cancelled",
+                            "timeout": "run_timeout",
+                            "failed": "run_failed",
+                        }[model_terminal.status]
+                        yield await emit(
+                            terminal_type,
+                            error_code=model_terminal.error_code.value
+                            if model_terminal.error_code
+                            else None,
+                        )
+                        return
+
+                    try:
+                        decision = parser.parse(model_result, expected_run_id=run_id)
+                    except DecisionParseError as exc:
+                        if (
+                            exc.retryable
+                            and not parse_recovery_attempted
+                            and run_budget.model_calls_used < run_budget.max_model_calls
+                        ):
+                            parse_recovery_attempted = True
+                            messages.append(
+                                {
+                                    "role": "system",
+                                    "content": _DECISION_REPAIR_PROMPT,
+                                }
+                            )
+                            continue
+                        state.status = "failed"
+                        state.terminal_result = RunResult(
+                            run_id=run_id,
+                            status="failed",
+                            error_code=exc.error_code,
+                        )
+                        await self._save_checkpoint(state)
+                        yield await emit(
+                            "run_failed",
+                            error_code=exc.error_code.value,
+                        )
+                        return
+
+                    yield await emit(
+                        "model_decision",
+                        decision_id=decision.decision_id,
+                        action=decision.action,
+                        capability=decision.capability,
+                        capability_version=decision.capability_version,
+                        argument_keys=sorted(decision.arguments),
+                    )
+                    state.current_step = "dispatch"
+                    state.context = {
+                        **state.context,
+                        "decision_messages": messages,
+                        "pending_decision": decision.model_dump(mode="json"),
+                        "pending_invocation_started": False,
+                    }
+                    await self._save_checkpoint(state)
+                else:
+                    decision = pending_decision
+                    pending_decision = None
+
                 if decision.action in {"respond", "finish"}:
                     content = decision.content or ""
                     memory_result = await self._extract_memory_facts(
@@ -1083,18 +1332,26 @@ class AgentRuntime:
                     yield await emit("run_completed", content=content)
                     return
 
-                yield await emit(
-                    "tool_call_start",
-                    invocation_id=decision.decision_id,
-                    capability=decision.capability,
-                    argument_keys=sorted(decision.arguments),
-                )
+                if not pending_invocation_started:
+                    yield await emit(
+                        "tool_call_start",
+                        invocation_id=decision.decision_id,
+                        capability=decision.capability,
+                        argument_keys=sorted(decision.arguments),
+                    )
+                    pending_invocation_started = True
+                    state.context = {
+                        **state.context,
+                        "pending_invocation_started": True,
+                    }
+                    await self._save_checkpoint(state)
                 await self._observe_checkpoint_controls(run_id, run_cancellation)
                 invocation = await self.dispatcher.dispatch(
                     decision,
                     trusted_context,
                     budget=run_budget,
                     cancellation=run_cancellation,
+                    approval=approval,
                 )
                 await self._observe_checkpoint_controls(run_id, run_cancellation)
                 yield await emit(
@@ -1111,6 +1368,45 @@ class AgentRuntime:
                 )
                 if invocation.status != "succeeded":
                     error_code = invocation.error_code
+                    registry = getattr(self.dispatcher, "registry", None)
+                    owner = (
+                        registry.find_action(decision.capability or "")
+                        if registry is not None
+                        else None
+                    )
+                    approval_required = (
+                        owner is not None and owner[1].approval_required
+                    )
+                    error_value = (
+                        error_code.value
+                        if isinstance(error_code, ErrorCode)
+                        else str(error_code or "")
+                    )
+                    if (
+                        approval is None
+                        and approval_required
+                        and error_value == ErrorCode.POLICY_DENIED.value
+                    ):
+                        state.status = "paused"
+                        state.terminal_result = None
+                        state.context = {
+                            **state.context,
+                            "pending_decision": decision.model_dump(mode="json"),
+                            "pending_invocation_started": True,
+                            "approval_id": (
+                                f"approval:{run_id}:{decision.decision_id}"
+                            ),
+                        }
+                        await self._save_checkpoint(state)
+                        yield await emit(
+                            "approval_required",
+                            approval_id=f"approval:{run_id}:{decision.decision_id}",
+                            invocation_id=decision.decision_id,
+                            capability=decision.capability,
+                            capability_version=decision.capability_version,
+                            argument_keys=sorted(decision.arguments),
+                        )
+                        return
                     if invocation.status == "cancelled":
                         safe_code = ErrorCode.CANCELLED
                     elif invocation.status == "timeout":
@@ -1151,6 +1447,15 @@ class AgentRuntime:
                     return
 
                 messages.append(_tool_feedback_message(invocation))
+                state.current_step = "model"
+                state.context = {
+                    **state.context,
+                    "decision_messages": messages,
+                    "pending_decision": None,
+                    "pending_invocation_started": False,
+                }
+                pending_invocation_started = False
+                await self._save_checkpoint(state)
         except RunCancellationError:
             state.status = "cancelled"
             state.terminal_result = RunResult(
@@ -1186,12 +1491,23 @@ class AgentRuntime:
                 status="failed",
                 error_code=ErrorCode.PERMANENT,
             )
-            yield {
-                "type": "run_failed",
-                "run_id": run_id,
-                "sequence": sequence + 1,
-                "error_code": "checkpoint_lease_lost",
-            }
+            await self._canonical_mark_failed(
+                run_id,
+                error_code="checkpoint_lease_lost",
+            )
+            try:
+                yield await emit(
+                    "run_failed",
+                    error_code="checkpoint_lease_lost",
+                )
+            except CanonicalPersistenceError:
+                await self._canonical_mark_failed(run_id)
+                yield {
+                    "type": "run_failed",
+                    "run_id": run_id,
+                    "sequence": sequence + 1,
+                    "error_code": "checkpoint_lease_lost",
+                }
         except (asyncio.CancelledError, GeneratorExit):
             state.status = "cancelled"
             state.terminal_result = RunResult(
