@@ -267,4 +267,36 @@ describe('useChatStreaming RunView projection', () => {
     expect(cancelRunMock).not.toHaveBeenCalled();
     expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.status).toBe('failed');
   });
+
+  it('marks client configuration failures explicitly instead of as stream errors', async () => {
+    chatWithBackendMock.mockRejectedValue(new Error('请先在设置中填写 openai 的 API Key'));
+    const sessionId = 'session-config-error';
+    const messageId = 'message-config-error';
+    useChatStore.getState().setSessionMessages(sessionId, [{
+      id: messageId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date(),
+    }]);
+
+    const { result } = renderHook(() => useChatStreaming({
+      selectedProvider: 'openai',
+      selectedModel: 'gpt-3.5-turbo',
+      onConnectionStatusChange: vi.fn(),
+    }));
+
+    await act(async () => {
+      await result.current.startStreaming({
+        messages: [],
+        temperature: 0.7,
+        activeSessionId: sessionId,
+        aiMessageId: messageId,
+      });
+    });
+
+    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.run).toMatchObject({
+      phase: 'failed',
+      errorCode: 'configuration_error',
+    });
+  });
 });

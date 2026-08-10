@@ -133,19 +133,25 @@ async def get_optional_user(
 ) -> Optional[UserRead]:
     if token_auth is None:
         return None
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid authentication credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     token = token_auth.credentials
     payload = decode_access_token(token)
     if payload is None:
-        return None
+        raise credentials_exception
     user_id_str = payload.get("sub")
     if user_id_str is None:
-        return None
+        raise credentials_exception
     try:
         user_id = int(user_id_str)
     except ValueError:
-        return None
+        raise credentials_exception from None
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalars().first()
     if user is None:
-        return None
+        raise credentials_exception
     return UserRead.model_validate(user)

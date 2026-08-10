@@ -23,6 +23,23 @@ interface ParsedSSEEvent {
 
 type TerminalStatus = 'succeeded' | 'failed' | 'cancelled' | 'timeout';
 
+export const AUTH_STATE_CHANGED_EVENT = 'otakuneko-auth-state-changed';
+
+export interface CurrentUser {
+  id: number;
+  username: string;
+  avatar_url: string | null;
+  bangumi_id: number | null;
+  bangumi_name?: string | null;
+  sign: string | null;
+  created_at: string;
+}
+
+const invalidateAuth = () => {
+  localStorage.removeItem('token');
+  window.dispatchEvent(new Event(AUTH_STATE_CHANGED_EVENT));
+};
+
 interface NormalizedTerminalStatus {
   status: TerminalStatus;
   error_code: string | null;
@@ -55,7 +72,7 @@ interface ChatWithBackendOptions {
   onThinkingStart?: () => void;
   onThinkingChunk?: (chunk: string) => void;
   onThinkingEnd?: () => void;
-  onError?: (error: string) => void;
+  onError?: (error: string, errorCode?: string | null) => void;
   onRunStatus?: (status: {
     run_id: string;
     status: string;
@@ -381,6 +398,7 @@ export const chatWithBackend = async ({
     );
 
     if (!response.ok) {
+      if (response.status === 401) invalidateAuth();
       throw new Error(`API request failed: ${response.status}`);
     }
 
@@ -543,7 +561,12 @@ export const chatWithBackend = async ({
           }
           break;
         case 'error':
-          if (typeof data.detail === 'string' && data.detail && onError) onError(data.detail);
+          if (typeof data.detail === 'string' && data.detail && onError) {
+            onError(
+              data.detail,
+              typeof data.error_code === 'string' ? data.error_code : null,
+            );
+          }
           break;
       }
       emitRunView(nextPhase ? { phase: nextPhase } : {});
@@ -743,9 +766,28 @@ export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): 
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }
   );
-  if (!response.ok) return [];
+  if (!response.ok) {
+    if (response.status === 401) invalidateAuth();
+    throw new Error(`Chat history request failed: ${response.status}`);
+  }
   const data = await response.json();
   return data.messages || [];
+};
+
+export const fetchCurrentUser = async (): Promise<CurrentUser | null> => {
+  const token = localStorage.getItem('token');
+  if (!token) return null;
+  const response = await fetch('/api/v1/users/me', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (response.status === 401) {
+    invalidateAuth();
+    return null;
+  }
+  if (!response.ok) {
+    throw new Error(`User request failed: ${response.status}`);
+  }
+  return response.json();
 };
 
 export const cancelRun = async (runId: string, threadId?: string): Promise<Record<string, unknown>> => {
@@ -786,7 +828,10 @@ export const listThreads = async (xApiKey?: string, xBaseUrl?: string): Promise<
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     }
   );
-  if (!response.ok) return [];
+  if (!response.ok) {
+    if (response.status === 401) invalidateAuth();
+    throw new Error(`Chat threads request failed: ${response.status}`);
+  }
   const data = await response.json();
   return data.threads || [];
 };

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { cancelRun, chatWithBackend } from './fetcher';
+import {
+  cancelRun,
+  chatWithBackend,
+  fetchChatHistory,
+  fetchCurrentUser,
+  listThreads,
+} from './fetcher';
 
 vi.mock('@/store/useApiStore', () => ({
   useApiStore: {
@@ -58,6 +64,41 @@ describe('chatWithBackend authentication', () => {
     expect(new Headers(requestInit.headers).get('authorization')).toBe(
       'Bearer user-access-token',
     );
+  });
+
+  it('surfaces authentication failures when loading chat history', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }),
+    ));
+    localStorage.setItem('token', 'expired-token');
+
+    await expect(fetchChatHistory('thread-1')).rejects.toThrow(
+      'Chat history request failed: 401',
+    );
+    expect(localStorage.getItem('token')).toBeNull();
+  });
+
+  it('loads the authenticated user through the same frontend proxy', async () => {
+    localStorage.setItem('token', 'user-access-token');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ id: 7, username: 'user-7' }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    ));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchCurrentUser()).resolves.toMatchObject({ id: 7, username: 'user-7' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/v1/users/me',
+      { headers: { Authorization: 'Bearer user-access-token' } },
+    );
+  });
+
+  it('does not convert an unauthorized thread list into an empty account', async () => {
+    localStorage.setItem('token', 'expired-token');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
+
+    await expect(listThreads()).rejects.toThrow('Chat threads request failed: 401');
+    expect(localStorage.getItem('token')).toBeNull();
   });
 
   it('replays the current SSE event vocabulary into callbacks', async () => {

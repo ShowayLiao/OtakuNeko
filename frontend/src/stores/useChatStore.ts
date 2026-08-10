@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 
 export type ProcessNodeType = 'thought' | 'tool_call';
@@ -83,7 +82,7 @@ interface ChatStore {
   sessionConfigs: Record<string, SessionConfig>;
   activeSessionId: string | null;
 
-  createSession: () => string;
+  createSession: (sessionId?: string) => string;
   sendMessage: (sessionId: string, content: string | Message) => void;
   updateMessage: (sessionId: string, content: string, messageId?: string, processes?: ProcessNode[], plan?: string, status?: MessageStatus, run?: RunView) => void;
   switchSession: (sessionId: string) => void;
@@ -91,18 +90,18 @@ interface ChatStore {
   updateSessionTitle: (sessionId: string, title: string) => void;
   setSessionMessages: (sessionId: string, messages: Message[]) => void;
   setSessionConfig: (sessionId: string, config: Partial<SessionConfig>) => void;
+  loadSessions: (sessionIds: string[]) => void;
+  resetChat: () => void;
 }
 
-const useChatStore = create<ChatStore>()(
-  persist(
-    (set, get) => ({
+const useChatStore = create<ChatStore>()((set) => ({
       sessions: [],
       chatMessages: {},
       sessionConfigs: {},
       activeSessionId: null,
 
-      createSession: () => {
-        const sessionId = uuidv4();
+      createSession: (requestedSessionId) => {
+        const sessionId = requestedSessionId || uuidv4();
         const newSession: Session = {
           id: sessionId,
           title: '新会话',
@@ -252,17 +251,33 @@ const useChatStore = create<ChatStore>()(
           },
         }));
       },
-    }),
-    {
-      name: 'chat-storage',
-      partialize: (state) => ({
-        sessions: state.sessions,
-        chatMessages: state.chatMessages,
-        sessionConfigs: state.sessionConfigs,
-        activeSessionId: state.activeSessionId,
-      }),
-    }
-  )
-);
+
+      loadSessions: (sessionIds) => {
+        const uniqueSessionIds = [...new Set(sessionIds)];
+        const sessions = uniqueSessionIds.map((id) => ({
+          id,
+          title: '新会话',
+          updatedAt: new Date(),
+        }));
+        set({
+          sessions,
+          chatMessages: Object.fromEntries(
+            uniqueSessionIds.map((id) => [id, [] as Message[]]),
+          ),
+          sessionConfigs: {},
+          activeSessionId: sessions[0]?.id || null,
+        });
+      },
+
+      resetChat: () => {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem('chat-storage');
+        set({
+          sessions: [],
+          chatMessages: {},
+          sessionConfigs: {},
+          activeSessionId: null,
+        });
+      },
+    }));
 
 export default useChatStore;

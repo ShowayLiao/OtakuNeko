@@ -120,6 +120,13 @@ function normalizeProcessStatus(status?: string, errorCode?: string | null): Pro
   return 'error';
 }
 
+function clientErrorCode(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.startsWith('请先在设置中填写 ')
+    ? 'configuration_error'
+    : 'stream_error';
+}
+
 export function useChatStreaming({
   selectedProvider,
   selectedModel,
@@ -665,7 +672,7 @@ export function useChatStreaming({
           terminalStatusRef.current = mergedView.terminalStatus;
           publishRunView(mergedView);
         },
-        onError: () => {
+        onError: (_errorMessage, serverErrorCode) => {
           if (!acceptsStreamEvent()) return;
           terminalRef.current = true;
           contentBufferRef.current.clear();
@@ -690,7 +697,7 @@ export function useChatStreaming({
             ...runViewRef.current,
             phase: isDurableRun ? 'recovering' : 'failed',
             connectionStatus: 'disconnected',
-            errorCode: isDurableRun ? 'stream_interrupted' : 'stream_error',
+            errorCode: isDurableRun ? 'stream_interrupted' : (serverErrorCode || 'stream_error'),
             terminalStatus: null,
             cancelling: false,
           });
@@ -761,7 +768,7 @@ export function useChatStreaming({
           finalizeDisplay(activeSessionId, aiMessageId);
         },
       });
-    } catch {
+    } catch (error) {
       if (!isCurrentRun()) return;
       terminalRef.current = true;
       contentBufferRef.current.clear();
@@ -783,7 +790,7 @@ export function useChatStreaming({
         ...runViewRef.current,
         phase: isDurableRun ? 'recovering' : 'failed',
         connectionStatus: 'disconnected',
-        errorCode: isDurableRun ? 'stream_interrupted' : 'stream_error',
+        errorCode: isDurableRun ? 'stream_interrupted' : clientErrorCode(error),
         terminalStatus: null,
         cancelling: false,
       });

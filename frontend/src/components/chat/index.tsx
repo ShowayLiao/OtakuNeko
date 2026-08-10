@@ -7,7 +7,13 @@ import { v4 as uuidv4 } from 'uuid';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ChatInput } from './ChatInput';
 import ApiKeyModal from '../Modal/ApiKeyModal';
-import { fetchChatHistory, deleteChatHistory } from '@/lib/fetcher';
+import {
+  AUTH_STATE_CHANGED_EVENT,
+  deleteChatHistory,
+  fetchChatHistory,
+  fetchCurrentUser,
+  listThreads,
+} from '@/lib/fetcher';
 import useChatStore, { Message } from '../../stores/useChatStore';
 import { useRoleStore } from '@/store/useRoleStore';
 import presetRoles from '@/store/presetRoles';
@@ -15,14 +21,19 @@ import { useChatStreaming } from '@/hooks/useChatStreaming';
 import SessionPanel from './SessionPanel';
 import MessageList from './MessageList';
 import { ChatErrorBoundary } from './ChatErrorBoundary';
+import { useApiStore } from '@/store/useApiStore';
+import { resolveChatSelection } from '@/lib/chatDefaults';
 
 const EMPTY_MESSAGES: Message[] = [];
+type AuthState = 'loading' | 'authenticated' | 'anonymous';
 
 export default function ChatPage() {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connected');
   const [sessionSearch, setSessionSearch] = useState('');
   const [editText, setEditText] = useState<string | null>(null);
+  const [authState, setAuthState] = useState<AuthState>('loading');
+  const [authRefresh, setAuthRefresh] = useState(0);
 
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -32,8 +43,11 @@ export default function ChatPage() {
   const activeSessionId = useChatStore((state) => state.activeSessionId);
   const sessionConfigs = useChatStore((state) => state.sessionConfigs);
   const activeSessionConfig = activeSessionId ? sessionConfigs[activeSessionId] : undefined;
-  const selectedModel = activeSessionConfig?.model ?? 'gpt-3.5-turbo';
-  const selectedProvider = activeSessionConfig?.provider ?? 'openai';
+  const apiConfig = useApiStore((state) => state.config);
+  const { model: selectedModel, provider: selectedProvider } = resolveChatSelection(
+    activeSessionConfig,
+    apiConfig,
+  );
   const selectedRole = activeSessionConfig?.role ?? 'preset-1';
   const currentMessages = useChatStore((state) => (
     activeSessionId ? state.chatMessages[activeSessionId] || EMPTY_MESSAGES : EMPTY_MESSAGES
@@ -45,32 +59,77 @@ export default function ChatPage() {
   const updateSessionTitle = useChatStore((state) => state.updateSessionTitle);
   const setSessionMessages = useChatStore((state) => state.setSessionMessages);
   const setSessionConfig = useChatStore((state) => state.setSessionConfig);
+  const loadSessions = useChatStore((state) => state.loadSessions);
+  const resetChat = useChatStore((state) => state.resetChat);
 
   useEffect(() => {
-    if (!activeSessionId && sessions.length === 0) {
+    const refreshAuth = () => setAuthRefresh((value) => value + 1);
+    window.addEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
+    return () => window.removeEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const resolveAuth = async () => {
+      if (!localStorage.getItem('token')) return null;
+      return fetchCurrentUser();
+    };
+
+    void resolveAuth()
+      .then((user) => {
+        if (!cancelled) setAuthState(user ? 'authenticated' : 'anonymous');
+      })
+      .catch(() => {
+        if (!cancelled) setAuthState('anonymous');
+      });
+
+    return () => { cancelled = true; };
+  }, [authRefresh]);
+
+  useEffect(() => {
+    if (authState === 'loading') return;
+    let cancelled = false;
+    resetChat();
+
+    if (authState === 'anonymous') {
       createSession();
+      return () => { cancelled = true; };
     }
-  }, [activeSessionId, sessions.length, createSession]);
+
+    listThreads()
+      .then((threadIds) => {
+        if (cancelled) return;
+        loadSessions(threadIds);
+        if (threadIds.length === 0) createSession();
+      })
+      .catch(() => {
+        if (cancelled) return;
+        resetChat();
+        createSession();
+      });
+
+    return () => { cancelled = true; };
+  }, [authState, createSession, loadSessions, resetChat]);
 
   useEffect(() => {
-    if (!activeSessionId) return;
-    const existingMsgs = currentMessages;
-    if (!existingMsgs || existingMsgs.length === 0) {
-      const abortController = new AbortController();
-      fetchChatHistory(activeSessionId, abortController.signal).then((serverMsgs) => {
-        if (serverMsgs && serverMsgs.length > 0) {
-          const formatted = serverMsgs.map((m: any) => ({
-            id: `${activeSessionId}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            role: (m.role === 'human' ? 'user' : 'assistant') as Message['role'],
-            content: m.content || '',
-            createdAt: new Date(),
-          }));
-          setSessionMessages(activeSessionId, formatted);
-        }
-      }).catch(() => {});
-      return () => abortController.abort();
-    }
-  }, [activeSessionId, currentMessages, setSessionMessages]);
+    if (authState !== 'authenticated' || !activeSessionId) return;
+    const abortController = new AbortController();
+    fetchChatHistory(activeSessionId, abortController.signal)
+      .then((serverMsgs) => {
+        if (abortController.signal.aborted) return;
+        const current = useChatStore.getState().chatMessages[activeSessionId] || [];
+        if (current.length > 0 || serverMsgs.length === 0) return;
+        const formatted = serverMsgs.map((m: any, index: number) => ({
+          id: `${activeSessionId}-${index}`,
+          role: (m.role === 'human' ? 'user' : m.role) as Message['role'],
+          content: m.content || '',
+          createdAt: new Date(),
+        }));
+        setSessionMessages(activeSessionId, formatted);
+      })
+      .catch(() => {});
+    return () => abortController.abort();
+  }, [activeSessionId, authState, setSessionMessages]);
 
   const handleModelChange = (modelId: string, provider: string) => {
     if (activeSessionId) {
@@ -108,6 +167,10 @@ export default function ChatPage() {
     selectedModel,
     onConnectionStatusChange: setConnectionStatus,
   });
+
+  useEffect(() => {
+    if (authRefresh > 0) stopGeneration();
+  }, [authRefresh, stopGeneration]);
 
   const displayMessages = useMemo(() => {
     if (!streamingPreview) return currentMessages;
@@ -277,7 +340,7 @@ export default function ChatPage() {
   };
 
   const handleDeleteSession = (sessionId: string) => {
-    deleteChatHistory(sessionId).catch(() => {});
+    if (authState === 'authenticated') deleteChatHistory(sessionId).catch(() => {});
     deleteSession(sessionId);
   };
 
