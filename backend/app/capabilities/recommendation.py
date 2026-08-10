@@ -11,6 +11,8 @@ from typing import Any
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.types import ActionDescriptor, CapabilityResult
+from app.schemas.collection import CollectionSearchBase
+from app.services.collection_service import get_user_collections
 from app.services.user_profile_service import generate_user_profile
 from app.core.logging import get_logger
 
@@ -52,7 +54,7 @@ class RecommendationCapability(BaseCapability):
                             "items": {"type": "object"},
                         },
                     },
-                    "required": ["collections"],
+                    "required": [],
                 },
                 requires_auth=True,
             ),
@@ -69,7 +71,7 @@ class RecommendationCapability(BaseCapability):
                             "items": {"type": "object"},
                         },
                     },
-                    "required": ["collections"],
+                    "required": [],
                 },
                 requires_auth=True,
             ),
@@ -100,7 +102,7 @@ class RecommendationCapability(BaseCapability):
     # -- action handlers -------------------------------------------------------
 
     async def _generate_profile(self, **kwargs: Any) -> CapabilityResult:
-        collections = kwargs.get("collections") or []
+        collections = await self._resolve_collections(kwargs)
         if not collections:
             return CapabilityResult.ok(
                 profile={"llm_summary": {"total_rated": 0, "taste_dictionary": {}},
@@ -124,7 +126,7 @@ class RecommendationCapability(BaseCapability):
         )
 
     async def _analyse_taste(self, **kwargs: Any) -> CapabilityResult:
-        collections = kwargs.get("collections") or []
+        collections = await self._resolve_collections(kwargs)
         if not collections:
             return CapabilityResult.ok(
                 quadrants={
@@ -161,3 +163,21 @@ class RecommendationCapability(BaseCapability):
                 "total_tags_analysed": len(tag_stats),
             },
         )
+
+    @staticmethod
+    async def _resolve_collections(kwargs: dict[str, Any]) -> list[Any]:
+        """Load owned data from trusted dependencies, with direct-call compatibility."""
+        db = kwargs.get("db")
+        user_id = kwargs.get("user_id")
+        if db is not None and isinstance(user_id, int) and user_id > 0:
+            result = await get_user_collections(
+                db, CollectionSearchBase(user_id=user_id, limit=100)
+            )
+            items = getattr(result, "items", None)
+            if items is None and isinstance(result, dict):
+                items = result.get("items")
+            return [
+                item.model_dump(mode="json") if hasattr(item, "model_dump") else item
+                for item in (items or [])
+            ]
+        return list(kwargs.get("collections") or [])

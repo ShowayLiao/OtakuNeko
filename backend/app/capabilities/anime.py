@@ -13,6 +13,8 @@ from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.services.bangumi_service import (
     fetch_subject_by_id,
     get_audience_feedback,
+    get_bangumi_calendar,
+    get_bangumi_user_info,
     get_staff_info,
     get_cast_info,
 )
@@ -120,6 +122,19 @@ class AnimeCapability(BaseCapability):
                 description="Get audience reviews and feedback for an anime",
                 input_schema=subject_id_schema,
             ),
+            ActionDescriptor(
+                name="get_bangumi_calendar",
+                public_name="get_bangumi_calendar",
+                description="Get the current Bangumi broadcast calendar",
+                input_schema={"type": "object", "properties": {}, "required": []},
+            ),
+            ActionDescriptor(
+                name="get_bangumi_user_info",
+                public_name="get_bangumi_user_info",
+                description="Get public profile data for the authenticated user's linked Bangumi account",
+                input_schema={"type": "object", "properties": {}, "required": []},
+                requires_auth=True,
+            ),
         ]
 
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
@@ -130,6 +145,8 @@ class AnimeCapability(BaseCapability):
             "get_staff": self._get_staff,
             "get_cast": self._get_cast,
             "get_reviews": self._get_reviews,
+            "get_bangumi_calendar": self._get_calendar,
+            "get_bangumi_user_info": self._get_bangumi_user,
         }
         handler = handlers.get(action)
         if handler is None:
@@ -176,3 +193,19 @@ class AnimeCapability(BaseCapability):
         subject_id = kwargs["subject_id"]
         result = await get_audience_feedback(subject_id)
         return CapabilityResult.ok(**result.model_dump(exclude_none=True)).to_dict()
+
+    async def _get_calendar(self, **kwargs: Any) -> dict[str, Any]:
+        result = await get_bangumi_calendar()
+        payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        return CapabilityResult.ok(calendar=payload).to_dict()
+
+    async def _get_bangumi_user(self, **kwargs: Any) -> dict[str, Any]:
+        user = kwargs.get("user")
+        username = getattr(user, "bangumi_name", None)
+        if not isinstance(username, str) or not username.strip():
+            return CapabilityResult.fail(
+                "Linked Bangumi account is required", error_type="not_configured"
+            ).to_dict()
+        result = await get_bangumi_user_info(username.strip())
+        payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        return CapabilityResult.ok(user=payload).to_dict()

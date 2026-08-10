@@ -164,8 +164,21 @@ class CapabilityAdapter:
     def _resource_key(action: str, public_args: dict[str, Any]) -> str:
         if action in {"update_schedule", "delete_schedule"}:
             return f"schedule:{public_args.get('schedule_id', 'unknown')}"
-        if action in {"create_schedule", "upsert_schedule"}:
+        if action in {
+            "create_schedule", "upsert_schedule", "bulk_upsert_schedules",
+            "sync_bangumi_schedule",
+        }:
             return "schedule:collection"
+        if action in {"create_collection", "update_collection", "delete_collection", "upsert_collection"}:
+            return f"collection:{public_args.get('source', 'unknown')}:{public_args.get('source_id', 'unknown')}"
+        if action in {"batch_upsert_collections", "import_json_collections", "sync_bangumi_collections", "sync_douban_collections"}:
+            return "collection:bulk"
+        if action in {"add_rss_feed", "upsert_rss_feed"}:
+            return f"rss:feed:{public_args.get('name') or public_args.get('url', 'unknown')}"
+        if action == "remove_rss_feed":
+            return f"rss:feed:{public_args.get('item_path', 'unknown')}"
+        if action in {"set_rss_rule", "remove_rss_rule"}:
+            return f"rss:rule:{public_args.get('rule_name', 'unknown')}"
         return action
 
     @staticmethod

@@ -18,6 +18,38 @@ class TestRecommendationCapability:
         names = {a.name for a in capability.actions()}
         assert "generate_profile" in names
         assert "analyse_taste" in names
+        assert "collections" not in capability.actions()[0].input_schema.get("required", [])
+
+    @pytest.mark.asyncio
+    async def test_trusted_collection_source_overrides_public_collection_argument(
+        self, capability, monkeypatch
+    ):
+        captured = {}
+
+        async def fake_collections(db, request):
+            captured.update(db=db, user_id=request.user_id)
+            return type("Result", (), {"items": [{"rate": 9}]})()
+
+        def fake_profile(collections):
+            captured["collections"] = collections
+            return {"llm_summary": {"total_rated": len(collections)}}
+
+        monkeypatch.setattr(
+            "app.capabilities.recommendation.get_user_collections", fake_collections
+        )
+        monkeypatch.setattr(
+            "app.capabilities.recommendation.generate_user_profile", fake_profile
+        )
+
+        result = await capability.execute(
+            "generate_profile",
+            db="trusted-db",
+            user_id=11,
+            collections=[{"rate": 1}],
+        )
+
+        assert result["success"] is True
+        assert captured == {"db": "trusted-db", "user_id": 11, "collections": [{"rate": 9}]}
 
     @pytest.mark.asyncio
     async def test_empty_history_returns_deterministic_fallback(self, capability):

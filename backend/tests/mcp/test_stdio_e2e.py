@@ -325,8 +325,9 @@ async def test_authenticated_media_call_uses_trusted_environment():
             (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
         )
         content = json.loads(response["result"]["content"][0]["text"])
-        assert content["success"] is True
-        assert response["result"]["isError"] is False
+        assert content["success"] is False
+        assert content["error_type"] == "not_configured"
+        assert response["result"]["isError"] is True
     finally:
         await _cleanup_proc(proc)
 

@@ -143,6 +143,34 @@ def test_registry_default_public_allowlist_excludes_writes():
     assert write.approval_required is True
 
 
+def test_registry_can_explicitly_discover_side_effects_for_authenticated_runs():
+    registry = CapabilityRegistry()
+    registry.register(StubCapability())
+    registry.register(WriteStubCapability())
+
+    definitions = registry.allowed_public_definitions(include_side_effects=True)
+
+    assert [definition.public_name for definition in definitions] == [
+        "do_stuff",
+        "write_data",
+    ]
+    write = definitions[-1]
+    assert write.is_side_effect is True
+    assert write.approval_required is True
+
+
+def test_production_registry_includes_service_backed_data_capabilities():
+    from app.capabilities.factory import build_capability_registry
+
+    registry = build_capability_registry()
+
+    assert set(registry.list_names()) >= {
+        "collections",
+        "subjects",
+        "stats",
+    }
+
+
 def test_registry_validates_public_output_with_schema_and_size_limit():
     registry = CapabilityRegistry()
     registry.register(StubCapability())

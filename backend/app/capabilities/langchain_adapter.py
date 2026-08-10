@@ -115,7 +115,9 @@ def _public_schema(schema: dict[str, Any]) -> dict[str, Any]:
     return copied
 
 
-def _json_type_to_python(json_type: str) -> type:
+def _json_type_to_python(json_type: Any) -> type:
+    if isinstance(json_type, list):
+        json_type = next((item for item in json_type if item != "null"), "string")
     mapping = {
         "string": str,
         "integer": int,

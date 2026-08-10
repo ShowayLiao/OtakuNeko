@@ -86,13 +86,21 @@ def _validate_schema_node(schema: Any, path: str, *, root: bool = False) -> None
     schema_type = schema.get("type")
     if root and schema_type != "object":
         raise ValueError(f"{path} root type must be 'object'")
-    if schema_type not in _SUPPORTED_SCHEMA_TYPES:
+    if isinstance(schema_type, list):
+        if not schema_type or any(
+            not isinstance(item, str) or item not in _SUPPORTED_SCHEMA_TYPES
+            for item in schema_type
+        ):
+            raise ValueError(f"{path} has unsupported schema type '{schema_type}'")
+    elif schema_type not in _SUPPORTED_SCHEMA_TYPES:
         raise ValueError(f"{path} has unsupported schema type '{schema_type}'")
 
     if "enum" in schema and not isinstance(schema["enum"], list):
         raise ValueError(f"{path}.enum must be an array")
 
-    if schema_type == "object":
+    schema_types = set(schema_type) if isinstance(schema_type, list) else {schema_type}
+
+    if "object" in schema_types:
         properties = schema.get("properties", {})
         required = schema.get("required", [])
         if not isinstance(properties, dict):
@@ -109,7 +117,7 @@ def _validate_schema_node(schema: Any, path: str, *, root: bool = False) -> None
         for name, child in properties.items():
             _validate_schema_node(child, f"{path}.properties.{name}")
 
-    if schema_type == "array":
+    if "array" in schema_types:
         items = schema.get("items")
         if items is None:
             raise ValueError(f"{path}.items is required for array schemas")
@@ -179,7 +187,9 @@ def _build_tool_schema(cap: BaseCapability, action: str) -> dict[str, Any]:
     return _build_tool_from_descriptor(descriptor, cap.name)
 
 
-def _matches_json_type(value: Any, schema_type: str) -> bool:
+def _matches_json_type(value: Any, schema_type: str | list[str]) -> bool:
+    if isinstance(schema_type, list):
+        return any(_matches_json_type(value, item) for item in schema_type)
     if schema_type == "object":
         return isinstance(value, dict)
     if schema_type == "array":
@@ -204,7 +214,9 @@ def _argument_error(value: Any, schema: dict[str, Any], path: str) -> str | None
     if "enum" in schema and value not in schema["enum"]:
         return f"{path} must be one of {schema['enum']}"
 
-    if schema_type == "object":
+    schema_types = set(schema_type) if isinstance(schema_type, list) else {schema_type}
+
+    if "object" in schema_types and isinstance(value, dict):
         properties = schema.get("properties", {})
         for required in schema.get("required", []):
             if required not in value:
@@ -216,19 +228,19 @@ def _argument_error(value: Any, schema: dict[str, Any], path: str) -> str | None
                 if error:
                     return error
 
-    if schema_type == "array":
+    if "array" in schema_types and isinstance(value, list):
         for index, item in enumerate(value):
             error = _argument_error(item, schema["items"], f"{path}[{index}]")
             if error:
                 return error
 
-    if schema_type in {"integer", "number"}:
+    if ({"integer", "number"} & schema_types) and value is not None:
         if "minimum" in schema and value < schema["minimum"]:
             return f"{path} must be >= {schema['minimum']}"
         if "maximum" in schema and value > schema["maximum"]:
             return f"{path} must be <= {schema['maximum']}"
 
-    if schema_type == "string":
+    if "string" in schema_types and isinstance(value, str):
         if "minLength" in schema and len(value) < schema["minLength"]:
             return f"{path} is shorter than minLength"
         if "maxLength" in schema and len(value) > schema["maxLength"]:

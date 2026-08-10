@@ -174,11 +174,14 @@ class CapabilityRegistry:
         allowlist: set[str] | None = None,
         *,
         version: str = CONTRACT_VERSION,
+        include_side_effects: bool = False,
     ) -> list[PublicActionDefinition]:
-        """Return only read definitions, optionally narrowed by allowlist.
+        """Return discoverable definitions, optionally narrowed by allowlist.
 
-        An explicit allowlist cannot activate a side-effecting action in this
-        batch; writes remain approval-gated and unavailable to tool derivation.
+        Read actions are returned by default. Authenticated Runs may opt in to
+        discovering side-effecting actions so the model can propose them, but
+        Dispatcher/Policy remains the only execution boundary and still
+        requires trusted approval, idempotency, and resource authorization.
         """
         definitions: list[PublicActionDefinition] = []
         for capability in self._capabilities.values():
@@ -189,7 +192,9 @@ class CapabilityRegistry:
                 ):
                     continue
                 definition = self.get_public_definition(public_name, version)
-                if definition is None or definition.is_side_effect:
+                if definition is None or (
+                    definition.is_side_effect and not include_side_effects
+                ):
                     continue
                 definitions.append(definition)
         return definitions

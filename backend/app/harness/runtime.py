@@ -21,6 +21,7 @@ from app.harness.budget import (
     RunBudget,
     RunCancellationError,
 )
+from app.harness.authority import RUNTIME_OWNED_FIELDS
 from app.harness.coordinator import RunCoordinator
 from app.harness.context_manager import ContextManager
 from app.harness.contracts import (
@@ -82,6 +83,45 @@ def _tool_feedback_message(invocation: Any) -> dict[str, str]:
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+_SENSITIVE_ARGUMENT_PARTS = (
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "private_key", "certificate", "credential", "authorization",
+)
+
+
+def _safe_approval_arguments(value: Any, *, key: str = "", depth: int = 0) -> Any:
+    """Project approval context without exposing credentials or large payloads."""
+    lowered = key.lower()
+    if key in RUNTIME_OWNED_FIELDS or any(part in lowered for part in _SENSITIVE_ARGUMENT_PARTS):
+        return "[REDACTED]"
+    if depth >= 3:
+        return "[TRUNCATED]"
+    if isinstance(value, dict):
+        items = list(value.items())[:30]
+        result = {
+            str(child_key): _safe_approval_arguments(
+                child_value, key=str(child_key), depth=depth + 1
+            )
+            for child_key, child_value in items
+        }
+        if len(value) > len(items):
+            result["_truncated"] = True
+        return result
+    if isinstance(value, list):
+        items = [
+            _safe_approval_arguments(item, key=key, depth=depth + 1)
+            for item in value[:20]
+        ]
+        if len(value) > len(items):
+            items.append("[TRUNCATED]")
+        return items
+    if isinstance(value, str):
+        return value[:500] + ("..." if len(value) > 500 else "")
+    if value is None or isinstance(value, (bool, int, float)):
+        return value
+    return str(value)[:500]
 
 
 class CanonicalPersistenceError(RuntimeError):
@@ -205,7 +245,7 @@ class AgentRuntime:
         self,
         context: ExecutionContext,
     ) -> list[dict[str, Any]]:
-        """Expose only the dispatcher's public read action definitions."""
+        """Expose public action definitions allowed for this authenticated Run."""
         if self.dispatcher is None:
             return []
         registry = getattr(self.dispatcher, "registry", None)
@@ -214,7 +254,10 @@ class AgentRuntime:
         allowlist = set(context.capability_allowlist) or None
         return [
             definition.to_dict()
-            for definition in registry.allowed_public_definitions(allowlist)
+            for definition in registry.allowed_public_definitions(
+                allowlist,
+                include_side_effects=context.principal_id is not None,
+            )
         ]
 
     async def _acquire_checkpoint_lease(self, task: AgentTask) -> None:
@@ -1405,6 +1448,8 @@ class AgentRuntime:
                             capability=decision.capability,
                             capability_version=decision.capability_version,
                             argument_keys=sorted(decision.arguments),
+                            risk_level=owner[1].risk_level,
+                            safe_arguments=_safe_approval_arguments(decision.arguments),
                         )
                         return
                     if invocation.status == "cancelled":

@@ -86,11 +86,16 @@ class RecommendationAgent(BaseAgent):
                 user_id=getattr(task, "user_id", None),
             )
 
+        profile_arguments: dict[str, Any] = {"memory_context": memory_context}
+        if self._capability_invoker is None or self._legacy_collection_input_required():
+            # Direct unit/in-process callers retain the legacy explicit data
+            # path. Runtime-bound calls load current-user data inside the
+            # capability from trusted db + principal dependencies.
+            profile_arguments["collections"] = collections
         result = await self._execute_capability(
             "generate_profile",
             public_action="generate_user_profile_tool",
-            collections=collections,
-            memory_context=memory_context,
+            **profile_arguments,
         )
 
         if not result.get("success"):
@@ -196,6 +201,19 @@ class RecommendationAgent(BaseAgent):
         if capability is None:
             return {"success": False, "error_type": "not_configured"}
         return await capability.execute(action, **kwargs)
+
+    def _legacy_collection_input_required(self) -> bool:
+        """Keep compatibility with older injected test/capability descriptors."""
+        actions = getattr(self._capability, "actions", None)
+        if not callable(actions):
+            return False
+        descriptor = next(
+            (item for item in actions() if item.name == "generate_profile"), None
+        )
+        return bool(
+            descriptor
+            and "collections" in (descriptor.input_schema.get("required") or [])
+        )
 
     @staticmethod
     def _public_runtime_value(value: Any) -> Any:

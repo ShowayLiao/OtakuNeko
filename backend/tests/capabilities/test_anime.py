@@ -69,3 +69,46 @@ async def test_service_failure_returns_typed_error(monkeypatch):
     result = await AnimeCapability().execute("get_detail", subject_id=999)
     assert result["success"] is False
     assert result["error_type"] == "internal"
+
+
+def test_calendar_and_linked_user_actions_are_discoverable():
+    actions = {action.name: action for action in AnimeCapability().actions()}
+
+    assert actions["get_bangumi_calendar"].requires_auth is False
+    assert actions["get_bangumi_user_info"].requires_auth is True
+    assert "username" not in actions["get_bangumi_user_info"].input_schema.get("properties", {})
+
+
+@pytest.mark.asyncio
+async def test_linked_user_info_uses_trusted_user_identity(monkeypatch):
+    captured = {}
+
+    async def fake_info(username):
+        captured["username"] = username
+        return {"username": username, "id": 7, "sign": "public"}
+
+    monkeypatch.setattr("app.capabilities.anime.get_bangumi_user_info", fake_info)
+    result = await AnimeCapability().execute(
+        "get_bangumi_user_info",
+        user=type("User", (), {"bangumi_name": "linked-name", "username": "local"})(),
+        user_id=3,
+    )
+
+    assert result["success"] is True
+    assert captured["username"] == "linked-name"
+
+
+@pytest.mark.asyncio
+async def test_linked_user_info_does_not_fallback_to_local_username(monkeypatch):
+    async def unexpected_lookup(username):
+        pytest.fail(f"unexpected Bangumi lookup for local username: {username}")
+
+    monkeypatch.setattr("app.capabilities.anime.get_bangumi_user_info", unexpected_lookup)
+    result = await AnimeCapability().execute(
+        "get_bangumi_user_info",
+        user=type("User", (), {"bangumi_name": None, "username": "local"})(),
+        user_id=3,
+    )
+
+    assert result["success"] is False
+    assert result["error_type"] == "not_configured"

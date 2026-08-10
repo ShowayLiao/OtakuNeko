@@ -9,7 +9,7 @@ import pytest
 
 from app.capabilities.anime import AnimeCapability
 from app.capabilities.registry import CapabilityRegistry
-from app.mcp_server import ExposureMap, MCPServer, StdioServer
+from app.mcp_server import ExposureMap, MCPServer, StdioServer, _argument_error
 
 
 def _server() -> MCPServer:
@@ -45,6 +45,16 @@ async def test_invalid_tool_arguments_return_protocol_error():
     })
 
     assert response["error"]["code"] == -32602
+
+
+def test_nullable_json_schema_types_are_validated_at_call_time():
+    schema = {
+        "type": "array",
+        "items": {"type": ["integer", "null"]},
+    }
+
+    assert _argument_error([1, None], schema, "arguments") is None
+    assert _argument_error(["invalid"], schema, "arguments") is not None
 
 
 @pytest.mark.asyncio
