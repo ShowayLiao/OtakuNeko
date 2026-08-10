@@ -1136,7 +1136,7 @@ class AgentRuntime:
                         nonlocal specialist_call_index
                         specialist_call_index += 1
                         decision_id = (
-                            f"specialist-{route.selected_agent}-"
+                            f"{run_id}:specialist:{route.selected_agent}:"
                             f"{specialist_call_index}"
                         )
                         decision = AgentDecision(

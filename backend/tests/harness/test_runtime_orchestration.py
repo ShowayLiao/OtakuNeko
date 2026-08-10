@@ -500,3 +500,112 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
         for chunk in chunks
     )
     assert chunks[-1]["type"] == "run_completed"
+
+
+@pytest.mark.asyncio
+async def test_primary_runtime_uses_unique_specialist_invocation_ids_across_runs():
+    class StrictRunStore:
+        def __init__(self):
+            self.runs = {}
+            self.invocations = {}
+
+        async def create(self, run):
+            self.runs[run.run_id] = run
+            return run
+
+        async def get(self, run_id, *, user_id=None):
+            run = self.runs.get(run_id)
+            if run is not None and user_id is not None and run.user_id != user_id:
+                return None
+            return run
+
+        async def transition(self, run_id, status, *, error_code=None):
+            run = self.runs[run_id]
+            run.status = status
+            run.error_code = error_code
+            return run
+
+        async def create_invocation(self, **fields):
+            invocation_id = fields["invocation_id"]
+            existing = self.invocations.get(invocation_id)
+            if existing is not None and existing["run_id"] != fields["run_id"]:
+                raise RuntimeError("invocation identity conflict")
+            self.invocations[invocation_id] = fields
+            return fields
+
+        async def finish_invocation(self, invocation_id, status, *, error_code=None):
+            self.invocations[invocation_id].update(
+                status=status,
+                error_code=error_code,
+            )
+            return self.invocations[invocation_id]
+
+    class EventStore:
+        def __init__(self):
+            self.events = []
+
+        async def append(self, event, **kwargs):
+            self.events.append(event)
+            return event
+
+        async def list_after(self, run_id, after_sequence=0, **kwargs):
+            return [
+                event
+                for event in self.events
+                if event.run_id == run_id and event.sequence > after_sequence
+            ]
+
+    profile_capability = RuntimeRecommendationCapability()
+    anime_capability = RuntimeAnimeCapability()
+    capability_registry = CapabilityRegistry()
+    capability_registry.register(profile_capability)
+    capability_registry.register(anime_capability)
+    agent_registry = AgentRegistry()
+    agent_registry.register(
+        "recommendation",
+        RecommendationAgent(
+            profile_capability,
+            anime_capability=anime_capability,
+        ),
+    )
+    run_store = StrictRunStore()
+    runtime = AgentRuntime(
+        object(),
+        model_gateway=NoModelGateway(),
+        dispatcher=Dispatcher(capability_registry),
+        specialist_router=AgentRouter(agent_registry),
+        run_store=run_store,
+        event_store=EventStore(),
+    )
+
+    async def execute(run_id):
+        task = AgentTask(
+            user_id=7,
+            goal="推荐动漫",
+            metadata={
+                "run_id": run_id,
+                "messages": [{"role": "user", "content": "推荐动漫"}],
+            },
+        )
+        context = ExecutionContext(
+            principal_id=7,
+            run_id=run_id,
+            trace_id=f"trace-{run_id}",
+            capability_allowlist=frozenset(
+                {"generate_user_profile_tool", "search_anime_advanced"}
+            ),
+        )
+        return [
+            event async for event in runtime.stream_decision(task, context=context)
+        ]
+
+    first = await execute("run-specialist-1")
+    second = await execute("run-specialist-2")
+
+    assert first[-1]["type"] == "run_completed"
+    assert second[-1]["type"] == "run_completed"
+    assert len(run_store.invocations) == 4
+    assert {invocation["run_id"] for invocation in run_store.invocations.values()} == {
+        "run-specialist-1",
+        "run-specialist-2",
+    }
