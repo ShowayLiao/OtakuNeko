@@ -27,7 +27,11 @@ class TestRecommendationCapability:
         captured = {}
 
         async def fake_collections(db, request):
-            captured.update(db=db, user_id=request.user_id)
+            captured.update(
+                db=db,
+                user_id=request.user_id,
+                limit=request.limit,
+            )
             return type("Result", (), {"items": [{"rate": 9}]})()
 
         def fake_profile(collections):
@@ -49,7 +53,12 @@ class TestRecommendationCapability:
         )
 
         assert result["success"] is True
-        assert captured == {"db": "trusted-db", "user_id": 11, "collections": [{"rate": 9}]}
+        assert captured == {
+            "db": "trusted-db",
+            "user_id": 11,
+            "limit": None,
+            "collections": [{"rate": 9}],
+        }
 
     @pytest.mark.asyncio
     async def test_empty_history_returns_deterministic_fallback(self, capability):

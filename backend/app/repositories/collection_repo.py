@@ -97,7 +97,7 @@ class CollectionRepo:
             raise
     
     @staticmethod
-    async def get_by_user(db: AsyncSession, user_id: int, subject_type: Optional[int] = None, status: Optional[int] = None, skip: int = 0, limit: int = 100, sort_by: str = 'updated_at') -> CollectionWithSubjectList:
+    async def get_by_user(db: AsyncSession, user_id: int, subject_type: Optional[int] = None, status: Optional[int] = None, skip: int = 0, limit: Optional[int] = 100, sort_by: str = 'updated_at') -> CollectionWithSubjectList:
         """
         根据用户ID获取所有Collection，并左外连接Subject表
         
@@ -153,8 +153,10 @@ class CollectionRepo:
             elif sort_by == 'date':
                 query = query.order_by(desc(Subject.date))
             
-            # 添加分页
-            query = query.offset(skip).limit(limit)
+            # 保留 offset；limit=None 用于受控的内部全量画像查询。
+            query = query.offset(skip)
+            if limit is not None:
+                query = query.limit(limit)
             
             # 执行查询
             result = await db.execute(query)

@@ -171,7 +171,7 @@ class RecommendationCapability(BaseCapability):
         user_id = kwargs.get("user_id")
         if db is not None and isinstance(user_id, int) and user_id > 0:
             result = await get_user_collections(
-                db, CollectionSearchBase(user_id=user_id, limit=100)
+                db, CollectionSearchBase(user_id=user_id, limit=None)
             )
             items = getattr(result, "items", None)
             if items is None and isinstance(result, dict):

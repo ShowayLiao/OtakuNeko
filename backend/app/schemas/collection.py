@@ -153,7 +153,10 @@ class CollectionSearchBase(SearchBase):
     """
     user_id: int = Field(..., description="用户ID")
     status: Optional[CollectionStatus] = Field(None, description="收藏状态：1想看/2看过/3在看/4搁置/5抛弃")
-    limit: int = Field(default=10, description="返回的最大记录数")
+    limit: Optional[int] = Field(
+        default=10,
+        description="返回的最大记录数；内部画像查询传 None 表示读取全部记录",
+    )
 
 class CollectionSearchByName(CollectionSearchBase):
     """
