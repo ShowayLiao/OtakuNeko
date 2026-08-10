@@ -758,9 +758,13 @@ export const chatWithBackend = async ({
 };
 
 export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): Promise<any[]> => {
+  const normalizedThreadId = typeof threadId === 'string' ? threadId.trim() : '';
+  if (!normalizedThreadId || normalizedThreadId === '[object Object]') {
+    throw new Error('Invalid chat thread id');
+  }
   const token = localStorage.getItem("token");
   const response = await fetch(
-    `/api/v1/chat/history?thread_id=${encodeURIComponent(threadId)}`,
+    `/api/v1/chat/history?thread_id=${encodeURIComponent(normalizedThreadId)}`,
     {
       signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -833,5 +837,24 @@ export const listThreads = async (xApiKey?: string, xBaseUrl?: string): Promise<
     throw new Error(`Chat threads request failed: ${response.status}`);
   }
   const data = await response.json();
-  return data.threads || [];
+  const rawThreads: unknown = data && typeof data === 'object' ? data.threads : undefined;
+  if (!Array.isArray(rawThreads)) return [];
+
+  const threadIds = rawThreads.map((thread): string | null => {
+    if (typeof thread === 'string') {
+      const value = thread.trim();
+      return value && value !== '[object Object]' ? value : null;
+    }
+    if (!thread || typeof thread !== 'object') return null;
+    const record = thread as Record<string, unknown>;
+    for (const key of ['thread_id', 'public_id', 'threadId', 'publicThreadId', 'id']) {
+      const value = record[key];
+      if (typeof value === 'string' && value.trim() && value !== '[object Object]') {
+        return value.trim();
+      }
+    }
+    return null;
+  }).filter((threadId): threadId is string => threadId !== null);
+
+  return [...new Set(threadIds)];
 };

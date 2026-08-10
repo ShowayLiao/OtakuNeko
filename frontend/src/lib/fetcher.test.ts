@@ -78,6 +78,16 @@ describe('chatWithBackend authentication', () => {
     expect(localStorage.getItem('token')).toBeNull();
   });
 
+  it('rejects an invalid thread id before making a malformed history request', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchChatHistory({} as unknown as string)).rejects.toThrow(
+      'Invalid chat thread id',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('loads the authenticated user through the same frontend proxy', async () => {
     localStorage.setItem('token', 'user-access-token');
     const fetchMock = vi.fn().mockResolvedValue(new Response(
@@ -99,6 +109,24 @@ describe('chatWithBackend authentication', () => {
 
     await expect(listThreads()).rejects.toThrow('Chat threads request failed: 401');
     expect(localStorage.getItem('token')).toBeNull();
+  });
+
+  it('normalizes legacy thread records before they become URL parameters', async () => {
+    localStorage.setItem('token', 'user-access-token');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({
+        threads: [
+          { thread_id: 'thread-1' },
+          { id: 'thread-2' },
+          { public_id: 'thread-3' },
+          { unsupported: 'must-be-ignored' },
+          'thread-1',
+        ],
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } },
+    )));
+
+    await expect(listThreads()).resolves.toEqual(['thread-1', 'thread-2', 'thread-3']);
   });
 
   it('replays the current SSE event vocabulary into callbacks', async () => {
