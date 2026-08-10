@@ -477,6 +477,24 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
     ]
     assert any(chunk["type"] == "route_decision" for chunk in chunks)
     assert any(chunk["type"] == "agent_result" for chunk in chunks)
+    tool_events = [
+        chunk["type"]
+        for chunk in chunks
+        if chunk["type"] in {"tool_call_start", "tool_call_end"}
+    ]
+    assert tool_events == [
+        "tool_call_start",
+        "tool_call_end",
+        "tool_call_start",
+        "tool_call_end",
+    ]
+    assert max(
+        index
+        for index, chunk in enumerate(chunks)
+        if chunk["type"] == "tool_call_end"
+    ) < next(
+        index for index, chunk in enumerate(chunks) if chunk["type"] == "agent_result"
+    )
     assert any(
         chunk["type"] == "message_chunk" and chunk["content"]
         for chunk in chunks

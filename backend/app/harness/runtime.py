@@ -1127,6 +1127,7 @@ class AgentRuntime:
                         return
 
                     specialist_call_index = 0
+                    specialist_event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
                     async def invoke_specialist_capability(
                         capability: str,
@@ -1146,12 +1147,14 @@ class AgentRuntime:
                             capability_version="v1",
                             arguments=arguments,
                         )
-                        await emit(
-                            "tool_call_start",
-                            invocation_id=decision.decision_id,
-                            capability=decision.capability,
-                            capability_version=decision.capability_version,
-                            argument_keys=sorted(decision.arguments),
+                        await specialist_event_queue.put(
+                            await emit(
+                                "tool_call_start",
+                                invocation_id=decision.decision_id,
+                                capability=decision.capability,
+                                capability_version=decision.capability_version,
+                                argument_keys=sorted(decision.arguments),
+                            )
                         )
                         await self._observe_checkpoint_controls(
                             run_id, run_cancellation
@@ -1166,17 +1169,19 @@ class AgentRuntime:
                         await self._observe_checkpoint_controls(
                             run_id, run_cancellation
                         )
-                        await emit(
-                            "tool_call_end",
-                            invocation_id=invocation.invocation_id,
-                            capability=decision.capability,
-                            status=invocation.status,
-                            error_code=(
-                                invocation.error_code.value
-                                if isinstance(invocation.error_code, ErrorCode)
-                                else invocation.error_code
-                            ),
-                            output=invocation.output,
+                        await specialist_event_queue.put(
+                            await emit(
+                                "tool_call_end",
+                                invocation_id=invocation.invocation_id,
+                                capability=decision.capability,
+                                status=invocation.status,
+                                error_code=(
+                                    invocation.error_code.value
+                                    if isinstance(invocation.error_code, ErrorCode)
+                                    else invocation.error_code
+                                ),
+                                output=invocation.output,
+                            )
                         )
                         if invocation.status != "succeeded":
                             return {
@@ -1192,7 +1197,43 @@ class AgentRuntime:
                     )
                     run_budget.check_deadline()
                     run_budget.consume_step()
-                    specialist_raw = await bound_specialist.execute(task)
+                    specialist_task = asyncio.create_task(
+                        bound_specialist.execute(task)
+                    )
+                    pending_event_task: asyncio.Task[Any] | None = None
+                    try:
+                        while True:
+                            if specialist_task.done() and specialist_event_queue.empty():
+                                break
+                            pending_event_task = asyncio.create_task(
+                                specialist_event_queue.get()
+                            )
+                            done, _ = await asyncio.wait(
+                                {specialist_task, pending_event_task},
+                                return_when=asyncio.FIRST_COMPLETED,
+                            )
+                            if pending_event_task in done:
+                                yield pending_event_task.result()
+                            else:
+                                pending_event_task.cancel()
+                                await asyncio.gather(
+                                    pending_event_task, return_exceptions=True
+                                )
+                            pending_event_task = None
+                        specialist_raw = await specialist_task
+                    finally:
+                        if pending_event_task is not None and not pending_event_task.done():
+                            pending_event_task.cancel()
+                            await asyncio.gather(
+                                pending_event_task, return_exceptions=True
+                            )
+                        if not specialist_task.done():
+                            specialist_task.cancel()
+                            await asyncio.gather(
+                                specialist_task, return_exceptions=True
+                            )
+                    while not specialist_event_queue.empty():
+                        yield specialist_event_queue.get_nowait()
                     specialist_result = AgentResult.from_raw(
                         specialist_raw,
                         kind="subagent",

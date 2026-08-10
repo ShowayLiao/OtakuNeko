@@ -65,7 +65,15 @@ class TestRecommendationCapability:
                 "rate": 8,
                 "subject": {
                     "id": 1,
-                    "name": "Test Anime",
+                    "name": "Test Anime 1",
+                    "tags": [{"name": "测试", "count": 1}],
+                },
+            },
+            {
+                "rate": 9,
+                "subject": {
+                    "id": 2,
+                    "name": "Test Anime 2",
                     "tags": [{"name": "测试", "count": 1}],
                 },
             },
@@ -73,6 +81,8 @@ class TestRecommendationCapability:
         result = await capability.execute("generate_profile", collections=minimal)
         assert result["success"] is True
         assert "profile" in result
+        assert result["profile"]["llm_summary"]["total_rated"] == 2
+        assert result["profile"]["watched_ids"] == [1, 2]
 
     @pytest.mark.asyncio
     async def test_analyse_taste_empty_history(self, capability):

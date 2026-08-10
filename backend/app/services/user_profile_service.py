@@ -6,6 +6,7 @@
 
 from datetime import datetime, timezone
 import re
+from collections.abc import Mapping
 from typing import List, Dict, Any, TYPE_CHECKING, Tuple, TypedDict
 from collections import defaultdict
 from app.core.logging import get_logger
@@ -213,12 +214,14 @@ def _clean_and_extract_data(
 
     for item in collections:
         try:
-            subject = item.subject
+            subject = _read_field(item, "subject")
             if not subject:
                 continue
 
             # 提取subject_id
-            subject_id = subject.id or subject.source_id
+            subject_id = _read_field(subject, "id") or _read_field(
+                subject, "source_id"
+            )
             if subject_id:
                 try:
                     subject_id_int = int(subject_id)
@@ -228,18 +231,18 @@ def _clean_and_extract_data(
                     pass
 
             # 检查是否有有效评分
-            collection = getattr(item, "collection", None)
-            score = getattr(item, "rate", None)
+            collection = _read_field(item, "collection")
+            score = _read_field(item, "rate")
             if score is None and collection is not None:
-                score = getattr(collection, "rate", None)
+                score = _read_field(collection, "rate")
             if score is None or score == 0:
                 continue
 
             # 提取标签
-            tags = subject.tags or []
-            updated_at = getattr(item, "updated_at", None)
+            tags = _read_field(subject, "tags") or []
+            updated_at = _read_field(item, "updated_at")
             if updated_at is None and collection is not None:
-                updated_at = getattr(collection, "updated_at", None)
+                updated_at = _read_field(collection, "updated_at")
             entry = {
                 "tags": tags,
                 "score": float(score),
@@ -254,6 +257,13 @@ def _clean_and_extract_data(
             continue
 
     return watched_ids, rated_entries, tagged_entries
+
+
+def _read_field(value: Any, name: str, default: Any = None) -> Any:
+    """Read a field from either a domain model or a serialized mapping."""
+    if isinstance(value, Mapping):
+        return value.get(name, default)
+    return getattr(value, name, default)
 
 
 def _normalise_datetime(value: Any) -> datetime | None:

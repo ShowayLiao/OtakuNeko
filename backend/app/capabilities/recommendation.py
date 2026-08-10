@@ -176,8 +176,5 @@ class RecommendationCapability(BaseCapability):
             items = getattr(result, "items", None)
             if items is None and isinstance(result, dict):
                 items = result.get("items")
-            return [
-                item.model_dump(mode="json") if hasattr(item, "model_dump") else item
-                for item in (items or [])
-            ]
+            return list(items or [])
         return list(kwargs.get("collections") or [])
