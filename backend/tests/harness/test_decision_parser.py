@@ -39,6 +39,43 @@ def test_valid_invoke_decision_is_canonical_and_versioned() -> None:
     assert decision.capability_version == "v1"
 
 
+def test_invoke_decision_accepts_public_arguments_compatibility_alias() -> None:
+    decision = DecisionParser().parse(
+        _result(
+            {
+                "schema_version": "v1",
+                "decision_id": "decision-1",
+                "action": "invoke",
+                "capability": "catalog.search",
+                "capability_version": "v1",
+                "public_arguments": {"query": "anime"},
+            }
+        ),
+        expected_run_id="run-1",
+    )
+
+    assert decision.run_id == "run-1"
+    assert decision.arguments == {"query": "anime"}
+
+
+def test_invoke_decision_rejects_conflicting_argument_field_aliases() -> None:
+    with pytest.raises(DecisionParseError):
+        DecisionParser().parse(
+            _result(
+                {
+                    "schema_version": "v1",
+                    "decision_id": "decision-1",
+                    "run_id": "run-1",
+                    "action": "invoke",
+                    "capability": "catalog.search",
+                    "capability_version": "v1",
+                    "arguments": {"query": "anime"},
+                    "public_arguments": {"query": "manga"},
+                }
+            )
+        )
+
+
 @pytest.mark.parametrize("action", ["respond", "finish"])
 def test_terminal_decisions_do_not_become_invocations(action: str) -> None:
     decision = DecisionParser().parse(

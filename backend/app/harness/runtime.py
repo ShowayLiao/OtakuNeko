@@ -81,6 +81,47 @@ def _tool_feedback_message(invocation: Any) -> dict[str, str]:
     }
 
 
+def _assistant_continuation_message(model_result: Any) -> dict[str, str]:
+    """Represent one model proposal as the next provider turn.
+
+    The primary loop uses JSON content instead of native provider tool calls,
+    but the provider still needs to see its preceding assistant turn before a
+    capability observation. ``reasoning`` remains an optional,
+    provider-neutral field here and is projected by the Model Gateway only for
+    providers that support it.
+    """
+    content = getattr(model_result, "text", "") or ""
+    if not content:
+        decision = getattr(model_result, "decision", None)
+        if isinstance(decision, dict):
+            content = json.dumps(
+                decision,
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            )
+    message = {
+        "role": "assistant",
+        "content": str(content),
+    }
+    reasoning = getattr(model_result, "reasoning", "") or ""
+    if reasoning:
+        message["reasoning"] = str(reasoning)
+    return message
+
+
+def _checkpoint_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Persist only safe conversation fields, never raw provider reasoning."""
+    return [
+        {
+            "role": str(message.get("role", "user")),
+            "content": str(message.get("content", "")),
+        }
+        for message in messages
+        if isinstance(message, dict) and message.get("content") is not None
+    ]
+
+
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -860,6 +901,7 @@ class AgentRuntime:
                         and run_budget.model_calls_used < run_budget.max_model_calls
                     ):
                         parse_recovery_attempted = True
+                        messages.append(_assistant_continuation_message(model_result))
                         messages.append(
                             {"role": "system", "content": _DECISION_REPAIR_PROMPT}
                         )
@@ -871,6 +913,7 @@ class AgentRuntime:
                 if decision.action in {"respond", "finish"}:
                     return RunResult(run_id=run_id, status="completed", content=decision.content or "")
 
+                messages.append(_assistant_continuation_message(model_result))
                 invocation = await self.dispatcher.dispatch(
                     decision,
                     trusted_context,
@@ -999,7 +1042,7 @@ class AgentRuntime:
                         state.context.get("pending_invocation_started")
                     )
             else:
-                state.context["decision_messages"] = messages
+                state.context["decision_messages"] = _checkpoint_messages(messages)
                 await self._save_checkpoint(state)
         except CheckpointLeaseLost:
             yield {
@@ -1281,17 +1324,50 @@ class AgentRuntime:
                 run_budget.consume_step()
                 if pending_decision is None:
                     run_budget.reserve_model_call()
-                    model_result = await self.model_gateway.infer(
-                        goal=task.goal,
-                        messages=messages,
-                        run_id=run_id,
-                        trace_id=trusted_context.trace_id,
-                        context=model_context,
-                        capability_catalog=self._capability_catalog(trusted_context),
-                        cancellation=run_cancellation,
-                        deadline=run_budget.remaining_seconds(),
-                        budget=run_budget.snapshot(),
-                    )
+                    model_result = None
+                    stream_infer = getattr(self.model_gateway, "stream_infer", None)
+                    if callable(stream_infer):
+                        async for stream_event in stream_infer(
+                            goal=task.goal,
+                            messages=messages,
+                            run_id=run_id,
+                            trace_id=trusted_context.trace_id,
+                            context=model_context,
+                            capability_catalog=self._capability_catalog(trusted_context),
+                            cancellation=run_cancellation,
+                            deadline=run_budget.remaining_seconds(),
+                            budget=run_budget.snapshot(),
+                        ):
+                            delta = getattr(stream_event, "delta", None)
+                            if (
+                                delta is not None
+                                and getattr(delta, "kind", None) == "reasoning"
+                                and getattr(delta, "text", None)
+                            ):
+                                yield await emit(
+                                    "thinking_chunk",
+                                    content=delta.text,
+                                )
+                            streamed_result = getattr(stream_event, "result", None)
+                            if streamed_result is not None:
+                                model_result = streamed_result
+                        if model_result is None:
+                            raise RuntimeError("model stream ended without a result")
+                        yield await emit("thinking_end")
+                    else:
+                        # Keep injected legacy gateways working while the
+                        # concrete OpenAI gateway uses the structured stream.
+                        model_result = await self.model_gateway.infer(
+                            goal=task.goal,
+                            messages=messages,
+                            run_id=run_id,
+                            trace_id=trusted_context.trace_id,
+                            context=model_context,
+                            capability_catalog=self._capability_catalog(trusted_context),
+                            cancellation=run_cancellation,
+                            deadline=run_budget.remaining_seconds(),
+                            budget=run_budget.snapshot(),
+                        )
                     await self._observe_checkpoint_controls(run_id, run_cancellation)
                     run_budget.record_model_usage(getattr(model_result, "usage", None))
                     yield await emit(
@@ -1304,13 +1380,14 @@ class AgentRuntime:
                         status=model_result.status,
                         error_code=model_result.error_code,
                     )
-                    reasoning = getattr(model_result, "reasoning", "")
-                    if reasoning:
-                        yield await emit(
-                            "thinking_chunk",
-                            content=reasoning,
-                        )
-                        yield await emit("thinking_end")
+                    if not callable(stream_infer):
+                        reasoning = getattr(model_result, "reasoning", "")
+                        if reasoning:
+                            yield await emit(
+                                "thinking_chunk",
+                                content=reasoning,
+                            )
+                            yield await emit("thinking_end")
 
                     model_terminal = self._model_terminal(run_id, model_result)
                     if model_terminal is not None:
@@ -1339,6 +1416,7 @@ class AgentRuntime:
                             and run_budget.model_calls_used < run_budget.max_model_calls
                         ):
                             parse_recovery_attempted = True
+                            messages.append(_assistant_continuation_message(model_result))
                             messages.append(
                                 {
                                     "role": "system",
@@ -1359,6 +1437,7 @@ class AgentRuntime:
                         )
                         return
 
+                    messages.append(_assistant_continuation_message(model_result))
                     yield await emit(
                         "model_decision",
                         decision_id=decision.decision_id,
@@ -1370,7 +1449,7 @@ class AgentRuntime:
                     state.current_step = "dispatch"
                     state.context = {
                         **state.context,
-                        "decision_messages": messages,
+                        "decision_messages": _checkpoint_messages(messages),
                         "pending_decision": decision.model_dump(mode="json"),
                         "pending_invocation_started": False,
                     }
@@ -1536,7 +1615,7 @@ class AgentRuntime:
                 state.current_step = "model"
                 state.context = {
                     **state.context,
-                    "decision_messages": messages,
+                    "decision_messages": _checkpoint_messages(messages),
                     "pending_decision": None,
                     "pending_invocation_started": False,
                 }

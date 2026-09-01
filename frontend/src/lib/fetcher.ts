@@ -40,6 +40,58 @@ const invalidateAuth = () => {
   window.dispatchEvent(new Event(AUTH_STATE_CHANGED_EVENT));
 };
 
+export class ChatRequestError extends Error {
+  readonly code: string;
+  readonly status: number;
+
+  constructor(message: string, code: string, status: number) {
+    super(message);
+    this.name = 'ChatRequestError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+const httpErrorCode = (
+  status: number,
+  providerCode: unknown,
+  authenticationFailure = false,
+): string => {
+  if (authenticationFailure) return 'authentication_error';
+  if (typeof providerCode === 'string' && providerCode.trim() !== '') {
+    return providerCode;
+  }
+  if (status === 401) return 'configuration_error';
+  if (status === 408 || status === 504) return 'timeout';
+  if (status >= 500) return 'backend_error';
+  return 'request_error';
+};
+
+const chatRequestError = async (response: Response): Promise<ChatRequestError> => {
+  let detail: string | null = null;
+  let providerCode: unknown = null;
+  const authenticationFailure = response.status === 401
+    && /\bbearer\b/i.test(response.headers.get('WWW-Authenticate') || '');
+
+  try {
+    const payload = await response.clone().json() as Record<string, unknown>;
+    if (typeof payload.detail === 'string' && payload.detail.trim() !== '') {
+      detail = payload.detail;
+    }
+    providerCode = payload.error_code;
+  } catch {
+    // Some proxies return an empty or non-JSON error body.
+  }
+
+  if (authenticationFailure) invalidateAuth();
+
+  return new ChatRequestError(
+    detail || `API request failed: ${response.status}`,
+    httpErrorCode(response.status, providerCode, authenticationFailure),
+    response.status,
+  );
+};
+
 interface NormalizedTerminalStatus {
   status: TerminalStatus;
   error_code: string | null;
@@ -398,8 +450,7 @@ export const chatWithBackend = async ({
     );
 
     if (!response.ok) {
-      if (response.status === 401) invalidateAuth();
-      throw new Error(`API request failed: ${response.status}`);
+      throw await chatRequestError(response);
     }
 
     if (!resumeRun && !response.body) {
@@ -748,7 +799,7 @@ export const chatWithBackend = async ({
           });
         }
       } else if (onError) {
-        onError(err?.message || String(err));
+        onError(err?.message || String(err), err?.code || null);
       }
     }
   } finally {

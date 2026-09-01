@@ -75,8 +75,27 @@ def test_calendar_and_linked_user_actions_are_discoverable():
     actions = {action.name: action for action in AnimeCapability().actions()}
 
     assert actions["get_bangumi_calendar"].requires_auth is False
+    assert actions["get_bangumi_calendar"].max_output_fields == 8192
+    assert actions["get_detail_batch"].requires_auth is False
+    assert actions["get_detail_batch"].input_schema["properties"]["subject_ids"]["maxItems"] == 5
     assert actions["get_bangumi_user_info"].requires_auth is True
     assert "username" not in actions["get_bangumi_user_info"].input_schema.get("properties", {})
+
+
+@pytest.mark.asyncio
+async def test_batch_anime_details_uses_subject_ids(monkeypatch):
+    async def fake_details(subject_ids):
+        return {
+            "details": [{"id": subject_ids[0], "name": "Anime", "summary": "summary"}],
+            "failed_subject_ids": [],
+        }
+
+    monkeypatch.setattr("app.capabilities.anime.get_bangumi_subject_details", fake_details)
+
+    result = await AnimeCapability().execute("get_detail_batch", subject_ids=[123])
+
+    assert result["success"] is True
+    assert result["details"][0]["id"] == 123
 
 
 @pytest.mark.asyncio

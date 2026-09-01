@@ -4,6 +4,7 @@ from app.agents.agent_registry import AgentRegistry
 from app.agents.recommendation_agent import RecommendationAgent
 from app.agents.router import AgentRouter
 from app.capabilities.base import BaseCapability
+from app.capabilities.anime import AnimeCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
 from app.harness.contracts import ExecutionContext
@@ -351,6 +352,93 @@ async def test_primary_decision_loop_passes_public_capability_catalog_to_model()
 
 
 @pytest.mark.asyncio
+async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(monkeypatch):
+    async def fake_calendar():
+        return {"days": [{"weekday": {"id": 1}, "items": [{"id": 101}]}]}
+
+    async def fake_details(subject_ids):
+        return {
+            "details": [{"id": subject_ids[0], "name": "Anime", "summary": "summary"}],
+            "failed_subject_ids": [],
+        }
+
+    monkeypatch.setattr("app.capabilities.anime.get_bangumi_calendar", fake_calendar)
+    monkeypatch.setattr("app.capabilities.anime.get_bangumi_subject_details", fake_details)
+
+    class CalendarWorkflowGateway:
+        def __init__(self):
+            self.calls = []
+
+        async def infer(self, **kwargs):
+            self.calls.append(kwargs)
+            run_id = "run-bangumi-workflow"
+            if len(self.calls) == 1:
+                decision = {
+                    "schema_version": "v1",
+                    "decision_id": "calendar-1",
+                    "run_id": run_id,
+                    "action": "invoke",
+                    "capability": "get_bangumi_calendar",
+                    "capability_version": "v1",
+                    "arguments": {},
+                }
+            elif len(self.calls) == 2:
+                public_names = {item["public_name"] for item in kwargs["capability_catalog"]}
+                assert "get_anime_info_batch" in public_names
+                decision = {
+                    "schema_version": "v1",
+                    "decision_id": "details-1",
+                    "run_id": run_id,
+                    "action": "invoke",
+                    "capability": "get_anime_info_batch",
+                    "capability_version": "v1",
+                    "arguments": {"subject_ids": [101]},
+                }
+            else:
+                decision = {
+                    "schema_version": "v1",
+                    "decision_id": "finish-1",
+                    "run_id": run_id,
+                    "action": "finish",
+                    "content": "done",
+                }
+            return ModelCallResult(
+                provider="test",
+                model="test-model",
+                operation="decision",
+                status="completed",
+                decision=decision,
+            )
+
+    registry = CapabilityRegistry()
+    registry.register(AnimeCapability())
+    gateway = CalendarWorkflowGateway()
+    runtime = AgentRuntime(
+        object(),
+        model_gateway=gateway,
+        dispatcher=Dispatcher(registry),
+    )
+    task = AgentTask(
+        user_id=1,
+        goal="整理本周值得关注的新番",
+        metadata={
+            "run_id": "run-bangumi-workflow",
+            "messages": [{"role": "user", "content": "整理本周值得关注的新番"}],
+        },
+    )
+    context = ExecutionContext(
+        principal_id=1,
+        run_id="run-bangumi-workflow",
+        trace_id="trace-bangumi-workflow",
+    )
+
+    chunks = [chunk async for chunk in runtime.stream_decision(task, context=context)]
+
+    assert chunks[-1]["type"] == "run_completed"
+    assert len(gateway.calls) == 3
+
+
+@pytest.mark.asyncio
 async def test_primary_decision_loop_retries_once_after_invalid_model_decision():
     registry = CapabilityRegistry()
     gateway = RetryDecisionModelGateway()
@@ -381,7 +469,13 @@ async def test_primary_decision_loop_retries_once_after_invalid_model_decision()
     assert len(gateway.calls) == 2
     assert chunks[-1]["type"] == "run_completed"
     assert not any(chunk["type"] == "run_failed" for chunk in chunks)
-    assert "valid JSON Decision" in gateway.calls[1]["messages"][-1]["content"]
+    retry_messages = gateway.calls[1]["messages"]
+    repair_index = next(
+        index
+        for index, message in enumerate(retry_messages)
+        if "valid JSON Decision" in message["content"]
+    )
+    assert retry_messages[repair_index - 1]["role"] == "assistant"
 
 
 @pytest.mark.asyncio
@@ -416,7 +510,15 @@ async def test_primary_decision_loop_uses_provider_compatible_tool_feedback():
 
     assert chunks[-1]["type"] == "run_completed"
     assert len(gateway.calls) == 2
-    feedback = gateway.calls[1]["messages"][-1]
+    messages = gateway.calls[1]["messages"]
+    feedback = next(
+        message
+        for message in messages
+        if message["role"] == "user"
+        and "untrusted capability result data" in message["content"]
+    )
+    feedback_index = messages.index(feedback)
+    assert messages[feedback_index - 1]["role"] == "assistant"
     assert feedback["role"] == "user"
     assert "untrusted capability result data" in feedback["content"]
 

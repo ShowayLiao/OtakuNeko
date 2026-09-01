@@ -66,6 +66,50 @@ describe('chatWithBackend authentication', () => {
     );
   });
 
+  it('preserves provider configuration errors from a rejected chat request', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ detail: 'Missing API Key' }),
+      { status: 401, headers: { 'Content-Type': 'application/json' } },
+    )));
+    localStorage.setItem('token', 'user-access-token');
+    const onError = vi.fn();
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      onError,
+    });
+    expect(onError).toHaveBeenCalledWith('Missing API Key', 'configuration_error');
+    expect(localStorage.getItem('token')).toBe('user-access-token');
+  });
+
+  it('invalidates an expired user token rejected by the chat endpoint', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ detail: 'Invalid authentication credentials' }),
+      {
+        status: 401,
+        headers: {
+          'Content-Type': 'application/json',
+          'WWW-Authenticate': 'Bearer',
+        },
+      },
+    )));
+    localStorage.setItem('token', 'expired-token');
+    const onError = vi.fn();
+
+    await chatWithBackend({
+      messages: [],
+      provider: 'deepseek',
+      onError,
+    });
+
+    expect(onError).toHaveBeenCalledWith(
+      'Invalid authentication credentials',
+      'authentication_error',
+    );
+    expect(localStorage.getItem('token')).toBeNull();
+  });
+
   it('surfaces authentication failures when loading chat history', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ detail: 'unauthorized' }), { status: 401 }),

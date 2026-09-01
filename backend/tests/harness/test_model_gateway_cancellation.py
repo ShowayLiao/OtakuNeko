@@ -10,7 +10,7 @@ from app.harness.budget import (
     RunCancellationError,
 )
 from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
-from app.harness.model_types import ModelCallResult
+from app.harness.model_types import ModelCallResult, ModelDelta
 
 
 class BlockingAdapter:
@@ -25,6 +25,26 @@ class BlockingAdapter:
         finally:
             self.finished.set()
         raise AssertionError("the provider operation should be cancelled")
+
+
+class BlockingStreamingAdapter:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.finished = asyncio.Event()
+
+    async def complete(self, **kwargs) -> ModelCallResult:
+        raise AssertionError("the test must use the streaming adapter")
+
+    async def _stream(self):
+        self.started.set()
+        try:
+            await asyncio.sleep(60)
+        finally:
+            self.finished.set()
+        yield None
+
+    def stream(self, **kwargs):
+        return self._stream()
 
 
 class CancelledAdapter:
@@ -89,6 +109,72 @@ async def test_gateway_maps_deadline_and_reclaims_provider_task() -> None:
             ),
             timeout=0.2,
         )
+    assert adapter.finished.is_set()
+
+
+@pytest.mark.asyncio
+async def test_gateway_stream_infer_cancels_provider_iterator_and_waits_for_cleanup() -> None:
+    adapter = BlockingStreamingAdapter()
+    gateway = OpenAIModelGateway(
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        model="test-model",
+        adapter=adapter,
+    )
+    cancellation = CancellationToken()
+
+    async def consume() -> None:
+        async for _event in gateway.stream_infer(
+            goal="goal",
+            messages=[],
+            cancellation=cancellation,
+            deadline=5.0,
+        ):
+            pass
+
+    operation = asyncio.create_task(consume())
+    await asyncio.wait_for(adapter.started.wait(), timeout=1)
+    cancellation.cancel()
+
+    with pytest.raises(RunCancellationError):
+        await asyncio.wait_for(operation, timeout=1)
+    assert adapter.finished.is_set()
+
+
+@pytest.mark.asyncio
+async def test_gateway_stream_infer_enforces_one_deadline_across_chunks() -> None:
+    class SlowChunksAdapter:
+        def __init__(self) -> None:
+            self.finished = asyncio.Event()
+
+        async def complete(self, **kwargs) -> ModelCallResult:
+            raise AssertionError("the test must use the streaming adapter")
+
+        async def _stream(self):
+            try:
+                yield ModelDelta(kind="text", text="first")
+                await asyncio.sleep(60)
+            finally:
+                self.finished.set()
+
+        def stream(self, **kwargs):
+            return self._stream()
+
+    adapter = SlowChunksAdapter()
+    gateway = OpenAIModelGateway(
+        api_key="test-key",
+        base_url="https://example.test/v1",
+        model="test-model",
+        adapter=adapter,
+    )
+
+    with pytest.raises(DeadlineExceededError):
+        async for _event in gateway.stream_infer(
+            goal="goal",
+            messages=[],
+            deadline=0.01,
+        ):
+            pass
     assert adapter.finished.is_set()
 
 

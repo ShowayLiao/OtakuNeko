@@ -4,6 +4,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Virtual environments
 venv/
@@ -54,9 +60,18 @@ lobe-ui/
 # ==========================
 # 4. Database & Migrations
 # ==========================
+*.sqlite
 *.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # !!! 关键修正：保留 alembic/versions/ 
 # 这里只忽略 alembic 产生的缓存，不要忽略 versions 文件夹
@@ -84,7 +99,6 @@ data/
 # ==========================
 # 6. Docker & Deployment
 # ==========================
-.dockerignore
 Dockerfile.local
 # 如果你的 .pem 证书是部署用的，千万别传
 *.pem
@@ -120,10 +134,6 @@ lerna-debug.log*
 Thumbs.db
 .DS_Store
 
-
-.runtime/
-
-
 #=====================
 # 9. 文档
 # ==========================
@@ -135,3 +145,25 @@ backend/spec/
 # Local documentation/tooling scratch output
 .docs/
 .worktrees/
+
+# ==========================
+# 10. Local reports, exports & diagnostics
+# ==========================
+/.ticktickbind
+/architecture_report.*
+/lint-current.json
+/frontend/lint-current.json
+
+# Raw API responses, personal imports and local qBittorrent exports
+/bangumi_*.json
+/calendar.json
+/collection.json
+/collection_subject.json
+/qb.json
+/subject_characters.json
+/tofu*.json
+
+# One-off scripts belong in backend/scripts/; collected tests belong in backend/tests/
+/check_*.py
+/test_*.py
+/backend/test_*.py

@@ -1,9 +1,16 @@
+from collections import Counter
+
 from sqlalchemy import func, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_cache.decorator import cache
 
-from app.models import Collection, Subject, SubjectType
-from app.schemas.dashboard import DashboardStats
+from app.models import Collection, CollectionStatus, Subject, SubjectType
+from app.schemas.dashboard import (
+    CollectionGenreCount,
+    CollectionStatistics,
+    CollectionStatusCounts,
+    DashboardStats,
+)
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -91,3 +98,111 @@ async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
     logger.info(f"完成获取用户统计数据: user_id={user_id}, 结果: anime={stats.anime}, books={stats.books}, music={stats.music}, games={stats.games}, real={stats.real}, total={stats.total}")
     
     return stats
+
+
+def _effective_subject_type():
+    """Use the denormalized collection type, falling back to Subject.type."""
+    return func.coalesce(func.nullif(Collection.subject_type, 0), Subject.type)
+
+
+def _subject_tag_names(meta_tags, tags) -> set[str]:
+    """Extract and normalize subject tags without trusting model-provided data."""
+    candidates = meta_tags if isinstance(meta_tags, list) else []
+    if not candidates and isinstance(tags, list):
+        candidates = tags
+
+    names: set[str] = set()
+    for tag in candidates:
+        value = tag.get("name") if isinstance(tag, dict) else tag
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                names.add(normalized)
+    return names
+
+
+async def get_collection_statistics(
+    user_id: int,
+    db: AsyncSession,
+    subject_type: int = int(SubjectType.ANIME),
+) -> CollectionStatistics:
+    """Aggregate collection statistics in the backend for one trusted user.
+
+    ``Subject.meta_tags`` and ``Subject.tags`` are the repository's current
+    tag sources. There is no standalone Genre table, so ``top_genres`` is a
+    deterministic, per-subject tag frequency rather than an inferred genre
+    taxonomy.
+    """
+    effective_type = _effective_subject_type()
+    join_condition = and_(
+        Collection.source == Subject.source,
+        Collection.source_id == Subject.source_id,
+    )
+    filters = [Collection.user_id == user_id, effective_type == subject_type]
+
+    status_statement = (
+        select(Collection.type, func.count(Collection.id))
+        .select_from(Collection)
+        .outerjoin(Subject, join_condition)
+        .where(*filters)
+        .group_by(Collection.type)
+    )
+    status_result = await db.execute(status_statement)
+
+    status_counts = CollectionStatusCounts()
+    status_fields = {
+        CollectionStatus.WISH: "wish",
+        CollectionStatus.COLLECT: "watched",
+        CollectionStatus.DO: "watching",
+        CollectionStatus.ON_HOLD: "on_hold",
+        CollectionStatus.DROPPED: "dropped",
+    }
+    for status, count in status_result.all():
+        field_name = status_fields.get(CollectionStatus(int(status)))
+        if field_name is not None:
+            setattr(status_counts, field_name, int(count))
+
+    detail_statement = (
+        select(
+            Collection.source,
+            Collection.source_id,
+            Subject.meta_tags,
+            Subject.tags,
+        )
+        .select_from(Collection)
+        .outerjoin(Subject, join_condition)
+        .where(*filters)
+    )
+    detail_result = await db.execute(detail_statement)
+    tag_counts: Counter[str] = Counter()
+    seen_subjects: set[tuple[str, str]] = set()
+    tagged_subject_count = 0
+    total = 0
+
+    for source, source_id, meta_tags, tags in detail_result.all():
+        total += 1
+        key = (str(source), str(source_id))
+        if key in seen_subjects:
+            continue
+        seen_subjects.add(key)
+        names = _subject_tag_names(meta_tags, tags)
+        if names:
+            tagged_subject_count += 1
+            tag_counts.update(names)
+
+    top_genres = [
+        CollectionGenreCount(name=name, count=count)
+        for name, count in sorted(
+            tag_counts.items(), key=lambda item: (-item[1], item[0])
+        )[:3]
+    ]
+
+    return CollectionStatistics(
+        subject_type=int(subject_type),
+        total=total,
+        status_counts=status_counts,
+        top_genres=top_genres,
+        complete=True,
+        genre_subject_count=tagged_subject_count,
+        genre_complete=tagged_subject_count == total,
+    )

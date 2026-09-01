@@ -192,6 +192,12 @@ class DecisionParser:
             raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True) from exc
 
     def _canonicalize_invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if "arguments" not in payload and "public_arguments" in payload:
+            payload = {
+                **payload,
+                "arguments": payload["public_arguments"],
+            }
+            payload.pop("public_arguments", None)
         capability = payload.get("capability")
         if isinstance(capability, str) and capability in self.capability_aliases:
             canonical, version = self.capability_aliases[capability]

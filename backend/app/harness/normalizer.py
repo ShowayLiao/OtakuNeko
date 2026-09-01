@@ -378,9 +378,10 @@ def _compact_payload(
     *,
     max_payload_bytes: int,
     schema: dict[str, Any],
+    max_iterations: int = DEFAULT_MAX_OUTPUT_FIELDS * 4,
 ) -> bool:
     """Trim a safe projection until its JSON payload fits the public limit."""
-    for _ in range(DEFAULT_MAX_OUTPUT_FIELDS * 4):
+    for _ in range(max_iterations):
         size = _json_size(value)
         if size is not None and size <= max_payload_bytes:
             return True
@@ -485,11 +486,16 @@ class ResultNormalizer:
             if key not in {"success", "error", "error_type", "retryable", "latency_ms"}
         }
         try:
+            max_output_fields = (
+                descriptor.max_output_fields
+                if descriptor.max_output_fields is not None
+                else DEFAULT_MAX_OUTPUT_FIELDS
+            )
             _validate_bounds(
                 data,
                 max_payload_bytes=descriptor.max_payload_bytes,
                 max_depth=DEFAULT_MAX_OUTPUT_DEPTH,
-                max_fields=DEFAULT_MAX_OUTPUT_FIELDS,
+                max_fields=max_output_fields,
                 max_string_bytes=DEFAULT_MAX_OUTPUT_STRING_BYTES,
                 label="output",
             )
@@ -515,7 +521,7 @@ class ResultNormalizer:
             projection = _bounded_safe_value(
                 data,
                 max_depth=DEFAULT_MAX_OUTPUT_DEPTH,
-                max_fields=DEFAULT_MAX_OUTPUT_FIELDS,
+                max_fields=max_output_fields,
                 max_string_bytes=DEFAULT_MAX_OUTPUT_STRING_BYTES,
                 schema=descriptor.output_schema,
             )
@@ -524,6 +530,7 @@ class ResultNormalizer:
                 bounded_data,
                 max_payload_bytes=descriptor.max_payload_bytes,
                 schema=descriptor.output_schema,
+                max_iterations=max_output_fields * 4,
             )
             bounded_error = _schema_error(
                 bounded_data,

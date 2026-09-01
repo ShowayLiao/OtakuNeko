@@ -14,6 +14,7 @@ from app.services.bangumi_service import (
     fetch_subject_by_id,
     get_audience_feedback,
     get_bangumi_calendar,
+    get_bangumi_subject_details,
     get_bangumi_user_info,
     get_staff_info,
     get_cast_info,
@@ -24,6 +25,7 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 _SEARCH_RESULT_SUMMARY_LENGTH = 200
+_MAX_BATCH_DETAIL_SUBJECTS = 5
 
 
 def _normalise_tags(raw_tags: Any) -> list[str]:
@@ -101,8 +103,29 @@ class AnimeCapability(BaseCapability):
             ActionDescriptor(
                 name="get_detail",
                 public_name="get_anime_info",
-                description="Get detailed information about a specific anime subject",
+                description="Get detailed information about one anime subject. Use this after a calendar lookup when more evidence is needed.",
                 input_schema=subject_id_schema,
+            ),
+            ActionDescriptor(
+                name="get_detail_batch",
+                public_name="get_anime_info_batch",
+                description=(
+                    "Get detailed information for up to five selected anime subject IDs. "
+                    "Use this after get_bangumi_calendar; calendar summaries may be empty."
+                ),
+                input_schema={
+                    "type": "object",
+                    "properties": {
+                        "subject_ids": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 1},
+                            "minItems": 1,
+                            "maxItems": _MAX_BATCH_DETAIL_SUBJECTS,
+                        }
+                    },
+                    "required": ["subject_ids"],
+                    "additionalProperties": False,
+                },
             ),
             ActionDescriptor(
                 name="get_staff",
@@ -125,8 +148,13 @@ class AnimeCapability(BaseCapability):
             ActionDescriptor(
                 name="get_bangumi_calendar",
                 public_name="get_bangumi_calendar",
-                description="Get the current Bangumi broadcast calendar",
+                description=(
+                    "Get the complete current Bangumi broadcast calendar. "
+                    "Use get_anime_info_batch with selected subject IDs before answering "
+                    "calendar-analysis requests because summaries may be empty."
+                ),
                 input_schema={"type": "object", "properties": {}, "required": []},
+                max_output_fields=8192,
             ),
             ActionDescriptor(
                 name="get_bangumi_user_info",
@@ -142,6 +170,7 @@ class AnimeCapability(BaseCapability):
         handlers = {
             "search": self._search,
             "get_detail": self._get_detail,
+            "get_detail_batch": self._get_detail_batch,
             "get_staff": self._get_staff,
             "get_cast": self._get_cast,
             "get_reviews": self._get_reviews,
@@ -178,6 +207,26 @@ class AnimeCapability(BaseCapability):
         subject_id = kwargs["subject_id"]
         result = await fetch_subject_by_id(subject_id)
         return CapabilityResult.ok(**result.model_dump(exclude_none=True)).to_dict()
+
+    async def _get_detail_batch(self, **kwargs: Any) -> dict[str, Any]:
+        subject_ids = kwargs.get("subject_ids")
+        if (
+            not isinstance(subject_ids, list)
+            or not subject_ids
+            or len(subject_ids) > _MAX_BATCH_DETAIL_SUBJECTS
+        ):
+            return CapabilityResult.fail(
+                "Select between one and five anime subject IDs",
+                error_type="invalid_request",
+            ).to_dict()
+        try:
+            result = await get_bangumi_subject_details(subject_ids)
+        except ValueError:
+            return CapabilityResult.fail(
+                "Anime subject IDs did not match the batch detail contract",
+                error_type="invalid_request",
+            ).to_dict()
+        return CapabilityResult.ok(**result).to_dict()
 
     async def _get_staff(self, **kwargs: Any) -> dict[str, Any]:
         subject_id = kwargs["subject_id"]

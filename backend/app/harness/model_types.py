@@ -71,6 +71,15 @@ class ModelCallResult(BaseModel):
     retryable: bool = False
 
 
+class ModelStreamEvent(BaseModel):
+    """One incremental provider event or the completed normalized result."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    delta: ModelDelta | None = None
+    result: ModelCallResult | None = None
+
+
 class ProviderModelAdapter(Protocol):
     """Provider-neutral adapter implemented by OpenAI-compatible clients."""
 

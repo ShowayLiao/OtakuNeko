@@ -120,7 +120,11 @@ class CollectionCapability(BaseCapability):
             ActionDescriptor(
                 name="list_collections",
                 public_name="list_collections",
-                description="List collections owned by the authenticated user",
+                description=(
+                    "List one bounded page of collections owned by the authenticated "
+                    "user. This action is not suitable for full-collection statistics; "
+                    "use get_collection_statistics instead."
+                ),
                 input_schema=_schema({
                     "type": {"type": "integer"},
                     "status": {"type": "integer", "minimum": 1, "maximum": 5},

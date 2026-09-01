@@ -28,6 +28,10 @@ export async function POST(request: Request) {
   responseHeaders.set('Cache-Control', 'no-cache, no-transform');
   responseHeaders.set('Connection', 'keep-alive');
   responseHeaders.set('X-Accel-Buffering', 'no');
+  const authenticationChallenge = upstream.headers.get('www-authenticate');
+  if (authenticationChallenge) {
+    responseHeaders.set('WWW-Authenticate', authenticationChallenge);
+  }
 
   return new Response(upstream.body, {
     status: upstream.status,

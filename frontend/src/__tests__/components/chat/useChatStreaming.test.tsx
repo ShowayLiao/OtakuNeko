@@ -1,5 +1,5 @@
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { RunView } from '@/stores/useChatStore';
 import useChatStore from '@/stores/useChatStore';
@@ -36,11 +36,22 @@ interface StreamingCallbacks {
 }
 
 describe('useChatStreaming RunView projection', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
   afterEach(() => {
+    vi.useRealTimers();
     chatWithBackendMock.mockReset();
     cancelRunMock.mockReset();
     useChatStore.setState({ sessions: [], chatMessages: {}, sessionConfigs: {}, activeSessionId: null });
   });
+
+  async function flushRevealFrames() {
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+  }
 
   it('associates tool terminal events by invocation id and ignores late duplicate end events', async () => {
     chatWithBackendMock.mockImplementation(async (options: StreamingCallbacks) => {
@@ -139,6 +150,7 @@ describe('useChatStreaming RunView projection', () => {
       resolveStream();
       await Promise.resolve();
     });
+    await flushRevealFrames();
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
     expect(message?.status).toBe('cancelled');
@@ -175,6 +187,7 @@ describe('useChatStreaming RunView projection', () => {
         aiMessageId: messageId,
       });
     });
+    await flushRevealFrames();
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
     expect(message?.status).toBe('recovering');
@@ -217,6 +230,7 @@ describe('useChatStreaming RunView projection', () => {
         aiMessageId: messageId,
       });
     });
+    await flushRevealFrames();
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
     expect(message?.status).toBe('recovering');
@@ -226,6 +240,69 @@ describe('useChatStreaming RunView projection', () => {
       terminalStatus: null,
       errorCode: 'missing_terminal_event',
     });
+  });
+
+  it('reveals streamed content over animation frames before finalizing the message', async () => {
+    let callbacks!: StreamingCallbacks;
+    let releaseStream!: () => void;
+    chatWithBackendMock.mockImplementation((options: StreamingCallbacks) => {
+      callbacks = options;
+      options.onRunView?.(runningView);
+      options.onMessageChunk?.('abc');
+      return new Promise<void>((resolve) => { releaseStream = resolve; });
+    });
+    const sessionId = 'session-reveal';
+    const messageId = 'message-reveal';
+    useChatStore.getState().setSessionMessages(sessionId, [{
+      id: messageId,
+      role: 'assistant',
+      content: '',
+      createdAt: new Date(),
+    }]);
+
+    const { result } = renderHook(() => useChatStreaming({
+      selectedProvider: 'deepseek',
+      selectedModel: 'model',
+      onConnectionStatusChange: vi.fn(),
+    }));
+
+    act(() => {
+      void result.current.startStreaming({
+        messages: [],
+        temperature: 0.7,
+        activeSessionId: sessionId,
+        aiMessageId: messageId,
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.content).toBe('');
+    expect(result.current.streamingPreview).toBeNull();
+
+    await act(async () => {
+      vi.advanceTimersByTime(16);
+      await Promise.resolve();
+    });
+    expect(result.current.streamingPreview?.content).toBe('a');
+    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.content).toBe('');
+
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(result.current.streamingPreview?.content).toBe('abc');
+
+    await act(async () => {
+      callbacks.onRunView?.({ ...runningView, phase: 'completed', terminalStatus: 'succeeded' });
+      callbacks.onComplete?.({ hasDurableRun: true, terminalStatus: 'succeeded' });
+      releaseStream();
+      await Promise.resolve();
+    });
+
+    const message = useChatStore.getState().chatMessages[sessionId]?.[0];
+    expect(message?.content).toBe('abc');
+    expect(message?.status).toBe('completed');
   });
 
   it('does not call the durable cancel endpoint for a non-durable run', async () => {

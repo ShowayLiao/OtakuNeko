@@ -18,6 +18,9 @@ from app.schemas.collection import CollectionSyncRequest
 
 logger = get_logger(__name__)
 
+_EXPECTED_CALENDAR_WEEKDAY_IDS = frozenset(range(1, 8))
+_MAX_BANGUMI_DETAIL_SUBJECTS = 5
+
 # === 核心映射表 (The Magic) ===
 # 将 Bangumi 的非标准叫法映射为 AI 易读的叫法
 ROLE_MAPPING = {
@@ -137,6 +140,43 @@ async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
     except Exception as e:
         logger.error(f"获取条目详情失败: {e}")
         raise
+
+async def get_bangumi_subject_details(subject_ids: List[int]) -> Dict[str, Any]:
+    """Fetch a bounded, ordered set of subject details for calendar analysis."""
+    if not isinstance(subject_ids, list) or not subject_ids:
+        raise ValueError("At least one Bangumi subject ID is required")
+    if len(subject_ids) > _MAX_BANGUMI_DETAIL_SUBJECTS:
+        raise ValueError("At most five Bangumi subject IDs can be queried at once")
+
+    normalized_ids: list[int] = []
+    for subject_id in subject_ids:
+        if isinstance(subject_id, bool) or not isinstance(subject_id, int) or subject_id <= 0:
+            raise ValueError("Bangumi subject IDs must be positive integers")
+        if subject_id not in normalized_ids:
+            normalized_ids.append(subject_id)
+
+    fetched = await asyncio.gather(
+        *(fetch_subject_by_id(subject_id) for subject_id in normalized_ids),
+        return_exceptions=True,
+    )
+    details: list[dict[str, Any]] = []
+    failed_subject_ids: list[int] = []
+    for subject_id, result in zip(normalized_ids, fetched):
+        if isinstance(result, Exception):
+            logger.warning(
+                "Bangumi subject detail lookup failed",
+                extra={"subject_id": subject_id},
+            )
+            failed_subject_ids.append(subject_id)
+            continue
+        details.append(
+            result.model_dump(exclude_none=True)
+            if hasattr(result, "model_dump")
+            else dict(result)
+        )
+
+    return {"details": details, "failed_subject_ids": failed_subject_ids}
+
 
 def _clean_staff_data(raw_staff_list: List[Dict[str, Any]]) -> List[StaffInfo]:
     """
@@ -452,6 +492,22 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         
         # 调用 bangumi_client.py 中的 fetch_calendar 函数获取日历信息
         calendar_info = await fetch_calendar()
+        weekday_ids = {
+            day.get("weekday", {}).get("id")
+            for day in calendar_info
+            if isinstance(day, dict) and isinstance(day.get("weekday"), dict)
+        } if isinstance(calendar_info, list) else set()
+        if not _EXPECTED_CALENDAR_WEEKDAY_IDS.issubset(weekday_ids):
+            uncached_fetch = getattr(fetch_calendar, "__wrapped__", None)
+            if uncached_fetch is not None:
+                calendar_info = await uncached_fetch(bangumi_client)
+                weekday_ids = {
+                    day.get("weekday", {}).get("id")
+                    for day in calendar_info
+                    if isinstance(day, dict) and isinstance(day.get("weekday"), dict)
+                } if isinstance(calendar_info, list) else set()
+        if not _EXPECTED_CALENDAR_WEEKDAY_IDS.issubset(weekday_ids):
+            raise ValueError("Bangumi calendar must contain all seven weekdays")
         
         logger.info("成功获取 Bangumi 每日放送信息")
         

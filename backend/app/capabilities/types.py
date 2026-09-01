@@ -77,10 +77,13 @@ class ActionDescriptor:
     idempotency_mode: str = "none"
     approval_required: bool = False
     max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES
+    max_output_fields: int | None = None
 
     def __post_init__(self) -> None:
         if self.is_side_effect and not self.approval_required:
             object.__setattr__(self, "approval_required", True)
+        if self.max_output_fields is not None and self.max_output_fields < 1:
+            raise ValueError("max_output_fields must be positive when configured")
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +101,7 @@ class ActionDescriptor:
             "idempotency_mode": self.idempotency_mode,
             "approval_required": self.approval_required,
             "max_payload_bytes": self.max_payload_bytes,
+            "max_output_fields": self.max_output_fields,
         }
 
     def model_json_schema(self) -> dict[str, Any]:

@@ -22,8 +22,8 @@
     <a href="https://react.dev/">
         <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React">
     </a>
-    <a href="https://langchain.com/">
-        <img src="https://img.shields.io/badge/LangGraph-1.0-1C3C3C?style=flat-square&logo=chainlink&logoColor=white" alt="LangGraph">
+    <a href="docs/architecture/standard-agent-harness-reference.md">
+        <img src="https://img.shields.io/badge/Agent_Harness-Runtime--owned-6366F1?style=flat-square" alt="Agent Harness">
     </a>
     <a href="https://www.sqlite.org/">
         <img src="https://img.shields.io/badge/SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white" alt="SQLite">
@@ -52,64 +52,68 @@
 
 ---
 
-### v2.0.0-beta.1 — 2026-05-20 <span style="font-size:0.85em;background:#6366f1;color:#fff;padding:2px 8px;border-radius:10px;">Latest</span>
+### Harness — 2026-08-31 <span style="font-size:0.85em;background:#6366f1;color:#fff;padding:2px 8px;border-radius:10px;">Latest</span>
 
-> **🏗️ V2 全新重构：** FastAPI + Next.js 16 前后端分离架构，LangGraph ReAct Agent 流式聊天，收藏管理 + 可视化排班，Docker 一键部署，JWT 认证，SQLite / PostgreSQL 双模式数据库。
+> **🧭 Harness 当前版本：** 在 FastAPI + Next.js 前后端分离基础上，主聊天已切换为 Runtime-owned Decision Loop。LLM 只提出结构化 Decision，Capability、specialist 与外部服务通过受控调度边界执行；MCP server 另有独立的白名单暴露与策略边界；SSE 只投影可持久化的 Run Event。
 
 <details>
 <summary><b>📋 展开查看完整亮点</b></summary>
 <br>
 
-- **🏗️ V2 全新重构**：从 Streamlit 单页进化为 FastAPI + Next.js 16 前后端分离架构
-- **🧠 LangGraph ReAct Agent**：7 个内置 Tool 的思考-行动循环智能体，SSE 流式聊天
-- **💬 AI 实时聊天**：Tool Calling 过程可视化，多模型/多角色人格切换
+- **🧭 Runtime-owned Harness**：`AgentRuntime` 统一控制 Decision、预算、取消、checkpoint 和终态
+- **🧠 结构化模型决策**：Model Gateway 归一化 Provider，LLM 只能提出版本化 Decision，不能直接执行能力
+- **🧩 受控能力执行**：Capability Registry、Policy、Dispatcher 与可信 `ExecutionContext` 共同约束调用
+- **💬 AI 实时聊天**：Provider → Gateway → Runtime → SSE → Chat 的流式链路，支持能力过程可视化
+- **🗂️ Run/Event 持久化**：认证会话可查询、回放和取消；SSE 不是运行状态的唯一来源
 - **📚 收藏管理系统**：Bangumi + 豆瓣双平台同步，网格/列表双视图，智能搜索筛选
 - **📅 可视化排班表**：@dnd-kit 拖拽交互，CSV/iCal/TickTick 日历导出
 - **🔗 外部集成**：qBittorrent RSS 订阅、B 站跳转检索、bangumi-data 放送同步
-- **🐳 生产级部署**：Docker Compose 一键编排（PostgreSQL + Redis + Backend + Frontend + QB）
+- **🐳 容器化部署**：Docker Compose 编排 PostgreSQL、Redis、Backend、Frontend 与 qBittorrent
 - **🔐 JWT 认证体系**：bcrypt 密码哈希 + JWT Token + BYOK
-- **⚡ 双模式数据库**：SQLite（本地零依赖）/ PostgreSQL + Redis（生产高可用）
+- **⚡ 双模式数据库**：SQLite（本地、单 Worker）/ PostgreSQL（容器化部署）
 
 </details>
 
 ---
 
-## 🔥 V2 全新重构
+## 🔥 从 V1、V2 到 Harness
 
-> **2026 年，OtakuNeko 从零重写，彻底进化。**
+> **2026 年，OtakuNeko 从 Streamlit 单页应用演进为前后端分离系统，并继续升级为受控、可恢复、可观测的 Agent Harness。**
 
 > ⚠️ **Beta 警示**：当前版本处于开发早期，功能迭代频繁，Bug 较多。建议具备一定开发能力的小伙伴先行体验，暂不保证完整体验。如遇问题欢迎提 Issue！
 
-如果你来自 V1 时代（Streamlit 单页应用），这里是你需要知道的一切：
+如果你来自 V1 或早期 V2，这里用同一套对比方式说明当前 Harness 的变化：
 
-| 维度 | V1 (Streamlit) | V2 (FastAPI + Next.js) |
-|------|:---:|:---:|
-| **前端框架** | Streamlit 单页 | Next.js 16 App Router + React 19 |
-| **后端框架** | Streamlit 内嵌 | FastAPI 独立服务 (~30 API) |
-| **AI 引擎** | LangChain 简单链 | LangGraph ReAct Agent + 7 Tools |
-| **数据库** | JSON 文件存储 | SQLite / PostgreSQL 双模式 |
-| **部署方式** | 双击 .bat 本地运行 | Docker 一键编排 + 双模式 |
-| **UI 体验** | Streamlit 默认组件 | @lobehub/ui + antd + Tailwind |
-| **状态管理** | Session State | Zustand 持久化 |
-| **特色功能** | 画像 + 报告 | + 实时聊天 + 排班拖拽 + 收藏管理 |
-| **平台支持** | Windows 优先 | Windows / macOS / Linux / Docker |
+| 维度 | V1（Streamlit） | V2（FastAPI + Next.js） | Harness（当前） |
+|------|:---:|:---:|:---:|
+| **应用架构** | Streamlit 单页 | FastAPI + Next.js 前后端分离 | 前后端分离 + Agent Harness 控制面 |
+| **AI 引擎** | LangChain 简单链 | LangGraph ReAct + 静态 Tools | `AgentRuntime` + Model Gateway + Decision Parser |
+| **Run 控制者** | 页面请求 | LangGraph 内部循环 | `AgentRuntime` 唯一推进运行状态与终态 |
+| **模型权限** | 生成文本 | 直接产生 Tool Calling | 只提出版本化 Decision，不直接执行 |
+| **能力执行** | 内嵌函数 | 静态 Tool 注册 | Registry + Policy + Dispatcher + trusted context |
+| **Agent 分工** | 单链 | 单个 ReAct Agent | 主 Runtime + 可选领域 specialist；specialist 不拥有顶层 Run |
+| **状态与流式** | Session State | SSE + 会话状态 | canonical Run/Event + checkpoint；SSE 只做投影 |
+| **数据库** | JSON 文件 | SQLite / PostgreSQL | SQLite 单 Worker / PostgreSQL，Run/Event 与业务数据分层 |
+| **UI 体验** | Streamlit 默认组件 | @lobehub/ui + antd + Tailwind | Runtime Event、Capability 过程与逐帧内容渲染 |
+| **平台支持** | Windows 优先 | Windows / macOS / Linux / Docker | Windows / macOS / Linux / Docker |
 
 ### 🎯 核心升级亮点
 
-- **🏗️ 前后端分离架构** — FastAPI 提供 RESTful + SSE 流式 API，Next.js 承载现代化 UI，各司其职
-- **🧠 LangGraph ReAct Agent** — 从简单 LLM 链升级为具备 7 个 Tool 的思考-行动循环智能体
-- **💬 实时 AI 聊天** — 基于 SSE 流式传输，Tool Calling 过程可视化，支持多模型/多角色切换
+- **🧭 Agent Harness** — Runtime 控制 Run，模型提出 Decision，Dispatcher 执行经过 Schema、Policy 和授权检查的能力
+- **💬 实时 AI 聊天** — 基于 canonical Run Event 的 SSE 投影，Capability 调用过程可视化，支持多模型/多角色切换
+- **🧠 Provider-neutral Gateway** — 统一 OpenAI-compatible / DeepSeek 模型调用、流式 delta、取消、超时和错误契约
+- **🗂️ 可恢复运行边界** — 认证会话持久化 Run、Event 与 checkpoint；本地 SQLite 明确限制为单 Worker
 - **📅 可视化排班表** — @dnd-kit 拖拽交互，CSV/iCal/TickTick 日历导出
 - **📚 收藏管理系统** — 网格/列表双视图，Bangumi + 豆瓣双平台同步，智能搜索筛选
-- **🐳 生产级部署** — Docker Compose 一键编排 5 个服务（DB / Redis / Backend / Frontend / QB）
+- **🐳 容器化部署** — Docker Compose 编排 5 个服务（DB / Redis / Backend / Frontend / QB）
 - **🔐 JWT 认证体系** — bcrypt 密码哈希 + JWT Token + BYOK（自带 API Key）
-- **⚡ 双模式数据库** — 开发用 SQLite 零依赖即开即用，生产用 PostgreSQL + Redis 高可用
+- **⚡ 双模式数据库** — 开发用 SQLite 零依赖即开即用，容器化环境使用 PostgreSQL
 
 ---
 
 ## 📋 目录
 
-- [🔥 V2 全新重构](#-v2-全新重构)
+- [🔥 从 V1、V2 到 Harness](#-从-v1v2-到-harness)
 - [✨ 核心功能](#-核心功能)
 - [📸 界面预览](#-界面预览)
 - [🚀 快速开始](#-快速开始)
@@ -131,8 +135,8 @@
     <td width="50%">
         <h3>🧠 AI 智能聊天</h3>
         <ul>
-            <li>基于 LangGraph ReAct 工作流的动漫领域 AI 助手</li>
-            <li>多轮对话 + Tool Calling 可视化（查条目、搜声优、看评价）</li>
+            <li>基于 Runtime-owned Agent Harness 的动漫领域 AI 助手</li>
+            <li>多轮 Decision + Capability 调用可视化（查条目、搜声优、看评价）</li>
             <li>支持多模型切换（DeepSeek / OpenAI / 兼容 API）</li>
             <li>自定义 AI 角色人格预设（毒舌猫娘、柔情猫娘、圆头耄耋）</li>
         </ul>
@@ -183,7 +187,7 @@
         <h3>🔌 双模式部署</h3>
         <ul>
             <li><b>本地模式</b>：SQLite + 内存缓存，零依赖，即开即用</li>
-            <li><b>云模式</b>：PostgreSQL + Redis + Docker Compose，生产就绪</li>
+            <li><b>云模式</b>：PostgreSQL + Redis + Docker Compose，面向容器化多用户部署</li>
             <li>Docker 容器化一键部署</li>
             <li>Next.js API Routes 代理 + JWT 鉴权</li>
         </ul>
@@ -343,7 +347,7 @@ QB_PASSWORD=adminadmin
 | 模式 | 数据库 | 缓存 | 适用场景 |
 |------|--------|------|----------|
 | **local** | SQLite | 内存缓存 | 个人使用、开发调试、零依赖 |
-| **cloud** | PostgreSQL | Redis | 生产部署、多用户、高可用 |
+| **cloud** | PostgreSQL | Redis 配置（缓存当前仍为进程内实现） | 容器化部署、多用户场景 |
 
 ---
 
@@ -367,21 +371,23 @@ QB_PASSWORD=adminadmin
                          │ HTTP / SSE
 ┌────────────────────────┼─────────────────────────────────────┐
 │                 FastAPI Backend (Python)                      │
-│  ┌──────────┐  ┌──────▼──────┐  ┌────────────────────────┐  │
-│  │  Agent   │  │  API Layer  │  │  Auth (JWT + bcrypt)    │  │
-│  │ LangGraph │  │  9 Routers  │  │  Security Layer        │  │
-│  │ ReAct + 7 │  │  ~30 APIs   │  └────────────────────────┘  │
-│  │  Tools   │  └──────┬──────┘                               │
-│  └──────────┘         │                                       │
+│  ┌──────────────┐  ┌──────▼──────┐  ┌─────────────────────┐  │
+│  │ Agent Harness│  │  API Layer  │  │ Auth / Principal    │  │
+│  │ AgentRuntime │  │ REST + SSE  │  │ Policy / Approval   │  │
+│  └──────┬───────┘  └──────┬──────┘  └─────────────────────┘  │
+│         │ Model Gateway / Decision Parser                      │
+│  ┌──────▼──────────────────▼───────────────────────────────┐  │
+│  │ Capability Registry → Dispatcher → Result Normalizer    │  │
+│  │ Capability / optional specialist invocation             │  │
+│  └────────────────────┬────────────────────────────────────┘  │
 │  ┌────────────────────▼────────────────────────────────────┐  │
-│  │              Service Layer (11 Services)                  │  │
-│  │  Bangumi / Collection / Subject / Schedule / Stats       │  │
-│  │  UserProfile / Douban / QB / DataSync / User            │  │
+│  │                    Service Layer                         │  │
+│  │ Bangumi / Collection / Subject / Schedule / Stats / QB  │  │
 │  └────────────────────┬────────────────────────────────────┘  │
 │                       │                                       │
 │  ┌────────────────────▼────────────────────────────────────┐  │
-│  │         Repository Layer (4 Repos) + SQLModel ORM        │  │
-│  │  SubjectRepo / CollectionRepo / UserRepo / ScheduleRepo  │  │
+│  │         Repository / Run Store / Event Store / Memory    │  │
+│  │                SQLModel + SQLAlchemy ORM                  │  │
 │  └────────────────────┬────────────────────────────────────┘  │
 │                       │                                       │
 │           ┌───────────┴───────────┐                           │
@@ -404,37 +410,48 @@ QB_PASSWORD=adminadmin
                                             SQLite / PostgreSQL
 
 AI 聊天特殊链路：
-用户 → ChatPage  →  SSE Stream  →  LangGraph ReAct Agent
-                                      ↓
-                                Tool Calls (7 tools)
-                                      ├── Bangumi API / Scraper
-                                      ├── User Profile Service
-                                      └── Local Time
+用户 → ChatPage → FastAPI Ingress → AgentRuntime
+                                      ├── Model Gateway → LLM
+                                      │                    ↓
+                                      │          structured Decision
+                                      └── Decision Parser → Policy → Dispatcher
+                                                                  ↓
+                                                Capability / specialist
+                                                                  ↓
+                                                        Domain Service / API
+
+AgentRuntime → canonical Run Event → Run/Event Store
+                         └─────────→ SSE projection → Chat RunView
+
+MCP server（独立暴露边界）→ Exposure Map / Policy → 白名单 Capability actions
 ```
 
-### Agent 工作流
+### Agent 层职责区别
 
+| 层级 | 当前职责 | 与其他 Agent 概念的区别 |
+|------|----------|--------------------------|
+| **Agent Harness / `AgentRuntime`** | 创建并推进 Run，控制预算、取消、checkpoint、Decision loop 和唯一终态 | 它是可信控制面，不是一个自由调用工具的 LLM Agent |
+| **主聊天模型** | 通过 Model Gateway 接收上下文并提出版本化 `AgentDecision` | 它是不可信决策来源；不能直接访问数据库、凭据或执行能力 |
+| **Capability / Tool** | 执行单次稳定领域动作，例如条目查询、收藏统计或用户画像 | 没有独立 Agent loop；必须经过 Registry、Policy、Dispatcher 和结果归一化 |
+| **specialist Agent** | 在启用多 Agent 路由时处理限定领域任务；当前包含推荐 specialist | 可拥有领域内步骤，但由 Runtime 绑定受控能力调用，不拥有顶层 Run 控制权 |
+| **MCP / Workflow** | MCP server 独立暴露白名单 Capability actions；Workflow 由各自受控入口处理 | 当前 remote MCP/Workflow 尚未作为主聊天 Dispatcher target；它们不是第二套聊天 Runtime |
+
+旧 `graph.py`、LangGraph 事件适配器和单数 `tools.py` 已从主聊天路径移除。`agents/tools/` 中仍存在的领域函数不是模型可直接执行的工具目录；LangGraph 依赖仍可能用于 Memory 迁移边界，但不再控制聊天 Run。
+
+### Harness Decision 工作流
+
+```text
+用户消息 → AgentRuntime 构造可信 Context
+    → Model Gateway 流式调用模型
+    → Decision Parser 校验结构化 Decision
+        ├── respond / finish → 写入唯一 terminal result
+        └── invoke → Policy / Schema / Allowlist 校验
+                        → Dispatcher 执行 Capability 或 specialist
+                        → Result Normalizer 生成 safe observation
+                        → AgentRuntime 决定继续、暂停、取消或终止
 ```
-用户消息 → LangGraph ReAct Agent
-    → Agent Node: LLM 推理
-        → 决定调用 Tool?
-            ├── YES → Tool Node 执行
-            │          → 调用 Service 层实际逻辑
-            │          → 结果返回 Agent 继续推理
-            └── NO  → END → 流式返回最终回复
-```
 
-**7 个内置工具：**
-
-| Tool | 功能 | 数据来源 |
-|------|------|----------|
-| `get_anime_info` | 查询动画条目信息 | Bangumi API |
-| `fetch_audience_reviews` | 获取观众短评/长评 | Bangumi HTML Scraper |
-| `get_anime_staff` | 查询动画制作人员 | Bangumi API |
-| `get_anime_cast` | 查询动画声优阵容 | Bangumi API |
-| `search_anime_advanced` | 高级搜索动画条目 | Bangumi API |
-| `get_current_time` | 获取当前时间 | 本地系统时钟 |
-| `generate_user_profile_tool` | 生成用户画像分析 | 数据库 + LLM |
+当前能力由 Registry 动态发现，不再固定为“7 个内置工具”。主要领域包括动漫条目与日历、收藏与统计、推荐画像、排班、媒体和系统信息；其中一部分只读 action 可由独立 MCP server 按 Exposure Map 暴露，实际可见集合会按认证主体、allowlist 和副作用策略裁剪。
 
 ### 外部集成全景
 
@@ -458,16 +475,18 @@ OtakuNeko
 | 类别 | 技术 | 用途 |
 |------|------|------|
 | 框架 | **FastAPI** 0.109+ | RESTful API + SSE 流式响应 |
-| ORM | **SQLModel** + **SQLAlchemy** | 异步 ORM，6 张业务表 |
-| AI Agent | **LangGraph** 1.0+ | ReAct 工作流编排 |
-| LLM SDK | **LangChain-OpenAI** | 统一 LLM 调用接口 |
+| ORM | **SQLModel** + **SQLAlchemy** | 异步业务数据与 Run/Event 持久化 |
+| Agent Harness | **AgentRuntime** | Runtime-owned Decision Loop、预算、取消、恢复与终态 |
+| 模型边界 | **Model Gateway** + OpenAI-compatible adapter | Provider 归一化、结构化 Decision、流式 delta、超时与错误 |
+| 能力边界 | **Capability Registry** + **Dispatcher** | Schema、allowlist、Policy、审批、幂等与安全结果 |
+| 兼容依赖 | **LangChain / LangGraph** | Provider/Memory 等局部适配；不拥有主聊天循环 |
 | 数据库 | **SQLite** (本地) / **PostgreSQL** (生产) | 双模式自动切换 |
-| 缓存 | **fastapi-cache2** (内存/Redis) | API 响应缓存 |
+| 缓存 | **fastapi-cache2** | 当前使用进程内缓存；Redis 配置用于容器环境探测与后续适配 |
 | 迁移 | **Alembic** | 数据库版本管理 |
 | 认证 | **python-jose** + **passlib(bcrypt)** | JWT + 密码哈希 |
 | 爬虫 | **httpx** + **BeautifulSoup4** | Bangumi HTML Scraper |
 | 包管理 | **uv** | 新一代 Python 包管理器 |
-| 任务队列 | **Celery** (计划中) | 定时同步/离线计算 |
+| 后台调度 | **Proactive Scheduler** | 持久化任务、lease 与重试语义 |
 
 ### 前端 (Frontend)
 
@@ -521,7 +540,7 @@ OtakuNeko/
 │       ├── features/            # 功能模块
 │       │   ├── Sidebar/         # 主导航侧栏
 │       │   └── Theme/           # 主题切换器
-│       ├── services/            # API 服务层 (9 文件)
+│       ├── services/            # API 服务层
 │       ├── lib/                 # 工具库
 │       │   ├── fetcher.ts       # SSE 流式聊天
 │       │   └── utils.ts         # cn() 类名合并
@@ -530,16 +549,21 @@ OtakuNeko/
 │
 ├── backend/                     # ⚙️ 后端 (FastAPI + Python)
 │   └── app/
-│       ├── api/v1/              # API 路由层 (9 路由, ~30 端点)
-│       ├── agents/              # LangGraph Agent + 7 Tools
-│       ├── services/            # 业务服务层 (11 服务)
-│       ├── repositories/        # 数据仓库层 (4 Repos)
-│       ├── models/              # SQLModel ORM (6 表)
-│       ├── schemas/             # Pydantic Schema (11 文件)
+│       ├── api/v1/              # REST/SSE ingress 与 Run Event 投影
+│       ├── harness/             # Runtime、Gateway、Decision、Dispatcher、Store
+│       ├── capabilities/        # 领域能力、Action schema 与 Registry
+│       ├── agents/              # specialist、路由与遗留领域函数边界
+│       ├── mcp_server/          # MCP 暴露、可信上下文与策略
+│       ├── memory/              # SQL Memory、检索与 provenance
+│       ├── trace/               # Trace、脱敏与审计投影
+│       ├── evaluation/          # Agent Eval 数据、评分与 runner
+│       ├── services/            # Harness 外部的业务与集成服务
+│       ├── repositories/        # 数据仓库层
+│       ├── models/              # SQLModel ORM
+│       ├── schemas/             # Pydantic Schema
 │       ├── clients/             # 外部客户端 (Bangumi Scraper)
 │       ├── core/                # 基础设施 (配置/日志/安全)
 │       ├── db/                  # 数据库引擎 (双模式)
-│       ├── worker/              # Celery 任务队列 (计划中)
 │       └── main.py              # FastAPI 入口
 │
 ├── docker-compose.yml           # 🐳 Docker 编排 (5 服务)
@@ -549,9 +573,11 @@ OtakuNeko/
 ├── start_all.bat / .sh          # 本地开发一键启动
 ├── dev_infra.bat                # 基础设施启动 (DB + Redis)
 │
-└── docs/                        # 📄 架构文档
-    ├── backend-architecture-whitepaper.md
-    └── frontend-src-research-report.md
+└── docs/                        # 📄 架构、审计、任务与执行记录
+    ├── architecture/
+    ├── harness-audit/
+    ├── harness-tasks/
+    └── harness-execution/
 ```
 
 </details>
@@ -567,7 +593,7 @@ OtakuNeko/
 - **自然语言查询**：`"查一下《命运石之门》的制作人员"`、`"推荐几部类似《进击的巨人》的番"`
 - **角色人格切换**：在侧栏选择毒舌猫娘、柔情猫娘或圆头耄耋
 - **多模型切换**：在输入框上方选择不同的 LLM 模型
-- **Tool Calling 可视化**：AI 调用工具时实时展示调用过程和结果
+- **Capability 调用可视化**：实时展示受控能力的调用过程、安全结果与终态
 
 ### 📚 收藏管理
 
@@ -596,28 +622,39 @@ OtakuNeko/
 ## 🧩 开发路线
 
 ### 短期（1-2 周）
-- [ ] 补充用户画像独立 API 端点
-- [ ] Agent 工具自动拉取收藏数据（无需前端传入）
-- [ ] 四象限结果集成到画像返回值
-- [ ] 用户画像添加 TTL 缓存
+- [ ] 扩充真实 API + fake provider/tool 的 Agent Eval 场景
+- [ ] 完善 Capability 输出的 provenance、Artifact 与前端安全摘要
+- [ ] 为 Harness 版本补充面向使用者的运行诊断说明
 
 ### 中期（2-4 周）
-- [ ] 实现 Celery 定时任务（收藏增量同步、日历定时拉取、放送时间周期更新）
-- [ ] 清理 DEBUG 日志与完善模块导出
-- [ ] CORS 配置化 + API 速率限制
+- [ ] 将更多 specialist 接入 Runtime → Dispatcher 委派契约
+- [ ] 完善 Proactive Scheduler 与交互 Run 的共享审计语义
+- [ ] 增加 API 速率限制、指标与成本门禁
 
 ### 长期（1 月+）
-- [ ] Agent 架构升级：ReAct → Plan-and-Execute + 意图路由
-- [ ] 引入 RAG（向量数据库 + Embedding）+ Agent Memory（Checkpoint 持久化）
-- [ ] 添加单元测试、集成测试、CI/CD Pipeline
-- [ ] 前端测试覆盖
+- [ ] 引入可验证的共享 checkpoint、durable cancellation 与多 Worker lease adapter
+- [ ] 扩展 RAG / Artifact 检索，同时保持 Context 与长期 Memory 的信任边界
+- [ ] 建立自动 Eval、性能与安全回归门禁
 
 ---
 
 ## 📝 更新日志
 
+### Harness — 2026-08-31
+
+| 更新维度 | V2 行为 | Harness 当前更新 |
+|----------|---------|------------------|
+| **Agent 控制面** | LangGraph ReAct 循环拥有模型与 Tool 流程 | `AgentRuntime` 统一控制 Decision loop、预算、取消、checkpoint 和 terminal result |
+| **模型调用** | LangChain/Provider 调用与业务循环耦合 | Model Gateway 提供 provider-neutral 流式事件，并支持 DeepSeek 思考模式的多轮 Decision continuation |
+| **能力调用** | 固定 7 Tools | Registry 动态发现 Capability，经 Policy、Dispatcher、可信身份和 Result Normalizer 执行 |
+| **Bangumi 日历** | API 日历可能缺少 weekday，单条详情查询 | 校验完整七日数据并使用网页回退；新增最多 5 个候选条目的批量详情能力 |
+| **收藏统计** | 依赖有界收藏列表或基础总数 | 新增用户隔离的数据库聚合能力与认证 API，返回五种状态和前三个作品标签 |
+| **流式聊天** | 以网络 chunk 直接更新 UI | Provider → Gateway → Runtime → SSE 连续流式推理，回答与过程内容进入逐帧 reveal 队列 |
+| **错误与会话** | Chat 401 可能误清登录状态；创建按钮会透传点击事件 | 保留 Provider 配置错误信息；新建会话回调不再接收 React 点击事件 |
+| **仓库卫生** | 历史报告、抓取 JSON、临时脚本与生成资源曾被跟踪 | 移除不应进入 Git 的本地产物并补充 `.gitignore`，同时更新项目文档 |
+
 <details>
-<summary><b>📦 查看更多历史更新（3 条）</b></summary>
+<summary><b>📦 查看 V2 / V1 历史更新</b></summary>
 <br>
 
 ### v2.0.0-alpha.3 — 2026-05-10

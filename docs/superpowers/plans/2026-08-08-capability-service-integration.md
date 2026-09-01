@@ -137,7 +137,7 @@
 
 - 修改：`backend/tests/capabilities/test_anime.py`
 - 新建或修改：`backend/tests/capabilities/test_bangumi.py`
-- 复用：`backend/test_anime_staff_cast.py`
+- 退役手工脚本：原 `backend/test_anime_staff_cast.py` 已移除；相关回归统一收敛到 `backend/tests/capabilities/test_anime.py`
 
 ### Capability D：Schedule 扩展与审批接口
 

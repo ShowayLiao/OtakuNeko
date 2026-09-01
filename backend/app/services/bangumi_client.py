@@ -1,15 +1,142 @@
 import httpx
 from typing import Dict, List, Optional, Any
+from urllib.parse import urlparse
 
+from bs4 import BeautifulSoup
 from fastapi_cache.decorator import cache
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
 
+_CALENDAR_WEEKDAYS = (
+    ("Sun", 7, "星期日", "日曜日"),
+    ("Mon", 1, "星期一", "月曜日"),
+    ("Tue", 2, "星期二", "火曜日"),
+    ("Wed", 3, "星期三", "水曜日"),
+    ("Thu", 4, "星期四", "木曜日"),
+    ("Fri", 5, "星期五", "金曜日"),
+    ("Sat", 6, "星期六", "土曜日"),
+)
+_EXPECTED_WEEKDAY_IDS = {weekday_id for _, weekday_id, _, _ in _CALENDAR_WEEKDAYS}
+
+
+def _calendar_has_complete_weekdays(calendar: Any) -> bool:
+    """Return whether a Bangumi calendar contains all seven weekday IDs."""
+    if not isinstance(calendar, list):
+        return False
+
+    weekday_ids = {
+        day.get("weekday", {}).get("id")
+        for day in calendar
+        if isinstance(day, dict) and isinstance(day.get("weekday"), dict)
+    }
+    return _EXPECTED_WEEKDAY_IDS.issubset(weekday_ids)
+
+
+def _subject_id_from_href(href: Optional[str]) -> Optional[int]:
+    if not href:
+        return None
+
+    path_parts = urlparse(href).path.rstrip("/").split("/")
+    if len(path_parts) < 2 or path_parts[-2] != "subject":
+        return None
+
+    try:
+        return int(path_parts[-1])
+    except ValueError:
+        return None
+
+
+def _parse_calendar_html(html: str) -> List[Dict[str, Any]]:
+    """Parse the seven weekday columns from Bangumi's public calendar page."""
+    soup = BeautifulSoup(html, "html.parser")
+    calendar: List[Dict[str, Any]] = []
+
+    for css_name, weekday_id, weekday_cn, weekday_ja in _CALENDAR_WEEKDAYS:
+        weekday_column = soup.select_one(f".week.{css_name}")
+        if weekday_column is None:
+            continue
+
+        links = weekday_column.select("a.l[href]")
+        if not links:
+            links = weekday_column.select("a[href]")
+
+        items: List[Dict[str, Any]] = []
+        seen_subject_ids = set()
+        for link in links:
+            subject_id = _subject_id_from_href(link.get("href"))
+            if subject_id is None or subject_id in seen_subject_ids:
+                continue
+
+            title = link.get_text(" ", strip=True)
+            if not title:
+                continue
+
+            seen_subject_ids.add(subject_id)
+            items.append(
+                {
+                    "id": subject_id,
+                    "url": f"https://bgm.tv/subject/{subject_id}",
+                    "type": 2,
+                    "name": title,
+                    "name_cn": title,
+                    "summary": "",
+                    "air_date": None,
+                    "air_weekday": weekday_id,
+                }
+            )
+
+        calendar.append(
+            {
+                "weekday": {
+                    "en": css_name,
+                    "cn": weekday_cn,
+                    "ja": weekday_ja,
+                    "id": weekday_id,
+                },
+                "items": items,
+            }
+        )
+
+    return calendar
+
+
+def _merge_calendar_data(
+    api_calendar: Any, web_calendar: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Use the web page for weekday coverage and retain API item details."""
+    api_days_by_id = {
+        day.get("weekday", {}).get("id"): day
+        for day in api_calendar
+        if isinstance(day, dict) and isinstance(day.get("weekday"), dict)
+    } if isinstance(api_calendar, list) else {}
+
+    merged_calendar = []
+    for web_day in web_calendar:
+        weekday_id = web_day["weekday"]["id"]
+        api_day = api_days_by_id.get(weekday_id, {})
+        api_items_by_id = {
+            item.get("id"): item
+            for item in api_day.get("items", [])
+            if isinstance(item, dict) and item.get("id") is not None
+        }
+
+        merged_items = []
+        for web_item in web_day["items"]:
+            api_item = api_items_by_id.get(web_item["id"], {})
+            merged_items.append({**web_item, **api_item})
+
+        merged_calendar.append({**web_day, "items": merged_items})
+
+    return merged_calendar
+
+
 class BangumiClient:
     BASE_URL = "https://api.bgm.tv/v0"
     HEADERS = {"User-Agent": "OtakuNeko/1.0 (showayhacci@qq.com)"}
+    CALENDAR_URL = "https://api.bgm.tv/calendar"
+    WEB_CALENDAR_URL = "https://bgm.tv/calendar"
 
     async def get_user_collections(self, username: str, subject_type: Optional[int] = None, limit: int = 50, offset: int = 0) -> Dict:
         """
@@ -335,7 +462,7 @@ class BangumiClient:
                 logger.error(f"网络请求错误: {e}")
                 raise
 
-    @cache(expire=86400, namespace="bangumi")
+    @cache(expire=86400, namespace="bangumi-calendar-v3")
     async def get_calendar(self) -> Dict:
         """
         从 Bangumi API 获取每日放送信息
@@ -347,13 +474,25 @@ class BangumiClient:
             httpx.HTTPStatusError: 请求失败时抛出
             httpx.RequestError: 网络错误时抛出
         """
-        url = "https://api.bgm.tv/calendar"
+        url = self.CALENDAR_URL
         
         async with httpx.AsyncClient(headers=self.HEADERS) as client:
             try:
                 response = await client.get(url, timeout=30.0)
                 response.raise_for_status()  # 检查请求状态
-                return response.json()
+                api_calendar = response.json()
+                if _calendar_has_complete_weekdays(api_calendar):
+                    return api_calendar
+
+                logger.warning(
+                    "Bangumi API calendar has incomplete weekday coverage; using web fallback"
+                )
+                web_response = await client.get(self.WEB_CALENDAR_URL, timeout=30.0)
+                web_response.raise_for_status()
+                web_calendar = _parse_calendar_html(web_response.text)
+                if not _calendar_has_complete_weekdays(web_calendar):
+                    raise ValueError("Bangumi web calendar does not contain all weekdays")
+                return _merge_calendar_data(api_calendar, web_calendar)
             except httpx.HTTPStatusError as e:
                 logger.error(f"Bangumi API 请求失败: {e.response.status_code} - {e.response.text}")
                 raise

@@ -43,7 +43,7 @@ export default function SessionPanel({
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold' }}>会话</h3>
-          <ActionIcon icon={Plus} title="新建会话" onClick={onCreateSession} style={{ cursor: 'pointer' }} />
+          <ActionIcon icon={Plus} title="新建会话" onClick={() => onCreateSession()} style={{ cursor: 'pointer' }} />
         </div>
 
         <div style={{ marginBottom: 8, position: 'relative' }}>

@@ -161,6 +161,50 @@ def test_oversize_search_result_returns_bounded_success() -> None:
     assert len(str(result.model_projection()).encode("utf-8")) <= 1024
 
 
+def test_action_specific_field_limit_preserves_complete_calendar() -> None:
+    descriptor = ActionDescriptor(
+        name="calendar",
+        public_name="anime.calendar",
+        description="calendar",
+        input_schema={"type": "object"},
+        max_output_fields=2048,
+    )
+    raw = {
+        "success": True,
+        "calendar": [
+            {
+                "weekday": {"id": weekday_id},
+                "items": [
+                    {
+                        "id": weekday_id * 100 + item_id,
+                        "name": f"Anime {weekday_id}-{item_id}",
+                        "name_cn": f"动画 {weekday_id}-{item_id}",
+                        "air_date": "2026-08-11",
+                        "summary": "summary",
+                    }
+                    for item_id in range(20)
+                ],
+            }
+            for weekday_id in range(1, 8)
+        ],
+    }
+
+    result = ResultNormalizer().normalize(
+        raw,
+        descriptor=descriptor,
+        run_id="run-calendar",
+        decision_id="decision-calendar",
+        invocation_id="invocation-calendar",
+        trace_id="trace-calendar",
+    )
+
+    assert result.status == "succeeded"
+    assert result.provenance["bounded"] is False
+    assert [
+        day["weekday"]["id"] for day in result.model_projection()["safe_output"]["calendar"]
+    ] == list(range(1, 8))
+
+
 @pytest.mark.asyncio
 async def test_duplicate_decision_reuses_successful_invocation_projection() -> None:
     descriptor = ActionDescriptor(

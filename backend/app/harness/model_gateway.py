@@ -5,7 +5,7 @@ import json
 import math
 import time
 from types import SimpleNamespace
-from typing import Any, Protocol
+from typing import Any, AsyncIterator, Protocol
 from uuid import uuid4
 
 from openai import AsyncOpenAI
@@ -26,6 +26,7 @@ from app.harness.budget import (
 from app.harness.model_types import (
     ModelCallResult,
     ModelDelta,
+    ModelStreamEvent,
     ModelUsage,
     ProviderErrorCode,
     ProviderModelAdapter,
@@ -46,6 +47,25 @@ def _reasoning_content(value: Any) -> str:
         additional_kwargs = _field(value, "additional_kwargs", {}) or {}
         reasoning = additional_kwargs.get("reasoning_content")
     return str(reasoning) if reasoning else ""
+
+
+def _decision_from_text(value: str) -> dict[str, Any] | None:
+    """Decode a complete JSON Decision without retaining provider objects."""
+    candidate = value.strip()
+    if not candidate:
+        return None
+    lines = candidate.splitlines()
+    if (
+        len(lines) >= 3
+        and lines[0].strip().lower() in {"```", "```json"}
+        and lines[-1].strip() == "```"
+    ):
+        candidate = "\n".join(lines[1:-1]).strip()
+    try:
+        decoded = json.loads(candidate)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    return decoded if isinstance(decoded, dict) else None
 
 
 def _elapsed_ms(started: float) -> int:
@@ -90,6 +110,28 @@ def _safe_capability_catalog(value: Any) -> list[dict[str, Any]]:
             }
         )
     return catalog
+
+
+def _safe_model_messages(
+    messages: list[dict[str, Any]],
+    *,
+    provider: str,
+) -> list[dict[str, Any]]:
+    """Project Runtime messages into the provider's accepted public shape."""
+    projected: list[dict[str, Any]] = []
+    for message in messages:
+        if not isinstance(message, dict) or message.get("content") is None:
+            continue
+        item = {
+            "role": message.get("role", "user"),
+            "content": str(message.get("content", "")),
+        }
+        if provider == "deepseek" and item["role"] == "assistant":
+            reasoning = message.get("reasoning")
+            if isinstance(reasoning, str) and reasoning:
+                item["reasoning_content"] = reasoning
+        projected.append(item)
+    return projected
 
 
 async def _run_with_controls(
@@ -411,12 +453,15 @@ class OpenAICompatibleModelAdapter:
     ):
         started = time.perf_counter()
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        tool_call_parts: dict[int, dict[str, Any]] = {}
         finish_reason: str | None = None
         raw_usage = None
         response_id = None
         call_kwargs = dict(kwargs)
         call_kwargs.pop("trace_id", None)
         call_kwargs.pop("call_id", None)
+        call_kwargs.setdefault("stream_options", {"include_usage": True})
         try:
             stream = await self.client.chat.completions.create(
                 **self._request(
@@ -437,17 +482,37 @@ class OpenAICompatibleModelAdapter:
                 additional_kwargs = _field(delta, "additional_kwargs", {}) or {}
                 reasoning = reasoning or additional_kwargs.get("reasoning_content")
                 if reasoning:
-                    yield ModelDelta(kind="reasoning", text=str(reasoning))
+                    reasoning_text = str(reasoning)
+                    reasoning_parts.append(reasoning_text)
+                    yield ModelDelta(kind="reasoning", text=reasoning_text)
                 tool_calls = _field(delta, "tool_calls") or []
                 for tool_call in tool_calls:
                     function = _field(tool_call, "function")
+                    index_value = _field(tool_call, "index", 0)
+                    try:
+                        index = int(index_value)
+                    except (TypeError, ValueError):
+                        index = 0
+                    accumulated = tool_call_parts.setdefault(
+                        index,
+                        {"id": None, "name": "", "arguments": ""},
+                    )
+                    call_id = _field(tool_call, "id")
+                    if call_id:
+                        accumulated["id"] = str(call_id)
+                    name = _field(function, "name")
+                    if name:
+                        accumulated["name"] += str(name)
+                    arguments = _field(function, "arguments", "")
+                    if arguments:
+                        accumulated["arguments"] += str(arguments)
                     yield ModelDelta(
                         kind="tool_call",
                         tool_call={
-                            "index": _field(tool_call, "index", 0),
-                            "id": _field(tool_call, "id"),
-                            "name": _field(function, "name"),
-                            "arguments": _field(function, "arguments", ""),
+                            "index": index,
+                            "id": call_id,
+                            "name": name,
+                            "arguments": arguments,
                         },
                     )
                 content = _field(delta, "content")
@@ -455,12 +520,30 @@ class OpenAICompatibleModelAdapter:
                     text_parts.append(str(content))
                     yield ModelDelta(kind="text", text=str(content))
                 finish_reason = _field(choice, "finish_reason") or finish_reason
+            normalized_tool_calls: list[dict[str, Any]] = []
+            for call in tool_call_parts.values():
+                arguments: Any = call["arguments"] or "{}"
+                try:
+                    arguments = json.loads(arguments)
+                except (TypeError, json.JSONDecodeError):
+                    pass
+                normalized_tool_calls.append(
+                    {
+                        "id": call["id"],
+                        "name": call["name"],
+                        "arguments": arguments,
+                    }
+                )
+            final_text = "".join(text_parts)
             result = ModelCallResult(
                 provider=self.provider,
                 model=model,
                 operation="stream",
                 status="completed",
-                text="".join(text_parts),
+                text=final_text,
+                reasoning="".join(reasoning_parts),
+                decision=_decision_from_text(final_text),
+                tool_calls=normalized_tool_calls,
                 usage=_model_usage(raw_usage, _elapsed_ms(started)),
                 finish_reason=finish_reason,
             )
@@ -479,6 +562,7 @@ class OpenAICompatibleModelAdapter:
                 operation="stream",
                 status="cancelled" if code == "cancelled" else "failed",
                 text="".join(text_parts),
+                reasoning="".join(reasoning_parts),
                 usage=_model_usage(raw_usage, _elapsed_ms(started)),
                 error_code=code,
                 retryable=retryable,
@@ -560,22 +644,28 @@ class LangChainModelAdapter:
     async def stream(self, *, messages: list[dict[str, Any]], **kwargs: Any):
         started = time.perf_counter()
         text_parts: list[str] = []
+        reasoning_parts: list[str] = []
         try:
             async for chunk in self.model.astream(messages, **kwargs):
                 additional_kwargs = _field(chunk, "additional_kwargs", {}) or {}
                 reasoning = additional_kwargs.get("reasoning_content")
                 if reasoning:
-                    yield ModelDelta(kind="reasoning", text=str(reasoning))
+                    reasoning_text = str(reasoning)
+                    reasoning_parts.append(reasoning_text)
+                    yield ModelDelta(kind="reasoning", text=reasoning_text)
                 content = _field(chunk, "content")
                 if content:
                     text_parts.append(str(content))
                     yield ModelDelta(kind="text", text=str(content))
+            final_text = "".join(text_parts)
             result = ModelCallResult(
                 provider=self.provider,
                 model=self.model_name,
                 operation="stream",
                 status="completed",
-                text="".join(text_parts),
+                text=final_text,
+                reasoning="".join(reasoning_parts),
+                decision=_decision_from_text(final_text),
                 usage=_model_usage(None, _elapsed_ms(started)),
                 finish_reason="stop",
             )
@@ -590,6 +680,7 @@ class LangChainModelAdapter:
                 operation="stream",
                 status="cancelled" if code == "cancelled" else "failed",
                 text="".join(text_parts),
+                reasoning="".join(reasoning_parts),
                 usage=_model_usage(None, _elapsed_ms(started)),
                 error_code=code,
                 retryable=retryable,
@@ -600,6 +691,23 @@ class LangChainModelAdapter:
 
 
 class ModelGateway(Protocol):
+    def stream_infer(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        trace_id: str | None = None,
+        call_id: str | None = None,
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        capability_catalog: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ModelStreamEvent]:
+        """Yield provider deltas followed by one completed model result."""
+
     async def infer(
         self,
         *,
@@ -729,34 +837,18 @@ class OpenAIModelGateway:
         if close is not None:
             await close()
 
-    async def infer(
+    def _prepare_primary_request(
         self,
         *,
-        goal: str,
         messages: list[dict[str, Any]],
-        context: dict[str, Any] | None = None,
-        run_id: str | None = None,
-        trace_id: str | None = None,
-        call_id: str | None = None,
-        cancellation: CancellationToken | None = None,
-        deadline: float | None = None,
-        budget: dict[str, Any] | None = None,
-        capability_catalog: list[dict[str, Any]] | None = None,
-        **kwargs: Any,
-    ) -> ModelCallResult:
-        """Perform primary inference through the provider-neutral adapter.
-
-        The adapter returns data-only text/tool calls. DecisionParser owns the
-        untrusted-to-contract conversion; this method never executes a tool.
-        """
-        safe_messages = [
-            {
-                "role": message.get("role", "user"),
-                "content": str(message.get("content", "")),
-            }
-            for message in messages
-            if isinstance(message, dict) and message.get("content") is not None
-        ]
+        context: dict[str, Any] | None,
+        trace_id: str | None,
+        call_id: str | None,
+        capability_catalog: list[dict[str, Any]] | None,
+        kwargs: dict[str, Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Build the same safe provider request for complete and streamed calls."""
+        safe_messages = _safe_model_messages(messages, provider=self.provider)
         safe_context = _model_safe_context(context)
         if safe_context is not None:
             safe_messages.append(
@@ -787,6 +879,24 @@ class OpenAIModelGateway:
                     ),
                 }
             )
+            public_names = {item["public_name"] for item in safe_catalog}
+            if {"get_bangumi_calendar", "get_anime_info_batch"}.issubset(public_names):
+                safe_messages.append(
+                    {
+                        "role": "system",
+                        "content": (
+                            "Bangumi calendar workflow is mandatory for requests about "
+                            "this week's noteworthy anime: first invoke "
+                            "get_bangumi_calendar, then select up to five relevant "
+                            "subject IDs from its result and invoke "
+                            "get_anime_info_batch. The calendar is candidate metadata "
+                            "and may have empty summaries; you must not answer or "
+                            "finish immediately after the calendar call. Only answer "
+                            "after the detail result, marking failed subject IDs as "
+                            "missing data."
+                        ),
+                    }
+                )
         safe_messages.append(
             {
                 "role": "system",
@@ -795,8 +905,10 @@ class OpenAIModelGateway:
                     'schema_version: "v1", decision_id (a unique opaque string), '
                     "and action: invoke/respond/finish. For respond or finish, "
                     "include content. For invoke, include capability, "
-                    "capability_version and public arguments only. Do not include "
-                    "run_id; Runtime injects the trusted run identity. Never "
+                    'capability_version, and the JSON field "arguments" only. '
+                    'The field name is exactly "arguments"; never use '
+                    '"public_arguments", "params", "input", or "tool_input". '
+                    "Do not include run_id; Runtime injects the trusted run identity. Never "
                     "include user identity, credentials, database or approval "
                     "fields. Use the exact action names and schemas from the "
                     "capability catalog when invoking a capability."
@@ -814,9 +926,6 @@ class OpenAIModelGateway:
                 "budget",
             }
         }
-        # The primary Runtime consumes one JSON Decision, not free-form text.
-        # Keep this at the provider boundary so compatible providers can enforce
-        # the response shape before the untrusted result reaches DecisionParser.
         adapter_kwargs.setdefault("response_format", {"type": "json_object"})
         if self.provider == "deepseek" and self.deepseek_options:
             thinking_enabled = bool(self.deepseek_options.get("thinking", True))
@@ -838,6 +947,36 @@ class OpenAIModelGateway:
             adapter_kwargs["trace_id"] = str(trace_id)
         if call_id:
             adapter_kwargs["call_id"] = str(call_id)
+        return safe_messages, adapter_kwargs
+
+    async def infer(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        trace_id: str | None = None,
+        call_id: str | None = None,
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        capability_catalog: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        """Perform primary inference through the provider-neutral adapter.
+
+        The adapter returns data-only text/tool calls. DecisionParser owns the
+        untrusted-to-contract conversion; this method never executes a tool.
+        """
+        safe_messages, adapter_kwargs = self._prepare_primary_request(
+            messages=messages,
+            context=context,
+            trace_id=trace_id,
+            call_id=call_id,
+            capability_catalog=capability_catalog,
+            kwargs=kwargs,
+        )
         result = await _run_with_controls(
             self.adapter.complete(
                 messages=safe_messages,
@@ -850,6 +989,113 @@ class OpenAIModelGateway:
         )
         self.last_result = result
         return result
+
+    async def stream_infer(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        context: dict[str, Any] | None = None,
+        run_id: str | None = None,
+        trace_id: str | None = None,
+        call_id: str | None = None,
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        capability_catalog: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ModelStreamEvent]:
+        """Stream provider deltas and finish with one normalized model result.
+
+        ``deadline`` is a duration for the whole provider stream, not a fresh
+        timeout for every chunk. Each pending ``__anext__`` receives only the
+        remaining time, and cancellation/timeout closes the provider iterator
+        before the exception reaches Runtime.
+        """
+        safe_messages, adapter_kwargs = self._prepare_primary_request(
+            messages=messages,
+            context=context,
+            trace_id=trace_id,
+            call_id=call_id,
+            capability_catalog=capability_catalog,
+            kwargs=kwargs,
+        )
+        deadline_at: float | None = None
+        if deadline is not None:
+            try:
+                deadline_value = float(deadline)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("model deadline must be a finite number") from exc
+            if not math.isfinite(deadline_value):
+                raise ValueError("model deadline must be a finite number")
+            if deadline_value <= 0:
+                raise DeadlineExceededError("model deadline exceeded")
+            deadline_at = time.perf_counter() + deadline_value
+
+        iterator: Any | None = None
+        result: ModelCallResult | None = None
+        try:
+            iterator = self.adapter.stream(
+                messages=safe_messages,
+                model=self.model,
+                temperature=self.temperature,
+                **adapter_kwargs,
+            )
+            while True:
+                remaining: float | None = None
+                if deadline_at is not None:
+                    remaining = deadline_at - time.perf_counter()
+                    if remaining <= 0:
+                        raise DeadlineExceededError("model deadline exceeded")
+                try:
+                    delta = await _run_with_controls(
+                        iterator.__anext__(),
+                        cancellation=cancellation,
+                        deadline=remaining,
+                    )
+                except StopAsyncIteration:
+                    break
+                if not isinstance(delta, ModelDelta):
+                    raise TypeError("provider stream returned an invalid model delta")
+                yield ModelStreamEvent(delta=delta)
+        except (asyncio.CancelledError, GeneratorExit):
+            raise
+        except (RunCancellationError, DeadlineExceededError):
+            raise
+        except Exception as exc:
+            code, retryable = provider_error_code(exc)
+            result = ModelCallResult(
+                provider=self.provider,
+                model=self.model,
+                operation="stream",
+                status="cancelled" if code == "cancelled" else "failed",
+                error_code=code,
+                retryable=retryable,
+            )
+            yield ModelStreamEvent(
+                delta=ModelDelta(kind="error", error_code=code),
+            )
+        finally:
+            if iterator is not None:
+                close = getattr(iterator, "aclose", None)
+                if close is not None:
+                    try:
+                        await close()
+                    except Exception:
+                        pass
+
+        if result is None:
+            result = getattr(self.adapter, "last_result", None)
+        if not isinstance(result, ModelCallResult):
+            result = ModelCallResult(
+                provider=self.provider,
+                model=self.model,
+                operation="stream",
+                status="failed",
+                error_code="permanent",
+            )
+        self.last_result = result
+        yield ModelStreamEvent(result=result)
 
     async def synthesize_result(
         self,
