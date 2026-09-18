@@ -53,6 +53,25 @@ class _DecisionGateway:
         )
 
 
+class _RepeatingDecisionGateway:
+    def __init__(self, decision: dict) -> None:
+        self.decision = decision
+        self.calls: list[dict] = []
+
+    async def infer(self, **kwargs) -> ModelCallResult:
+        self.calls.append(kwargs)
+        return ModelCallResult(
+            provider="fake",
+            model="fake-model",
+            operation="infer",
+            status="completed",
+            decision={
+                **self.decision,
+                "decision_id": f"decision-loop-{len(self.calls)}",
+            },
+        )
+
+
 class _TerminalDispatcher:
     def __init__(self, result: InvocationResult) -> None:
         self.result = result
@@ -509,3 +528,57 @@ async def test_primary_runtime_loop_rejects_untrusted_model_decisions(
         ErrorCode.INVALID_REQUEST.value,
         ErrorCode.UNAUTHORIZED.value,
     }
+
+
+@pytest.mark.asyncio
+async def test_primary_runtime_stops_repeating_decisions_at_step_budget() -> None:
+    capability = _CatalogCapability()
+    registry = CapabilityRegistry()
+    registry.register(capability)
+    gateway = _RepeatingDecisionGateway(
+        {
+            "schema_version": "v1",
+            "run_id": "run-step-budget",
+            "action": "invoke",
+            "capability": "catalog.search",
+            "capability_version": "v1",
+            "arguments": {"query": "anime"},
+        }
+    )
+    runtime = AgentRuntime(
+        object(),
+        model_gateway=gateway,
+        dispatcher=Dispatcher(registry),
+    )
+    budget = RunBudget(max_steps=2, max_model_calls=8, max_tool_calls=8)
+
+    events = [
+        event
+        async for event in runtime.stream_decision(
+            AgentTask(
+                task_id=109,
+                user_id=7,
+                goal="repeat tool calls",
+                metadata={
+                    "run_id": "run-step-budget",
+                    "messages": [],
+                },
+            ),
+            context=ExecutionContext(
+                principal_id=7,
+                run_id="run-step-budget",
+                trace_id="trace-step-budget",
+                capability_allowlist=frozenset({"catalog.search"}),
+            ),
+            budget=budget,
+        )
+    ]
+
+    assert events[-1]["type"] == "run_failed"
+    assert events[-1]["error_code"] == ErrorCode.BUDGET_EXCEEDED.value
+    assert not any(event["type"] == "run_completed" for event in events)
+    assert len(gateway.calls) == 2
+    assert len(capability.calls) == 2
+    assert budget.steps_used == 2
+    assert budget.model_calls_used == 2
+    assert budget.tool_calls_used == 2

@@ -1,15 +1,15 @@
 name: Agent evaluation
 
 on:
-  pull_request:
-  push:
-    branches: [main]
   schedule:
     - cron: "0 18 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  fast:
+  observability:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -22,20 +22,13 @@ jobs:
           python-version: "3.11"
           enable-cache: true
       - run: uv sync --locked --dev
-      - run: uv run pytest tests/evaluation -q
-      - run: uv run pytest tests/trace tests/harness tests/acceptance -q
-      - run: uv run ruff check app/evaluation tests/evaluation
-      - run: uv run ruff check app/trace tests/trace
-      - run: uv run python -m app.evaluation.runner --config evals/config/fast.yaml
       - run: uv run python -m app.evaluation.runner --config evals/config/observability.yaml
       - uses: actions/upload-artifact@v4
-        with:
-          name: evaluation-fast-report
-          path: backend/.runtime/evaluation/fast.json
-      - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: evaluation-observability-report
           path: backend/.runtime/evaluation/observability.json
+          if-no-files-found: error
 
   full:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
@@ -62,3 +55,4 @@ jobs:
         with:
           name: evaluation-full-report
           path: backend/.runtime/evaluation/full.json
+          if-no-files-found: error

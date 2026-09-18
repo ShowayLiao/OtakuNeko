@@ -1,0 +1,163 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  software:
+    name: software
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run backend lint
+        run: uv run --locked ruff check app tests
+
+      - name: Run backend tests
+        run: uv run --locked pytest
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Run frontend lint
+        run: pnpm lint
+        working-directory: frontend
+
+      - name: Run frontend typecheck
+        run: pnpm typecheck
+        working-directory: frontend
+
+      - name: Run frontend tests
+        run: pnpm test
+        working-directory: frontend
+
+      - name: Build frontend
+        run: pnpm build
+        working-directory: frontend
+
+  backend-quality-baseline:
+    name: backend-quality-baseline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run backend type and dependency legality baselines
+        run: |
+          set +e
+          uv run --locked mypy
+          mypy_exit=$?
+          uv run --locked deptry .
+          deptry_exit=$?
+          set -e
+          echo "mypy exit code: $mypy_exit"
+          echo "deptry exit code: $deptry_exit"
+          test "$mypy_exit" -eq 0 && test "$deptry_exit" -eq 0
+
+  harness:
+    name: harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run deterministic Harness regression
+        run: uv run --locked pytest tests/harness tests/acceptance tests/capabilities tests/trace -q
+
+      - name: Lint Harness boundaries
+        run: uv run --locked ruff check app/harness app/capabilities app/trace tests/harness tests/acceptance tests/capabilities tests/trace
+
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run offline fast evaluation
+        run: uv run --locked python -m app.evaluation.runner --config evals/config/fast.yaml
+
+      - name: Upload offline evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-evaluation-report
+          path: backend/.runtime/evaluation/fast.json
+          if-no-files-found: error
