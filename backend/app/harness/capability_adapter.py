@@ -132,6 +132,11 @@ class CapabilityAdapter:
             }
 
         if descriptor.is_side_effect:
+            if principal is None or self._idempotency_store is None:
+                return CapabilityResult.fail(
+                    "Authenticated principal and idempotency store required",
+                    error_type="idempotency_required",
+                ).to_dict()
             resource_key = self._resource_key(action, public)
             scope = f"{principal.principal_id}:{self._capability.name}:{resource_key}"
             execution = await self._idempotency_store.execute_once(

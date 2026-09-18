@@ -4,7 +4,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from app.harness.contracts import InvocationResult
+from app.harness.contracts import ErrorCode, InvocationResult
 
 
 class AgentResult(BaseModel):
@@ -109,5 +109,9 @@ class AgentResult(BaseModel):
             name=name,
             status="completed" if result.status == "succeeded" else "failed",
             data=result.output,
-            error_code=result.error_code.value if result.error_code else None,
+            error_code=(
+                result.error_code.value
+                if isinstance(result.error_code, ErrorCode)
+                else result.error_code
+            ),
         )
