@@ -210,3 +210,391 @@ Review: pass
 Batch 完成时使用 `docs/harness-execution/TEMPLATE.md` 中的结构输出：批次状态、commit、任务、测试通过/失败/跳过、Review verdict、rounds、changed files、deferred findings、未解决风险和下一批次。
 
 没有活动 Batch 的文档任务至少应输出：变更文件、验证命令和退出码、未运行项目及原因、审查结论、未解决风险和回滚方式。
+
+
+# Project Management
+
+This repository uses the global `$ticktick-project-system` skill for external project management.
+
+Use `$ticktick-project-system` when the user explicitly asks to:
+
+* create a TickTick project structure
+* sync a plan to TickTick
+* update project state
+* review project progress
+* create or update hypotheses, capabilities, or AI actions
+* perform a weekly review
+* materialize the current plan into TickTick tasks
+
+Do not modify TickTick when the user only asks for analysis, brainstorming, coding, or planning unless they explicitly ask to sync/update/create the project state.
+
+Assume AI handles most implementation details. Do not create TickTick tasks for individual file edits, functions, shell commands, test commands, plots, or other low-level implementation steps unless they require independent human tracking.
+
+---
+
+## Project Identity
+
+Project name:
+Otakuneko
+
+TickTick project:
+Otakuneko
+
+Project mode:
+Agent development
+
+Repository purpose:
+`OtakuNeko 是一个前后端分离的个人番剧管理与分析助手：后端基于 FastAPI 提供收藏同步、排班、外部集成和 AI 聊天能力，前端基于 Next.js 提供管理与实时聊天界面。Agent Harness 正在从现有 LangGraph 运行路径向 Runtime-owned、可观测且可恢复的控制面演进；是否已接入真实主路径必须以源码和测试为准。`
+
+
+# Mode B — Agent / Software System Development
+
+> 如果当前项目不是 Agent / 软件系统开发项目，可保留本节但忽略执行。
+> 当 `Project mode = Agent development` 时，遵循本节。
+
+## Management Model
+
+Use this hierarchy:
+
+`Project -> Workstream -> Capability -> AI Action`
+
+Development loop:
+
+`Problem -> Capability Spec -> AI Implementation -> Eval -> Acceptance -> Decision -> Next Capability / Iteration`
+
+## Project Top Notes
+
+The TickTick project should contain two top notes:
+
+### `00｜Project Definition`
+
+Maintain:
+
+* outcome
+* scope
+* non-goals
+* definition of done
+* current stage/version
+* important links
+
+### `01｜System Metrics`
+
+Maintain:
+
+* current version
+* baseline/current/target metrics
+* current bottlenecks
+* current best commit/eval
+* current focus
+* regression guardrails
+* latest major decision
+
+These two notes are the source of truth for system state.
+
+## Workstream
+
+TickTick groups represent stable technical workstreams.
+
+Examples:
+
+* `CORE RUNTIME`
+* `TOOLS & SANDBOX`
+* `CONTEXT & MEMORY`
+* `PLANNING & CONTROL`
+* `EVAL & OBSERVABILITY`
+* `PERFORMANCE`
+* `RELEASE`
+
+Use workstreams to express where the capability belongs, not whether it is complete.
+
+## Capability Parent Task
+
+A parent task represents a system capability.
+
+Recommended title format:
+
+`Capability Name｜vX`
+
+Examples:
+
+* `Context Compaction｜v1`
+* `Tool Recovery｜v2`
+* `Stuck Detection｜v1`
+
+A capability task should contain:
+
+* Problem
+* Goal
+* Scope
+* Expected Behavior
+* Acceptance Criteria
+* Metrics
+* Result
+* Decision
+* Next
+* Artifacts
+
+A capability is complete only after evaluation leads to a clear decision:
+
+* Accept
+* Iterate
+* Rework
+* Revert
+* Park
+
+Do not mark a capability complete merely because the implementation exists.
+
+## AI Action Subtask
+
+A child task represents one independently delegable AI work package.
+
+Recommended title format:
+
+`Axxx｜完成实现 + eval + regression + 结论`
+
+A good AI Action may include:
+
+* implementation
+* tests
+* eval
+* regression checks
+* benchmark comparison
+* result summary
+
+Prefer one outcome-oriented AI Action over many coding micro-tasks.
+
+Example:
+
+`实现 Context Compaction v1，完成 long-task eval、regression 检查并输出结果总结`
+
+Avoid creating separate TickTick tasks for:
+
+* editing individual files
+* implementing functions
+* running shell commands
+* writing unit tests
+* changing config files
+
+unless they require independent tracking.
+
+## Capability Decision Rule
+
+After an AI Action:
+
+1. update Result
+2. check Acceptance Criteria
+3. update system metrics if necessary
+4. decide Accept / Iterate / Rework / Revert / Park
+5. identify the next bottleneck
+6. create a new capability or iteration only if justified
+7. mark only the true next action as `#next`
+
+---
+
+# Shared TickTick Rules
+
+These rules apply to both project modes.
+
+## Tags
+
+Use only a small set of execution-state tags:
+
+* `#next`
+* `#waiting`
+* `#blocked`
+
+Meaning:
+
+### `#next`
+
+The item can be acted on now and is a genuine next step.
+
+### `#waiting`
+
+The item is waiting for:
+
+* training
+* machine/GPU
+* external result
+* another person
+* dependency
+
+### `#blocked`
+
+There is a known blocker preventing progress.
+
+Do not use project-name tags when the project is already represented by a TickTick list.
+
+## Dates
+
+TickTick dates mean:
+
+`I plan to handle this around this date.`
+
+They do not mean hard calendar commitments.
+
+Only assign dates to:
+
+* genuine short-term execution plans
+* items that truly need to appear in Today
+
+Do not pre-schedule large amounts of future research or development work.
+
+## Calendar Boundary
+
+Apple Calendar is the source of truth for hard time commitments.
+
+Use Calendar for:
+
+* meetings
+* appointments
+* travel
+* fixed-time reviews
+* hard deadlines
+* anything that occupies a specific time slot
+
+Do not duplicate ordinary TickTick work into Calendar unless time-blocking is explicitly desired.
+
+## Reminder Boundary
+
+Apple Reminders is the capture inbox.
+
+Use it for:
+
+* quick Siri capture
+* things the user is afraid of forgetting
+* temporary unprocessed actions
+
+After review:
+
+* project-related item -> TickTick
+* knowledge/idea -> Apple Notes
+* fixed-time event -> Apple Calendar
+* simple timed reminder -> remain in Apple Reminders
+* irrelevant -> delete
+
+## Notes Boundary
+
+Apple Notes stores durable information, not project execution state.
+
+Use it for:
+
+* knowledge
+* ideas
+* reflections
+* life systems
+* book/movie/series lists
+* long-term references
+
+Do not use Apple Notes as the primary project task manager.
+
+---
+
+# Weekly Review
+
+Use the `$ticktick-project-system` skill when the user asks for a weekly review.
+
+The weekly review should:
+
+1. clear Apple Reminders Inbox
+2. review Apple Notes Inbox
+3. inspect the next two weeks of Calendar
+4. review all active TickTick projects
+5. update LLM metrics/hypotheses or Agent capabilities/metrics
+6. review `#waiting`
+7. review `#blocked`
+8. update routines/habits if necessary
+9. select weekly focus
+10. identify true `#next` actions
+
+Weekly focus should normally contain:
+
+## ONE BIG THING
+
+The single most important result, judgment, or capability to advance.
+
+## SECONDARY
+
+At most 1–2 additional priorities.
+
+## NOT THIS WEEK
+
+Explicitly defer attractive but non-critical work.
+
+For LLM research, weekly focus should prefer:
+
+* resolving an important uncertainty
+* validating/rejecting a hypothesis
+* identifying the true bottleneck
+
+For Agent development, weekly focus should prefer:
+
+* getting a capability to an acceptance decision
+* removing the largest system bottleneck
+* completing a meaningful reliability/eval milestone
+
+---
+
+# TickTick Tool Usage
+
+When syncing or creating project state:
+
+1. first inspect the currently available TickTick MCP/CLI/tooling
+2. read its actual schema/help
+3. map the semantic operations to the available commands
+4. reuse existing project objects when possible
+5. avoid duplicate lists, groups, notes, tasks, or tags
+6. update existing objects before creating new ones
+7. preserve user-written content unless an update is explicitly required
+
+Required semantic operations may include:
+
+* find/create project list
+* find/create group
+* find/create/update note
+* find/create/update parent task
+* find/create/update subtask
+* set/remove tags
+* set/remove dates
+* complete/archive task
+* move task/group
+* inspect current project state
+
+Do not assume a specific MCP function name or CLI syntax.
+
+---
+
+# Project-Specific Overrides
+
+Use this section for rules unique to this repository.
+
+## Technical Constraints
+
+- 后端 `requires-python = ">=3.10"`，使用 FastAPI、SQLModel/SQLAlchemy、Alembic、LangChain/LangGraph 和 pytest/Ruff；前端使用 Next.js 16、React 19、TypeScript 和 Vitest。
+- 前端包管理器为 pnpm `10.15.1`；CI 使用 Node.js `20.19.0`。版本与命令以 `backend/pyproject.toml`、`backend/uv.lock`、`frontend/package.json` 和工作流配置为准。
+- 本地 SQLite checkpoint adapter 仅按单 Worker 使用；当前已有受限的 checkpoint、取消和重启恢复路径，但不得据此宣称支持共享多 Worker recovery。容器化部署使用 Docker Compose 编排 PostgreSQL、Redis、Backend、Frontend 和 qBittorrent。
+- Agent 运行必须遵守本文前述 Runtime ownership、结构化 Decision、可信身份/资源授权、显式副作用、审计和恢复不变量；Provider/LangChain/LangGraph 专属对象不得泄漏到业务层。
+
+## Evaluation Source of Truth
+
+评估以 `backend/app/evaluation/runner.py`、`backend/evals/config/`、`backend/evals/datasets/` 和 `backend/evals/baselines/` 为准；离线快速评估使用 `evals/config/fast.yaml`，可观测性评估使用 `evals/config/observability.yaml`，完整评估使用 `evals/config/full.yaml`。仓库未配置 WandB 作为权威来源。
+
+适用的工程门禁为：`uv run --directory backend pytest`、`uv run --directory backend ruff check app tests`、`pnpm --dir frontend lint`、`pnpm --dir frontend typecheck`、`pnpm --dir frontend test` 和 `pnpm --dir frontend build`；Eval 命令和报告路径以 `.github/workflows/` 及 `backend/evals/README.md` 为准。
+
+## Important Repositories / Paths
+
+- 后端控制面与边界：`backend/app/harness/`、`backend/app/agents/`、`backend/app/capabilities/`、`backend/app/mcp_server/`、`backend/app/memory/`、`backend/app/trace/`。
+- 业务与集成：`backend/app/services/`、`backend/app/api/v1/`；评估与测试：`backend/app/evaluation/`、`backend/evals/`、`backend/tests/`。
+- 前端：`frontend/src/`、`frontend/src/__tests__/`；部署与自动化：`docker-compose.yml`、`.github/workflows/`。
+- Harness 权威资料与执行记录：`docs/architecture/`、`docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/`。
+
+## Current Active Focus
+
+当前没有明确批准的活动 Batch；BATCH-26 是最近已完成的执行批次。近期焦点是维护 Level 4 Runtime-owned 主路径及其 CI/Eval 门禁，并处理已声明的剩余风险：Dispatcher-backed specialist/subagent 合约，以及超出 SQLite 单 Worker 限制的共享 checkpoint、取消和 worker recovery。目标架构或历史 execution record 仍不能替代当前源码与真实验证证据。
+
+## Explicit Non-Goals
+
+- 不仅凭 README、目标架构、任务计划、类名或测试名称断言真实接入；当前能力必须由源码和真实验证证据确认，也不在没有活动 Batch 时伪造执行记录。
+- 没有明确任务范围时，不重写 LangGraph 图、不替换模型框架，也不整体迁移收藏/日程等业务 Service；相关变更必须保留受控 Runtime、Registry、Policy 和 adapter 边界。
+- 不执行生产部署、生产数据库操作或生产迁移；不把真实 Secret、Token、完整用户数据或 raw Provider payload 写入仓库、日志、测试、Eval fixture 或文档。
+- 用户未明确要求时，不同步或修改 TickTick 等外部项目状态，也不扩展到与当前任务无关的业务功能。
