@@ -20,6 +20,7 @@ env/
 # uv (Python manager)
 # 注意：uv.lock 必须提交，所以不要写在这里
 .uv/
+.uv-cache/
 
 # ==========================
 # 2. Node.js & Frontend
@@ -153,6 +154,8 @@ backend/spec/
 /architecture_report.*
 /lint-current.json
 /frontend/lint-current.json
+/.agents
+/.claude
 
 # Raw API responses, personal imports and local qBittorrent exports
 /bangumi_*.json

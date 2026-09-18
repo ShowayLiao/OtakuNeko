@@ -5,31 +5,23 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "aiofiles>=25.1.0",
     "aiosqlite>=0.20.0",
     "alembic>=1.13.0",
-    "anyio>=4.0.0",
     "asyncpg>=0.31.0",
     "beautifulsoup4>=4.14.3",
-    "certifi>=2024.2.2",
-    "click>=8.1.0",
     "concurrent-log-handler>=0.9.20",
     "fastapi>=0.109.0",
     "fastapi-cache2>=0.2.2",
     "httpx>=0.26.0",
     "langchain-core>=1.2.11",
     "langchain-openai>=1.1.9",
-    "langgraph>=1.0.10",
-    "langgraph-checkpoint-sqlite>=2.0.0",
     "lxml>=6.0.2",
     "openai>=2.20.0",
     "passlib[bcrypt]>=1.7.4",
-    "psycopg2-binary>=2.9.11",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.1.0",
-    "python-dotenv>=1.0.0",
     "python-jose[cryptography]>=3.3.0",
-    "python-multipart>=0.0.9",
+    "python-dotenv>=1.0.0",
     "pyyaml>=6.0",
     "qbittorrent-api>=2025.11.1",
     "rank-bm25>=0.2.2",
@@ -44,6 +36,10 @@ otakuneko-eval = "app.evaluation.runner:main"
 
 [dependency-groups]
 dev = [
+    "deptry>=0.23.1",
+    "langgraph>=1.0.10",
+    "langgraph-checkpoint-sqlite>=2.0.0",
+    "mypy>=1.14.0",
     "ruff>=0.15.12",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
@@ -52,6 +48,30 @@ dev = [
 
 [tool.uv]
 index-url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+required-version = "==0.10.10"
+
+[tool.deptry]
+# These are direct runtime dependencies whose usage is intentionally expressed
+# through deployment/configuration boundaries that deptry cannot infer:
+# PostgreSQL's async SQLAlchemy URL, BeautifulSoup's lxml parser, Pydantic's
+# .env loading, and the Docker ASGI entrypoint respectively.
+per_rule_ignores = { DEP002 = ["asyncpg", "lxml", "python-dotenv", "uvicorn"] }
+
+[tool.mypy]
+python_version = "3.11"
+explicit_package_bases = true
+files = [
+    "app/harness",
+    "app/capabilities",
+    "app/memory",
+    "app/trace",
+]
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+show_error_codes = true
+pretty = true
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
