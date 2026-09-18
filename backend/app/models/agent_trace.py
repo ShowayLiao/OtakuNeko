@@ -27,12 +27,12 @@ class AgentTraceModel(SQLModel, table=True):
     goal: str = Field(default="")
     status: str = Field(default="completed", index=True)
     headers_json: Optional[str] = Field(default=None)
-    started_at: datetime = Field(
+    started_at: datetime = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default_factory=_utc_now,
         index=True,
         sa_type=DateTime(timezone=True),
     )
-    created_at: datetime = Field(
+    created_at: datetime = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default_factory=_utc_now,
         index=True,
         sa_type=DateTime(timezone=True),
@@ -54,7 +54,7 @@ class TraceEventModel(SQLModel, table=True):
     agent_name: str = Field(default="")
     status: str = Field(default="completed")
     step_json: Optional[str] = Field(default=None)
-    created_at: datetime = Field(
+    created_at: datetime = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default_factory=_utc_now,
         sa_type=DateTime(timezone=True),
     )

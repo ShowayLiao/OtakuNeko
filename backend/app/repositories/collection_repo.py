@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional, cast
 from sqlmodel import select, and_
 from sqlalchemy import desc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,31 @@ from ..schemas.collection import (
 )
 
 logger = get_logger(__name__)
+
+# SQLModel model attributes are SQLAlchemy column descriptors at runtime, while
+# their annotations describe instance values.  These aliases keep query code
+# honest at that boundary without weakening the project-wide type checks.
+_COLLECTION_ID = cast(Any, Collection.id)
+_COLLECTION_USER_ID = cast(Any, Collection.user_id)
+_COLLECTION_SOURCE = cast(Any, Collection.source)
+_COLLECTION_SOURCE_ID = cast(Any, Collection.source_id)
+_COLLECTION_TYPE = cast(Any, Collection.type)
+_COLLECTION_UPDATED_AT = cast(Any, Collection.updated_at)
+_COLLECTION_RATE = cast(Any, Collection.rate)
+_COLLECTION_COMMENT = cast(Any, Collection.comment)
+_COLLECTION_TAGS = cast(Any, Collection.tags)
+_SUBJECT_ID = cast(Any, Subject.id)
+_SUBJECT_SOURCE = cast(Any, Subject.source)
+_SUBJECT_SOURCE_ID = cast(Any, Subject.source_id)
+_SUBJECT_TYPE = cast(Any, Subject.type)
+_SUBJECT_RATING = cast(Any, Subject.rating)
+_SUBJECT_DATE = cast(Any, Subject.date)
+_SUBJECT_NAME = cast(Any, Subject.name)
+_SUBJECT_NAME_CN = cast(Any, Subject.name_cn)
+_SUBJECT_SUMMARY = cast(Any, Subject.summary)
+_SUBJECT_TAGS = cast(Any, Subject.tags)
+_SUBJECT_META_TAGS = cast(Any, Subject.meta_tags)
+_SUBJECT_INFOBOX = cast(Any, Subject.infobox)
 
 
 class CollectionRepo:
@@ -73,13 +98,13 @@ class CollectionRepo:
             query = select(Collection, Subject).outerjoin(
                 Subject, 
                 and_(
-                    Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id
+                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID
                 )
             ).where(
-                Collection.user_id == search_data.user_id,
-                Collection.source == search_data.source,
-                Collection.source_id == search_data.source_id
+                _COLLECTION_USER_ID == search_data.user_id,
+                _COLLECTION_SOURCE == search_data.source,
+                _COLLECTION_SOURCE_ID == search_data.source_id
             )
             
             result = await db.execute(query)
@@ -121,10 +146,10 @@ class CollectionRepo:
             query = select(Collection, Subject).outerjoin(
                 Subject, 
                 and_(
-                    Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id
+                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID
                 )
-            ).where(Collection.user_id == user_id)
+            ).where(_COLLECTION_USER_ID == user_id)
             
             # 应用条目类型过滤
             if subject_type is not None:
@@ -132,26 +157,26 @@ class CollectionRepo:
                 from sqlmodel import or_
                 query = query.where(
                     or_(
-                        (Subject.type == subject_type),
-                        (Subject.id.is_(None))
+                        (_SUBJECT_TYPE == subject_type),
+                        (_SUBJECT_ID.is_(None))
                     )
                 )
             
             # 应用状态过滤
             if status is not None:
-                query = query.where(Collection.type == status)
+                query = query.where(_COLLECTION_TYPE == status)
             
             # 应用排序
             if sort_by == 'updated_at':
-                query = query.order_by(desc(Collection.updated_at))
+                query = query.order_by(desc(_COLLECTION_UPDATED_AT))
             elif sort_by == 'rate':
-                query = query.order_by(desc(Collection.rate))
+                query = query.order_by(desc(_COLLECTION_RATE))
             elif sort_by == 'score':
                 # 使用 rating 字段中的 score 值进行排序
                 from sqlalchemy import cast, Float
-                query = query.order_by(desc(cast(Subject.rating.op('->>')('score'), Float)))
+                query = query.order_by(desc(cast(_SUBJECT_RATING.op('->>')('score'), Float)))
             elif sort_by == 'date':
-                query = query.order_by(desc(Subject.date))
+                query = query.order_by(desc(_SUBJECT_DATE))
             
             # 保留 offset；limit=None 用于受控的内部全量画像查询。
             query = query.offset(skip)
@@ -238,10 +263,16 @@ class CollectionRepo:
         """
         try:
             # 从 collection_data 中提取搜索信息
+            if (
+                collection_data.user_id is None
+                or collection_data.source is None
+                or collection_data.source_id is None
+            ):
+                return None
             search_data = CollectionSearchByID(
                 user_id=collection_data.user_id,
                 source=collection_data.source,
-                source_id=collection_data.source_id
+                source_id=collection_data.source_id,
             )
             
             # 获取Collection对象
@@ -250,7 +281,7 @@ class CollectionRepo:
                 return None
             
             # 解包元组，获取Collection对象
-            collection, _ = result
+            collection = cast(Collection, result.collection)
             
             # 将 CollectionUpdate 转换为字典，只包含设置的字段
             update_data = collection_data.model_dump(exclude_unset=True)
@@ -294,7 +325,7 @@ class CollectionRepo:
                 return False
             
             # 解包元组，获取Collection对象
-            collection, _ = result
+            collection = cast(Collection, result.collection)
             user_id = collection.user_id
             
             await db.delete(collection)
@@ -337,13 +368,13 @@ class CollectionRepo:
             query = select(Collection, Subject).outerjoin(
                 Subject, 
                 and_(
-                    Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id
+                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID
                 )
             )
             
             # 添加用户过滤条件
-            query = query.where(Collection.user_id == search_data.user_id)
+            query = query.where(_COLLECTION_USER_ID == search_data.user_id)
             
             # 添加关键词搜索条件，搜索多个字段
             if search_data.keyword:
@@ -351,54 +382,54 @@ class CollectionRepo:
                 # 构建基本查询条件
                 conditions = [
                     # Collection 表字段
-                    Collection.comment.ilike(keyword_pattern) if Collection.comment is not None else False,
+                    _COLLECTION_COMMENT.ilike(keyword_pattern),
                     # Subject 表字段
-                    Subject.name.ilike(keyword_pattern) if Subject.name is not None else False,
-                    Subject.name_cn.ilike(keyword_pattern) if Subject.name_cn is not None else False,
-                    Subject.summary.ilike(keyword_pattern) if Subject.summary is not None else False
+                    _SUBJECT_NAME.ilike(keyword_pattern),
+                    _SUBJECT_NAME_CN.ilike(keyword_pattern),
+                    _SUBJECT_SUMMARY.ilike(keyword_pattern)
                 ]
                 
                 # 添加 JSON 字段搜索（使用PostgreSQL兼容的操作）
                 from sqlalchemy import cast, String
                 # Collection.tags 搜索
                 conditions.append(
-                    Collection.tags.isnot(None) & 
-                    cast(Collection.tags, String).ilike(f"%{search_data.keyword}%")
+                    _COLLECTION_TAGS.isnot(None) &
+                    cast(_COLLECTION_TAGS, String).ilike(f"%{search_data.keyword}%")
                 )
                 # Subject.tags 搜索
                 conditions.append(
-                    Subject.tags.isnot(None) & 
-                    cast(Subject.tags, String).ilike(f"%{search_data.keyword}%")
+                    _SUBJECT_TAGS.isnot(None) &
+                    cast(_SUBJECT_TAGS, String).ilike(f"%{search_data.keyword}%")
                 )
                 # Subject.meta_tags 搜索
                 conditions.append(
-                    Subject.meta_tags.isnot(None) & 
-                    cast(Subject.meta_tags, String).ilike(f"%{search_data.keyword}%")
+                    _SUBJECT_META_TAGS.isnot(None) &
+                    cast(_SUBJECT_META_TAGS, String).ilike(f"%{search_data.keyword}%")
                 )
                 # Subject.infobox 搜索
                 conditions.append(
-                    Subject.infobox.isnot(None) & 
-                    cast(Subject.infobox, String).ilike(f"%{search_data.keyword}%")
+                    _SUBJECT_INFOBOX.isnot(None) &
+                    cast(_SUBJECT_INFOBOX, String).ilike(f"%{search_data.keyword}%")
                 )
                 
                 query = query.where(or_(*conditions))
             
             # 应用状态过滤
             if getattr(search_data, 'status', None) is not None:
-                query = query.where(Collection.type == search_data.status)
+                query = query.where(_COLLECTION_TYPE == search_data.status)
             
             # 应用排序
             sort_by = getattr(search_data, 'sort_by', 'updated_at')
             if sort_by == 'updated_at':
-                query = query.order_by(desc(Collection.updated_at))
+                query = query.order_by(desc(_COLLECTION_UPDATED_AT))
             elif sort_by == 'rate':
-                query = query.order_by(desc(Collection.rate))
+                query = query.order_by(desc(_COLLECTION_RATE))
             elif sort_by == 'score':
                 # 使用 rating 字段中的 score 值进行排序
                 from sqlalchemy import cast, Float
-                query = query.order_by(desc(cast(Subject.rating.op('->>')('score'), Float)))
+                query = query.order_by(desc(cast(_SUBJECT_RATING.op('->>')('score'), Float)))
             elif sort_by == 'date':
-                query = query.order_by(desc(Subject.date))
+                query = query.order_by(desc(_SUBJECT_DATE))
             
             # 添加分页
             query = query.offset(search_data.skip).limit(search_data.limit)
@@ -442,9 +473,11 @@ class CollectionRepo:
             from fastapi_cache import FastAPICache
             from ..core.config import settings
             if settings.DEPLOY_MODE == "local":
-                from sqlalchemy.dialects.sqlite import insert
+                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                insert = cast(Any, sqlite_insert)
             elif settings.DEPLOY_MODE == "cloud":
-                from sqlalchemy.dialects.postgresql import insert
+                from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+                insert = cast(Any, postgresql_insert)
             else:
                 logger.error("Deploy mode not supported")
                 return 
@@ -468,7 +501,7 @@ class CollectionRepo:
             
             # 2. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
             # 获取模型的所有列名
-            all_columns = {col.name for col in Collection.__table__.columns}
+            all_columns = {col.name for col in cast(Any, Collection).__table__.columns}
             # 排除掉唯一键 (因为唯一键冲突时不用更新它自己)
             update_cols = all_columns - set(unique_fields)
             

@@ -167,7 +167,9 @@ class MemoryFact:
             kind=kind,
             importance=value.get("importance", 0.5),
             source=value.get("source", "conversation"),
-            created_at=value.get("created_at", value.get("timestamp")),
+            created_at=_parse_datetime(
+                value.get("created_at", value.get("timestamp"))
+            ) or datetime.now(timezone.utc),
             metadata=metadata,
         )
 

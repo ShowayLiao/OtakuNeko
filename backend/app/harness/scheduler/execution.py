@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from app.harness.policy import ProactivePolicy
+from app.harness.result import ErrorCode
 from app.harness.task import AgentTask
 
 SUPPORTED_SCHEDULED_TASK_TYPES = frozenset(
@@ -24,7 +25,7 @@ def build_agent_task(task_def: Any, run: Any) -> AgentTask:
         task_id=getattr(run, "id", None),
         user_id=task_def.user_id,
         goal=goal,
-        metadata={
+        task_metadata={
             "task_def_id": task_def.id,
             "run_id": run.id,
             "task_type": task_def.task_type,
@@ -141,7 +142,7 @@ async def handle_task_def(
             terminal_code = getattr(terminal, "error_code", None)
             category = (
                 terminal_code.value
-                if hasattr(terminal_code, "value")
+                if isinstance(terminal_code, ErrorCode)
                 else str(terminal_code)
                 if terminal_code is not None
                 else "permanent"

@@ -72,17 +72,11 @@ async def get_subject_by_source(
     """
     try:
         from app.schemas.adaptersV2 import subject_with_collection_to_unified
-        from app.schemas.subject import SubjectWithCollection
-        
-        subject, collection = await SubjectRepo.get_by_source(db, search_data)
-        if not subject:
+        subject_with_collection = await SubjectRepo.get_by_source(db, search_data)
+        if subject_with_collection is None:
             return None
         
         # 构建SubjectWithCollection对象
-        subject_with_collection = SubjectWithCollection(
-            subject=subject,
-            collection=collection
-        )
         
         # 转换为UnifiedCollectionSubject格式
         return subject_with_collection_to_unified(subject_with_collection)
@@ -281,7 +275,7 @@ async def search_subject_by_name(
         raise
 
 async def search_subject_cloud(
-    db: AsyncSession,
+    db: AsyncSession | None,
     search_data: SubjectSearchCloud
 ) -> UnifiedList:
     """
@@ -301,6 +295,8 @@ async def search_subject_cloud(
         remote_response = await search_bangumi_subjects(search_data.keyword, search_data.type, search_data.limit, search_data.offset)
         
         # 直接使用 bangumi_search_to_unified_list 函数转换为 UnifiedList 格式
+        if not isinstance(remote_response, dict):
+            return UnifiedList(total=0, items=[])
         return bangumi_search_to_unified_list(remote_response)
         
     except Exception as e:
@@ -336,17 +332,26 @@ async def search_mixed(
     
     # 创建云端搜索数据
     cloud_search_data = SubjectSearchCloud(
-        keyword=search_data.keyword if hasattr(search_data, 'keyword') else '',
+        keyword=search_data.keyword or '',
         type=search_data.type,
-        limit=search_data.limit,
-        offset=search_data.skip,
+        limit=search_data.limit or 10,
+        offset=search_data.skip or 0,
         user_id=search_data.user_id
     )
     
     # 并行执行本地搜索和云端搜索
     if hasattr(search_data, 'keyword') and search_data.keyword:
         # 有关键词，使用 search_subject_by_name
-        local_task = search_subject_by_name(db, search_data)
+        local_task = search_subject_by_name(
+            db,
+            SubjectSearchByName(
+                keyword=search_data.keyword or "",
+                type=search_data.type,
+                skip=search_data.skip or 0,
+                limit=search_data.limit or 10,
+                user_id=search_data.user_id,
+            ),
+        )
     else:
         # 无关键词时使用 get_all_subjects
         local_task = get_all_subjects(db, search_data)
@@ -426,7 +431,9 @@ async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
     """
     try:
         # 构建搜索数据，查找对应的 Subject
-        search_data = SubjectSearchByID(source="bangumi", source_id=subject_id)
+        search_data = SubjectSearchByID(
+            source="bangumi", source_id=subject_id, user_id=None
+        )
         subject_result = await SubjectRepo.get_by_source(db, search_data)
         
         if not subject_result:
@@ -434,7 +441,7 @@ async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
             return False
         
         # 解包获取 Subject 对象
-        subject, _ = subject_result
+        subject = subject_result.subject
         
         # 获取 bangumi-data JSON 数据
         bangumi_data_url = "https://cdn.jsdelivr.net/npm/bangumi-data/dist/data.json"
@@ -463,7 +470,7 @@ async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
             try:
                 begin_dt = datetime.fromisoformat(begin_str)
                 # 提取 time 和 weekday
-                subject.air_time = begin_dt.time()
+                subject.air_time = begin_dt
                 # 注意：Python 的 weekday() 返回 0-6，而要求的是 1-7，所以需要 +1
                 subject.air_weekday = begin_dt.weekday() + 1
                 logger.info(f"Synced air time for subject {subject_id}: {subject.air_time}, weekday: {subject.air_weekday}")

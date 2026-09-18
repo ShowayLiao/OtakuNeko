@@ -12,7 +12,7 @@ def utc_now():
     return datetime.now(timezone.utc)
 
 
-class Collection(SQLModel, table=True):  # type: ignore[call-arg]
+class Collection(SQLModel, table=True):
     """用户收藏模型，存储用户对任意类型条目的收藏信息"""
     id: Optional[int] = Field(default=None, primary_key=True, index=True, description="收藏记录唯一ID")
     user_id: int = Field(index=True, foreign_key="users.id", description="用户ID")
@@ -35,5 +35,4 @@ class Collection(SQLModel, table=True):  # type: ignore[call-arg]
     __table_args__ = (
         UniqueConstraint('user_id', 'source', 'source_id', name='uq_user_collection'),
     )
-
 

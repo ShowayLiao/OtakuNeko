@@ -68,11 +68,11 @@ class AgentRouter:
         # 2. Optional classifier
         if self._classifier is not None:
             try:
-                decision = self._classify_with_timeout(goal, messages or [])
-                if decision is None:
+                classified = self._classify_with_timeout(goal, messages or [])
+                if classified is None:
                     raise ValueError("classifier returned no decision")
-                if decision.confidence >= 0.5 and self._registry_has(decision.selected_agent):
-                    return decision
+                if classified.confidence >= 0.5 and self._registry_has(classified.selected_agent):
+                    return classified
             except Exception:
                 logger.warning("router_classifier_failed", exc_info=True)
                 pass
@@ -93,10 +93,14 @@ class AgentRouter:
                 return None
             self._classifier_inflight = True
         result: queue.Queue[RouteDecision | None] = queue.Queue(maxsize=1)
+        classifier = self._classifier
 
         def classify() -> None:
             try:
-                result.put(self._classifier.classify(goal, messages))
+                if classifier is None:
+                    result.put(None)
+                else:
+                    result.put(classifier.classify(goal, messages))
             except Exception:
                 result.put(None)
             finally:

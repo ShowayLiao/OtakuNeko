@@ -7,7 +7,7 @@ import json
 import os
 from contextlib import nullcontext
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
+from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, Protocol, cast
 from uuid import uuid4
 
 from app.agents.router import AgentRouter
@@ -151,13 +151,13 @@ def _safe_approval_arguments(value: Any, *, key: str = "", depth: int = 0) -> An
             result["_truncated"] = True
         return result
     if isinstance(value, list):
-        items = [
+        list_items: list[Any] = [
             _safe_approval_arguments(item, key=key, depth=depth + 1)
             for item in value[:20]
         ]
-        if len(value) > len(items):
-            items.append("[TRUNCATED]")
-        return items
+        if len(value) > len(list_items):
+            list_items.append("[TRUNCATED]")
+        return list_items
     if isinstance(value, str):
         return value[:500] + ("..." if len(value) > 500 else "")
     if value is None or isinstance(value, (bool, int, float)):
@@ -934,7 +934,14 @@ class AgentRuntime:
                         if isinstance(error_code, ErrorCode)
                         else ErrorCode.TOOL_ERROR
                     )
-                    return RunResult(run_id=run_id, status=status, error_code=safe_code)
+                    return RunResult(
+                        run_id=run_id,
+                        status=cast(
+                            Literal["completed", "failed", "cancelled", "timeout"],
+                            status,
+                        ),
+                        error_code=safe_code,
+                    )
                 messages.append(_tool_feedback_message(invocation))
             return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED)
         except asyncio.CancelledError:
@@ -1203,7 +1210,10 @@ class AgentRuntime:
                             run_id, run_cancellation
                         )
                         run_budget.check_deadline()
-                        invocation = await self.dispatcher.dispatch(
+                        dispatcher = self.dispatcher
+                        if dispatcher is None:
+                            raise RuntimeError("dispatcher is required for tool execution")
+                        invocation = await dispatcher.dispatch(
                             decision,
                             trusted_context,
                             budget=run_budget,
@@ -1537,9 +1547,13 @@ class AgentRuntime:
                         if registry is not None
                         else None
                     )
-                    approval_required = (
-                        owner is not None and owner[1].approval_required
+                    owner_descriptor = (
+                        owner[1] if isinstance(owner, tuple) and len(owner) > 1 else None
                     )
+                    approval_required = bool(
+                        getattr(owner_descriptor, "approval_required", False)
+                    )
+                    risk_level = getattr(owner_descriptor, "risk_level", None)
                     error_value = (
                         error_code.value
                         if isinstance(error_code, ErrorCode)
@@ -1568,7 +1582,7 @@ class AgentRuntime:
                             capability=decision.capability,
                             capability_version=decision.capability_version,
                             argument_keys=sorted(decision.arguments),
-                            risk_level=owner[1].risk_level,
+                            risk_level=risk_level,
                             safe_arguments=_safe_approval_arguments(decision.arguments),
                         )
                         return

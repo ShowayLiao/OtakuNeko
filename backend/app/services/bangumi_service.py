@@ -1,12 +1,12 @@
 import asyncio
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, cast
 from bs4 import BeautifulSoup
 
 from fastapi_cache import FastAPICache
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from ..models import Subject, User
+from ..models import User
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
 from ..schemas.bangumi import StaffInfo, SubjectDetail, CastInfo, ShortComment, LongReview, AudienceFeedback
@@ -15,6 +15,7 @@ from app.clients.bangumi_client import BangumiClient
 from app.schemas.bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem, BangumiCalendarRating, BangumiCalendarCollection, BangumiCalendarImage
 from app.core.logging import get_logger
 from app.schemas.collection import CollectionSyncRequest
+from app.schemas.subject import SubjectRead
 
 logger = get_logger(__name__)
 
@@ -121,7 +122,7 @@ async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
     try:
         # 并行请求：同时获取"详情"、"角色/制作人员"和"角色列表"
         # 获取条目详情
-        subject_data = await fetch_subject_detail(subject_id)
+        subject_data = cast(dict[str, Any], await fetch_subject_detail(subject_id))
         
         # 获取 Staff 和 Cast 信息
         cleaned_staff = await get_staff_info(subject_id)
@@ -176,8 +177,6 @@ async def get_bangumi_subject_details(subject_ids: List[int]) -> Dict[str, Any]:
         assert isinstance(result, SubjectDetail)
         details.append(
             result.model_dump(exclude_none=True)
-            if hasattr(result, "model_dump")
-            else dict(result)
         )
 
     return {"details": details, "failed_subject_ids": failed_subject_ids}
@@ -375,7 +374,7 @@ async def sync_user_collections(
         raise
 
 
-async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str = "bangumi") -> Subject:
+async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str = "bangumi") -> SubjectRead | None:
     """
     从 Bangumi API 同步单个条目的详细信息到本地数据库
     
@@ -448,10 +447,12 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str 
     # 从数据库中获取更新后的 Subject 对象
     from app.repositories.subject_repo import SubjectRepo
     from app.schemas.subject import SubjectSearchByID
-    subject_search = SubjectSearchByID(source=source, source_id=str(subject_id))
+    subject_search = SubjectSearchByID(
+        source=source, source_id=str(subject_id), user_id=None
+    )
     subject_result = await SubjectRepo.get_by_source(db, subject_search)
     
-    return subject_result[0] if subject_result else None
+    return subject_result.subject if subject_result else None
 
 
 async def get_bangumi_user_info(username: str) -> Dict:
@@ -475,7 +476,7 @@ async def get_bangumi_user_info(username: str) -> Dict:
         
         logger.info(f"成功获取 Bangumi 用户信息: {username}")
         
-        return user_info
+        return cast(dict[str, Any], user_info)
         
     except Exception as e:
         import traceback
@@ -498,7 +499,7 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         logger.info("获取 Bangumi 每日放送信息")
         
         # 调用 bangumi_client.py 中的 fetch_calendar 函数获取日历信息
-        calendar_info = await fetch_calendar()
+        calendar_info = cast(list[dict[str, Any]], await fetch_calendar())
         weekday_ids = {
             day.get("weekday", {}).get("id")
             for day in calendar_info
@@ -507,7 +508,9 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         if not _EXPECTED_CALENDAR_WEEKDAY_IDS.issubset(weekday_ids):
             uncached_fetch = getattr(fetch_calendar, "__wrapped__", None)
             if uncached_fetch is not None:
-                calendar_info = await uncached_fetch(bangumi_client)
+                calendar_info = cast(
+                    list[dict[str, Any]], await uncached_fetch(bangumi_client)
+                )
                 weekday_ids = {
                     day.get("weekday", {}).get("id")
                     for day in calendar_info

@@ -17,6 +17,7 @@ from app.memory.types import MemorySourceType
 from app.core.logging import get_logger
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelCallResult
 
 logger = get_logger(__name__)
 
@@ -41,7 +42,7 @@ class LLMFactExtractor(MemoryExtractor):
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._model = model
         self._model_gateway = model_gateway
-        self.last_model_call = None
+        self.last_model_call: ModelCallResult | None = None
 
     async def extract(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Run fact extraction over the given messages."""

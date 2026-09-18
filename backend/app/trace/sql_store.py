@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import and_, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,15 @@ logger = get_logger(__name__)
 
 _MAX_TRACES = 1000
 _DEFAULT_MAX_AGE = timedelta(days=30)
+
+_TRACE_ID = cast(Any, AgentTraceModel.trace_id)
+_TRACE_USER_ID = cast(Any, AgentTraceModel.user_id)
+_TRACE_TASK_ID = cast(Any, AgentTraceModel.task_id)
+_TRACE_STATUS = cast(Any, AgentTraceModel.status)
+_TRACE_STARTED_AT = cast(Any, AgentTraceModel.started_at)
+_EVENT_TRACE_ID = cast(Any, TraceEventModel.trace_id)
+_EVENT_STEP_INDEX = cast(Any, TraceEventModel.step_index)
+_EVENT_ID = cast(Any, TraceEventModel.id)
 
 
 def _utc_now() -> datetime:
@@ -132,8 +141,8 @@ class SqlTraceStore:
         if user_id is None:
             return None
         stmt = select(AgentTraceModel).where(
-            AgentTraceModel.trace_id == trace_id,
-            AgentTraceModel.user_id == user_id,
+            _TRACE_ID == trace_id,
+            _TRACE_USER_ID == user_id,
         )
         model = (await self._session.execute(stmt)).scalars().one_or_none()
         if model is None:
@@ -162,29 +171,29 @@ class SqlTraceStore:
         if user_id is None:
             return [], None
         bounded_limit = max(1, min(limit, 100))
-        stmt = select(AgentTraceModel).where(AgentTraceModel.user_id == user_id)
+        stmt = select(AgentTraceModel).where(_TRACE_USER_ID == user_id)
         if task_id is not None:
-            stmt = stmt.where(AgentTraceModel.task_id == task_id)
+            stmt = stmt.where(_TRACE_TASK_ID == task_id)
         if status is not None:
-            stmt = stmt.where(AgentTraceModel.status == status)
+            stmt = stmt.where(_TRACE_STATUS == status)
         if started_after is not None:
-            stmt = stmt.where(AgentTraceModel.started_at >= started_after)
+            stmt = stmt.where(_TRACE_STARTED_AT >= started_after)
         if started_before is not None:
-            stmt = stmt.where(AgentTraceModel.started_at < started_before)
+            stmt = stmt.where(_TRACE_STARTED_AT < started_before)
         if cursor is not None:
             started_at, trace_id = _decode_cursor(cursor)
             stmt = stmt.where(
                 or_(
-                    AgentTraceModel.started_at < started_at,
+                    _TRACE_STARTED_AT < started_at,
                     and_(
-                        AgentTraceModel.started_at == started_at,
-                        AgentTraceModel.trace_id < trace_id,
+                        _TRACE_STARTED_AT == started_at,
+                        _TRACE_ID < trace_id,
                     ),
                 )
             )
         stmt = stmt.order_by(
-            AgentTraceModel.started_at.desc(),
-            AgentTraceModel.trace_id.desc(),
+            _TRACE_STARTED_AT.desc(),
+            _TRACE_ID.desc(),
         ).limit(bounded_limit + 1)
         models = list((await self._session.execute(stmt)).scalars().all())
         has_more = len(models) > bounded_limit
@@ -201,18 +210,18 @@ class SqlTraceStore:
             delete_trace_ids: set[str] = set()
             if self._max_age is not None:
                 cutoff = _utc_now() - self._max_age
-                old_stmt = select(AgentTraceModel.trace_id).where(
-                    AgentTraceModel.started_at < cutoff
+                old_stmt = select(_TRACE_ID).where(
+                    _TRACE_STARTED_AT < cutoff
                 )
                 delete_trace_ids.update(
                     (await self._session.execute(old_stmt)).scalars().all()
                 )
 
             count_stmt = (
-                select(AgentTraceModel.trace_id)
+                select(_TRACE_ID)
                 .order_by(
-                    AgentTraceModel.started_at.desc(),
-                    AgentTraceModel.trace_id.desc(),
+                    _TRACE_STARTED_AT.desc(),
+                    _TRACE_ID.desc(),
                 )
                 .offset(self._max_traces)
             )
@@ -224,12 +233,12 @@ class SqlTraceStore:
 
             await self._session.execute(
                 delete(TraceEventModel).where(
-                    TraceEventModel.trace_id.in_(delete_trace_ids)
+                    _EVENT_TRACE_ID.in_(delete_trace_ids)
                 )
             )
             await self._session.execute(
                 delete(AgentTraceModel).where(
-                    AgentTraceModel.trace_id.in_(delete_trace_ids)
+                    _TRACE_ID.in_(delete_trace_ids)
                 )
             )
             await self._session.commit()
@@ -246,8 +255,8 @@ class SqlTraceStore:
             headers["schema_version"] = TRACE_LEGACY_SCHEMA_VERSION
         event_stmt = (
             select(TraceEventModel)
-            .where(TraceEventModel.trace_id == model.trace_id)
-            .order_by(TraceEventModel.step_index, TraceEventModel.id)
+            .where(_EVENT_TRACE_ID == model.trace_id)
+            .order_by(_EVENT_STEP_INDEX, _EVENT_ID)
         )
         event_models = (
             (await self._session.execute(event_stmt)).scalars().all()

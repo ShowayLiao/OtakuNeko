@@ -12,7 +12,7 @@ import hashlib
 import inspect
 import json
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, cast
 from urllib.parse import quote
 
 from fastapi import HTTPException
@@ -112,7 +112,7 @@ def _json_safe(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
     if dataclasses.is_dataclass(value):
-        return _json_safe(dataclasses.asdict(value))
+        return _json_safe(dataclasses.asdict(cast(Any, value)))
     if isinstance(value, dict):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

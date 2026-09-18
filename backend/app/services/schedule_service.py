@@ -4,7 +4,7 @@ import traceback
 
 from app.core.logging import get_logger
 from app.models import Schedule
-from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, UnifiedSchedule, UnifiedScheduleList
+from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleRead, UnifiedSchedule, UnifiedScheduleList
 from app.repositories.schedule_repo import ScheduleRepository
 
 # 导入 Bangumi 相关服务
@@ -15,6 +15,8 @@ from .subject_service import batch_upsert_subjects
 # 导入适配器
 from app.schemas.adaptersV2 import bangumi_calendar_to_subject_upsert_list, UnifiedList, UnifiedCollectionSubject
 from app.schemas.subject import SubjectRead
+from app.schemas.collection import CollectionRead
+from app.models.enums import SubjectType
 
 logger = get_logger(__name__)
 
@@ -69,9 +71,19 @@ class ScheduleService:
             for schedule, subject, collection in unified_schedules:
                 # 创建 UnifiedSchedule 对象
                 unified_item = UnifiedSchedule(
-                    schedule=schedule,
-                    subject=subject,
-                    collection=collection
+                    schedule=ScheduleRead.model_validate(
+                        schedule, from_attributes=True
+                    ),
+                    subject=(
+                        SubjectRead.model_validate(subject, from_attributes=True)
+                        if subject is not None
+                        else None
+                    ),
+                    collection=(
+                        CollectionRead.model_validate(collection, from_attributes=True)
+                        if collection is not None
+                        else None
+                    ),
                 )
                 items.append(unified_item)
             
@@ -360,9 +372,9 @@ class ScheduleService:
                     id=0,  # 默认ID，数据库中会生成
                     source=subject_upsert.source,
                     source_id=subject_upsert.source_id,
-                    name=subject_upsert.name,
+                    name=subject_upsert.name or "",
                     name_cn=subject_upsert.name_cn,
-                    type=subject_upsert.type,
+                    type=subject_upsert.type or SubjectType.ANIME,
                     summary=subject_upsert.summary,
                     date=subject_upsert.date,
                     platform=subject_upsert.platform,

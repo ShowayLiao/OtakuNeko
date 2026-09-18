@@ -8,7 +8,7 @@ from app.models import Collection, CollectionStatus, Subject
 from app.repositories.collection_repo import CollectionRepo
 from app.repositories.subject_repo import SubjectRepo
 from app.schemas.collection import (
-    CollectionCreate, CollectionUpdate, CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionUpsert, CollectionUpsertList
+    CollectionCreate, CollectionUpdate, CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionUpsert, CollectionUpsertList, CollectionUpsertRequest
 )
 from app.schemas.subject import SubjectSearchByID
 from app.schemas.adaptersV2 import (
@@ -144,6 +144,8 @@ async def update_collection(
         if collection:
             logger.info(f"Updated collection: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
             # 清除用户的统计数据缓存
+            if collection_data.user_id is None:
+                raise ValueError("user_id is required to update a collection")
             await _clear_collection_cache(collection_data.user_id)
         else:
             logger.warning(f"Collection not found for update: user_id: {collection_data.user_id}, source: {collection_data.source}, source_id: {collection_data.source_id}")
@@ -175,6 +177,8 @@ async def delete_collection(
         if deleted:
             logger.info(f"Deleted collection: user_id: {search_data.user_id}, source: {search_data.source}, source_id: {search_data.source_id}")
             # 清除用户的统计数据缓存
+            if search_data.user_id is None:
+                raise ValueError("user_id is required to delete a collection")
             await _clear_collection_cache(search_data.user_id)
         else:
             logger.warning(f"Collection not found for deletion: user_id: {search_data.user_id}, source: {search_data.source}, source_id: {search_data.source_id}")
@@ -199,7 +203,9 @@ async def get_user_collections(
     """
     try:
         # 调用仓库方法获取收藏列表
-        collection_with_subject_list = await CollectionRepo.get_by_user(db, search_data.user_id, search_data.type, search_data.status, search_data.skip, search_data.limit, getattr(search_data, 'sort_by', 'updated_at'))
+        if search_data.user_id is None:
+            raise ValueError("user_id is required to list collections")
+        collection_with_subject_list = await CollectionRepo.get_by_user(db, search_data.user_id, search_data.type, search_data.status, search_data.skip or 0, search_data.limit, getattr(search_data, 'sort_by', 'updated_at'))
         logger.info(f"Get collections found: {collection_with_subject_list.total} results for user_id: {search_data.user_id}, type: {search_data.type}, status: {search_data.status}")
         
         # 使用转换函数转换为统一视图模型列表
@@ -238,7 +244,7 @@ async def upsert_collection(
     db: AsyncSession,
     user_id: int,
     sid: Optional[int] = None,
-    data: Optional[dict] = None
+    data: CollectionUpsertRequest | dict[str, Any] | None = None
 ) -> UnifiedCollectionSubject:
     """
     更新或添加收藏
@@ -261,7 +267,19 @@ async def upsert_collection(
         SQLAlchemyError: 数据库操作异常
     """
     # 从data中提取collection和subject信息
-    collection_data = data.collection if hasattr(data, 'collection') else data.get('collection') if isinstance(data, dict) else None
+    collection_data: CollectionUpdate | dict[str, Any] | None
+    if isinstance(data, CollectionUpsertRequest):
+        collection_data = data.collection
+    elif isinstance(data, dict):
+        raw_collection = data.get("collection")
+        if isinstance(raw_collection, dict):
+            collection_data = CollectionUpdate(**raw_collection)
+        elif isinstance(raw_collection, CollectionUpdate):
+            collection_data = raw_collection
+        else:
+            collection_data = None
+    else:
+        collection_data = None
     # 第一步：检查subject是否存在
     if sid:
         # 使用sid查询subject
@@ -288,14 +306,18 @@ async def upsert_collection(
                 'private': False,
                 'tags': None
             }
-    elif collection_data:
+    elif collection_data is not None:
+        if isinstance(collection_data, dict):
+            collection_data = CollectionUpdate(**collection_data)
+        if not collection_data.source or not collection_data.source_id:
+            raise ValueError("collection source and source_id are required")
         # 使用collection_data中的source和source_id查询subject
         subject_search_data = SubjectSearchByID(
+            user_id=user_id,
             source=collection_data.source,
             source_id=collection_data.source_id
         )
-        subject_result = await SubjectRepo.get_by_source(db, subject_search_data)
-        subject = subject_result[0] if subject_result else None
+        await SubjectRepo.get_by_source(db, subject_search_data)
         
         # 构建collection搜索数据
         collection_search_data = CollectionSearchByID(
@@ -307,6 +329,9 @@ async def upsert_collection(
         raise ValueError("Either sid or collection_data is required")
     
     # 第二步：使用batch_upsert方法更新或添加收藏
+    if collection_data is None:
+        raise ValueError("Either sid or collection_data is required")
+
     from app.schemas.collection import CollectionUpsert, CollectionUpsertList
     
     # 构建CollectionUpsert对象

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from dataclasses import dataclass, field
-from typing import List, Optional, TYPE_CHECKING
+from typing import Any, List, Optional, TYPE_CHECKING, cast
 
 from app.memory.retrievers.bm25_retriever import BM25Retriever
 from app.memory.retrievers.vector_retriever import VectorRetriever
@@ -107,7 +107,7 @@ class MemoryManager:
         terminal_output = ""
         if self.checkpointer:
             config = run_checkpoint_config(thread_id, run_id or self.run_id)
-            cp = await self.checkpointer.aget_tuple(config)
+            cp = await self.checkpointer.aget_tuple(cast(Any, config))
             if cp:
                 short = self._messages_from_checkpoint(cp.checkpoint)
                 channel_values = cp.checkpoint.get("channel_values", {})
@@ -159,7 +159,7 @@ class MemoryManager:
         messages = []
         if self.checkpointer:
             config = run_checkpoint_config(thread_id, run_id or self.run_id)
-            cp = await self.checkpointer.aget_tuple(config)
+            cp = await self.checkpointer.aget_tuple(cast(Any, config))
             if cp:
                 messages = self._messages_from_checkpoint(cp.checkpoint)[-20:]
 

@@ -179,7 +179,7 @@ class ScheduleCapability(BaseCapability):
             ),
         ])
 
-        write_common = {
+        write_common: dict[str, Any] = {
             "requires_auth": True,
             "is_side_effect": True,
             "idempotency_mode": "required",

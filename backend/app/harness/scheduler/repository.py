@@ -6,7 +6,7 @@ import asyncio
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
 
 @dataclass
@@ -177,7 +177,12 @@ class SqlTaskRepository:
         from app.models.agent_task import AgentTaskDef
 
         async with self._session_factory() as session:
-            result = await session.execute(select(AgentTaskDef).where(AgentTaskDef.user_id == user_id, AgentTaskDef.deleted_at.is_(None)))
+            result = await session.execute(
+                select(AgentTaskDef).where(
+                    cast(Any, AgentTaskDef.user_id) == user_id,
+                    cast(Any, AgentTaskDef.deleted_at).is_(None),
+                )
+            )
             return list(result.scalars())
 
     async def set_enabled(self, task_id: int, user_id: int, enabled: bool) -> Any | None:
@@ -232,7 +237,11 @@ class SqlTaskRepository:
             task = await session.get(AgentTaskDef, task_id)
             if task is None or task.user_id != user_id:
                 return None
-            result = await session.execute(select(AgentTaskRun).where(AgentTaskRun.task_def_id == task_id))
+            result = await session.execute(
+                select(AgentTaskRun).where(
+                    cast(Any, AgentTaskRun.task_def_id) == task_id
+                )
+            )
             return list(result.scalars())
 
     async def claim_due(self, now: datetime, lease_seconds: int, limit: int = 100) -> list[Claim]:
@@ -243,7 +252,11 @@ class SqlTaskRepository:
         async with self._session_factory() as session:
             result = await session.execute(
                 select(AgentTaskDef)
-                .where(AgentTaskDef.enabled.is_(True), AgentTaskDef.deleted_at.is_(None), AgentTaskDef.next_run <= now)
+                .where(
+                    cast(Any, AgentTaskDef.enabled).is_(True),
+                    cast(Any, AgentTaskDef.deleted_at).is_(None),
+                    cast(Any, AgentTaskDef.next_run) <= now,
+                )
                 .with_for_update(skip_locked=True)
                 .limit(limit)
             )
@@ -269,8 +282,8 @@ class SqlTaskRepository:
                 existing_result = await session.execute(
                     select(AgentTaskRun)
                     .where(
-                        AgentTaskRun.task_def_id == task_def.id,
-                        AgentTaskRun.scheduled_slot == slot,
+                        cast(Any, AgentTaskRun.task_def_id) == task_def.id,
+                        cast(Any, AgentTaskRun.scheduled_slot) == slot,
                     )
                     .with_for_update()
                 )

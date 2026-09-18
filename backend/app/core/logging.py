@@ -1,6 +1,7 @@
 import logging
 import os
 from logging.handlers import TimedRotatingFileHandler
+from typing import Optional
 
 # 尝试导入并发日志处理器，如果不存在则使用标准处理器
 try:
@@ -69,7 +70,7 @@ class LoggingConfig:
         if not os.path.exists(self.log_dir):
             os.makedirs(self.log_dir, exist_ok=True)
     
-    def get_logger(self, name: str = None) -> logging.Logger:
+    def get_logger(self, name: Optional[str] = None) -> logging.Logger:
         """
         获取配置好的日志记录器
         
@@ -121,6 +122,7 @@ class LoggingConfig:
         """
         log_file = os.path.join(self.log_dir, f"{log_name}.log")
         
+        handler: logging.Handler
         if HAS_CONCURRENT_HANDLER:
             # 使用并发日志处理器（异步写入）
             handler = ConcurrentRotatingFileHandler(
@@ -164,7 +166,7 @@ class LoggingConfig:
 logging_config = LoggingConfig()
 
 
-def get_logger(name: str = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> logging.Logger:
     """
     获取日志记录器的便捷函数
     

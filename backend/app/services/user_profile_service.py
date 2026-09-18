@@ -41,10 +41,17 @@ class FilteredTag(TypedDict):
     avg_score: float
 
 
-class TasteDictionary(TypedDict):
+class TasteDictionary(TypedDict, total=False):
     """全景字典类型"""
     total_rated: int
     taste_dictionary: Dict[str, List[int]]
+    total_rated_items: int
+    rating_baseline: float
+    favorite_tags: List[str]
+    avoid_tags: List[str]
+    strong_avoid_tags: List[str]
+    tag_preferences: Dict[str, Dict[str, Any]]
+    error: str
 
 
 class ChartData(TypedDict):
@@ -54,11 +61,12 @@ class ChartData(TypedDict):
     bar_score: List[Dict[str, Any]]
 
 
-class UserProfile(TypedDict):
+class UserProfile(TypedDict, total=False):
     """用户画像完整类型"""
     llm_summary: TasteDictionary
     chart_data: ChartData
     watched_ids: List[int]
+    error: str
 
 
 def generate_user_profile(
@@ -324,7 +332,7 @@ def _calculate_tag_statistics(
         标签统计字典：{tag_name: {"count": X, "total_score": Y}}
     """
     reference_time = _normalise_datetime(as_of) or datetime.now(timezone.utc)
-    tag_stats = defaultdict(
+    tag_stats: defaultdict[str, dict[str, float]] = defaultdict(
         lambda: {
             "count": 0,
             "total_score": 0.0,
@@ -498,8 +506,10 @@ def _calculate_affinity_scores(filtered_tags: Dict[str, Dict[str, Any]]) -> Dict
     return affinity_scores
 
 
-def _build_chart_data(filtered_tags: Dict[str, Dict[str, Any]], 
-                     affinity_scores: Dict[str, int]) -> Dict[str, Any]:
+def _build_chart_data(
+    filtered_tags: Dict[str, Dict[str, Any]],
+    affinity_scores: Dict[str, int],
+) -> ChartData:
     """
     构建图表数据
     
@@ -570,7 +580,7 @@ def _summary_defaults(
     *,
     rating_baseline: float = _NEUTRAL_SCORE,
     total_rated_items: int = 0,
-) -> Dict[str, Any]:
+) -> TasteDictionary:
     return {
         "total_rated": 0,
         "total_rated_items": total_rated_items,
@@ -587,7 +597,7 @@ def _is_structural_tag(tag: str) -> bool:
     return tag in _STRUCTURAL_TAGS or bool(_YEAR_TAG_PATTERN.fullmatch(tag))
 
 
-def _create_empty_profile() -> Dict[str, Any]:
+def _create_empty_profile() -> UserProfile:
     """创建空画像（输入为空时使用）"""
     return {
         "llm_summary": _summary_defaults(),
@@ -605,7 +615,7 @@ def _create_basic_profile(
     *,
     rating_baseline: float = _NEUTRAL_SCORE,
     total_rated_items: int = 0,
-) -> Dict[str, Any]:
+) -> UserProfile:
     """创建基础画像（数据不足时使用）"""
     return {
         "llm_summary": _summary_defaults(
@@ -621,7 +631,7 @@ def _create_basic_profile(
     }
 
 
-def _create_error_profile(error_msg: str) -> Dict[str, Any]:
+def _create_error_profile(error_msg: str) -> UserProfile:
     """创建错误画像（发生异常时使用）"""
     return {
         "llm_summary": {

@@ -25,7 +25,7 @@ from app.memory.interfaces import (
     MemoryRepository,
     MemoryService,
 )
-from app.memory.types import MemoryFact, MemorySourceType
+from app.memory.types import MemoryFact, MemoryKind, MemorySourceType
 from app.memory.retrievers.bm25_retriever import BM25Retriever
 from app.memory.retrievers.hybrid_retriever import HybridRetriever
 from app.core.logging import get_logger
@@ -150,9 +150,18 @@ class MemoryServiceImpl(MemoryService):
                     return None
 
                 fact_id = str(uuid.uuid4())
+                try:
+                    typed_source_type = (
+                        MemorySourceType(source_type)
+                        if source_type is not None
+                        else MemorySourceType.USER
+                    )
+                except ValueError:
+                    typed_source_type = MemorySourceType.LEGACY
+                typed_kind = MemoryKind(kind)
                 fact = MemoryFact(
                     content=content,
-                    source_type=source_type or MemorySourceType.USER,
+                    source_type=typed_source_type,
                     source_id=source_id,
                     confidence=confidence,
                     verified=verified,
@@ -160,7 +169,7 @@ class MemoryServiceImpl(MemoryService):
                     id=fact_id,
                     user_id=owner_id,
                     thread_id=thread_id,
-                    kind=kind,
+                    kind=typed_kind,
                     importance=importance,
                     source=source,
                     metadata=metadata or {},
@@ -514,6 +523,12 @@ class LegacyMemoryServiceAdapter(MemoryService):
         source: str = "conversation",
         user_id: int | None = None,
         kind: str = "episodic",
+        source_type: str | None = None,
+        source_id: str | None = None,
+        confidence: float = 0.5,
+        verified: bool = False,
+        expires_at: Any = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> str | None:
         self._deprecated()
@@ -571,6 +586,8 @@ class LegacyMemoryServiceAdapter(MemoryService):
         budget: RunBudget | None = None,
         cancellation: CancellationToken | None = None,
         trace_id: str | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        call_id: str | None = None,
     ) -> int:
         self._deprecated()
         scoped = self._scope(thread_id, user_id, "semantic")

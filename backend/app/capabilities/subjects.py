@@ -122,6 +122,7 @@ class SubjectCapability(BaseCapability):
         result = await search_subject_cloud(None, SubjectSearchCloud(
             keyword=kwargs.get("keyword", ""), type=kwargs.get("type"),
             skip=kwargs.get("skip", 0), limit=min(kwargs.get("limit", 10), 100),
+            user_id=None,
         ))
         payload = _public(result)
         return CapabilityResult.ok(total=payload.get("total", 0), subjects=payload.get("items", [])).to_dict()

@@ -43,7 +43,7 @@ class AgentTaskDef(SQLModel, table=True):
 
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)
-        self.validate_definition()
+        self.validate_definition()  # type: ignore[operator]  # Pydantic validator descriptor is not modeled by mypy
 
     @model_validator(mode="after")
     def validate_definition(self) -> "AgentTaskDef":

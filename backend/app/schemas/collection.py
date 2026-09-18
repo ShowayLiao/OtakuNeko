@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, Sequence
 from datetime import datetime
 from app.models.enums import CollectionStatus
 from .shared import BaseList, SearchBase
@@ -112,7 +112,7 @@ class CollectionList(BaseList):
     
     用于返回分页的收藏列表，包含总数和条目列表
     """
-    items: List[CollectionBase] = Field(
+    items: Sequence[CollectionBase] = Field(
         default_factory=list,
         max_length=100,
         description="收藏列表",

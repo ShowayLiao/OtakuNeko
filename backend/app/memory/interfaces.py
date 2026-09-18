@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 import html
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Sequence
 
 from app.memory.types import MemoryFact, MemorySourceType
 from app.trace.redaction import redact
@@ -68,7 +68,7 @@ class ContextCompiler:
         self,
         *,
         user_preferences: list[str] | str | None = None,
-        memory_facts: list[MemoryFact | dict[str, Any]] | None = None,
+        memory_facts: Sequence[MemoryFact | dict[str, Any]] | None = None,
         tool_outputs: list[Any] | None = None,
     ) -> list[ContextBlock]:
         blocks = [

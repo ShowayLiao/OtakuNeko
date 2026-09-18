@@ -81,6 +81,7 @@ class StatsCapability(BaseCapability):
             return CapabilityResult.fail(
                 "Trusted db and principal are required", error_type="invalid_args"
             ).to_dict()
+        result: Any
         try:
             if action == "get_collection_statistics":
                 result = await get_collection_statistics(

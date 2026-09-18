@@ -53,8 +53,8 @@ class BaseCapability(ABC):
                     )
                 return result
 
-        traced_execute.__trace_instrumented__ = True
-        cls.execute = traced_execute
+        setattr(traced_execute, "__trace_instrumented__", True)
+        setattr(cls, "execute", traced_execute)
 
     @property
     @abstractmethod

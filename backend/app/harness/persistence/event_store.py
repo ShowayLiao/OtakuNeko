@@ -6,7 +6,7 @@ import hashlib
 import json
 import math
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +27,10 @@ _SENSITIVE_KEYS = {
     "token",
 }
 _MAX_PAYLOAD_BYTES = 64 * 1024
+
+_EVENT_RUN_ID = cast(Any, AgentRunEvent.run_id)
+_EVENT_SEQUENCE = cast(Any, AgentRunEvent.sequence)
+_EVENT_OCCURRED_AT = cast(Any, AgentRunEvent.occurred_at)
 
 
 class EventStoreError(RuntimeError):
@@ -215,10 +219,10 @@ class EventStore:
         statement = (
             select(AgentRunEvent)
             .where(
-                AgentRunEvent.run_id == run_id,
-                AgentRunEvent.sequence > after_sequence,
+                _EVENT_RUN_ID == run_id,
+                _EVENT_SEQUENCE > after_sequence,
             )
-            .order_by(AgentRunEvent.sequence)
+            .order_by(_EVENT_SEQUENCE)
             .limit(bounded_limit)
         )
         return list((await self._session.execute(statement)).scalars().all())
@@ -241,8 +245,8 @@ class EventStore:
         bounded_limit = max(1, min(limit, 10000))
         statement = (
             select(AgentRunEvent)
-            .where(AgentRunEvent.run_id.in_(normalized_ids))
-            .order_by(AgentRunEvent.occurred_at, AgentRunEvent.run_id, AgentRunEvent.sequence)
+            .where(_EVENT_RUN_ID.in_(normalized_ids))
+            .order_by(_EVENT_OCCURRED_AT, _EVENT_RUN_ID, _EVENT_SEQUENCE)
             .limit(bounded_limit)
         )
         return list((await self._session.execute(statement)).scalars().all())
@@ -252,8 +256,8 @@ class EventStore:
 
     async def _get_by_sequence(self, run_id: str, sequence: int) -> AgentRunEvent | None:
         statement = select(AgentRunEvent).where(
-            AgentRunEvent.run_id == run_id,
-            AgentRunEvent.sequence == sequence,
+            _EVENT_RUN_ID == run_id,
+            _EVENT_SEQUENCE == sequence,
         )
         return (await self._session.execute(statement)).scalars().one_or_none()
 

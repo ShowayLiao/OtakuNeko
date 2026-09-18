@@ -40,7 +40,7 @@ class AgentMemory(SQLModel, table=True):
     content: str = Field(nullable=False)
     importance: float = Field(default=0.5, ge=0.0, le=1.0)
     source: str = Field(default="conversation")
-    created_at: datetime = Field(
+    created_at: datetime = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default_factory=lambda: datetime.now(timezone.utc),
         nullable=False,
         index=True,

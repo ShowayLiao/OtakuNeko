@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -47,6 +47,15 @@ _TRANSITIONS: dict[str, frozenset[str]] = {
     "abandoned": frozenset(),
 }
 _TERMINAL = frozenset({"succeeded", "failed", "cancelled", "abandoned"})
+
+_RUN_THREAD_ID = cast(Any, AgentRun.thread_id)
+_RUN_USER_ID = cast(Any, AgentRun.user_id)
+_RUN_CREATED_AT = cast(Any, AgentRun.created_at)
+_RUN_RUN_ID = cast(Any, AgentRun.run_id)
+_INVOCATION_RUN_ID = cast(Any, AgentInvocation.run_id)
+_INVOCATION_IDEMPOTENCY_KEY = cast(Any, AgentInvocation.idempotency_key)
+_INVOCATION_SEQUENCE = cast(Any, AgentInvocation.sequence)
+_EVENT_RUN_ID = cast(Any, AgentRunEvent.run_id)
 
 
 def _utc_now() -> datetime:
@@ -120,10 +129,10 @@ class RunStore:
         statement = (
             select(AgentRun)
             .where(
-                AgentRun.thread_id == str(thread_id),
-                AgentRun.user_id == user_id,
+                _RUN_THREAD_ID == str(thread_id),
+                _RUN_USER_ID == user_id,
             )
-            .order_by(AgentRun.created_at, AgentRun.run_id)
+            .order_by(_RUN_CREATED_AT, _RUN_RUN_ID)
             .limit(bounded_limit)
         )
         runs = (await self._session.execute(statement)).scalars().all()
@@ -140,8 +149,8 @@ class RunStore:
         statement = (
             select(AgentRun.thread_id)
             .where(
-                AgentRun.user_id == user_id,
-                AgentRun.thread_id.is_not(None),
+                _RUN_USER_ID == user_id,
+                _RUN_THREAD_ID.is_not(None),
             )
             .distinct()
             .order_by(AgentRun.thread_id)
@@ -152,19 +161,19 @@ class RunStore:
     async def delete_thread(self, thread_id: str, *, user_id: int) -> int:
         """Delete one owner-scoped canonical thread and its dependent facts."""
         runs_statement = select(AgentRun.run_id).where(
-            AgentRun.thread_id == str(thread_id),
-            AgentRun.user_id == user_id,
+            _RUN_THREAD_ID == str(thread_id),
+            _RUN_USER_ID == user_id,
         )
         run_ids = list((await self._session.execute(runs_statement)).scalars().all())
         if not run_ids:
             return 0
         await self._session.execute(
-            delete(AgentRunEvent).where(AgentRunEvent.run_id.in_(run_ids))
+            delete(AgentRunEvent).where(_EVENT_RUN_ID.in_(run_ids))
         )
         await self._session.execute(
-            delete(AgentInvocation).where(AgentInvocation.run_id.in_(run_ids))
+            delete(AgentInvocation).where(_INVOCATION_RUN_ID.in_(run_ids))
         )
-        await self._session.execute(delete(AgentRun).where(AgentRun.run_id.in_(run_ids)))
+        await self._session.execute(delete(AgentRun).where(_RUN_RUN_ID.in_(run_ids)))
         await self._session.commit()
         return len(run_ids)
 
@@ -237,8 +246,8 @@ class RunStore:
             existing_key = (
                 await self._session.execute(
                     select(AgentInvocation).where(
-                        AgentInvocation.run_id == run_id,
-                        AgentInvocation.idempotency_key == idempotency_key,
+                        _INVOCATION_RUN_ID == run_id,
+                        _INVOCATION_IDEMPOTENCY_KEY == idempotency_key,
                     )
                 )
             ).scalars().one_or_none()
@@ -256,8 +265,8 @@ class RunStore:
         existing_sequence = (
             await self._session.execute(
                 select(AgentInvocation).where(
-                    AgentInvocation.run_id == run_id,
-                    AgentInvocation.sequence == sequence,
+                    _INVOCATION_RUN_ID == run_id,
+                    _INVOCATION_SEQUENCE == sequence,
                 )
             )
         ).scalars().one_or_none()

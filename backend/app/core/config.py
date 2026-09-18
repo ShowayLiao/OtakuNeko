@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     QB_ALLOWED_USER_IDS: str = ""
 
     # 4. 【核心逻辑】自动生成 DATABASE_URL
-    @computed_field
+    @computed_field  # type: ignore[prop-decorator]  # Pydantic's decorator order is unsupported by mypy
     @property
     def DATABASE_URL(self) -> str:
         if self.DEPLOY_MODE == "local":

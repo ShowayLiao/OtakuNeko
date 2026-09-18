@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.harness.authority import reject_runtime_owned_fields
 
 
-CONTRACT_VERSION = "v1"
+CONTRACT_VERSION: Literal["v1"] = "v1"
 
 
 class ErrorCode(str, Enum):
@@ -34,7 +34,7 @@ def _reject_model_owned_identity(arguments: dict[str, Any]) -> dict[str, Any]:
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[CONTRACT_VERSION] = CONTRACT_VERSION
+    schema_version: Literal["v1"] = CONTRACT_VERSION
 
 
 class RunRequest(ContractModel):

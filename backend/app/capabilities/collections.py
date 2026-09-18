@@ -110,7 +110,7 @@ class CollectionCapability(BaseCapability):
         write_payload = _schema(
             {**_COLLECTION_FIELDS, "idempotency_key": {"type": "string"}}
         )
-        write_common = {
+        write_common: dict[str, Any] = {
             "is_side_effect": True,
             "requires_auth": True,
             "idempotency_mode": "required",
@@ -273,6 +273,7 @@ class CollectionCapability(BaseCapability):
             user_id=user_id,
             type=kwargs.get("type"),
             status=kwargs.get("status"),
+            keyword=None,
             skip=kwargs.get("skip", 0),
             limit=min(kwargs.get("limit", 10), 100),
             sort_by=kwargs.get("sort_by", "updated_at"),
@@ -354,7 +355,9 @@ class CollectionCapability(BaseCapability):
         result = await upsert_collection(
             db,
             user_id,
-            data=CollectionUpsertRequest(collection=CollectionUpdate(**data)),
+            data=CollectionUpsertRequest(
+                collection=CollectionUpdate(**data), subject=None
+            ).model_dump(exclude_unset=True),
         )
         return CapabilityResult.ok(collection=_public(result)).to_dict()
 
@@ -392,6 +395,7 @@ class CollectionCapability(BaseCapability):
             subject_type=kwargs.get("subject_type"),
             limit=kwargs.get("limit", 50),
             offset=kwargs.get("offset", 0),
+            data=None,
         ))
         return CapabilityResult.ok(processed_count=count).to_dict()
 

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, model_validator
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, Sequence
 from datetime import datetime
 from app.models.enums import SubjectType, CollectionStatus
 from .shared import BaseList, SearchBase
@@ -141,7 +141,7 @@ class SubjectList(BaseList):
     
     用于返回分页的条目列表，包含总数和条目列表
     """
-    items: List[SubjectBase] = Field(default_factory=list, description="条目列表")
+    items: Sequence[SubjectBase] = Field(default_factory=list, description="条目列表")
 
 
 class SubjectReadList(SubjectList):

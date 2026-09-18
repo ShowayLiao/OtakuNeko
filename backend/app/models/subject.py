@@ -12,7 +12,7 @@ def utc_now():
     return datetime.utcnow()
 
 
-class Subject(SQLModel, table=True):  # type: ignore[call-arg]
+class Subject(SQLModel, table=True):
     """
     通用条目模型，支持多数据源（Bangumi、豆瓣等）
     

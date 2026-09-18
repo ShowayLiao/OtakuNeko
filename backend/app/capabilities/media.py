@@ -19,7 +19,7 @@ class _QBServiceErrorPlaceholder(Exception):
 
 
 QBService: Any = None
-QBServiceError: type[Exception] = _QBServiceErrorPlaceholder
+QBServiceError: Any = _QBServiceErrorPlaceholder
 
 
 def _new_qb() -> Any:
@@ -110,7 +110,7 @@ class MediaCapability(BaseCapability):
         return "Media library lookup, RSS feed management, and download rules"
 
     def actions(self) -> list[ActionDescriptor]:
-        write_common = {
+        write_common: dict[str, Any] = {
             "requires_auth": True,
             "is_side_effect": True,
             "idempotency_mode": "required",

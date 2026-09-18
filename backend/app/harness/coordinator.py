@@ -369,6 +369,7 @@ class RunCoordinator:
 
         if self.terminal_result is None:
             self._finish("completed", None)
+        assert self.terminal_result is not None
         # The result is yielded exactly once, even when the adapter emitted a
         # duplicate or contradictory terminal chunk.
         yield self.terminal_result
@@ -487,6 +488,8 @@ class RunCoordinator:
     ) -> None:
         assert self.budget is not None
         assert self.cancellation is not None
+        gateway = self.model_gateway
+        assert gateway is not None
         configured_limit = context.get("max_model_calls", self.max_model_calls)
         try:
             synthesis_limit = max(0, int(configured_limit))
@@ -501,7 +504,7 @@ class RunCoordinator:
             self.budget.check_deadline()
             self.budget.reserve_model_call()
             try:
-                content = await self.model_gateway.synthesize(
+                content = await gateway.synthesize(
                     goal=task.goal,
                     messages=context.get("messages") or task.metadata.get("messages", []),
                     results=execution_results,
@@ -510,7 +513,7 @@ class RunCoordinator:
                     deadline=self.budget.remaining_seconds(),
                     budget=self.budget.snapshot(),
                 )
-                gateway_result = getattr(self.model_gateway, "last_result", None)
+                gateway_result = getattr(gateway, "last_result", None)
                 self.budget.record_model_usage(
                     getattr(gateway_result, "usage", None)
                 )
@@ -528,7 +531,7 @@ class RunCoordinator:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                gateway_result = getattr(self.model_gateway, "last_result", None)
+                gateway_result = getattr(gateway, "last_result", None)
                 self.budget.record_model_usage(
                     getattr(gateway_result, "usage", None)
                 )
@@ -610,6 +613,7 @@ class RunCoordinator:
 
     def _account_event(self, event: RunEvent) -> None:
         assert self.budget is not None
+        assert self.cancellation is not None
         event_type = event.event_type
         if event_type in _STEP_EVENTS:
             self.budget.consume_step()

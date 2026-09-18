@@ -54,16 +54,16 @@ class AgentRun(SQLModel, table=True):
     status: str = Field(default="queued", index=True, nullable=False)
     goal_hash: str = Field(default="", nullable=False)
     model: str = Field(default="", nullable=False)
-    started_at: Optional[datetime] = Field(
+    started_at: Optional[datetime] = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default=None,
         sa_type=DateTime(timezone=True),
     )
-    finished_at: Optional[datetime] = Field(
+    finished_at: Optional[datetime] = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default=None,
         sa_type=DateTime(timezone=True),
     )
     error_code: Optional[str] = Field(default=None, index=True)
-    created_at: datetime = Field(
+    created_at: datetime = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default_factory=_utc_now,
         index=True,
         sa_type=DateTime(timezone=True),
@@ -107,11 +107,11 @@ class AgentInvocation(SQLModel, table=True):
     status: str = Field(default="pending", index=True, nullable=False)
     input_hash: str = Field(default="", nullable=False)
     idempotency_key: Optional[str] = Field(default=None, index=True)
-    started_at: Optional[datetime] = Field(
+    started_at: Optional[datetime] = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default=None,
         sa_type=DateTime(timezone=True),
     )
-    finished_at: Optional[datetime] = Field(
+    finished_at: Optional[datetime] = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default=None,
         sa_type=DateTime(timezone=True),
     )
@@ -148,7 +148,7 @@ class AgentRunEvent(SQLModel, table=True):
     event_type: str = Field(default="", nullable=False)
     invocation_id: Optional[str] = Field(default=None, index=True)
     payload_json: str = Field(default="{}", nullable=False)
-    occurred_at: datetime = Field(
+    occurred_at: datetime = Field(  # type: ignore[call-overload]  # SQLModel Field stub lacks sa_type overload
         default_factory=_utc_now,
         index=True,
         sa_type=DateTime(timezone=True),

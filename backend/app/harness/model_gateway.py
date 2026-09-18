@@ -5,7 +5,7 @@ import json
 import math
 import time
 from types import SimpleNamespace
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Protocol, Sequence
 from uuid import uuid4
 
 from openai import AsyncOpenAI
@@ -522,11 +522,11 @@ class OpenAICompatibleModelAdapter:
                 finish_reason = _field(choice, "finish_reason") or finish_reason
             normalized_tool_calls: list[dict[str, Any]] = []
             for call in tool_call_parts.values():
-                arguments: Any = call["arguments"] or "{}"
+                raw_arguments: Any = call["arguments"] or "{}"
                 try:
-                    arguments = json.loads(arguments)
+                    arguments = json.loads(raw_arguments)
                 except (TypeError, json.JSONDecodeError):
-                    pass
+                    arguments = raw_arguments
                 normalized_tool_calls.append(
                     {
                         "id": call["id"],
@@ -730,7 +730,7 @@ class ModelGateway(Protocol):
         *,
         goal: str,
         messages: list[dict[str, Any]],
-        results: list[AgentResult | dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
         cancellation: CancellationToken | None = None,
         deadline: float | None = None,
         budget: dict[str, Any] | None = None,
@@ -743,7 +743,7 @@ class ModelGateway(Protocol):
         *,
         goal: str,
         messages: list[dict[str, Any]],
-        results: list[AgentResult | dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
         cancellation: CancellationToken | None = None,
         deadline: float | None = None,
         budget: dict[str, Any] | None = None,
@@ -1102,7 +1102,7 @@ class OpenAIModelGateway:
         *,
         goal: str,
         messages: list[dict[str, Any]],
-        results: list[AgentResult | dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
         cancellation: CancellationToken | None = None,
         deadline: float | None = None,
         budget: dict[str, Any] | None = None,
@@ -1208,7 +1208,7 @@ class OpenAIModelGateway:
         *,
         goal: str,
         messages: list[dict[str, Any]],
-        results: list[AgentResult | dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
         cancellation: CancellationToken | None = None,
         deadline: float | None = None,
         budget: dict[str, Any] | None = None,

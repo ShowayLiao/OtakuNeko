@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from .shared import BaseList
 
 if TYPE_CHECKING:
-    from .adapters import CollectionSubjectList
+    from .collection import CollectionSubjectList
 
 logger = logging.getLogger(__name__)
 
@@ -62,10 +62,10 @@ def convert_to_collection_subject_list(
     Returns:
         转换后的 CollectionSubjectList 对象
     """
-    from .adapters import CollectionSubject, CollectionSubjectList
+    from .collection import CollectionSubject, CollectionSubjectList
     
     # 创建 subject 字典，方便通过 source 和 source_id 查找
-    subject_dict = {}
+    subject_dict: dict[tuple[str, str], SubjectRead] = {}
     for subject in subject_read_list.items:
         key = (subject.source, subject.source_id)
         subject_dict[key] = subject
@@ -75,7 +75,7 @@ def convert_to_collection_subject_list(
     for collection in collection_read_list.items:
         # 查找对应的 subject
         key = (collection.source, collection.source_id)
-        subject = subject_dict.get(key)
+        matched_subject = subject_dict.get(key)
         
         # 创建 CollectionSubject 对象
         collection_subject = CollectionSubject(
@@ -91,7 +91,7 @@ def convert_to_collection_subject_list(
             ep_status=collection.ep_status,
             subject_type=collection.subject_type,
             updated_at=collection.updated_at,
-            subject=subject
+            subject=matched_subject
         )
         collection_subjects.append(collection_subject)
     
@@ -138,7 +138,7 @@ def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") 
             # 从item中获取subject_id（如果存在）
             subject_id = item.get("subject_id")
             if subject_id:
-                subject_upsert_data = {
+                subject_upsert_data: dict[str, Any] = {
                     "source": source,
                     "source_id": str(subject_id)
                 }
@@ -283,7 +283,7 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
         
         # 处理不同格式的差异
         # 设置默认值
-        subject_upsert_data = {
+        subject_upsert_data: dict[str, Any] = {
             "source": "bangumi",
             "source_id": str(subject_data.get("id", ""))
         }
@@ -390,7 +390,7 @@ def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int, sou
         
         # 处理不同格式的差异
         # 设置默认值
-        collection_upsert_data = {
+        collection_upsert_data: dict[str, Any] = {
             "user_id": user_id,
             "source": source,
             "source_id": str(item.get("subject_id", subject_data.get("id", ""))),
@@ -770,7 +770,7 @@ def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
             source_id=str(item.get("id", "")),
             name=item.get("name", ""),
             name_cn=item.get("name_cn", ""),
-            type=type_enum,
+            type=type_enum or SubjectType.ANIME,
             summary=item.get("summary"),
             date=item.get("date", ""),
             platform=item.get("platform", ""),

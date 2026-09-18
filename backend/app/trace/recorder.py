@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from time import monotonic
-from typing import Any, AsyncIterator, Iterator
+from typing import Any, AsyncIterator, Iterator, Literal, cast
 
 from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
 from app.trace.redaction import redact
@@ -153,11 +153,14 @@ class TraceRecorder:
         metadata = _event_metadata(raw_data)
         self._sequence += 1
         return TraceEvent(
-            event_type=event_type,
+            event_type=TraceEventType(event_type),
             run_id=metadata["run_id"] or self.run_id,
             sequence=self._sequence,
             data=_safe_event_data(raw_data),
-            status=status,
+            status=cast(
+                Literal["running", "completed", "failed", "timeout", "cancelled"],
+                status,
+            ),
             duration_ms=duration_ms,
             latency_ms=metadata["latency_ms"],
             correlation_id=self.run_id,

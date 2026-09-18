@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy import and_, or_
 from sqlmodel import select, func, delete
@@ -25,6 +25,14 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 _LONG_TERM_KINDS = ("semantic", "profile")
+
+_MEMORY_USER_ID = cast(Any, AgentMemory.user_id)
+_MEMORY_KIND = cast(Any, AgentMemory.kind)
+_MEMORY_THREAD_ID = cast(Any, AgentMemory.thread_id)
+_MEMORY_FACT_ID = cast(Any, AgentMemory.fact_id)
+_MEMORY_CREATED_AT = cast(Any, AgentMemory.created_at)
+_MEMORY_ID = cast(Any, AgentMemory.id)
+_USER_ID = cast(Any, User.id)
 
 
 def _utc_now() -> datetime:
@@ -97,11 +105,11 @@ class SqlMemoryRepository(MemoryRepository):
             raise ValueError("limit must be between 1 and 1000")
         stmt = (
             select(AgentMemory)
-            .where(AgentMemory.user_id == owner_id)
+            .where(_MEMORY_USER_ID == owner_id)
         )
         stmt = self._apply_scope(stmt, thread_id, kind)
         stmt = (
-            stmt.order_by(AgentMemory.created_at, AgentMemory.id)
+            stmt.order_by(_MEMORY_CREATED_AT, _MEMORY_ID)
             .offset(offset)
             .limit(limit)
         )
@@ -122,14 +130,14 @@ class SqlMemoryRepository(MemoryRepository):
         owner_id = _require_user_id(user_id)
         stmt = (
             delete(AgentMemory)
-            .where(AgentMemory.fact_id == fact_id)
-            .where(AgentMemory.user_id == owner_id)
+            .where(_MEMORY_FACT_ID == fact_id)
+            .where(_MEMORY_USER_ID == owner_id)
         )
         if kind is not None:
-            stmt = stmt.where(AgentMemory.kind == kind)
+            stmt = stmt.where(_MEMORY_KIND == kind)
         if kind not in _LONG_TERM_KINDS:
-            stmt = stmt.where(AgentMemory.thread_id == thread_id)
-        result = await self._session.execute(stmt)
+            stmt = stmt.where(_MEMORY_THREAD_ID == thread_id)
+        result: Any = await self._session.execute(stmt)
         await self._session.flush()
         if result.rowcount:
             logger.info(
@@ -148,7 +156,7 @@ class SqlMemoryRepository(MemoryRepository):
         stmt = (
             select(func.count())
             .select_from(AgentMemory)
-            .where(AgentMemory.user_id == owner_id)
+            .where(_MEMORY_USER_ID == owner_id)
         )
         stmt = self._apply_scope(stmt, thread_id, kind)
 
@@ -158,7 +166,7 @@ class SqlMemoryRepository(MemoryRepository):
     async def lock_owner(self, user_id: int) -> None:
         owner_id = _require_user_id(user_id)
         await self._session.execute(
-            select(User.id).where(User.id == owner_id).with_for_update()
+            select(_USER_ID).where(_USER_ID == owner_id).with_for_update()
         )
 
     async def commit(self) -> None:
@@ -179,10 +187,10 @@ class SqlMemoryRepository(MemoryRepository):
         Returns the number of deleted rows.
         """
         owner_id = _require_user_id(user_id)
-        stmt = delete(AgentMemory).where(AgentMemory.user_id == owner_id)
+        stmt = delete(AgentMemory).where(_MEMORY_USER_ID == owner_id)
         if kind is not None:
-            stmt = stmt.where(AgentMemory.kind == kind)
-        result = await self._session.execute(stmt)
+            stmt = stmt.where(_MEMORY_KIND == kind)
+        result: Any = await self._session.execute(stmt)
         await self._session.commit()
         return result.rowcount or 0
 
@@ -194,10 +202,10 @@ class SqlMemoryRepository(MemoryRepository):
         owner_id = _require_user_id(user_id)
         stmt = (
             delete(AgentMemory)
-            .where(AgentMemory.thread_id == thread_id)
-            .where(AgentMemory.user_id == owner_id)
+            .where(_MEMORY_THREAD_ID == thread_id)
+            .where(_MEMORY_USER_ID == owner_id)
         )
-        result = await self._session.execute(stmt)
+        result: Any = await self._session.execute(stmt)
         await self._session.commit()
         return result.rowcount or 0
 
@@ -208,23 +216,23 @@ class SqlMemoryRepository(MemoryRepository):
         """Apply episodic thread scope or long-term owner scope."""
         if kind == "episodic":
             return stmt.where(
-                AgentMemory.kind == kind,
-                AgentMemory.thread_id == thread_id,
+                _MEMORY_KIND == kind,
+                _MEMORY_THREAD_ID == thread_id,
             )
         if kind in _LONG_TERM_KINDS:
-            return stmt.where(AgentMemory.kind == kind)
+            return stmt.where(_MEMORY_KIND == kind)
         if kind is not None:
             return stmt.where(
-                AgentMemory.kind == kind,
-                AgentMemory.thread_id == thread_id,
+                _MEMORY_KIND == kind,
+                _MEMORY_THREAD_ID == thread_id,
             )
         return stmt.where(
             or_(
                 and_(
-                    AgentMemory.kind == "episodic",
-                    AgentMemory.thread_id == thread_id,
+                    _MEMORY_KIND == "episodic",
+                    _MEMORY_THREAD_ID == thread_id,
                 ),
-                AgentMemory.kind.in_(_LONG_TERM_KINDS),
+                _MEMORY_KIND.in_(_LONG_TERM_KINDS),
             )
         )
 

@@ -65,7 +65,8 @@ def _parse_calendar_html(html: str) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
         seen_subject_ids = set()
         for link in links:
-            subject_id = _subject_id_from_href(link.get("href"))
+            href = link.get("href")
+            subject_id = _subject_id_from_href(href if isinstance(href, str) else None)
             if subject_id is None or subject_id in seen_subject_ids:
                 continue
 
@@ -254,14 +255,14 @@ class BangumiClient:
         }
         
         # 构建完整的请求体
-        payload = {
+        payload: dict[str, Any] = {
             "keyword": keyword,
             "sort": sort,
             "filter": {}
         }
         
         # 构建过滤器对象
-        filter_dict = {}
+        filter_dict: dict[str, Any] = {}
         
         # 添加类型过滤
         if subject_types:
@@ -354,7 +355,7 @@ class BangumiClient:
         }
         
         # 构建请求体 (Request Body)
-        payload = {
+        payload: dict[str, Any] = {
             "keyword": keyword,
             "sort": "rank",
             "filter": {}
@@ -463,7 +464,7 @@ class BangumiClient:
                 raise
 
     @cache(expire=86400, namespace="bangumi-calendar-v3")
-    async def get_calendar(self) -> Dict:
+    async def get_calendar(self) -> List[Dict[str, Any]]:
         """
         从 Bangumi API 获取每日放送信息
         
