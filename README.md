@@ -641,7 +641,6 @@ OtakuNeko/
 ## 📝 更新日志
 
 ### Harness — 2026-08-31
-
 | 更新维度 | V2 行为 | Harness 当前更新 |
 |----------|---------|------------------|
 | **Agent 控制面** | LangGraph ReAct 循环拥有模型与 Tool 流程 | `AgentRuntime` 统一控制 Decision loop、预算、取消、checkpoint 和 terminal result |
