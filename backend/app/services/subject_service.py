@@ -358,10 +358,18 @@ async def search_mixed(
     local_results, remote_results = await asyncio.gather(local_task, remote_task, return_exceptions=True)
     
     # 处理异常情况
+    if isinstance(local_results, asyncio.CancelledError):
+        raise local_results
+    if isinstance(local_results, BaseException) and not isinstance(local_results, Exception):
+        raise local_results
     if isinstance(local_results, Exception):
         logger.error(f"本地搜索失败: {local_results}")
         local_results = UnifiedList(total=0, items=[])
     
+    if isinstance(remote_results, asyncio.CancelledError):
+        raise remote_results
+    if isinstance(remote_results, BaseException) and not isinstance(remote_results, Exception):
+        raise remote_results
     if isinstance(remote_results, Exception):
         logger.error(f"云端搜索失败: {remote_results}")
         remote_results = UnifiedList(total=0, items=[])
@@ -371,6 +379,9 @@ async def search_mixed(
     
     # 合并结果：优先保留本地条目，补充云端独有的条目
     # 创建本地结果的唯一标识集合，用于去重
+    assert isinstance(local_results, UnifiedList)
+    assert isinstance(remote_results, UnifiedList)
+
     local_identifiers = set()
     for item in local_results.items:
         # 确保 item 有 subject 属性，且 subject 有 source 和 source_id 属性

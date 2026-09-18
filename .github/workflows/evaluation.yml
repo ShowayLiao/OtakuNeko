@@ -18,6 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
+          version: "0.10.10"
+          python-version: "3.11"
           enable-cache: true
       - run: uv sync --locked --dev
       - run: uv run pytest tests/evaluation -q
@@ -49,6 +51,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
       - run: uv sync --locked --dev
       - run: uv run python -m app.evaluation.runner --config evals/config/full.yaml
       - uses: actions/upload-artifact@v4

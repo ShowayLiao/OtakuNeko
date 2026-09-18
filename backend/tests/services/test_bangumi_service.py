@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from app.schemas.bangumi import SubjectDetail
@@ -50,6 +52,49 @@ async def test_get_bangumi_subject_details_deduplicates_ids_and_keeps_failures(m
     assert set(requested) == {1, 2}
     assert [item["id"] for item in result["details"]] == [1]
     assert result["failed_subject_ids"] == [2]
+
+
+@pytest.mark.asyncio
+async def test_get_bangumi_subject_details_propagates_cancellation(monkeypatch):
+    async def cancelled_fetch(_subject_id: int):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(bangumi_service, "fetch_subject_by_id", cancelled_fetch)
+
+    with pytest.raises(asyncio.CancelledError):
+        await bangumi_service.get_bangumi_subject_details([1])
+
+
+@pytest.mark.asyncio
+async def test_sync_subject_detail_does_not_clear_schedule_fields(monkeypatch):
+    captured_updates = []
+
+    async def fake_fetch_subject_detail(_subject_id: int):
+        return {"id": 123, "name": "Anime", "type": 2}
+
+    async def fake_batch_update(_db, subject_updates):
+        captured_updates.append(subject_updates)
+
+    async def fake_get_by_source(_db, _search_data):
+        return None
+
+    monkeypatch.setattr(
+        bangumi_service,
+        "fetch_subject_detail",
+        fake_fetch_subject_detail,
+    )
+    monkeypatch.setattr("app.services.subject_service.batch_update_subjects", fake_batch_update)
+    monkeypatch.setattr(
+        "app.repositories.subject_repo.SubjectRepo.get_by_source",
+        fake_get_by_source,
+    )
+
+    await bangumi_service.sync_subject_detail(123, db=None)
+
+    update_data = captured_updates[0].items[0].model_dump(exclude_unset=True)
+    assert "air_time" not in update_data
+    assert "air_weekday" not in update_data
+    assert "last_sync" not in update_data
 
 
 @pytest.mark.asyncio

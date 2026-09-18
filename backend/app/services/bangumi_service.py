@@ -162,13 +162,18 @@ async def get_bangumi_subject_details(subject_ids: List[int]) -> Dict[str, Any]:
     details: list[dict[str, Any]] = []
     failed_subject_ids: list[int] = []
     for subject_id, result in zip(normalized_ids, fetched):
-        if isinstance(result, Exception):
-            logger.warning(
-                "Bangumi subject detail lookup failed",
-                extra={"subject_id": subject_id},
-            )
-            failed_subject_ids.append(subject_id)
-            continue
+        if isinstance(result, BaseException):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Bangumi subject detail lookup failed",
+                    extra={"subject_id": subject_id},
+                )
+                failed_subject_ids.append(subject_id)
+                continue
+            raise result
+        assert isinstance(result, SubjectDetail)
         details.append(
             result.model_dump(exclude_none=True)
             if hasattr(result, "model_dump")
@@ -399,27 +404,29 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str 
     if subject_upsert_list.items:
         adapted_data = subject_upsert_list.items[0]
         # 转换为 SubjectUpdate 对象
-        subject_update = SubjectUpdate(
-            source=source,
-            source_id=str(subject_id),
-            name=adapted_data.name,
-            name_cn=adapted_data.name_cn,
-            type=adapted_data.type,
-            summary=adapted_data.summary,
-            date=adapted_data.date,
-            platform=adapted_data.platform,
-            eps=adapted_data.eps,
-            volumes=adapted_data.volumes,
-            images=adapted_data.images,
-            image=adapted_data.image,
-            tags=adapted_data.tags,
-            meta_tags=adapted_data.meta_tags,
-            infobox=adapted_data.infobox,
-            rating=adapted_data.rating,
-            collection=adapted_data.collection,
-            series=adapted_data.series,
-            locked=adapted_data.locked,
-            nsfw=adapted_data.nsfw
+        subject_update = SubjectUpdate.model_validate(
+            {
+                "source": source,
+                "source_id": str(subject_id),
+                "name": adapted_data.name,
+                "name_cn": adapted_data.name_cn,
+                "type": adapted_data.type,
+                "summary": adapted_data.summary,
+                "date": adapted_data.date,
+                "platform": adapted_data.platform,
+                "eps": adapted_data.eps,
+                "volumes": adapted_data.volumes,
+                "images": adapted_data.images,
+                "image": adapted_data.image,
+                "tags": adapted_data.tags,
+                "meta_tags": adapted_data.meta_tags,
+                "infobox": adapted_data.infobox,
+                "rating": adapted_data.rating,
+                "collection": adapted_data.collection,
+                "series": adapted_data.series,
+                "locked": adapted_data.locked,
+                "nsfw": adapted_data.nsfw,
+            }
         )
         
         # 创建 SubjectUpdateList
