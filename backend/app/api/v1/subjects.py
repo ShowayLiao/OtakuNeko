@@ -242,10 +242,11 @@ async def sync_subject_air_time_endpoint(
     try:
         # 调用服务层的 sync_subject_air_time 函数
         success = await sync_subject_air_time(db, id)
-        
-        if success:
-            return {"status": "success", "message": f"番剧 {id} 时间同步成功"}
-        else:
-            raise HTTPException(status_code=404, detail=f"番剧 {id} 不存在或同步失败")
     except Exception as e:
+        # 抓取或写库失败是内部故障，不能伪装成"条目不存在"
         raise HTTPException(status_code=500, detail=f"同步番剧时间失败: {str(e)}")
+
+    if not success:
+        raise HTTPException(status_code=404, detail=f"番剧 {id} 不存在或同步失败")
+
+    return {"status": "success", "message": f"番剧 {id} 时间同步成功"}

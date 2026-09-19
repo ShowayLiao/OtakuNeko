@@ -12,14 +12,13 @@ from app.schemas.subject import (
     SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName
 )
 from app.services.bangumi_client import search_subjects as search_bangumi_subjects
+from app.services.bangumi_data_sync import BangumiDataSyncService
 from app.repositories.subject_repo import SubjectRepo
 from app.schemas.adaptersV2 import (
     UnifiedList,
     subject_with_collection_list_to_unified_list,
     UnifiedCollectionSubject
 )
-
-import httpx
 
 logger = get_logger(__name__)
 
@@ -415,6 +414,19 @@ async def search_mixed(
     return merged_result
 
 
+def _find_begin(data: dict, bangumi_id: str) -> Optional[str]:
+    """在 bangumi-data 目录中定位某条目的 begin 时间。
+
+    item 级 begin 是放送开始时间，site 级 begin 是该站点条目的上线时间，
+    因此优先取 item 级。
+    """
+    for item in data.get("items", []):
+        for site in item.get("sites", []):
+            if site.get("site") == "bangumi" and str(site.get("id")) == bangumi_id:
+                return item.get("begin") or site.get("begin")
+    return None
+
+
 async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
     """
     同步番剧放送时间
@@ -424,69 +436,49 @@ async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
         subject_id: Bangumi 番剧ID
 
     Returns:
-        同步是否成功
+        条目存在且已提交返回 True；条目不存在返回 False
 
     Raises:
-        Exception: 同步过程中的异常
+        Exception: 抓取或写库失败时向上抛出，避免把内部故障伪装成"条目不存在"
     """
     try:
-        # 构建搜索数据，查找对应的 Subject
-        search_data = SubjectSearchByID(
-            source="bangumi", source_id=subject_id, user_id=None
-        )
-        subject_result = await SubjectRepo.get_by_source(db, search_data)
-        
-        if not subject_result:
+        # 写路径必须操作 session 绑定的 ORM 行
+        subject = await SubjectRepo.get_orm_by_source(db, "bangumi", subject_id)
+
+        if subject is None:
             logger.error(f"Subject not found: bangumi/{subject_id}")
             return False
-        
-        # 解包获取 Subject 对象
-        subject = subject_result.subject
-        
-        # 获取 bangumi-data JSON 数据
-        bangumi_data_url = "https://cdn.jsdelivr.net/npm/bangumi-data/dist/data.json"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(bangumi_data_url)
-            response.raise_for_status()
-            data = response.json()
-        
-        # 在 items 中匹配对应的条目
-        matched_item = None
-        for item in data.get("items", []):
-            sites = item.get("sites", [])
-            for site in sites:
-                if site.get("site") == "bangumi" and site.get("id") == subject_id:
-                    matched_item = item
-                    break
-            if matched_item:
-                break
-        
+
+        data = await BangumiDataSyncService.fetch_bangumi_data()
+        begin_str = _find_begin(data, subject_id)
+
         # 更新字段
         subject.last_sync = datetime.now(timezone.utc)
-        
-        if matched_item and "begin" in matched_item:
-            # 解析 begin 字段
-            begin_str = matched_item["begin"]
+
+        if begin_str:
             try:
                 begin_dt = datetime.fromisoformat(begin_str)
-                # 提取 time 和 weekday
-                subject.air_time = begin_dt
-                # 注意：Python 的 weekday() 返回 0-6，而要求的是 1-7，所以需要 +1
+                # weekday() 返回 0-6，接口约定是 1-7，所以 +1。
+                # 用保留时区偏移的解析结果计算，否则深夜番会被算到前一天。
                 subject.air_weekday = begin_dt.weekday() + 1
+                # Subject.air_time 是 DateTime 列，SQLite 会丢弃 tzinfo；
+                # 前端按 ISO/UTC 解析，因此这里归一到 UTC 再落库。
+                if begin_dt.tzinfo is not None:
+                    begin_dt = begin_dt.astimezone(timezone.utc).replace(tzinfo=None)
+                subject.air_time = begin_dt
                 logger.info(f"Synced air time for subject {subject_id}: {subject.air_time}, weekday: {subject.air_weekday}")
             except Exception as e:
                 logger.error(f"Failed to parse begin field: {e}")
         else:
             logger.info(f"No begin field found for subject {subject_id}, only updating last_sync")
-        
+
         # 提交更新
         await db.commit()
-        await db.refresh(subject)
-        
+
         return True
     except Exception as e:
         logger.error(f"Failed to sync subject air time: {e}")
         await db.rollback()
-        return False
+        raise
 
 
