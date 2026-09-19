@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Optional, cast
 from sqlmodel import select, and_
 from sqlalchemy import desc
@@ -120,7 +121,44 @@ class CollectionRepo:
         except SQLAlchemyError as e:
             logger.error(f"获取收藏记录失败: {e}")
             raise
-    
+
+    @staticmethod
+    async def get_orm_by_user_and_subject(
+        db: AsyncSession, user_id: int, source: str, source_id: str
+    ) -> Optional[Collection]:
+        """
+        按 (user_id, source, source_id) 直接返回 session 绑定的 ORM 行。
+
+        写路径必须使用本方法：CollectionWithSubject.collection 是 CollectionRead
+        DTO 的副本，且 CollectionRead 没有 id 字段，写路径无法从 DTO 还原主键，
+        db.add/db.delete/db.refresh 都会抛 UnmappedInstanceError。
+
+        这里刻意不做 _is_valid_subject 校验，让写路径能够修复孤立收藏记录。
+
+        Args:
+            db: 数据库会话
+            user_id: 用户ID
+            source: 数据来源
+            source_id: 原站ID
+
+        Returns:
+            Collection ORM 实例，不存在则返回 None
+
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            query = select(Collection).where(
+                _COLLECTION_USER_ID == user_id,
+                _COLLECTION_SOURCE == source,
+                _COLLECTION_SOURCE_ID == source_id,
+            )
+            result = await db.execute(query)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取Collection ORM行失败: {e}")
+            raise
+
     @staticmethod
     async def get_by_user(db: AsyncSession, user_id: int, subject_type: Optional[int] = None, status: Optional[int] = None, skip: int = 0, limit: Optional[int] = 100, sort_by: str = 'updated_at') -> CollectionWithSubjectList:
         """
@@ -268,33 +306,36 @@ class CollectionRepo:
                 or collection_data.source is None
                 or collection_data.source_id is None
             ):
-                return None
-            search_data = CollectionSearchByID(
-                user_id=collection_data.user_id,
-                source=collection_data.source,
-                source_id=collection_data.source_id,
+                raise ValueError(
+                    "user_id, source and source_id are required to update a collection"
+                )
+
+            # 写路径必须取 ORM 行
+            collection = await CollectionRepo.get_orm_by_user_and_subject(
+                db,
+                collection_data.user_id,
+                collection_data.source,
+                collection_data.source_id,
             )
-            
-            # 获取Collection对象
-            result = await CollectionRepo.get_by_user_and_subject(db, search_data)
-            if not result:
+            if collection is None:
                 return None
-            
-            # 解包元组，获取Collection对象
-            collection = cast(Collection, result.collection)
-            
+
             # 将 CollectionUpdate 转换为字典，只包含设置的字段
             update_data = collection_data.model_dump(exclude_unset=True)
-            
+
             # 更新设置的字段
             for field, value in update_data.items():
+                # 身份字段由上面的查询确定，不允许改写
+                if field in ("user_id", "source", "source_id"):
+                    continue
                 setattr(collection, field, value)
-            
-            # 保存更新
-            db.add(collection)
+
+            # GET /collections 按 updated_at 排序，编辑必须刷新时间戳
+            if "updated_at" not in update_data:
+                collection.updated_at = datetime.now(timezone.utc)
+
             await db.commit()
-            await db.refresh(collection)
-            
+
             logger.info(f"Updated collection: user_id={collection.user_id}, source={collection.source}, source_id={collection.source_id}")
             return collection
         except SQLAlchemyError as e:
@@ -319,15 +360,16 @@ class CollectionRepo:
         """
         try:
             from fastapi_cache import FastAPICache
-            
-            result = await CollectionRepo.get_by_user_and_subject(db, search_data)
-            if not result:
+
+            # 写路径必须取 ORM 行
+            collection = await CollectionRepo.get_orm_by_user_and_subject(
+                db, search_data.user_id, search_data.source, search_data.source_id
+            )
+            if collection is None:
                 return False
-            
-            # 解包元组，获取Collection对象
-            collection = cast(Collection, result.collection)
+
             user_id = collection.user_id
-            
+
             await db.delete(collection)
             await db.commit()
             
@@ -484,31 +526,57 @@ class CollectionRepo:
 
             if not data_list.collections:
                 return
-            
+
             # 固定唯一键字段
             unique_fields = ['user_id', 'source', 'source_id']
-            
-            # 收集所有涉及的用户ID
-            user_ids = set()
+            # 唯一键与自增主键都不参与 on-conflict 更新
+            non_updatable_fields = {'id', 'created_at'}
+
+            now = datetime.now(timezone.utc)
+            user_ids: set[int] = set()
+            insert_rows: list[dict[str, Any]] = []
+            provided_columns: set[str] = set()
+
             for item in data_list.collections:
-                user_ids.add(item.user_id)
-            
-            # 准备数据列表
-            items_data = [item.model_dump() for item in data_list.collections]
-            
+                # 只有客户端显式提供的字段才参与 on-conflict 更新
+                provided = item.model_dump(exclude_unset=True)
+
+                for identity_field in unique_fields:
+                    if not provided.get(identity_field):
+                        raise ValueError(
+                            f"Collection {identity_field} is required for upsert"
+                        )
+                if provided.get("type") is None:
+                    # collection.type 是 NOT NULL。Core insert 不会应用模型端的
+                    # Python default，而且数据库在冲突解析之前就校验 NOT NULL，
+                    # 所以冲突路径也不能省掉它。
+                    raise ValueError("Collection type is required for upsert")
+
+                # 插入值使用完整 dump：所有行的 key 一致（executemany 要求），
+                # 且 NOT NULL 列拿到模型默认值而不是 None。
+                row = item.model_dump()
+                # collection.updated_at 是 NOT NULL，Core insert 绕过了模型端的
+                # default_factory，必须在 Python 侧显式物化。
+                row["updated_at"] = provided.get("updated_at") or now
+                insert_rows.append(row)
+
+                provided_columns |= set(provided.keys())
+                user_ids.add(row["user_id"])
+
             # 1. 构建 Insert 语句
-            stmt = insert(Collection).values(items_data)
-            
-            # 2. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
-            # 获取模型的所有列名
-            all_columns = {col.name for col in cast(Any, Collection).__table__.columns}
-            # 排除掉唯一键 (因为唯一键冲突时不用更新它自己)
-            update_cols = all_columns - set(unique_fields)
-            
+            stmt = insert(Collection).values(insert_rows)
+
+            # 2. 只更新本次显式提供的字段，避免把未提供的列清成默认值/NULL。
+            #    这里必须从语句实际包含的列推导，不能用模型全部列，否则
+            #    stmt.excluded.<col> 会指向语句中不存在的列。
+            update_cols = (
+                provided_columns | {"updated_at"}
+            ) - set(unique_fields) - non_updatable_fields
+
             # 3. 构建 set_ 字典
             # 这里的 getattr(stmt.excluded, col) 是核心
-            set_dict = {col: getattr(stmt.excluded, col) for col in update_cols}
-            
+            set_dict = {col: getattr(stmt.excluded, col) for col in sorted(update_cols)}
+
             # 4. 添加 On Conflict 子句
             stmt = stmt.on_conflict_do_update(
                 index_elements=unique_fields,

@@ -1,5 +1,6 @@
 import inspect
 import traceback
+from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -344,6 +345,9 @@ async def upsert_collection(
 
     for identity_field in ("user_id", "source", "source_id"):
         upsert_dict.pop(identity_field, None)
+    # collection.updated_at 是 NOT NULL，Core insert 不会应用模型端 default_factory，
+    # 且 GET /collections 按它排序，所以必须在服务层显式赋值。
+    upsert_dict.setdefault("updated_at", datetime.now(timezone.utc))
     upsert_data = CollectionUpsert(
         user_id=user_id,
         source=collection_search_data.source,
@@ -411,6 +415,8 @@ async def batch_upsert_collections(
             source_id = item_data.pop("source_id", None)
             if not source or not source_id:
                 raise ValueError("Collection source and source_id are required.")
+            # collection.updated_at 是 NOT NULL，必须在服务层显式赋值
+            item_data.setdefault("updated_at", datetime.now(timezone.utc))
             normalized.append(
                 CollectionUpsert(
                     user_id=user_id,
