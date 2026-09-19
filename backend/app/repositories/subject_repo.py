@@ -29,6 +29,22 @@ _COLLECTION_COMMENT = cast(Any, Collection.comment)
 _COLLECTION_TAGS = cast(Any, Collection.tags)
 
 
+def _column_fill_value(model: Any, column_name: str) -> Any:
+    """返回批量插入时某列缺失可用的回填值。
+
+    NOT NULL 列不能回填 None：Core insert 会直接写出 NULL 并触发
+    IntegrityError。这类列必须使用模型自身的 Python-side default；既非 nullable
+    又没有默认值的列，说明调用方漏传了必填字段，应当明确报错。
+    """
+    column = cast(Any, model).__table__.columns.get(column_name)
+    if column is None or column.nullable:
+        return None
+    if column.default is not None:
+        default = column.default.arg
+        return default() if callable(default) else default
+    raise ValueError(f"{model.__name__}.{column_name} is required for batch upsert")
+
+
 class SubjectRepo:
     """
     Subject 数据访问层
@@ -56,40 +72,40 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            from ..schemas.subject import SubjectSearchByID
-            
             # 将 SubjectCreate 转换为字典
             subject_dict = subject_data.model_dump()
-            
+
+            # Subject.last_sync 是 NOT NULL，而 SubjectCreate 的默认值是 None。
+            # 显式带上 None 会让 UPDATE 分支写出 NULL，剔除后交给模型自身的
+            # Python-side default 处理。
+            if subject_dict.get("last_sync") is None:
+                subject_dict.pop("last_sync", None)
+
             # 检查是否已经存在相同 source 和 source_id 的 Subject
             source = subject_dict.get("source")
             source_id = subject_dict.get("source_id")
-            
+
             if not isinstance(source, str) or not isinstance(source_id, str):
                 raise ValueError("source and source_id are required")
-            search_data = SubjectSearchByID(
-                user_id=None, source=source, source_id=source_id
-            )
-            result = await SubjectRepo.get_by_source(db, search_data)
-            existing_subject = result.subject if result else None
-            
+
+            # 写路径必须取 ORM 行，DTO 副本无法被 setattr/commit/refresh 写回
+            existing_subject = await SubjectRepo.get_orm_by_source(db, source, source_id)
+
             if existing_subject:
                 # 如果存在，更新现有记录
                 for field, value in subject_dict.items():
                     setattr(existing_subject, field, value)
-                
+
                 await db.commit()
-                await db.refresh(existing_subject)
-                
+
                 logger.info(f"Updated existing subject: id={existing_subject.id}, source={existing_subject.source}, source_id={existing_subject.source_id}")
-                return cast(Subject, existing_subject)
+                return existing_subject
             else:
                 # 如果不存在，创建新记录
                 new_subject = Subject(**subject_dict)
                 db.add(new_subject)
                 await db.commit()
-                await db.refresh(new_subject)
-                
+
                 logger.info(f"Created new subject: id={new_subject.id}, source={new_subject.source}, source_id={new_subject.source_id}")
                 return new_subject
         except SQLAlchemyError as e:
@@ -141,7 +157,41 @@ class SubjectRepo:
         except SQLAlchemyError as e:
             logger.error(f"获取Subject失败: {e}")
             raise
-    
+
+    @staticmethod
+    async def get_orm_by_source(db: AsyncSession, source: str, source_id: str) -> Optional[Subject]:
+        """
+        按数据源和ID直接返回 session 绑定的 ORM 行。
+
+        写路径必须使用本方法：SubjectWithCollection.subject 是 SubjectRead DTO
+        的副本，没有 _sa_instance_state，db.add/db.delete/db.refresh 都会抛
+        UnmappedInstanceError。
+
+        与 get_by_source 不同，这里刻意不做 _is_valid_subject 校验，让写路径能够
+        看到并修复/删除名称为空的脏数据行。
+
+        Args:
+            db: 数据库会话
+            source: 数据来源
+            source_id: 原站ID
+
+        Returns:
+            Subject ORM 实例，不存在则返回 None
+
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            query = select(Subject).where(
+                _SUBJECT_SOURCE == source,
+                _SUBJECT_SOURCE_ID == source_id,
+            )
+            result = await db.execute(query)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取Subject ORM行失败: {e}")
+            raise
+
     @staticmethod
     async def search_by_name(db: AsyncSession, search_data: SubjectSearchByName) -> SubjectWithCollectionList:
         """
@@ -364,39 +414,31 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            
+
             # 验证必要的更新字段
             if not subject_data.source or not subject_data.source_id:
                 logger.error("Update failed: source and source_id are required for updating subject")
                 return None
-            
-            # 获取Subject对象，使用正确的参数类型调用get_by_source
-            search_data = SubjectSearchByID(
-                user_id=None,
-                source=subject_data.source,
-                source_id=subject_data.source_id
+
+            # 写路径必须取 ORM 行
+            subject = await SubjectRepo.get_orm_by_source(
+                db, subject_data.source, subject_data.source_id
             )
-            subject_result = await SubjectRepo.get_by_source(db, search_data)
-            if not subject_result:
+            if subject is None:
                 logger.info(f"Subject not found for update: source={subject_data.source}, source_id={subject_data.source_id}")
                 return None
-            
-            # 解包元组，获取Subject对象
-            subject = cast(Subject, subject_result.subject)
-            
+
             # 将 SubjectUpdate 转换为字典，只包含设置的字段
             update_data = subject_data.model_dump(exclude_unset=True)
-            
+
             # 更新设置的字段
             for field, value in update_data.items():
                 # 不允许更新source和source_id字段
                 if field not in ["source", "source_id"]:
                     setattr(subject, field, value)
-            
-            db.add(subject)
+
             await db.commit()
-            await db.refresh(subject)
-            
+
             logger.info(f"Updated subject: id={subject.id}, source={subject.source}, source_id={subject.source_id}")
             return subject
         except SQLAlchemyError as e:
@@ -420,13 +462,14 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            # 获取Subject对象
-            subject_result = await SubjectRepo.get_by_source(db, search_data)
-            if not subject_result:
+            # 写路径必须取 ORM 行
+            subject = await SubjectRepo.get_orm_by_source(
+                db, search_data.source, search_data.source_id
+            )
+            if subject is None:
                 return False
-            
-            # 解包元组，获取Subject对象
-            await db.delete(subject_result.subject)
+
+            await db.delete(subject)
             await db.commit()
             return True
         except SQLAlchemyError as e:
@@ -513,11 +556,14 @@ class SubjectRepo:
             # 获取所有字典中出现过的所有 key 的并集
             all_keys = set().union(*(d.keys() for d in subject_dicts))
             
-            # 回填缺失的 key 为 None
+            # 回填缺失的 key：nullable 列回填 None，NOT NULL 列必须用模型默认值，
+            # 否则异构批次会写出 NULL 并触发 IntegrityError。
+            missing_keys = {k for d in subject_dicts for k in all_keys if k not in d}
+            fill_values = {k: _column_fill_value(Subject, k) for k in missing_keys}
             for d in subject_dicts:
                 for k in all_keys:
                     if k not in d:
-                        d[k] = None
+                        d[k] = fill_values[k]
             
             logger.info(f"数据清洗与结构统一完成，共处理 {len(subject_dicts)} 条数据")
             # ================= [修复的核心代码] 结束 =================
