@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError
@@ -9,6 +9,19 @@ from ..models import Schedule, Subject, Collection
 from ..schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList
 
 logger = get_logger(__name__)
+
+# SQLModel class attributes are SQLAlchemy column descriptors at runtime.
+_SCHEDULE_ID = cast(Any, Schedule.id)
+_SCHEDULE_USER_ID = cast(Any, Schedule.user_id)
+_SCHEDULE_DAY = cast(Any, Schedule.day_of_week)
+_SCHEDULE_START = cast(Any, Schedule.start_time)
+_SCHEDULE_SOURCE = cast(Any, Schedule.source)
+_SCHEDULE_SOURCE_ID = cast(Any, Schedule.source_id)
+_SUBJECT_SOURCE = cast(Any, Subject.source)
+_SUBJECT_SOURCE_ID = cast(Any, Subject.source_id)
+_COLLECTION_SOURCE = cast(Any, Collection.source)
+_COLLECTION_SOURCE_ID = cast(Any, Collection.source_id)
+_COLLECTION_USER_ID = cast(Any, Collection.user_id)
 
 
 class ScheduleRepository:
@@ -33,9 +46,9 @@ class ScheduleRepository:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            query = select(Schedule).where(Schedule.user_id == user_id).order_by(Schedule.day_of_week, Schedule.start_time)
+            query = select(Schedule).where(_SCHEDULE_USER_ID == user_id).order_by(_SCHEDULE_DAY, _SCHEDULE_START)
             result = await db.execute(query)
-            return result.scalars().all()
+            return list(result.scalars().all())
         except SQLAlchemyError as e:
             logger.error(f"获取用户排班记录失败: {e}")
             raise
@@ -59,13 +72,14 @@ class ScheduleRepository:
             # 构建查询，使用左外连接
             query = (
                 select(Schedule, Subject, Collection)
-                .where(Schedule.user_id == user_id)
-                .outerjoin(Subject, (Schedule.source == Subject.source) & (Schedule.source_id == Subject.source_id))
-                .outerjoin(Collection, (Schedule.source == Collection.source) & (Schedule.source_id == Collection.source_id) & (Collection.user_id == user_id))
-                .order_by(Schedule.day_of_week, Schedule.start_time)
+                .where(_SCHEDULE_USER_ID == user_id)
+                .outerjoin(Subject, (_SCHEDULE_SOURCE == _SUBJECT_SOURCE) & (_SCHEDULE_SOURCE_ID == _SUBJECT_SOURCE_ID))
+                .outerjoin(Collection, (_SCHEDULE_SOURCE == _COLLECTION_SOURCE) & (_SCHEDULE_SOURCE_ID == _COLLECTION_SOURCE_ID) & (_COLLECTION_USER_ID == user_id))
+                .order_by(_SCHEDULE_DAY, _SCHEDULE_START)
             )
             result = await db.execute(query)
-            return result.all()
+            rows: list[Any] = list(result.all())
+            return [(row[0], row[1], row[2]) for row in rows]
         except SQLAlchemyError as e:
             logger.error(f"获取用户统一排班记录失败: {e}")
             raise
@@ -252,11 +266,11 @@ class ScheduleRepository:
         """
         try:
             query = select(Schedule).where(
-                Schedule.user_id == user_id,
-                Schedule.day_of_week == day_of_week
-            ).order_by(Schedule.start_time)
+                _SCHEDULE_USER_ID == user_id,
+                _SCHEDULE_DAY == day_of_week
+            ).order_by(_SCHEDULE_START)
             result = await db.execute(query)
-            return result.scalars().all()
+            return list(result.scalars().all())
         except SQLAlchemyError as e:
             logger.error(f"获取指定星期的排班记录失败: {e}")
             raise
@@ -284,12 +298,12 @@ class ScheduleRepository:
         """
         try:
             query = select(Schedule).where(
-                Schedule.user_id == user_id,
-                Schedule.day_of_week == day_of_week,
-                Schedule.start_time == start_time
+                _SCHEDULE_USER_ID == user_id,
+                _SCHEDULE_DAY == day_of_week,
+                _SCHEDULE_START == start_time
             )
             if exclude_id:
-                query = query.where(Schedule.id != exclude_id)
+                query = query.where(_SCHEDULE_ID != exclude_id)
             result = await db.execute(query)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
@@ -316,17 +330,17 @@ class ScheduleRepository:
             logger.debug(f"数据库会话: {db}")
             
             # 构建删除查询
-            delete_query = Schedule.__table__.delete().where(Schedule.user_id == user_id)
+            delete_query = cast(Any, Schedule).__table__.delete().where(_SCHEDULE_USER_ID == user_id)
             logger.debug(f"删除查询: {delete_query}")
             
             # 执行删除操作
-            result = await db.execute(delete_query)
+            result: Any = await db.execute(delete_query)
             logger.info(f"删除操作结果: {result}")
             logger.info(f"删除的记录数: {result.rowcount}")
             
             # 提交事务
             await db.commit()
-            logger.info(f"事务提交成功")
+            logger.info("事务提交成功")
             
             logger.info(f"成功删除用户 {user_id} 的所有排班记录，共删除 {result.rowcount} 条")
             return True
@@ -335,7 +349,7 @@ class ScheduleRepository:
             logger.error(f"错误类型: {type(e).__name__}")
             logger.error(f"错误堆栈: {traceback.format_exc()}")
             await db.rollback()
-            logger.info(f"事务回滚成功")
+            logger.info("事务回滚成功")
             raise
     
     @staticmethod
@@ -356,10 +370,13 @@ class ScheduleRepository:
         """
         try:
             from ..core.config import settings
+            insert_fn: Any
             if settings.DEPLOY_MODE == "local":
-                from sqlalchemy.dialects.sqlite import insert
+                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                insert_fn = sqlite_insert
             elif settings.DEPLOY_MODE == "cloud":
-                from sqlalchemy.dialects.postgresql import insert
+                from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+                insert_fn = postgresql_insert
             else:
                 logger.error("Deploy mode not supported")
                 return 0
@@ -411,7 +428,7 @@ class ScheduleRepository:
             # ===============================================
             
             # 3. 构建 Insert 语句
-            stmt = insert(Schedule).values(schedule_dicts)
+            stmt = insert_fn(Schedule).values(schedule_dicts)
             
             # 4. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
             # 仅更新本次数据中包含的字段 (all_keys)，避免更新那些完全没有传的字段
@@ -435,7 +452,7 @@ class ScheduleRepository:
                 )
             
             # 7. 执行语句
-            result = await db.execute(stmt)
+            await db.execute(stmt)
             await db.commit()
             
             logger.info(f"批量 Upsert 完成: {len(schedule_dicts)} 个排班记录处理成功")
@@ -449,7 +466,7 @@ class ScheduleRepository:
             raise
 
     @staticmethod
-    async def upsert(db: AsyncSession, user_id: int, schedule_upsert: ScheduleUpsert) -> Schedule:
+    async def upsert(db: AsyncSession, user_id: int, schedule_upsert: ScheduleUpsert) -> Schedule | None:
         """
         Upsert 单个排班记录
 
@@ -466,10 +483,13 @@ class ScheduleRepository:
         """
         try:
             from ..core.config import settings
+            insert_fn: Any
             if settings.DEPLOY_MODE == "local":
-                from sqlalchemy.dialects.sqlite import insert
+                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                insert_fn = sqlite_insert
             elif settings.DEPLOY_MODE == "cloud":
-                from sqlalchemy.dialects.postgresql import insert
+                from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+                insert_fn = postgresql_insert
             else:
                 logger.error("Deploy mode not supported")
                 return None
@@ -478,7 +498,7 @@ class ScheduleRepository:
             unique_fields = ['user_id', 'source', 'source_id']
             
             # 1. 将 ScheduleUpsert 对象转换为字典，并进行数据清洗
-            schedule_dict = schedule_upsert.model_dump(exclude_unset=True) if hasattr(schedule_upsert, 'model_dump') else schedule_upsert
+            schedule_dict: dict[str, Any] = schedule_upsert.model_dump(exclude_unset=True)
             
             # 确保用户ID一致
             schedule_dict['user_id'] = user_id
@@ -496,7 +516,7 @@ class ScheduleRepository:
             logger.info(f"开始处理单个排班记录: user_id={user_id}, source={schedule_dict.get('source')}, source_id={schedule_dict.get('source_id')}")
 
             # 2. 构建 Insert 语句
-            stmt = insert(Schedule).values(schedule_dict)
+            stmt = insert_fn(Schedule).values(schedule_dict)
             
             # 3. 自动计算需要更新的字段 (除了 unique_fields 以外的所有字段)
             # 仅更新本次数据中包含的字段，避免更新那些完全没有传的字段
@@ -527,14 +547,14 @@ class ScheduleRepository:
             # 构建查询语句，使用唯一键字段
             from sqlmodel import select
             query = select(Schedule).where(
-                Schedule.user_id == user_id,
-                Schedule.source == schedule_dict['source'],
-                Schedule.source_id == schedule_dict['source_id']
+                _SCHEDULE_USER_ID == user_id,
+                _SCHEDULE_SOURCE == schedule_dict['source'],
+                _SCHEDULE_SOURCE_ID == schedule_dict['source_id']
             )
             result = await db.execute(query)
             updated_schedule = result.scalar_one_or_none()
             
-            logger.info(f"Upsert 完成: 排班记录处理成功")
+            logger.info("Upsert 完成: 排班记录处理成功")
             return updated_schedule
             
         except SQLAlchemyError as e:

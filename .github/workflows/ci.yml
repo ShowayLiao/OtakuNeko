@@ -1,0 +1,199 @@
+name: CI
+
+on:
+  # Every pull request runs the gates regardless of its base branch: the
+  # repository's default branch is release-1.0 while integration work happens on
+  # feature-* branches, so a `main`-only filter meant CI never ran at all.
+  pull_request:
+  push:
+    branches: [main, release-1.0]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  software:
+    name: software
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run backend lint
+        run: uv run --locked ruff check app tests
+
+      - name: Run backend tests
+        run: uv run --locked pytest
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Run frontend lint
+        run: pnpm lint
+        working-directory: frontend
+
+      - name: Run frontend typecheck
+        run: pnpm typecheck
+        working-directory: frontend
+
+      - name: Run frontend tests
+        run: pnpm test
+        working-directory: frontend
+
+      - name: Build frontend
+        run: pnpm build
+        working-directory: frontend
+
+  backend-quality-baseline:
+    name: backend-quality-baseline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run backend type and dependency legality baselines
+        run: |
+          set +e
+          uv run --locked mypy
+          mypy_exit=$?
+          uv run --locked deptry .
+          deptry_exit=$?
+          set -e
+          echo "mypy exit code: $mypy_exit"
+          echo "deptry exit code: $deptry_exit"
+          test "$mypy_exit" -eq 0 && test "$deptry_exit" -eq 0
+
+      - name: Run backend format check on the enforced scope
+        # Blocking. The scope is the same first-wave architecture boundary the
+        # mypy baseline covers; files outside it are measured by the debt report
+        # below instead of being reformatted, so this gate never forces unrelated
+        # reflow on code nobody has touched.
+        run: |
+          uv run --locked ruff format --check \
+            app/harness app/capabilities app/memory app/trace \
+            tests/harness tests/capabilities tests/memory tests/trace
+
+      - name: Record backend formatting debt outside the enforced scope
+        # Report only: `ruff format --diff` exits 1 whenever debt exists, so that
+        # exit code is captured rather than propagated. The blocking check is the
+        # scoped --check step above.
+        if: always()
+        run: |
+          mkdir -p .runtime/quality
+          set +e
+          uv run --locked ruff format --diff app tests alembic scripts \
+            > .runtime/quality/format-debt.diff 2>&1
+          diff_exit=$?
+          set -e
+          echo "files still unformatted: $(grep -c '^--- ' .runtime/quality/format-debt.diff || true)"
+          echo "report lines: $(wc -l < .runtime/quality/format-debt.diff)"
+          echo "ruff format --diff exit code: $diff_exit"
+
+      - name: Upload backend formatting debt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-format-debt
+          path: backend/.runtime/quality/format-debt.diff
+          if-no-files-found: error
+
+  harness:
+    name: harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run deterministic Harness regression
+        run: uv run --locked pytest tests/harness tests/acceptance tests/capabilities tests/trace -q
+
+      - name: Lint Harness boundaries
+        run: uv run --locked ruff check app/harness app/capabilities app/trace tests/harness tests/acceptance tests/capabilities tests/trace
+
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run offline fast evaluation
+        run: uv run --locked python -m app.evaluation.runner --config evals/config/fast.yaml
+
+      - name: Upload offline evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-evaluation-report
+          path: backend/.runtime/evaluation/fast.json
+          if-no-files-found: error

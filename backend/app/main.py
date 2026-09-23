@@ -1,17 +1,27 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from app.db.database import init_db
 from app.api import api_router
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.harness.scheduler.repository import SqlTaskRepository
+from app.harness.scheduler import Scheduler
+from app.harness.scheduler.execution import handle_task_def
+from app.db.database import AsyncSessionLocal
+from app.harness.checkpoint import validate_checkpoint_configuration
+from app.agents.provider_endpoint import (
+    parse_provider_allowlists,
+    validate_provider_configuration,
+)
+
 
 # 缓存相关导入
-from fastapi_cache import FastAPICache
-from fastapi_cache.coder import PickleCoder
-from fastapi_cache.backends.inmemory import InMemoryBackend  # <--- 必须导入这个
-from redis.asyncio import Redis
-import logging
+from fastapi_cache import FastAPICache  # noqa: E402
+from fastapi_cache.coder import PickleCoder  # noqa: E402
+from fastapi_cache.backends.inmemory import InMemoryBackend  # noqa: E402
+from redis.asyncio import Redis  # noqa: E402
 
 # 初始化日志系统
 logger = get_logger(__name__)
@@ -23,9 +33,54 @@ async def lifespan(app: FastAPI):
     
     # 1. 数据库初始化
     # 如果是本地 SQLite，这一步会自动生成 .db 文件并建表
-    logger.info(f"Initializing database with URL: {settings.DATABASE_URL}")
-    await init_db()
-    logger.info("Database initialized successfully")
+    # Never log credentials embedded in a database URL.
+    if settings.DEPLOY_MODE == "local":
+        logger.info("Initializing local database schema")
+        await init_db()
+        logger.info("Local database initialized successfully")
+    else:
+        logger.info("Cloud database schema is managed by Alembic before startup")
+
+    validate_checkpoint_configuration(
+        deploy_mode=settings.DEPLOY_MODE,
+        adapter=settings.HARNESS_CHECKPOINT_ADAPTER,
+        single_worker=settings.HARNESS_CHECKPOINT_SINGLE_WORKER,
+        worker_count=settings.HARNESS_WORKER_COUNT,
+    )
+    allowed_hosts, allowed_ports = parse_provider_allowlists(
+        settings.PROVIDER_ALLOWED_HOSTS,
+        settings.PROVIDER_ALLOWED_PORTS,
+    )
+    validate_provider_configuration(
+        deploy_mode=settings.DEPLOY_MODE,
+        resolve_dns=settings.PROVIDER_RESOLVE_DNS,
+        allowed_hosts=allowed_hosts,
+        allowed_ports=allowed_ports,
+    )
+    app.state.proactive_repository = SqlTaskRepository(AsyncSessionLocal)
+    app.state.proactive_scheduler = None
+    if settings.ENABLE_PROACTIVE_SCHEDULER:
+        # Scheduler startup is intentionally fail-closed until a real
+        # dispatcher-backed Runtime is injected by the deployment.
+        app.state.proactive_router = None
+        app.state.proactive_runtime = None
+
+        async def scheduled_handler(task_def, run):
+            return await handle_task_def(
+                task_def,
+                run,
+                app.state.proactive_runtime,
+                app.state.proactive_router,
+                repository=app.state.proactive_repository,
+            )
+
+        app.state.proactive_scheduler = Scheduler(
+            lambda lease: app.state.proactive_repository.claim_due(
+                datetime.now(timezone.utc), lease
+            ),
+            scheduled_handler,
+        )
+        await app.state.proactive_scheduler.start()
     
     # 2. 缓存初始化 (智能切换逻辑)
     redis = None
@@ -82,6 +137,9 @@ async def lifespan(app: FastAPI):
             logger.info("Redis connection closed")
         except Exception as e:
             logger.error(f"Failed to close Redis connection: {e}")
+
+    if app.state.proactive_scheduler is not None:
+        await app.state.proactive_scheduler.stop()
     
     await FastAPICache.clear()
     logger.info("Cache cleared")

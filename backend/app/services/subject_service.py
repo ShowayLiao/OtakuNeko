@@ -1,28 +1,24 @@
-from typing import Any, Dict, List, Optional
+from typing import Optional
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select, or_
 
 from fastapi_cache import FastAPICache
 from app.core.logging import get_logger
 
-from app.models import Collection, Subject, SubjectType, User
-from app.schemas.collection import CollectionList, CollectionRead
+from app.models import Subject
 from app.schemas.subject import (
     SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectUpsertList,
-    SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName,
-    SubjectWithCollection, SubjectWithCollectionList
+    SubjectSearchByID, SubjectSearchBase, SubjectSearchCloud, SubjectSearchByName
 )
 from app.services.bangumi_client import search_subjects as search_bangumi_subjects
+from app.services.bangumi_data_sync import BangumiDataSyncService
 from app.repositories.subject_repo import SubjectRepo
 from app.schemas.adaptersV2 import (
     UnifiedList,
     subject_with_collection_list_to_unified_list,
     UnifiedCollectionSubject
 )
-
-import httpx
 
 logger = get_logger(__name__)
 
@@ -75,18 +71,11 @@ async def get_subject_by_source(
     """
     try:
         from app.schemas.adaptersV2 import subject_with_collection_to_unified
-        from app.schemas.adaptersV2 import UnifiedCollectionSubject
-        from app.schemas.subject import SubjectWithCollection
-        
-        subject, collection = await SubjectRepo.get_by_source(db, search_data)
-        if not subject:
+        subject_with_collection = await SubjectRepo.get_by_source(db, search_data)
+        if subject_with_collection is None:
             return None
         
         # 构建SubjectWithCollection对象
-        subject_with_collection = SubjectWithCollection(
-            subject=subject,
-            collection=collection
-        )
         
         # 转换为UnifiedCollectionSubject格式
         return subject_with_collection_to_unified(subject_with_collection)
@@ -285,7 +274,7 @@ async def search_subject_by_name(
         raise
 
 async def search_subject_cloud(
-    db: AsyncSession,
+    db: AsyncSession | None,
     search_data: SubjectSearchCloud
 ) -> UnifiedList:
     """
@@ -305,6 +294,8 @@ async def search_subject_cloud(
         remote_response = await search_bangumi_subjects(search_data.keyword, search_data.type, search_data.limit, search_data.offset)
         
         # 直接使用 bangumi_search_to_unified_list 函数转换为 UnifiedList 格式
+        if not isinstance(remote_response, dict):
+            return UnifiedList(total=0, items=[])
         return bangumi_search_to_unified_list(remote_response)
         
     except Exception as e:
@@ -340,17 +331,26 @@ async def search_mixed(
     
     # 创建云端搜索数据
     cloud_search_data = SubjectSearchCloud(
-        keyword=search_data.keyword if hasattr(search_data, 'keyword') else '',
+        keyword=search_data.keyword or '',
         type=search_data.type,
-        limit=search_data.limit,
-        offset=search_data.skip,
+        limit=search_data.limit or 10,
+        offset=search_data.skip or 0,
         user_id=search_data.user_id
     )
     
     # 并行执行本地搜索和云端搜索
     if hasattr(search_data, 'keyword') and search_data.keyword:
         # 有关键词，使用 search_subject_by_name
-        local_task = search_subject_by_name(db, search_data)
+        local_task = search_subject_by_name(
+            db,
+            SubjectSearchByName(
+                keyword=search_data.keyword or "",
+                type=search_data.type,
+                skip=search_data.skip or 0,
+                limit=search_data.limit or 10,
+                user_id=search_data.user_id,
+            ),
+        )
     else:
         # 无关键词时使用 get_all_subjects
         local_task = get_all_subjects(db, search_data)
@@ -362,10 +362,18 @@ async def search_mixed(
     local_results, remote_results = await asyncio.gather(local_task, remote_task, return_exceptions=True)
     
     # 处理异常情况
+    if isinstance(local_results, asyncio.CancelledError):
+        raise local_results
+    if isinstance(local_results, BaseException) and not isinstance(local_results, Exception):
+        raise local_results
     if isinstance(local_results, Exception):
         logger.error(f"本地搜索失败: {local_results}")
         local_results = UnifiedList(total=0, items=[])
     
+    if isinstance(remote_results, asyncio.CancelledError):
+        raise remote_results
+    if isinstance(remote_results, BaseException) and not isinstance(remote_results, Exception):
+        raise remote_results
     if isinstance(remote_results, Exception):
         logger.error(f"云端搜索失败: {remote_results}")
         remote_results = UnifiedList(total=0, items=[])
@@ -375,6 +383,9 @@ async def search_mixed(
     
     # 合并结果：优先保留本地条目，补充云端独有的条目
     # 创建本地结果的唯一标识集合，用于去重
+    assert isinstance(local_results, UnifiedList)
+    assert isinstance(remote_results, UnifiedList)
+
     local_identifiers = set()
     for item in local_results.items:
         # 确保 item 有 subject 属性，且 subject 有 source 和 source_id 属性
@@ -403,6 +414,19 @@ async def search_mixed(
     return merged_result
 
 
+def _find_begin(data: dict, bangumi_id: str) -> Optional[str]:
+    """在 bangumi-data 目录中定位某条目的 begin 时间。
+
+    item 级 begin 是放送开始时间，site 级 begin 是该站点条目的上线时间，
+    因此优先取 item 级。
+    """
+    for item in data.get("items", []):
+        for site in item.get("sites", []):
+            if site.get("site") == "bangumi" and str(site.get("id")) == bangumi_id:
+                return item.get("begin") or site.get("begin")
+    return None
+
+
 async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
     """
     同步番剧放送时间
@@ -412,67 +436,49 @@ async def sync_subject_air_time(db: AsyncSession, subject_id: str) -> bool:
         subject_id: Bangumi 番剧ID
 
     Returns:
-        同步是否成功
+        条目存在且已提交返回 True；条目不存在返回 False
 
     Raises:
-        Exception: 同步过程中的异常
+        Exception: 抓取或写库失败时向上抛出，避免把内部故障伪装成"条目不存在"
     """
     try:
-        # 构建搜索数据，查找对应的 Subject
-        search_data = SubjectSearchByID(source="bangumi", source_id=subject_id)
-        subject_result = await SubjectRepo.get_by_source(db, search_data)
-        
-        if not subject_result:
+        # 写路径必须操作 session 绑定的 ORM 行
+        subject = await SubjectRepo.get_orm_by_source(db, "bangumi", subject_id)
+
+        if subject is None:
             logger.error(f"Subject not found: bangumi/{subject_id}")
             return False
-        
-        # 解包获取 Subject 对象
-        subject, _ = subject_result
-        
-        # 获取 bangumi-data JSON 数据
-        bangumi_data_url = "https://cdn.jsdelivr.net/npm/bangumi-data/dist/data.json"
-        async with httpx.AsyncClient() as client:
-            response = await client.get(bangumi_data_url)
-            response.raise_for_status()
-            data = response.json()
-        
-        # 在 items 中匹配对应的条目
-        matched_item = None
-        for item in data.get("items", []):
-            sites = item.get("sites", [])
-            for site in sites:
-                if site.get("site") == "bangumi" and site.get("id") == subject_id:
-                    matched_item = item
-                    break
-            if matched_item:
-                break
-        
+
+        data = await BangumiDataSyncService.fetch_bangumi_data()
+        begin_str = _find_begin(data, subject_id)
+
         # 更新字段
         subject.last_sync = datetime.now(timezone.utc)
-        
-        if matched_item and "begin" in matched_item:
-            # 解析 begin 字段
-            begin_str = matched_item["begin"]
+
+        if begin_str:
             try:
                 begin_dt = datetime.fromisoformat(begin_str)
-                # 提取 time 和 weekday
-                subject.air_time = begin_dt.time()
-                # 注意：Python 的 weekday() 返回 0-6，而要求的是 1-7，所以需要 +1
+                # weekday() 返回 0-6，接口约定是 1-7，所以 +1。
+                # 用保留时区偏移的解析结果计算，否则深夜番会被算到前一天。
                 subject.air_weekday = begin_dt.weekday() + 1
+                # Subject.air_time 是 DateTime 列，SQLite 会丢弃 tzinfo；
+                # 前端按 ISO/UTC 解析，因此这里归一到 UTC 再落库。
+                if begin_dt.tzinfo is not None:
+                    begin_dt = begin_dt.astimezone(timezone.utc).replace(tzinfo=None)
+                subject.air_time = begin_dt
                 logger.info(f"Synced air time for subject {subject_id}: {subject.air_time}, weekday: {subject.air_weekday}")
             except Exception as e:
                 logger.error(f"Failed to parse begin field: {e}")
         else:
             logger.info(f"No begin field found for subject {subject_id}, only updating last_sync")
-        
+
         # 提交更新
         await db.commit()
-        await db.refresh(subject)
-        
+
         return True
     except Exception as e:
         logger.error(f"Failed to sync subject air time: {e}")
         await db.rollback()
-        return False
+        raise
 
 

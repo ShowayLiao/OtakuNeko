@@ -1,14 +1,12 @@
 import asyncio
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, cast
 from bs4 import BeautifulSoup
 
 from fastapi_cache import FastAPICache
-from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from ..models import Subject, SubjectType, User
-from ..repositories import CollectionRepo, SubjectRepo
+from ..models import User
 from ..schemas.adaptersV2 import bangumi_subject_to_subjectlist
 from ..schemas.user import UserRead
 from ..schemas.bangumi import StaffInfo, SubjectDetail, CastInfo, ShortComment, LongReview, AudienceFeedback
@@ -16,9 +14,13 @@ from .bangumi_client import fetch_subject_detail, fetch_user_collections, fetch_
 from app.clients.bangumi_client import BangumiClient
 from app.schemas.bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem, BangumiCalendarRating, BangumiCalendarCollection, BangumiCalendarImage
 from app.core.logging import get_logger
-from app.schemas.collection import CollectionList, CollectionSyncRequest
+from app.schemas.collection import CollectionSyncRequest
+from app.schemas.subject import SubjectRead
 
 logger = get_logger(__name__)
+
+_EXPECTED_CALENDAR_WEEKDAY_IDS = frozenset(range(1, 8))
+_MAX_BANGUMI_DETAIL_SUBJECTS = 5
 
 # === 核心映射表 (The Magic) ===
 # 将 Bangumi 的非标准叫法映射为 AI 易读的叫法
@@ -120,7 +122,7 @@ async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
     try:
         # 并行请求：同时获取"详情"、"角色/制作人员"和"角色列表"
         # 获取条目详情
-        subject_data = await fetch_subject_detail(subject_id)
+        subject_data = cast(dict[str, Any], await fetch_subject_detail(subject_id))
         
         # 获取 Staff 和 Cast 信息
         cleaned_staff = await get_staff_info(subject_id)
@@ -139,6 +141,46 @@ async def fetch_subject_by_id(subject_id: int) -> SubjectDetail:
     except Exception as e:
         logger.error(f"获取条目详情失败: {e}")
         raise
+
+async def get_bangumi_subject_details(subject_ids: List[int]) -> Dict[str, Any]:
+    """Fetch a bounded, ordered set of subject details for calendar analysis."""
+    if not isinstance(subject_ids, list) or not subject_ids:
+        raise ValueError("At least one Bangumi subject ID is required")
+    if len(subject_ids) > _MAX_BANGUMI_DETAIL_SUBJECTS:
+        raise ValueError("At most five Bangumi subject IDs can be queried at once")
+
+    normalized_ids: list[int] = []
+    for subject_id in subject_ids:
+        if isinstance(subject_id, bool) or not isinstance(subject_id, int) or subject_id <= 0:
+            raise ValueError("Bangumi subject IDs must be positive integers")
+        if subject_id not in normalized_ids:
+            normalized_ids.append(subject_id)
+
+    fetched = await asyncio.gather(
+        *(fetch_subject_by_id(subject_id) for subject_id in normalized_ids),
+        return_exceptions=True,
+    )
+    details: list[dict[str, Any]] = []
+    failed_subject_ids: list[int] = []
+    for subject_id, result in zip(normalized_ids, fetched):
+        if isinstance(result, BaseException):
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, Exception):
+                logger.warning(
+                    "Bangumi subject detail lookup failed",
+                    extra={"subject_id": subject_id},
+                )
+                failed_subject_ids.append(subject_id)
+                continue
+            raise result
+        assert isinstance(result, SubjectDetail)
+        details.append(
+            result.model_dump(exclude_none=True)
+        )
+
+    return {"details": details, "failed_subject_ids": failed_subject_ids}
+
 
 def _clean_staff_data(raw_staff_list: List[Dict[str, Any]]) -> List[StaffInfo]:
     """
@@ -254,7 +296,6 @@ async def sync_user_collections(
         limit = request_data.limit if request_data and request_data.limit else 50
         offset = request_data.offset if request_data and request_data.offset else 0
         subject_type = request_data.subject_type if request_data and request_data.subject_type else None
-        sync_count = 0
         total_success = 0
         
         while True:
@@ -333,7 +374,7 @@ async def sync_user_collections(
         raise
 
 
-async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str = "bangumi") -> Subject:
+async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str = "bangumi") -> SubjectRead | None:
     """
     从 Bangumi API 同步单个条目的详细信息到本地数据库
     
@@ -362,27 +403,29 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str 
     if subject_upsert_list.items:
         adapted_data = subject_upsert_list.items[0]
         # 转换为 SubjectUpdate 对象
-        subject_update = SubjectUpdate(
-            source=source,
-            source_id=str(subject_id),
-            name=adapted_data.name,
-            name_cn=adapted_data.name_cn,
-            type=adapted_data.type,
-            summary=adapted_data.summary,
-            date=adapted_data.date,
-            platform=adapted_data.platform,
-            eps=adapted_data.eps,
-            volumes=adapted_data.volumes,
-            images=adapted_data.images,
-            image=adapted_data.image,
-            tags=adapted_data.tags,
-            meta_tags=adapted_data.meta_tags,
-            infobox=adapted_data.infobox,
-            rating=adapted_data.rating,
-            collection=adapted_data.collection,
-            series=adapted_data.series,
-            locked=adapted_data.locked,
-            nsfw=adapted_data.nsfw
+        subject_update = SubjectUpdate.model_validate(
+            {
+                "source": source,
+                "source_id": str(subject_id),
+                "name": adapted_data.name,
+                "name_cn": adapted_data.name_cn,
+                "type": adapted_data.type,
+                "summary": adapted_data.summary,
+                "date": adapted_data.date,
+                "platform": adapted_data.platform,
+                "eps": adapted_data.eps,
+                "volumes": adapted_data.volumes,
+                "images": adapted_data.images,
+                "image": adapted_data.image,
+                "tags": adapted_data.tags,
+                "meta_tags": adapted_data.meta_tags,
+                "infobox": adapted_data.infobox,
+                "rating": adapted_data.rating,
+                "collection": adapted_data.collection,
+                "series": adapted_data.series,
+                "locked": adapted_data.locked,
+                "nsfw": adapted_data.nsfw,
+            }
         )
         
         # 创建 SubjectUpdateList
@@ -404,10 +447,12 @@ async def sync_subject_detail(subject_id: int, db: AsyncSession, *, source: str 
     # 从数据库中获取更新后的 Subject 对象
     from app.repositories.subject_repo import SubjectRepo
     from app.schemas.subject import SubjectSearchByID
-    subject_search = SubjectSearchByID(source=source, source_id=str(subject_id))
+    subject_search = SubjectSearchByID(
+        source=source, source_id=str(subject_id), user_id=None
+    )
     subject_result = await SubjectRepo.get_by_source(db, subject_search)
     
-    return subject_result[0] if subject_result else None
+    return subject_result.subject if subject_result else None
 
 
 async def get_bangumi_user_info(username: str) -> Dict:
@@ -431,7 +476,7 @@ async def get_bangumi_user_info(username: str) -> Dict:
         
         logger.info(f"成功获取 Bangumi 用户信息: {username}")
         
-        return user_info
+        return cast(dict[str, Any], user_info)
         
     except Exception as e:
         import traceback
@@ -454,14 +499,31 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         logger.info("获取 Bangumi 每日放送信息")
         
         # 调用 bangumi_client.py 中的 fetch_calendar 函数获取日历信息
-        calendar_info = await fetch_calendar()
+        calendar_info = cast(list[dict[str, Any]], await fetch_calendar())
+        weekday_ids = {
+            day.get("weekday", {}).get("id")
+            for day in calendar_info
+            if isinstance(day, dict) and isinstance(day.get("weekday"), dict)
+        } if isinstance(calendar_info, list) else set()
+        if not _EXPECTED_CALENDAR_WEEKDAY_IDS.issubset(weekday_ids):
+            uncached_fetch = getattr(fetch_calendar, "__wrapped__", None)
+            if uncached_fetch is not None:
+                calendar_info = cast(
+                    list[dict[str, Any]], await uncached_fetch(bangumi_client)
+                )
+                weekday_ids = {
+                    day.get("weekday", {}).get("id")
+                    for day in calendar_info
+                    if isinstance(day, dict) and isinstance(day.get("weekday"), dict)
+                } if isinstance(calendar_info, list) else set()
+        if not _EXPECTED_CALENDAR_WEEKDAY_IDS.issubset(weekday_ids):
+            raise ValueError("Bangumi calendar must contain all seven weekdays")
         
         logger.info("成功获取 Bangumi 每日放送信息")
         
         # 转换数据结构以匹配 schema
         calendar_days = []
         for day_index, day_data in enumerate(calendar_info):
-            weekday = day_data.get('weekday', {}).get('id', 'unknown')
             # 转换 items
             items = []
             for item_index, item in enumerate(day_data.get('items', [])):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from app.services.bangumi_service import get_bangumi_user_info, get_bangumi_calendar
 from app.schemas.user import BangumiUserInfo
 from app.schemas.bangumi import BangumiCalendar

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { SearchBar as LobeSearchBar, SearchBarProps } from '@lobehub/ui';
 import { debounce } from 'lodash';
 
@@ -19,8 +19,8 @@ const SearchBar: React.FC<HeaderSearchBarProps> = ({
   const [value, setValue] = useState<string>('');
 
   // 防抖处理函数
-  const debouncedSearch = useCallback(
-    debounce((searchValue: string) => {
+  const debouncedSearch = useMemo(
+    () => debounce((searchValue: string) => {
       onSearch?.(searchValue);
     }, debounceDelay),
     [onSearch, debounceDelay]

@@ -21,7 +21,50 @@ class BangumiDataSyncService:
     """
     # 常量定义
     DATA_URL = "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json"
-    
+
+    # 按优先级排列的数据源，与 fetch_and_sync_recent_data 共用，避免两处漂移
+    DATA_SOURCES: tuple[str, ...] = (
+        "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json",
+        "https://unpkg.com/bangumi-data@0.3/dist/data.json",  # 备用数据源
+    )
+
+    @classmethod
+    async def fetch_bangumi_data(cls) -> Dict[str, Any]:
+        """依次尝试所有镜像下载 bangumi-data 目录。
+
+        供只需要目录内容、不需要落库的调用方复用（例如单条条目的放送时间同步）。
+        通过类调用，因此测试可以 monkeypatch 这个外部 I/O 边界。
+
+        Returns:
+            解析后的 bangumi-data 目录
+
+        Raises:
+            RuntimeError: 所有数据源都失败
+        """
+        last_error: Optional[Exception] = None
+        for data_url in cls.DATA_SOURCES:
+            try:
+                logger.info(f"下载 bangumi-data: {data_url}")
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        data_url, timeout=30.0, follow_redirects=True
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+
+                if not isinstance(data, dict) or "items" not in data:
+                    raise ValueError(
+                        f"下载的数据格式不正确，缺少 'items' 字段: {data_url}"
+                    )
+                return data
+            except (httpx.HTTPError, json.JSONDecodeError, ValueError) as error:
+                last_error = error
+                logger.warning(
+                    f"bangumi-data 数据源失败: {data_url}, "
+                    f"{type(error).__name__}: {error}"
+                )
+        raise RuntimeError("无法下载 bangumi-data 数据") from last_error
+
     @classmethod
     async def fetch_and_sync_recent_data(cls, db: AsyncSession) -> int:
         """
@@ -37,10 +80,7 @@ class BangumiDataSyncService:
             Exception: 同步过程中发生错误时抛出
         """
         # 数据源配置
-        data_sources = [
-            "https://cdn.jsdelivr.net/npm/bangumi-data@0.3/dist/data.json",
-            "https://unpkg.com/bangumi-data@0.3/dist/data.json",  # 备用数据源
-        ]
+        data_sources = list(cls.DATA_SOURCES)
         
         # 重试配置
         max_retries = 3
@@ -245,7 +285,7 @@ class BangumiDataSyncService:
                 retry_delay *= 2  # 指数退避
         
         # 所有重试都失败
-        error_msg = f"所有重试都失败，无法同步 bangumi-data 数据"
+        error_msg = "所有重试都失败，无法同步 bangumi-data 数据"
         logger.error(error_msg)
         await db.rollback()
         raise Exception(error_msg)
@@ -330,7 +370,7 @@ class BangumiDataSyncService:
             # 自动回退机制
             # 如果查询结果的数量远少于传入 ID 的数量，触发同步
             if len(records) < len(bangumi_ids) * 0.5:
-                logger.warning(f"查询结果数量较少，尝试同步数据")
+                logger.warning("查询结果数量较少，尝试同步数据")
                 await cls.fetch_and_sync_recent_data(db)
                 
                 # 重新查询
@@ -344,8 +384,6 @@ class BangumiDataSyncService:
             
             # 构建返回字典
             result_dict: Dict[int, str] = {}
-            current_date = datetime.now(timezone.utc)
-            
             for record in records:
                 # 提取放送时间，直接返回原始的 ISO 时间格式
                 broadcast_begin = record.broadcast_begin

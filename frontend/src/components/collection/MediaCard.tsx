@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Tag, ActionIcon, Tooltip } from '@lobehub/ui';
 import { Rss, Plus, Tv, Clock, Film, Book, X } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';

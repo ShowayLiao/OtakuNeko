@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- user profile extensions are server-defined. */
 import { Avatar, Button, Flexbox, Popover, Tag, toast } from '@lobehub/ui';
 import { createStaticStyles } from 'antd-style';
 import {
@@ -25,9 +26,8 @@ import ImportModal from '../Modal/ImportModal';
 import ApiKeyModal from '../Modal/ApiKeyModal';
 import { dashboardService, type DashboardStats } from '@/services/dashboard';
 import { collectionService } from '@/services/collections';
-import { fetchChatHistory } from '@/lib/fetcher';
+import { AUTH_STATE_CHANGED_EVENT, fetchCurrentUser } from '@/lib/fetcher';
 import useChatStore from '@/stores/useChatStore';
-import { v4 as uuidv4 } from 'uuid';
 
 // 定义用户信息类型
 interface UserInfo {
@@ -119,19 +119,8 @@ const User: React.FC = () => {
       }
 
       // 调用后端API获取用户信息
-      const response = await fetch('http://localhost:8000/api/v1/users/me', {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch user info: ${response.statusText}`);
-      }
-
-      const data = await response.json();
+      const data = await fetchCurrentUser();
+      if (!data) throw new Error('No authenticated user found');
       setUserInfo(data);
       
       // 用户信息获取成功后，获取统计数据
@@ -164,30 +153,16 @@ const User: React.FC = () => {
 
   // 登录成功后的处理函数
   const handleLoginSuccess = () => {
-    fetchUserInfo();
-    const { sessions, activeSessionId } = useChatStore.getState();
-    if (sessions.length === 0) return;
-    sessions.forEach(async (s) => {
-      if (s.id === activeSessionId) {
-        const msgs = await fetchChatHistory(s.id);
-        if (msgs.length > 0) {
-          msgs.forEach((m: any) => {
-            useChatStore.getState().sendMessage(s.id, {
-              id: uuidv4(),
-              role: m.role,
-              content: m.content,
-              createdAt: new Date(),
-            });
-          });
-        }
-      }
-    });
+    void fetchUserInfo();
+    window.dispatchEvent(new Event(AUTH_STATE_CHANGED_EVENT));
   };
 
   // 退出登录函数
   const handleLogout = () => {
     // 清除localStorage中的token
     localStorage.removeItem('token');
+    useChatStore.getState().resetChat();
+    window.dispatchEvent(new Event(AUTH_STATE_CHANGED_EVENT));
     // 重置用户信息状态
     setUserInfo(null);
     setError('No authentication token found');

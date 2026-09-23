@@ -2,6 +2,7 @@ import { ActionIcon, SearchBar as LobeSearchBar } from '@lobehub/ui';
 import { Popover, Input, Button, Tag, Space } from 'antd';
 import { Hash, FileCode, Search, Star, CheckCircle2 } from 'lucide-react';
 import React, { useState, useRef } from 'react';
+import { useAppTheme } from '@/components/providers/LobeProvider';
 import { searchService, SearchResult } from '../../services/search';
 
 // 搜索面板的样式容器
@@ -21,7 +22,7 @@ export interface SearchResultItem {
   hasCollection: boolean;
   source: string;
   sourceId: number;
-  fullItem?: any; // 存储完整的 item 结构
+  fullItem?: unknown; // 存储完整的 item 结构
 }
 
 // 修改 Props 定义，增加 onSelect 回调
@@ -31,6 +32,7 @@ interface SearchTriggerProps {
 
 // 在组件参数里解构 onSelect
 const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
+  const { isDarkMode } = useAppTheme();
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -72,7 +74,7 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
             title: subject.name_cn || subject.name || keyword,
             cover: subject.image || (subject.images && subject.images.common ? subject.images.common : ''),
             score: subject.rating && subject.rating.score ? subject.rating.score : (subject.score || 0),
-            tags: subject.tags ? subject.tags.map((tag: any) => tag.name || tag) : [],
+            tags: subject.tags ? subject.tags.map((tag) => tag.name) : [],
             hasCollection: !!collection,
             source: subject.source,
             sourceId: subject.source_id ?? 0,
@@ -161,8 +163,8 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
           maxHeight: 300,
           overflowY: 'auto',
           borderRadius: 8,
-          border: '1px solid #e5e7eb',
-          backgroundColor: '#ffffff'
+          border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : '#e5e7eb'}`,
+          backgroundColor: isDarkMode ? '#1f2937' : '#ffffff'
         }}
       >
         {searchResults.length > 0 ? (
@@ -175,8 +177,8 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
                 padding: 8,
                 borderRadius: 6,
                 margin: 4,
-                backgroundColor: '#ffffff',
-                border: '1px solid #e5e7eb',
+                backgroundColor: isDarkMode ? 'rgba(255,255,255,0.04)' : '#ffffff',
+                border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : '#e5e7eb'}`,
                 cursor: 'pointer',
                 transition: 'all 0.2s'
               }}
@@ -204,7 +206,7 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                       <Star size={12} color="#ffd700" />
-                      <span style={{ fontSize: 12, color: '#666' }}>{item.score}</span>
+                      <span style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#666' }}>{item.score}</span>
                     </div>
                     {item.hasCollection && (
                       <CheckCircle2 size={12} color="#52c41a" />
@@ -222,20 +224,20 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
             </div>
           ))
         ) : (
-          <div style={{ padding: 16, textAlign: 'center', color: '#999', fontSize: 12 }}>
+          <div style={{ padding: 16, textAlign: 'center', color: isDarkMode ? '#9ca3af' : '#999', fontSize: 12 }}>
             {keyword ? '未找到相关结果' : '请输入搜索关键词'}
           </div>
         )}
         
         {/* 加载更多提示 */}
         {loadingMore && (
-          <div style={{ padding: 8, textAlign: 'center', fontSize: 12, color: '#999' }}>
+          <div style={{ padding: 8, textAlign: 'center', fontSize: 12, color: isDarkMode ? '#9ca3af' : '#999' }}>
             加载中...
           </div>
         )}
         
         {!hasMore && searchResults.length > 0 && (
-          <div style={{ padding: 8, textAlign: 'center', fontSize: 12, color: '#999' }}>
+          <div style={{ padding: 8, textAlign: 'center', fontSize: 12, color: isDarkMode ? '#9ca3af' : '#999' }}>
             没有更多结果了
           </div>
         )}
@@ -254,12 +256,32 @@ const SearchTrigger = ({ onSelect }: SearchTriggerProps) => {
         // 抵消 Popover 的默认内边距，让我们的内容铺满
         styles={{ container: { padding: 4 } }}
       >
-        <ActionIcon 
+        <button
+          type="button"
+          aria-label="搜索并插入"
+          title="搜索并插入"
+          onClick={() => setOpen((current) => !current)}
+          style={{
+            width: 32,
+            height: 32,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            border: 0,
+            borderRadius: 8,
+            background: open ? 'var(--lobe-color-fill-2)' : 'transparent',
+            color: 'inherit',
+            cursor: 'pointer',
+          }}
+        >
+          <Search size={16} aria-hidden="true" />
+        </button>
+        {/*
           icon={Search} 
           title="搜索并插入" 
           size={{ blockSize: 32 }}
           active={open} // 激活状态下图标会变色
-        />
+        */}
       </Popover>
       
       {/* 简单的 Hover 样式全局注入 */}

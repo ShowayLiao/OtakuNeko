@@ -1,13 +1,48 @@
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Any, Optional, cast
 from sqlmodel import select, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.logging import get_logger
-from ..models import Subject, SubjectType, Collection
-from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectUpdateList, SubjectList, SubjectUpsertList, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName, SubjectWithCollection, SubjectWithCollectionList
+from ..models import Subject, Collection
+from ..schemas.subject import SubjectCreate, SubjectUpdate, SubjectUpsertList, SubjectSearchByID, SubjectSearchBase, SubjectSearchByName, SubjectWithCollection, SubjectWithCollectionList
 
 logger = get_logger(__name__)
+
+# SQLModel exposes these attributes as SQLAlchemy InstrumentedAttribute values
+# at runtime.  The model annotations intentionally remain the instance types,
+# so the aliases keep query construction typed without changing behavior.
+_SUBJECT_ID = cast(Any, Subject.id)
+_SUBJECT_SOURCE = cast(Any, Subject.source)
+_SUBJECT_SOURCE_ID = cast(Any, Subject.source_id)
+_SUBJECT_NAME = cast(Any, Subject.name)
+_SUBJECT_NAME_CN = cast(Any, Subject.name_cn)
+_SUBJECT_SUMMARY = cast(Any, Subject.summary)
+_SUBJECT_TYPE = cast(Any, Subject.type)
+_SUBJECT_TAGS = cast(Any, Subject.tags)
+_SUBJECT_META_TAGS = cast(Any, Subject.meta_tags)
+_SUBJECT_INFOBOX = cast(Any, Subject.infobox)
+_COLLECTION_SOURCE = cast(Any, Collection.source)
+_COLLECTION_SOURCE_ID = cast(Any, Collection.source_id)
+_COLLECTION_USER_ID = cast(Any, Collection.user_id)
+_COLLECTION_COMMENT = cast(Any, Collection.comment)
+_COLLECTION_TAGS = cast(Any, Collection.tags)
+
+
+def _column_fill_value(model: Any, column_name: str) -> Any:
+    """返回批量插入时某列缺失可用的回填值。
+
+    NOT NULL 列不能回填 None：Core insert 会直接写出 NULL 并触发
+    IntegrityError。这类列必须使用模型自身的 Python-side default；既非 nullable
+    又没有默认值的列，说明调用方漏传了必填字段，应当明确报错。
+    """
+    column = cast(Any, model).__table__.columns.get(column_name)
+    if column is None or column.nullable:
+        return None
+    if column.default is not None:
+        default = column.default.arg
+        return default() if callable(default) else default
+    raise ValueError(f"{model.__name__}.{column_name} is required for batch upsert")
 
 
 class SubjectRepo:
@@ -37,28 +72,32 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            from sqlmodel import select
-            from ..schemas.subject import SubjectSearchByID
-            
             # 将 SubjectCreate 转换为字典
             subject_dict = subject_data.model_dump()
-            
+
+            # Subject.last_sync 是 NOT NULL，而 SubjectCreate 的默认值是 None。
+            # 显式带上 None 会让 UPDATE 分支写出 NULL，剔除后交给模型自身的
+            # Python-side default 处理。
+            if subject_dict.get("last_sync") is None:
+                subject_dict.pop("last_sync", None)
+
             # 检查是否已经存在相同 source 和 source_id 的 Subject
             source = subject_dict.get("source")
             source_id = subject_dict.get("source_id")
-            
-            search_data = SubjectSearchByID(source=source, source_id=source_id)
-            result = await SubjectRepo.get_by_source(db, search_data)
-            existing_subject = result[0] if result else None
-            
+
+            if not isinstance(source, str) or not isinstance(source_id, str):
+                raise ValueError("source and source_id are required")
+
+            # 写路径必须取 ORM 行，DTO 副本无法被 setattr/commit/refresh 写回
+            existing_subject = await SubjectRepo.get_orm_by_source(db, source, source_id)
+
             if existing_subject:
                 # 如果存在，更新现有记录
                 for field, value in subject_dict.items():
                     setattr(existing_subject, field, value)
-                
+
                 await db.commit()
-                await db.refresh(existing_subject)
-                
+
                 logger.info(f"Updated existing subject: id={existing_subject.id}, source={existing_subject.source}, source_id={existing_subject.source_id}")
                 return existing_subject
             else:
@@ -66,8 +105,7 @@ class SubjectRepo:
                 new_subject = Subject(**subject_dict)
                 db.add(new_subject)
                 await db.commit()
-                await db.refresh(new_subject)
-                
+
                 logger.info(f"Created new subject: id={new_subject.id}, source={new_subject.source}, source_id={new_subject.source_id}")
                 return new_subject
         except SQLAlchemyError as e:
@@ -97,13 +135,13 @@ class SubjectRepo:
             query = select(Subject, Collection).outerjoin(
                 Collection, 
                 and_(
-                    Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id,
-                    Collection.user_id == search_data.user_id if search_data.user_id else false()
+                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID,
+                    _COLLECTION_USER_ID == search_data.user_id if search_data.user_id else false()
                 )
             ).where(
-                Subject.source == search_data.source,
-                Subject.source_id == search_data.source_id
+                _SUBJECT_SOURCE == search_data.source,
+                _SUBJECT_SOURCE_ID == search_data.source_id
             )
             
             result = await db.execute(query)
@@ -119,7 +157,41 @@ class SubjectRepo:
         except SQLAlchemyError as e:
             logger.error(f"获取Subject失败: {e}")
             raise
-    
+
+    @staticmethod
+    async def get_orm_by_source(db: AsyncSession, source: str, source_id: str) -> Optional[Subject]:
+        """
+        按数据源和ID直接返回 session 绑定的 ORM 行。
+
+        写路径必须使用本方法：SubjectWithCollection.subject 是 SubjectRead DTO
+        的副本，没有 _sa_instance_state，db.add/db.delete/db.refresh 都会抛
+        UnmappedInstanceError。
+
+        与 get_by_source 不同，这里刻意不做 _is_valid_subject 校验，让写路径能够
+        看到并修复/删除名称为空的脏数据行。
+
+        Args:
+            db: 数据库会话
+            source: 数据来源
+            source_id: 原站ID
+
+        Returns:
+            Subject ORM 实例，不存在则返回 None
+
+        Raises:
+            SQLAlchemyError: 数据库操作异常
+        """
+        try:
+            query = select(Subject).where(
+                _SUBJECT_SOURCE == source,
+                _SUBJECT_SOURCE_ID == source_id,
+            )
+            result = await db.execute(query)
+            return result.scalar_one_or_none()
+        except SQLAlchemyError as e:
+            logger.error(f"获取Subject ORM行失败: {e}")
+            raise
+
     @staticmethod
     async def search_by_name(db: AsyncSession, search_data: SubjectSearchByName) -> SubjectWithCollectionList:
         """
@@ -144,46 +216,45 @@ class SubjectRepo:
             query = select(Subject, Collection).outerjoin(
                 Collection, 
                 and_(
-                    Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id,
-                    Collection.user_id == search_data.user_id if search_data.user_id else false()
+                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID,
+                    _COLLECTION_USER_ID == search_data.user_id if search_data.user_id else false()
                 )
             )
             
             # 构建搜索条件
             conditions = [
-                Subject.name.ilike(search_term),
-                Subject.name_cn.ilike(search_term),
-                Subject.summary.ilike(search_term),
-                Collection.comment.ilike(search_term) if Collection.comment is not None else False
+                _SUBJECT_NAME.ilike(search_term),
+                _SUBJECT_NAME_CN.ilike(search_term),
+                _SUBJECT_SUMMARY.ilike(search_term),
+                _COLLECTION_COMMENT.ilike(search_term)
             ]
             
             # 添加 JSON 字段搜索（使用PostgreSQL兼容的操作）
             from sqlalchemy import cast, String
-            from sqlalchemy.dialects.postgresql import JSONB
             
             # 安全处理Collection.tags（JSON数组）
             conditions.append(
-                Collection.tags.isnot(None) & 
-                cast(Collection.tags, String).ilike(f"%{search_data.keyword}%")
+                _COLLECTION_TAGS.isnot(None) &
+                cast(_COLLECTION_TAGS, String).ilike(f"%{search_data.keyword}%")
             )
             
             # 安全处理Subject.tags（JSON数组）
             conditions.append(
-                Subject.tags.isnot(None) & 
-                cast(Subject.tags, String).ilike(f"%{search_data.keyword}%")
+                _SUBJECT_TAGS.isnot(None) &
+                cast(_SUBJECT_TAGS, String).ilike(f"%{search_data.keyword}%")
             )
             
             # 安全处理Subject.meta_tags（JSON数组）
             conditions.append(
-                Subject.meta_tags.isnot(None) & 
-                cast(Subject.meta_tags, String).ilike(f"%{search_data.keyword}%")
+                _SUBJECT_META_TAGS.isnot(None) &
+                cast(_SUBJECT_META_TAGS, String).ilike(f"%{search_data.keyword}%")
             )
             
             # 安全处理Subject.infobox（JSON数组）
             conditions.append(
-                Subject.infobox.isnot(None) & 
-                cast(Subject.infobox, String).ilike(f"%{search_data.keyword}%")
+                _SUBJECT_INFOBOX.isnot(None) &
+                cast(_SUBJECT_INFOBOX, String).ilike(f"%{search_data.keyword}%")
             )
             
             # 应用搜索条件
@@ -191,7 +262,7 @@ class SubjectRepo:
             
             # 应用类型过滤
             if search_data.type is not None:
-                query = query.where(Subject.type == search_data.type)
+                query = query.where(_SUBJECT_TYPE == search_data.type)
             
             # 添加分页
             query = query.offset(search_data.skip).limit(search_data.limit)
@@ -234,15 +305,15 @@ class SubjectRepo:
             query = select(Subject, Collection).outerjoin(
                 Collection, 
                 and_(
-                    Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id,
-                    Collection.user_id == search_data.user_id if search_data.user_id else false()
+                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID,
+                    _COLLECTION_USER_ID == search_data.user_id if search_data.user_id else false()
                 )
             )
             
             # 应用过滤条件
             if search_data.type is not None:
-                query = query.where(Subject.type == search_data.type)
+                query = query.where(_SUBJECT_TYPE == search_data.type)
             
             # 添加分页
             result = await db.execute(query.offset(search_data.skip).limit(search_data.limit))
@@ -279,10 +350,10 @@ class SubjectRepo:
         try:
             from sqlalchemy import func
             
-            query = select(func.count(Subject.id))
+            query = select(func.count(_SUBJECT_ID))
             
             if subject_type is not None:
-                query = query.where(Subject.type == subject_type)
+                query = query.where(_SUBJECT_TYPE == subject_type)
             
             result = await db.execute(query)
             return result.scalar_one()
@@ -311,13 +382,13 @@ class SubjectRepo:
             search_term = f"%{name}%"
             # 构建搜索条件
             conditions = [
-                Subject.name.ilike(search_term),
-                Subject.name_cn.ilike(search_term),
-                Subject.summary.ilike(search_term)
+                _SUBJECT_NAME.ilike(search_term),
+                _SUBJECT_NAME_CN.ilike(search_term),
+                _SUBJECT_SUMMARY.ilike(search_term)
             ]
             
             # 构建查询
-            query = select(func.count(Subject.id)).where(
+            query = select(func.count(_SUBJECT_ID)).where(
                 or_(*conditions)
             )
             
@@ -343,39 +414,31 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            from sqlalchemy import false
-            
+
             # 验证必要的更新字段
             if not subject_data.source or not subject_data.source_id:
                 logger.error("Update failed: source and source_id are required for updating subject")
                 return None
-            
-            # 获取Subject对象，使用正确的参数类型调用get_by_source
-            search_data = SubjectSearchByID(
-                source=subject_data.source,
-                source_id=subject_data.source_id
+
+            # 写路径必须取 ORM 行
+            subject = await SubjectRepo.get_orm_by_source(
+                db, subject_data.source, subject_data.source_id
             )
-            subject_result = await SubjectRepo.get_by_source(db, search_data)
-            if not subject_result:
+            if subject is None:
                 logger.info(f"Subject not found for update: source={subject_data.source}, source_id={subject_data.source_id}")
                 return None
-            
-            # 解包元组，获取Subject对象
-            subject, _ = subject_result
-            
+
             # 将 SubjectUpdate 转换为字典，只包含设置的字段
             update_data = subject_data.model_dump(exclude_unset=True)
-            
+
             # 更新设置的字段
             for field, value in update_data.items():
                 # 不允许更新source和source_id字段
                 if field not in ["source", "source_id"]:
                     setattr(subject, field, value)
-            
-            db.add(subject)
+
             await db.commit()
-            await db.refresh(subject)
-            
+
             logger.info(f"Updated subject: id={subject.id}, source={subject.source}, source_id={subject.source_id}")
             return subject
         except SQLAlchemyError as e:
@@ -399,16 +462,13 @@ class SubjectRepo:
             SQLAlchemyError: 数据库操作异常
         """
         try:
-            # 获取Subject对象
-            subject_result = await SubjectRepo.get_by_source(db, search_data)
-            if not subject_result:
+            # 写路径必须取 ORM 行
+            subject = await SubjectRepo.get_orm_by_source(
+                db, search_data.source, search_data.source_id
+            )
+            if subject is None:
                 return False
-            
-            # 解包元组，获取Subject对象
-            subject, _ = subject_result
-            if not subject:
-                return False
-            
+
             await db.delete(subject)
             await db.commit()
             return True
@@ -435,9 +495,11 @@ class SubjectRepo:
         try:
             from ..core.config import settings
             if settings.DEPLOY_MODE == "local":
-                from sqlalchemy.dialects.sqlite import insert
+                from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+                insert = cast(Any, sqlite_insert)
             elif settings.DEPLOY_MODE == "cloud":
-                from sqlalchemy.dialects.postgresql import insert
+                from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+                insert = cast(Any, postgresql_insert)
             else:
                 logger.error("Deploy mode not supported")
                 return 0
@@ -494,11 +556,14 @@ class SubjectRepo:
             # 获取所有字典中出现过的所有 key 的并集
             all_keys = set().union(*(d.keys() for d in subject_dicts))
             
-            # 回填缺失的 key 为 None
+            # 回填缺失的 key：nullable 列回填 None，NOT NULL 列必须用模型默认值，
+            # 否则异构批次会写出 NULL 并触发 IntegrityError。
+            missing_keys = {k for d in subject_dicts for k in all_keys if k not in d}
+            fill_values = {k: _column_fill_value(Subject, k) for k in missing_keys}
             for d in subject_dicts:
                 for k in all_keys:
                     if k not in d:
-                        d[k] = None
+                        d[k] = fill_values[k]
             
             logger.info(f"数据清洗与结构统一完成，共处理 {len(subject_dicts)} 条数据")
             # ================= [修复的核心代码] 结束 =================
@@ -528,14 +593,13 @@ class SubjectRepo:
                 )
             
             # 7. 执行语句
-            result = await db.execute(stmt)
+            await db.execute(stmt)
             await db.commit()
             
             # 清除可能受影响的用户统计缓存
             try:
                 from fastapi_cache import FastAPICache
                 from sqlalchemy import select, and_
-                from app.models import Collection
                 
                 # 收集所有与这些 Subject 相关的用户 ID
                 affected_user_ids = set()
@@ -548,10 +612,10 @@ class SubjectRepo:
                         continue
 
                     # 查询与当前 Subject 相关的所有收藏记录
-                    subject_query = select(Collection.user_id).where(
+                    subject_query = select(_COLLECTION_USER_ID).where(
                         and_(
-                            Collection.source == source,
-                            Collection.source_id == source_id
+                            _COLLECTION_SOURCE == source,
+                            _COLLECTION_SOURCE_ID == source_id
                         )
                     )
                     subject_result = await db.execute(subject_query)

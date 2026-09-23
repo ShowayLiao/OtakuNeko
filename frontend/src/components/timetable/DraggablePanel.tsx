@@ -1,12 +1,15 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- drag payloads come from dnd-kit extensions. */
 import React, { useState, useMemo, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import { DraggablePanel, Flexbox, Segmented, ActionIcon, Icon } from '@lobehub/ui';
 import { Typography, Badge, Dropdown, Tooltip, Spin } from 'antd';
 import { Filter, LayoutGrid, Tv, Book, Gamepad2, Film } from 'lucide-react';
 import TimelineMediaCard from './TimelineMediaCard';
 import DraggableItemWrapper from './DraggableItemWrapper';
-import SubjectModal from '../Modal/SubjectModal';
 import { BangumiItem } from '@/services/bangumiService';
 import { getCollections } from '@/services/scheduleService';
+
+const SubjectModal = dynamic(() => import('../Modal/SubjectModal'), { ssr: false });
 
 const { Text } = Typography;
 
@@ -82,6 +85,8 @@ export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
   // --- 3. 数据获取逻辑 ---
   
   useEffect(() => {
+    const controller = new AbortController();
+    const debounceTimer = window.setTimeout(() => {
     const fetchCollections = async () => {
       setLoading(true);
       setError(null);
@@ -97,10 +102,12 @@ export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
         if (searchQuery) {
           params.keyword = searchQuery;
         }
+        params.signal = controller.signal;
         
         const items = await getCollections(params);
         setCollections(items || []);
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError('获取收藏数据失败');
         console.error('Error fetching collections:', err);
       } finally {
@@ -109,6 +116,12 @@ export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
     };
 
     fetchCollections();
+    }, 180);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(debounceTimer);
+    };
   }, [activeType, activeStatus, searchQuery]);
 
   // --- 4. 数据过滤和排序逻辑 ---
@@ -315,14 +328,16 @@ export const CollectionPanel = ({ searchQuery = '' }: CollectionPanelProps) => {
       </DraggablePanel>
 
       {/* 条目详情模态框 */}
-      <SubjectModal
-        isOpen={isSubjectModalOpen}
-        onClose={() => {
-          setIsSubjectModalOpen(false);
-          setSelectedSubject(null);
-        }}
-        initialValues={selectedSubject}
-      />
+      {isSubjectModalOpen && (
+        <SubjectModal
+          isOpen
+          onClose={() => {
+            setIsSubjectModalOpen(false);
+            setSelectedSubject(null);
+          }}
+          initialValues={selectedSubject}
+        />
+      )}
     </>
   );
 };

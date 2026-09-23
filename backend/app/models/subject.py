@@ -1,7 +1,7 @@
 from __future__ import annotations
-from datetime import datetime, timezone, time
-from typing import List, Optional, Dict, Any, TYPE_CHECKING
-from sqlmodel import SQLModel, Field, Relationship
+from datetime import datetime, timezone
+from typing import List, Optional, Dict, Any
+from sqlmodel import SQLModel, Field
 from sqlalchemy import Column, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSON
 from .enums import SubjectType
@@ -12,7 +12,7 @@ def utc_now():
     return datetime.utcnow()
 
 
-class Subject(SQLModel, table=True):  # type: ignore[call-arg]
+class Subject(SQLModel, table=True):
     """
     通用条目模型，支持多数据源（Bangumi、豆瓣等）
     

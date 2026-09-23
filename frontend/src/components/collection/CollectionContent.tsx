@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Empty } from '@lobehub/ui';
 import { SpotlightCard } from '@lobehub/ui/awesome';
 import { useAppTheme } from '@/components/providers/LobeProvider';

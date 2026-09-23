@@ -1,6 +1,5 @@
 "use client";
 import { usePathname, useRouter } from 'next/navigation';
-import { useState } from 'react';
 import { MessageSquare, Grid, CalendarDays, UserCircle, Settings } from 'lucide-react';
 import { ActionIcon, Flexbox, SideNav } from '@lobehub/ui';
 import { theme } from 'antd';
@@ -11,10 +10,9 @@ export const DesktopSidebar = () => {
   const pathname = usePathname();
   const router = useRouter();
   const { token } = theme.useToken();
-  const [activeKey, setActiveKey] = useState<string>(pathname || '');
+  const activeKey = pathname || '';
 
   const handleSelect = (key: string) => {
-    setActiveKey(key);
     router.push(key);
   };
 

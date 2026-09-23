@@ -1,0 +1,58 @@
+name: Agent evaluation
+
+on:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  observability:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked --dev
+      - run: uv run python -m app.evaluation.runner --config evals/config/observability.yaml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-observability-report
+          path: backend/.runtime/evaluation/observability.json
+          if-no-files-found: error
+
+  full:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: evaluation-full
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+      - run: uv sync --locked --dev
+      - run: uv run python -m app.evaluation.runner --config evals/config/full.yaml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evaluation-full-report
+          path: backend/.runtime/evaluation/full.json
+          if-no-files-found: error

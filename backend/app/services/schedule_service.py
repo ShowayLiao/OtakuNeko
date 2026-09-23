@@ -4,7 +4,7 @@ import traceback
 
 from app.core.logging import get_logger
 from app.models import Schedule
-from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleReadList, UnifiedSchedule, UnifiedScheduleList
+from app.schemas.schedule import ScheduleCreate, ScheduleUpdate, ScheduleUpsert, ScheduleUpsertList, ScheduleRead, UnifiedSchedule, UnifiedScheduleList
 from app.repositories.schedule_repo import ScheduleRepository
 
 # 导入 Bangumi 相关服务
@@ -14,7 +14,8 @@ from .bangumi_data_sync import BangumiDataSyncService
 from .subject_service import batch_upsert_subjects
 # 导入适配器
 from app.schemas.adaptersV2 import bangumi_calendar_to_subject_upsert_list, UnifiedList, UnifiedCollectionSubject
-from app.schemas.subject import SubjectRead
+from app.schemas.subject import SubjectRead, SubjectUpsertList
+from app.schemas.collection import CollectionRead
 
 logger = get_logger(__name__)
 
@@ -69,9 +70,19 @@ class ScheduleService:
             for schedule, subject, collection in unified_schedules:
                 # 创建 UnifiedSchedule 对象
                 unified_item = UnifiedSchedule(
-                    schedule=schedule,
-                    subject=subject,
-                    collection=collection
+                    schedule=ScheduleRead.model_validate(
+                        schedule, from_attributes=True
+                    ),
+                    subject=(
+                        SubjectRead.model_validate(subject, from_attributes=True)
+                        if subject is not None
+                        else None
+                    ),
+                    collection=(
+                        CollectionRead.model_validate(collection, from_attributes=True)
+                        if collection is not None
+                        else None
+                    ),
                 )
                 items.append(unified_item)
             
@@ -212,7 +223,7 @@ class ScheduleService:
             
             # 校验用户ID
             if schedule_data.user_id != user_id:
-                logger.warning(f"Upsert 排班记录失败: 用户ID不匹配")
+                logger.warning("Upsert 排班记录失败: 用户ID不匹配")
                 return None
             
             # 直接调用 repository 的 upsert 方法
@@ -220,7 +231,7 @@ class ScheduleService:
             if result:
                 logger.info(f"成功 Upsert 用户 {user_id} 的排班记录")
             else:
-                logger.warning(f"Upsert 排班记录失败")
+                logger.warning("Upsert 排班记录失败")
             return result
         except Exception as e:
             logger.error(f"Upsert 排班记录失败: {e}")
@@ -315,7 +326,6 @@ class ScheduleService:
                 logger.info(f"第一个返回的时间值 - bangumi_id: {first_id}, time: {air_time_dict[first_id]}")
             
             # 遍历 subject_upsert_list.items，填充 air_time
-            from datetime import time
             for subject_upsert in subject_upsert_list.items:
                 try:
                     bangumi_id = int(subject_upsert.source_id)
@@ -337,6 +347,26 @@ class ScheduleService:
                 # logger.info(f"番剧 {subject_upsert.source_id} 的 air_weekday 值: {subject_upsert.air_weekday}")
             
             # 4. 批量插入数据（此时数据已包含时间）
+            # bangumi-data 偶尔会给出缺少名称或类型的条目。写路径不再兜底成
+            # ""/SubjectType.ANIME —— 空名称正是 scripts/cleanup_empty_subjects.py
+            # 要清理的脏数据，所以这类条目直接跳过并记录，不让整批同步失败。
+            valid_items = [
+                item
+                for item in subject_upsert_list.items
+                if item.name and item.name.strip() and item.type is not None
+            ]
+            skipped = len(subject_upsert_list.items) - len(valid_items)
+            if skipped:
+                logger.error(
+                    f"跳过 {skipped} 条缺少名称或类型的日历条目，"
+                    f"不写入空名称数据"
+                )
+            if not valid_items:
+                raise ValueError("Bangumi 日历没有可写入的有效条目（缺少名称或类型）")
+            subject_upsert_list = SubjectUpsertList(
+                total=len(valid_items), items=valid_items
+            )
+
             logger.info("批量插入 Subject 数据")
             logger.info(f"第一条数据的 air_time 类型: {type(subject_upsert_list.items[0].air_time)}")
             logger.info(f"第一条数据的 air_time 值: {subject_upsert_list.items[0].air_time}")
@@ -351,12 +381,16 @@ class ScheduleService:
             # 构造 SubjectRead 对象
             first_item_processed = False
             for subject_upsert in subject_upsert_list.items:
+                # 已在上面过滤过，这里同时完成类型收窄
+                if not subject_upsert.name or subject_upsert.type is None:
+                    continue
+
                 # 记录第一个item的airtime值
                 if not first_item_processed:
                     logger.info(f"第一条数据的 air_time 值: {subject_upsert.air_time}")
                     logger.info(f"第一条数据的 air_weekday 值: {subject_upsert.air_weekday}")
                     first_item_processed = True
-                
+
                 subject_read = SubjectRead(
                     id=0,  # 默认ID，数据库中会生成
                     source=subject_upsert.source,

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- import data is user-provided JSON. */
 import { request } from './client';
 
 // 同步收藏请求参数
@@ -74,7 +75,10 @@ export const collectionService = {
     if (data.sort_by) params.append('sort_by', data.sort_by);
 
     const queryString = params.toString();
-    const endpoint = `/collections${queryString ? `?${queryString}` : ''}`;
+    // The backend route is declared with a trailing slash. Calling the
+    // canonical URL avoids a 307 redirect through the Next.js rewrite, which
+    // can otherwise drop the Authorization header.
+    const endpoint = `/collections/${queryString ? `?${queryString}` : ''}`;
 
     return request<CollectionListResponse>(endpoint, {
       method: 'GET',

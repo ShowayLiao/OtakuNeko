@@ -4,5 +4,15 @@ from .enums import SubjectType, CollectionStatus
 from .user import User
 from .schedule import Schedule
 from .broadcast_metadata import AnimeBroadcastMetadata
+from .agent_memory import AgentMemory
+from .agent_task import AgentTaskDef, AgentTaskRun
+from .agent_trace import AgentTraceModel, TraceEventModel
+from .agent_run import AgentRun, AgentInvocation, AgentRunEvent
 
-__all__ = ["Collection", "Subject", "SubjectType", "CollectionStatus", "User", "Schedule", "AnimeBroadcastMetadata"]
+__all__ = [
+    "Collection", "Subject", "SubjectType", "CollectionStatus", "User",
+    "Schedule", "AnimeBroadcastMetadata", "AgentMemory",
+    "AgentTaskDef", "AgentTaskRun",
+    "AgentTraceModel", "TraceEventModel",
+    "AgentRun", "AgentInvocation", "AgentRunEvent",
+]

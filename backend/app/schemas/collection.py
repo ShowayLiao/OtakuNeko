@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict, Any, TYPE_CHECKING
+from typing import Optional, List, Dict, Any, TYPE_CHECKING, Sequence
 from datetime import datetime
 from app.models.enums import CollectionStatus
 from .shared import BaseList, SearchBase
@@ -112,7 +112,11 @@ class CollectionList(BaseList):
     
     用于返回分页的收藏列表，包含总数和条目列表
     """
-    items: List[CollectionBase] = Field(default_factory=list, description="收藏列表")
+    items: Sequence[CollectionBase] = Field(
+        default_factory=list,
+        max_length=100,
+        description="收藏列表",
+    )
 
 class CollectionUpdateList(BaseList):
     """
@@ -149,7 +153,10 @@ class CollectionSearchBase(SearchBase):
     """
     user_id: int = Field(..., description="用户ID")
     status: Optional[CollectionStatus] = Field(None, description="收藏状态：1想看/2看过/3在看/4搁置/5抛弃")
-    limit: int = Field(default=10, description="返回的最大记录数")
+    limit: Optional[int] = Field(
+        default=10,
+        description="返回的最大记录数；内部画像查询传 None 表示读取全部记录",
+    )
 
 class CollectionSearchByName(CollectionSearchBase):
     """
@@ -170,7 +177,11 @@ class CollectionSyncRequest(BaseModel):
     limit: Optional[int] = Field(default=50, ge=1, le=100, description="每页请求数量")
     offset: Optional[int] = Field(default=0, ge=0, description="分页偏移量")
     sync_count: Optional[int] = Field(default=0, ge=0, description="已同步数量")
-    data: Optional[List[Dict[str, Any]]] = Field(None, description="用于豆瓣上传的数据列表")
+    data: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        max_length=100,
+        description="用于豆瓣上传的数据列表",
+    )
 
 
 class CollectionUpsertRequest(BaseModel):
@@ -200,7 +211,11 @@ class CollectionUpsertList(BaseList):
     
     用于插入或更新多个收藏记录，包含多个CollectionUpsert对象
     """
-    collections: List[CollectionUpsert] = Field(default_factory=list, description="收藏列表")
+    collections: List[CollectionUpsert] = Field(
+        default_factory=list,
+        max_length=100,
+        description="收藏列表",
+    )
 
 
 class CollectionSubject(CollectionBase):
