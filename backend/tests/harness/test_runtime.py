@@ -115,9 +115,5 @@ class TestAgentRuntime:
 
         recorded = await traces.list_recent(limit=1)
         assert len(recorded) == 1
-        events = [
-            event
-            for step in recorded[0].steps
-            for event in step.events
-        ]
+        events = [event for step in recorded[0].steps for event in step.events]
         assert any(event.event_type == "route_decision" for event in events)

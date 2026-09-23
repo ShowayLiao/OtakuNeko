@@ -66,7 +66,10 @@ class WriteStubCapability(BaseCapability):
                 name="write_data",
                 public_name="write_data",
                 description="Write data",
-                input_schema={"type": "object", "properties": {"user_id": {"type": "integer"}}},
+                input_schema={
+                    "type": "object",
+                    "properties": {"user_id": {"type": "integer"}},
+                },
                 is_side_effect=True,
             )
         ]
@@ -176,12 +179,18 @@ def test_registry_validates_public_output_with_schema_and_size_limit():
     registry.register(StubCapability())
 
     valid = registry.validate_public_output(
-        "do_stuff", {"value": "ok"}, output_schema={"type": "object", "required": ["value"]}
+        "do_stuff",
+        {"value": "ok"},
+        output_schema={"type": "object", "required": ["value"]},
     )
     invalid = registry.validate_public_output(
-        "do_stuff", {"other": "ok"}, output_schema={"type": "object", "required": ["value"]}
+        "do_stuff",
+        {"other": "ok"},
+        output_schema={"type": "object", "required": ["value"]},
     )
-    oversized = registry.validate_public_output("do_stuff", {"value": "x"}, max_payload_bytes=1)
+    oversized = registry.validate_public_output(
+        "do_stuff", {"value": "x"}, max_payload_bytes=1
+    )
 
     assert valid == {"success": True, "data": {"value": "ok"}}
     assert invalid["error_type"] == "invalid_output"

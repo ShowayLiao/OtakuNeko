@@ -103,16 +103,9 @@ class SqlMemoryRepository(MemoryRepository):
             raise ValueError("offset must be non-negative")
         if limit <= 0 or limit > 1000:
             raise ValueError("limit must be between 1 and 1000")
-        stmt = (
-            select(AgentMemory)
-            .where(_MEMORY_USER_ID == owner_id)
-        )
+        stmt = select(AgentMemory).where(_MEMORY_USER_ID == owner_id)
         stmt = self._apply_scope(stmt, thread_id, kind)
-        stmt = (
-            stmt.order_by(_MEMORY_CREATED_AT, _MEMORY_ID)
-            .offset(offset)
-            .limit(limit)
-        )
+        stmt = stmt.order_by(_MEMORY_CREATED_AT, _MEMORY_ID).offset(offset).limit(limit)
 
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
@@ -238,11 +231,7 @@ class SqlMemoryRepository(MemoryRepository):
 
     @staticmethod
     def _row_to_dict(row: AgentMemory) -> dict[str, Any]:
-        metadata = (
-            json.loads(row.metadata_json)
-            if row.metadata_json
-            else {}
-        )
+        metadata = json.loads(row.metadata_json) if row.metadata_json else {}
         provenance = metadata.get("provenance")
         if not isinstance(provenance, dict):
             provenance = {}

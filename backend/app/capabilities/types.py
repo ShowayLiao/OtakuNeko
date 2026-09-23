@@ -35,7 +35,9 @@ def _schema_type_matches(value: Any, expected: str) -> bool:
 
 def _matches_output_schema(value: Any, schema: dict[str, Any]) -> bool:
     expected_type = schema.get("type")
-    if isinstance(expected_type, str) and not _schema_type_matches(value, expected_type):
+    if isinstance(expected_type, str) and not _schema_type_matches(
+        value, expected_type
+    ):
         return False
     if isinstance(value, dict):
         properties = schema.get("properties", {})
@@ -173,7 +175,9 @@ class CapabilityResult:
         max_payload_bytes: int = DEFAULT_MAX_PAYLOAD_BYTES,
     ) -> dict[str, Any]:
         """Return a bounded, structured envelope safe for adapter boundaries."""
-        if output_schema is not None and not _matches_output_schema(self.data, output_schema):
+        if output_schema is not None and not _matches_output_schema(
+            self.data, output_schema
+        ):
             return {
                 "success": False,
                 "data": {},
@@ -210,6 +214,8 @@ class CapabilityResult:
         return cls(success=True, data=data)
 
     @classmethod
-    def fail(cls, error: str, error_type: str | None = None, **data: Any) -> CapabilityResult:
+    def fail(
+        cls, error: str, error_type: str | None = None, **data: Any
+    ) -> CapabilityResult:
         """Create a typed error result."""
         return cls(success=False, error=error, error_type=error_type, data=data)

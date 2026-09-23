@@ -23,12 +23,16 @@ class MemoryContext:
 
 
 class MemoryManager:
-    def __init__(self, api_key: str, base_url: str,
-                 checkpointer: Optional["AsyncSqliteSaver"] = None,
-                 store=None,
-                 max_facts: int = 500,
-                 fact_model: str = "gpt-3.5-turbo",
-                 run_id: str | None = None):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        checkpointer: Optional["AsyncSqliteSaver"] = None,
+        store=None,
+        max_facts: int = 500,
+        fact_model: str = "gpt-3.5-turbo",
+        run_id: str | None = None,
+    ):
         self.checkpointer = checkpointer
         self._store = store
         self.max_facts = max_facts
@@ -54,18 +58,25 @@ class MemoryManager:
         facts = []
         for item in items:
             val = item.value
-            facts.append({
-                "id": item.key,
-                "content": val.get("content", ""),
-                "importance": val.get("importance", 0.5),
-                "timestamp": val.get("timestamp", ""),
-                "source": val.get("source", "conversation"),
-                "embedding": val.get("embedding", []),
-            })
+            facts.append(
+                {
+                    "id": item.key,
+                    "content": val.get("content", ""),
+                    "importance": val.get("importance", 0.5),
+                    "timestamp": val.get("timestamp", ""),
+                    "source": val.get("source", "conversation"),
+                    "embedding": val.get("embedding", []),
+                }
+            )
         return facts
 
-    async def _add_fact(self, thread_id: str, content: str,
-                        importance: float = 0.5, source: str = "conversation") -> Optional[str]:
+    async def _add_fact(
+        self,
+        thread_id: str,
+        content: str,
+        importance: float = 0.5,
+        source: str = "conversation",
+    ) -> Optional[str]:
         if not self._store:
             return None
 
@@ -82,26 +93,33 @@ class MemoryManager:
 
         fact_id = str(uuid.uuid4())
         await self._store.aput(
-            ("facts", thread_id), fact_id,
+            ("facts", thread_id),
+            fact_id,
             {
                 "content": content,
                 "importance": importance,
                 "source": source,
                 "timestamp": datetime.utcnow().isoformat(),
                 "embedding": new_vec,
-            }
+            },
         )
 
         if len(existing) > self.max_facts:
-            facts_sorted = sorted(existing, key=lambda f: (f.get("importance", 0), f.get("timestamp", "")))
-            for old in facts_sorted[:-(self.max_facts)]:
+            facts_sorted = sorted(
+                existing, key=lambda f: (f.get("importance", 0), f.get("timestamp", ""))
+            )
+            for old in facts_sorted[: -(self.max_facts)]:
                 await self._store.adelete(("facts", thread_id), old["id"])
 
         return fact_id
 
-    async def load_context(self, thread_id: str, current_query: str,
-                           top_k: int = 5,
-                           run_id: str | None = None) -> MemoryContext:
+    async def load_context(
+        self,
+        thread_id: str,
+        current_query: str,
+        top_k: int = 5,
+        run_id: str | None = None,
+    ) -> MemoryContext:
         short = []
         completed_steps = []
         terminal_output = ""
@@ -117,7 +135,9 @@ class MemoryManager:
         long_facts = []
         all_facts = await self._get_facts(thread_id)
         if all_facts and self._store:
-            long_facts = await self.hybrid.retrieve(current_query, all_facts, top_k=top_k)
+            long_facts = await self.hybrid.retrieve(
+                current_query, all_facts, top_k=top_k
+            )
 
         parts = []
         if long_facts:
@@ -134,13 +154,16 @@ class MemoryManager:
                 role_label = "用户" if m["role"] in ("human", "user") else "AI"
                 parts.append(f"- [{role_label}] {m['content'][:200]}")
 
-        logger.info("context_loaded", extra={
-            "thread_id": thread_id,
-            "short_msg_count": len(short),
-            "fact_count": len(long_facts),
-            "completed_steps": completed_steps,
-            "has_terminal": bool(terminal_output),
-        })
+        logger.info(
+            "context_loaded",
+            extra={
+                "thread_id": thread_id,
+                "short_msg_count": len(short),
+                "fact_count": len(long_facts),
+                "completed_steps": completed_steps,
+                "has_terminal": bool(terminal_output),
+            },
+        )
 
         return MemoryContext(
             short_term_messages=short,
@@ -173,7 +196,7 @@ class MemoryManager:
         system_prompt = (
             "请从以下对话中提取关于用户的重要信息（偏好、习惯、个人信息、重要决策），"
             "每条信息简洁概括（一句话）。不要提取琐碎的闲聊内容。\n"
-            "只返回 JSON 格式：{\"facts\": [{\"content\": \"...\", \"importance\": 0.8}]}"
+            '只返回 JSON 格式：{"facts": [{"content": "...", "importance": 0.8}]}'
         )
 
         try:
@@ -187,6 +210,7 @@ class MemoryManager:
                 temperature=0.3,
             )
             import json
+
             result = json.loads(response.choices[0].message.content or "{}")
             facts = result.get("facts", [])
 
@@ -195,7 +219,9 @@ class MemoryManager:
                 content = fact.get("content", "")
                 importance = float(fact.get("importance", 0.5))
                 if content:
-                    fact_id = await self._add_fact(thread_id, content, importance=importance)
+                    fact_id = await self._add_fact(
+                        thread_id, content, importance=importance
+                    )
                     if fact_id:
                         count += 1
             return count

@@ -35,7 +35,9 @@ def _public_schema(schema: dict) -> dict:
                 child.update(_public_schema(child))
     required = copied.get("required")
     if isinstance(required, list):
-        copied["required"] = [name for name in required if name not in _AUTHORITY_FIELDS]
+        copied["required"] = [
+            name for name in required if name not in _AUTHORITY_FIELDS
+        ]
     for key in ("items", "additionalProperties", "not"):
         child = copied.get(key)
         if isinstance(child, dict):
@@ -43,7 +45,10 @@ def _public_schema(schema: dict) -> dict:
     for key in ("oneOf", "anyOf", "allOf"):
         children = copied.get(key)
         if isinstance(children, list):
-            copied[key] = [_public_schema(child) if isinstance(child, dict) else child for child in children]
+            copied[key] = [
+                _public_schema(child) if isinstance(child, dict) else child
+                for child in children
+            ]
     return copied
 
 
@@ -52,9 +57,7 @@ class CapabilityRegistry:
 
     def __init__(self) -> None:
         self._capabilities: Dict[str, BaseCapability] = {}
-        self._public_actions: dict[
-            str, tuple[BaseCapability, ActionDescriptor]
-        ] = {}
+        self._public_actions: dict[str, tuple[BaseCapability, ActionDescriptor]] = {}
 
     def register(self, capability: BaseCapability) -> None:
         """Register a capability by its name.
@@ -105,7 +108,9 @@ class CapabilityRegistry:
         """Return names of all registered capabilities."""
         return list(self._capabilities.keys())
 
-    def find_action(self, public_name: str) -> tuple[BaseCapability, ActionDescriptor] | None:
+    def find_action(
+        self, public_name: str
+    ) -> tuple[BaseCapability, ActionDescriptor] | None:
         """Find the owning capability and action by explicit public name."""
         owner = self._public_actions.get(public_name)
         if owner is not None:

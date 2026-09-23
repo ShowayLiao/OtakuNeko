@@ -110,6 +110,7 @@ class TestInMemoryTraceStore:
         await store.record(t1)
         # Force a small delay so timestamps differ
         import asyncio
+
         await asyncio.sleep(0.01)
         t2 = AgentTrace(task_id=2, goal="second")
         await store.record(t2)
@@ -147,8 +148,6 @@ class TestInMemoryTraceStore:
 
         recent = await store.list_recent(limit=10)
         assert len(recent) <= 2
-
-
 
         class FakeAdapter:
             async def run(self, state):

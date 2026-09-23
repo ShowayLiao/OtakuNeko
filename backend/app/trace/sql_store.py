@@ -210,9 +210,7 @@ class SqlTraceStore:
             delete_trace_ids: set[str] = set()
             if self._max_age is not None:
                 cutoff = _utc_now() - self._max_age
-                old_stmt = select(_TRACE_ID).where(
-                    _TRACE_STARTED_AT < cutoff
-                )
+                old_stmt = select(_TRACE_ID).where(_TRACE_STARTED_AT < cutoff)
                 delete_trace_ids.update(
                     (await self._session.execute(old_stmt)).scalars().all()
                 )
@@ -232,14 +230,10 @@ class SqlTraceStore:
                 return
 
             await self._session.execute(
-                delete(TraceEventModel).where(
-                    _EVENT_TRACE_ID.in_(delete_trace_ids)
-                )
+                delete(TraceEventModel).where(_EVENT_TRACE_ID.in_(delete_trace_ids))
             )
             await self._session.execute(
-                delete(AgentTraceModel).where(
-                    _TRACE_ID.in_(delete_trace_ids)
-                )
+                delete(AgentTraceModel).where(_TRACE_ID.in_(delete_trace_ids))
             )
             await self._session.commit()
         except Exception:
@@ -258,22 +252,15 @@ class SqlTraceStore:
             .where(_EVENT_TRACE_ID == model.trace_id)
             .order_by(_EVENT_STEP_INDEX, _EVENT_ID)
         )
-        event_models = (
-            (await self._session.execute(event_stmt)).scalars().all()
-        )
+        event_models = (await self._session.execute(event_stmt)).scalars().all()
         steps: list[TraceStep] = []
         for event in event_models:
             if not event.step_json:
                 continue
             step_payload = json.loads(event.step_json)
             for event_payload in step_payload.get("events", []):
-                if (
-                    legacy_trace
-                    and "schema_version" not in event_payload
-                ):
-                    event_payload["schema_version"] = (
-                        TRACE_LEGACY_SCHEMA_VERSION
-                    )
+                if legacy_trace and "schema_version" not in event_payload:
+                    event_payload["schema_version"] = TRACE_LEGACY_SCHEMA_VERSION
             steps.append(TraceStep.model_validate(step_payload))
         headers["steps"] = steps
         headers["trace_id"] = model.trace_id

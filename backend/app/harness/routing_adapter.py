@@ -17,7 +17,9 @@ class FeatureFlagRoutingAdapter:
         self._router = router
         self._enabled = enabled
 
-    async def stream(self, state: AgentState, **kwargs: Any) -> AsyncIterator[dict[str, Any]]:
+    async def stream(
+        self, state: AgentState, **kwargs: Any
+    ) -> AsyncIterator[dict[str, Any]]:
         if not self._enabled:
             async for chunk in self._fallback.stream(state, **kwargs):
                 yield chunk

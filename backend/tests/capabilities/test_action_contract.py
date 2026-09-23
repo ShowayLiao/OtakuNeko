@@ -49,7 +49,10 @@ class TestActionDescriptor:
             "read data",
             input_schema={"type": "object", "properties": {}},
             version="v2",
-            output_schema={"type": "object", "properties": {"value": {"type": "string"}}},
+            output_schema={
+                "type": "object",
+                "properties": {"value": {"type": "string"}},
+            },
             risk_level="medium",
             timeout_seconds=12,
             retry_class="transient",

@@ -13,16 +13,14 @@ class MockMessage:
 def _make_checkpoint(messages):
     class FakeCheckpoint:
         pass
+
     cp = FakeCheckpoint()
     cp.checkpoint = {"channel_values": {"messages": messages}}
     return cp
 
 
 def _mock_embed():
-    return patch.object(
-        MemoryManager, "_get_facts",
-        new=AsyncMock(return_value=[])
-    )
+    return patch.object(MemoryManager, "_get_facts", new=AsyncMock(return_value=[]))
 
 
 class TestMemoryManagerPhaseBC:
@@ -35,8 +33,12 @@ class TestMemoryManagerPhaseBC:
         checkpointer.aget_tuple = AsyncMock(return_value=_make_checkpoint(messages))
 
         store = InMemoryStore()
-        mgr = MemoryManager(api_key="sk-test", base_url="https://test",
-                            checkpointer=checkpointer, store=store)
+        mgr = MemoryManager(
+            api_key="sk-test",
+            base_url="https://test",
+            checkpointer=checkpointer,
+            store=store,
+        )
 
         ctx = await mgr.load_context("thread-1", "继续聊天")
         assert isinstance(ctx, MemoryContext)
@@ -49,8 +51,12 @@ class TestMemoryManagerPhaseBC:
         checkpointer.aget_tuple = AsyncMock(return_value=None)
 
         store = InMemoryStore()
-        mgr = MemoryManager(api_key="sk-test", base_url="https://test",
-                            checkpointer=checkpointer, store=store)
+        mgr = MemoryManager(
+            api_key="sk-test",
+            base_url="https://test",
+            checkpointer=checkpointer,
+            store=store,
+        )
 
         ctx = await mgr.load_context("ghost-thread", "随便聊聊")
         assert ctx.short_term_messages == []
@@ -63,21 +69,43 @@ class TestMemoryManagerPhaseBC:
         checkpointer.aget_tuple = AsyncMock(return_value=_make_checkpoint(messages))
 
         store = InMemoryStore()
-        await store.aput(("facts", "thread-facts"), "fact-1",
-                         {"content": "用户偏好科幻类型", "importance": 0.9,
-                          "timestamp": "2025-01-01", "source": "conversation",
-                          "embedding": [0.1] * 1536})
-        await store.aput(("facts", "thread-facts"), "fact-2",
-                         {"content": "用户喜欢宫崎骏", "importance": 0.7,
-                          "timestamp": "2025-01-02", "source": "conversation",
-                          "embedding": [0.2] * 1536})
+        await store.aput(
+            ("facts", "thread-facts"),
+            "fact-1",
+            {
+                "content": "用户偏好科幻类型",
+                "importance": 0.9,
+                "timestamp": "2025-01-01",
+                "source": "conversation",
+                "embedding": [0.1] * 1536,
+            },
+        )
+        await store.aput(
+            ("facts", "thread-facts"),
+            "fact-2",
+            {
+                "content": "用户喜欢宫崎骏",
+                "importance": 0.7,
+                "timestamp": "2025-01-02",
+                "source": "conversation",
+                "embedding": [0.2] * 1536,
+            },
+        )
 
-        mgr = MemoryManager(api_key="sk-test", base_url="https://test",
-                            checkpointer=checkpointer, store=store)
+        mgr = MemoryManager(
+            api_key="sk-test",
+            base_url="https://test",
+            checkpointer=checkpointer,
+            store=store,
+        )
 
-        with patch.object(mgr.hybrid, "retrieve", new=AsyncMock(return_value=[
-            {"content": "用户偏好科幻类型", "importance": 0.9}
-        ])):
+        with patch.object(
+            mgr.hybrid,
+            "retrieve",
+            new=AsyncMock(
+                return_value=[{"content": "用户偏好科幻类型", "importance": 0.9}]
+            ),
+        ):
             ctx = await mgr.load_context("thread-facts", "推荐动画")
             assert len(ctx.long_term_facts) >= 1
 
@@ -87,8 +115,12 @@ class TestMemoryManagerPhaseBC:
         messages = [MockMessage("human", "hello")]
         checkpointer.aget_tuple = AsyncMock(return_value=_make_checkpoint(messages))
 
-        mgr = MemoryManager(api_key="sk-test", base_url="https://test",
-                            checkpointer=checkpointer, store=None)
+        mgr = MemoryManager(
+            api_key="sk-test",
+            base_url="https://test",
+            checkpointer=checkpointer,
+            store=None,
+        )
 
         ctx = await mgr.load_context("no-store-thread", "查询")
         assert ctx.short_term_messages != []
@@ -97,11 +129,14 @@ class TestMemoryManagerPhaseBC:
     @pytest.mark.asyncio
     async def test_add_and_retrieve_fact_via_store(self):
         store = InMemoryStore()
-        mgr = MemoryManager(api_key="sk-test", base_url="https://test",
-                            store=store)
+        mgr = MemoryManager(api_key="sk-test", base_url="https://test", store=store)
 
-        with patch.object(mgr.vector, "embed", new=AsyncMock(return_value=[[0.0] * 1536])):
-            fact_id = await mgr._add_fact("thread-add", "用户喜欢Python", importance=0.8)
+        with patch.object(
+            mgr.vector, "embed", new=AsyncMock(return_value=[[0.0] * 1536])
+        ):
+            fact_id = await mgr._add_fact(
+                "thread-add", "用户喜欢Python", importance=0.8
+            )
             assert fact_id is not None
 
         facts = await mgr._get_facts("thread-add")
@@ -115,8 +150,12 @@ class TestMemoryManagerPhaseBC:
         messages = [MockMessage("human", f"msg{i}") for i in range(10)]
         checkpointer.aget_tuple = AsyncMock(return_value=_make_checkpoint(messages))
 
-        mgr = MemoryManager(api_key="sk-test", base_url="https://test",
-                            checkpointer=checkpointer, store=None)
+        mgr = MemoryManager(
+            api_key="sk-test",
+            base_url="https://test",
+            checkpointer=checkpointer,
+            store=None,
+        )
 
         count = await mgr.extract_and_store_facts("thread-no-store")
         assert count == 0

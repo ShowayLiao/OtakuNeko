@@ -44,7 +44,10 @@ def test_model_snapshot_contains_safe_scope_but_no_runtime_authority() -> None:
     assert "user_id" not in str(dumped)
     assert "token" not in str(dumped)
     assert snapshot.snapshot_hash
-    assert ModelContextSnapshot.model_validate(dumped).snapshot_hash == snapshot.snapshot_hash
+    assert (
+        ModelContextSnapshot.model_validate(dumped).snapshot_hash
+        == snapshot.snapshot_hash
+    )
 
 
 def test_cross_owner_and_untrusted_memory_cannot_become_trusted_context() -> None:
@@ -79,7 +82,9 @@ def test_cross_owner_and_untrusted_memory_cannot_become_trusted_context() -> Non
 
 
 def test_context_budget_truncation_is_explicit_and_preserves_policy_metadata() -> None:
-    snapshot = ContextManager(_context(), max_context_chars=80, max_memory_items=2).build_snapshot(
+    snapshot = ContextManager(
+        _context(), max_context_chars=80, max_memory_items=2
+    ).build_snapshot(
         memory_context=MemoryContext(
             memory_facts=[
                 MemoryFact(
@@ -110,7 +115,9 @@ def test_context_budget_truncation_is_explicit_and_preserves_policy_metadata() -
     assert all(len(item.content) <= 80 for item in snapshot.memory)
 
 
-def test_context_isolates_tenant_thread_and_keeps_external_envelopes_untrusted() -> None:
+def test_context_isolates_tenant_thread_and_keeps_external_envelopes_untrusted() -> (
+    None
+):
     trusted_context = ExecutionContext(
         principal_id=7,
         tenant_id="tenant-a",

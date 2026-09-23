@@ -118,7 +118,9 @@ async def test_changed_payload_with_same_key_is_conflict(schedule_adapter):
     adapter, calls = schedule_adapter
 
     await adapter.execute(_context(7), "create_schedule", _create_args("same", "1"))
-    result = await adapter.execute(_context(7), "create_schedule", _create_args("same", "2"))
+    result = await adapter.execute(
+        _context(7), "create_schedule", _create_args("same", "2")
+    )
 
     assert result["success"] is False
     assert result["error_type"] == "idempotency_conflict"

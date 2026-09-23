@@ -52,16 +52,12 @@ async def test_sql_store_round_trip_is_scoped_and_redacted(db_session):
     assert await store.query(trace.trace_id, user_id=8) is None
     header = (
         await db_session.exec(
-            select(AgentTraceModel).where(
-                AgentTraceModel.trace_id == trace.trace_id
-            )
+            select(AgentTraceModel).where(AgentTraceModel.trace_id == trace.trace_id)
         )
     ).one()
     event = (
         await db_session.exec(
-            select(TraceEventModel).where(
-                TraceEventModel.trace_id == trace.trace_id
-            )
+            select(TraceEventModel).where(TraceEventModel.trace_id == trace.trace_id)
         )
     ).one()
     raw_database_payload = f"{header.goal}{header.headers_json}{event.step_json}"
@@ -195,9 +191,7 @@ async def test_sql_store_stable_cursor_pagination(db_session):
         await store.record(trace)
 
     first_page, cursor = await store.list_page(limit=2, user_id=7)
-    second_page, next_cursor = await store.list_page(
-        limit=2, user_id=7, cursor=cursor
-    )
+    second_page, next_cursor = await store.list_page(limit=2, user_id=7, cursor=cursor)
 
     assert len(first_page) == 2
     assert len(second_page) == 1

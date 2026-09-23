@@ -24,7 +24,9 @@ class BM25Retriever:
             self.bm25 = BM25Okapi(tokenized)
             self._dirty = False
 
-    def search(self, query: str, top_k: int = 5, facts: list[str] | None = None) -> list[tuple[int, float]]:
+    def search(
+        self, query: str, top_k: int = 5, facts: list[str] | None = None
+    ) -> list[tuple[int, float]]:
         if facts is not None:
             self._ensure_index(facts)
         if not self.bm25:
@@ -33,11 +35,7 @@ class BM25Retriever:
         scores = self.bm25.get_scores(tokenized_query)
         max_score = max(scores) if max(scores) and max(scores) > 0 else 1
         ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
-        positive = [
-            (int(i), float(s / max_score))
-            for i, s in ranked[:top_k]
-            if s > 0
-        ]
+        positive = [(int(i), float(s / max_score)) for i, s in ranked[:top_k] if s > 0]
         if positive:
             return positive
 
@@ -53,8 +51,8 @@ class BM25Retriever:
             return []
         return [
             (int(i), float(score / max_overlap))
-            for i, score in sorted(
-                overlap, key=lambda item: item[1], reverse=True
-            )[:top_k]
+            for i, score in sorted(overlap, key=lambda item: item[1], reverse=True)[
+                :top_k
+            ]
             if score > 0
         ]

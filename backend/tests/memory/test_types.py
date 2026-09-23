@@ -40,26 +40,18 @@ class TestMemoryRecord:
             MemoryRecord(user_id=1, content="fact")
 
     def test_importance_range_valid(self):
-        rec = MemoryRecord(
-            user_id=1, thread_id="th-1", content="fact", importance=0.0
-        )
+        rec = MemoryRecord(user_id=1, thread_id="th-1", content="fact", importance=0.0)
         assert rec.importance == 0.0
-        rec = MemoryRecord(
-            user_id=1, thread_id="th-1", content="fact", importance=1.0
-        )
+        rec = MemoryRecord(user_id=1, thread_id="th-1", content="fact", importance=1.0)
         assert rec.importance == 1.0
 
     def test_importance_below_zero_raises(self):
         with pytest.raises(ValueError):
-            MemoryRecord(
-                user_id=1, thread_id="th-1", content="fact", importance=-0.1
-            )
+            MemoryRecord(user_id=1, thread_id="th-1", content="fact", importance=-0.1)
 
     def test_importance_above_one_raises(self):
         with pytest.raises(ValueError):
-            MemoryRecord(
-                user_id=1, thread_id="th-1", content="fact", importance=1.1
-            )
+            MemoryRecord(user_id=1, thread_id="th-1", content="fact", importance=1.1)
 
     def test_kind_as_string_is_validated(self):
         rec = MemoryRecord(user_id=1, content="fact", kind="semantic")

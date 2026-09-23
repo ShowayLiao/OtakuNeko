@@ -143,13 +143,17 @@ class SqlIdempotencyStore:
                 },
             )
         event = (
-            await self._session.execute(
-                select(AgentRunEvent).where(
-                    AgentRunEvent.run_id == run.run_id,
-                    AgentRunEvent.event_type == "idempotency.result",
+            (
+                await self._session.execute(
+                    select(AgentRunEvent).where(
+                        AgentRunEvent.run_id == run.run_id,
+                        AgentRunEvent.event_type == "idempotency.result",
+                    )
                 )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if event is not None:
             return IdempotencyExecution(
                 status="replayed",
@@ -211,10 +215,14 @@ class InMemoryIdempotencyStore:
                 value = operation()
                 if inspect.isawaitable(value):
                     value = await value
-                result = value if isinstance(value, dict) else {
-                    "status": "succeeded",
-                    "message": "Operation completed.",
-                }
+                result = (
+                    value
+                    if isinstance(value, dict)
+                    else {
+                        "status": "succeeded",
+                        "message": "Operation completed.",
+                    }
+                )
             except Exception:
                 result = _safe_failure()
             self._records[identity] = (payload_hash, result)

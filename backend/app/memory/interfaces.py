@@ -62,7 +62,7 @@ class ContextCompiler:
         suffix = "... (truncated)"
         if max_chars <= len(suffix):
             return suffix[:max_chars]
-        return text[:max_chars - len(suffix)] + suffix
+        return text[: max_chars - len(suffix)] + suffix
 
     def compile(
         self,
@@ -83,11 +83,7 @@ class ContextCompiler:
         if isinstance(preferences, str):
             preferences = [preferences]
         preference_text = self._bound(
-            "\n".join(
-                self._bound(item)
-                for item in preferences
-                if str(item).strip()
-            )
+            "\n".join(self._bound(item) for item in preferences if str(item).strip())
         )
         if preference_text:
             blocks.append(
@@ -102,7 +98,11 @@ class ContextCompiler:
         fact_lines: list[str] = []
         fact_trust: list[bool] = []
         for raw_fact in memory_facts or []:
-            fact = raw_fact if isinstance(raw_fact, MemoryFact) else MemoryFact.from_dict(raw_fact)
+            fact = (
+                raw_fact
+                if isinstance(raw_fact, MemoryFact)
+                else MemoryFact.from_dict(raw_fact)
+            )
             if fact.is_expired():
                 continue
             trust = "trusted" if fact.trusted else "untrusted-data"
@@ -147,13 +147,11 @@ class ContextCompiler:
     def render(self, blocks: list[ContextBlock]) -> str:
         rendered: list[str] = []
         for block in blocks:
-            content = self._bound(
-                html.escape(self._bound(block.content), quote=False)
-            )
+            content = self._bound(html.escape(self._bound(block.content), quote=False))
             trust = "trusted" if block.trusted else "untrusted-data"
             rendered.append(
-                f"<{block.kind} trust=\"{trust}\" "
-                f"source=\"{html.escape(block.source_type)}\">"
+                f'<{block.kind} trust="{trust}" '
+                f'source="{html.escape(block.source_type)}">'
                 f"{content}</{block.kind}>"
             )
         return "\n".join(rendered)

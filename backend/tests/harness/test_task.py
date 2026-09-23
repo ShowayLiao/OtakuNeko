@@ -43,7 +43,13 @@ class TestAgentTaskInstantiation:
     def test_model_dump_includes_all_fields(self) -> None:
         task = AgentTask(user_id=1, goal="test", metadata={"key": "val"})
         data = task.model_dump()
-        assert set(data.keys()) == {"task_id", "user_id", "goal", "metadata", "created_at"}
+        assert set(data.keys()) == {
+            "task_id",
+            "user_id",
+            "goal",
+            "metadata",
+            "created_at",
+        }
         assert data["user_id"] == 1
         assert data["goal"] == "test"
         assert data["metadata"] == {"key": "val"}

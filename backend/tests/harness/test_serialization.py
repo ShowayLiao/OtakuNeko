@@ -45,7 +45,10 @@ class TestAgentStateSerialization:
         data = original.to_dict()
         restored = AgentState.from_dict(data)
         assert restored.status == "completed"
-        assert restored.result == {"recommendations": ["Steins;Gate"], "reason": "psychological"}
+        assert restored.result == {
+            "recommendations": ["Steins;Gate"],
+            "reason": "psychological",
+        }
 
     def test_round_trip_failed_state(self) -> None:
         task = AgentTask(user_id=1, goal="fail test")

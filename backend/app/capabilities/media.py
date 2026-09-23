@@ -45,7 +45,12 @@ def _settings() -> Any:
 def _qb_access_allowed(user_id: int | None) -> bool:
     """Mirror the server-owned qB allowlist without exposing provider config."""
     config = _settings()
-    if config is None or not config.ENABLE_QB_PROXY or not isinstance(user_id, int) or user_id <= 0:
+    if (
+        config is None
+        or not config.ENABLE_QB_PROXY
+        or not isinstance(user_id, int)
+        or user_id <= 0
+    ):
         return False
     raw = config.QB_ALLOWED_USER_IDS.strip()
     if not raw:
@@ -62,7 +67,9 @@ def _qb_access_allowed(user_id: int | None) -> bool:
 
 def _provider_configured() -> bool:
     config = _settings()
-    return bool(config and config.ENABLE_QB_PROXY and config.QB_HOST and config.QB_USERNAME)
+    return bool(
+        config and config.ENABLE_QB_PROXY and config.QB_HOST and config.QB_USERNAME
+    )
 
 
 def _safe_model(value: Any) -> Any:
@@ -92,7 +99,11 @@ def _safe_operation_result(result: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {"status": "succeeded", "message": "Operation completed."}
     allowed = {
-        "status", "message", "error_code", "retryable", "old_resource_id",
+        "status",
+        "message",
+        "error_code",
+        "retryable",
+        "old_resource_id",
         "compensation_status",
     }
     return {key: value for key, value in payload.items() if key in allowed}

@@ -79,8 +79,7 @@ def collection_idempotency_scope(
     resource_key: str,
 ) -> str:
     return (
-        f"principal:{int(principal_id)}|method:{method.upper()}|"
-        f"resource:{resource_key}"
+        f"principal:{int(principal_id)}|method:{method.upper()}|resource:{resource_key}"
     )
 
 
@@ -194,7 +193,11 @@ class CollectionHttpIdempotencyAdapter:
                     "item_count": item_count,
                 }
             except HTTPException as error:
-                detail = error.detail if isinstance(error.detail, str) else "HTTP operation failed."
+                detail = (
+                    error.detail
+                    if isinstance(error.detail, str)
+                    else "HTTP operation failed."
+                )
                 return _error_result(
                     status="failed",
                     http_status=error.status_code,
@@ -255,9 +258,7 @@ def collection_http_response(execution: IdempotencyExecution) -> JSONResponse:
 
     headers = {
         "X-Idempotency-Status": execution.status,
-        "X-Collection-Cache-Status": str(
-            result.get("cache_status", "not_applicable")
-        ),
+        "X-Collection-Cache-Status": str(result.get("cache_status", "not_applicable")),
     }
     return JSONResponse(content=content, status_code=status_code, headers=headers)
 

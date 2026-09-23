@@ -134,7 +134,9 @@ async def test_provider_error_is_classified_and_does_not_expose_raw_detail():
 
 
 def test_provider_endpoint_failures_have_safe_ssrf_category():
-    error = ValueError("provider endpoint resolved address is not public: 169.254.169.254")
+    error = ValueError(
+        "provider endpoint resolved address is not public: 169.254.169.254"
+    )
 
     assert provider_error_code(error) == ("ssrf", False)
     assert safe_provider_detail(error) == "Provider endpoint is not allowed"
@@ -283,7 +285,12 @@ async def test_provider_stream_accumulates_reasoning_and_final_decision():
         )
     ]
 
-    assert [delta.kind for delta in deltas] == ["reasoning", "text", "reasoning", "text"]
+    assert [delta.kind for delta in deltas] == [
+        "reasoning",
+        "text",
+        "reasoning",
+        "text",
+    ]
     assert adapter.last_result is not None
     assert adapter.last_result.reasoning == "first second"
     assert adapter.last_result.text == decision_text
@@ -392,7 +399,9 @@ async def test_gateway_keeps_synthesize_signature_and_records_safe_result():
     assert gateway.last_result is not None
     assert gateway.last_result.provider == "openai-compatible"
     events = [event for step in trace.steps for event in step.events]
-    model_events = [event for event in events if event.event_type == TraceEventType.MODEL_CALL]
+    model_events = [
+        event for event in events if event.event_type == TraceEventType.MODEL_CALL
+    ]
     assert model_events
     assert model_events[0].data["provider"] == "openai-compatible"
     assert "test-key" not in str(model_events[0].data)
@@ -436,7 +445,9 @@ async def test_gateway_accepts_only_provider_neutral_context_snapshot():
 
 @pytest.mark.asyncio
 async def test_gateway_infer_prompt_describes_required_decision_fields():
-    completions = FakeCompletions(response=response(content='{"action":"respond","content":"done"}'))
+    completions = FakeCompletions(
+        response=response(content='{"action":"respond","content":"done"}')
+    )
     gateway = OpenAIModelGateway(
         api_key="test-key",
         base_url="https://example.test/v1",

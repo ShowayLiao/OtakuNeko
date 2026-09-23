@@ -199,9 +199,7 @@ class TestRuntimeInstrumentation:
             checkpoint_store=checkpoints,
             trace_store=store,
         )
-        stream = runtime.stream(
-            AgentTask(task_id=99, user_id=1, goal="private")
-        )
+        stream = runtime.stream(AgentTask(task_id=99, user_id=1, goal="private"))
 
         await anext(stream)
         await stream.aclose()
@@ -237,9 +235,7 @@ class TestRuntimeInstrumentation:
         store = InMemoryTraceStore()
         runtime = AgentRuntime(RoutingStreamAdapter(), trace_store=store)
 
-        [chunk async for chunk in runtime.stream(
-            AgentTask(user_id=1, goal="route")
-        )]
+        [chunk async for chunk in runtime.stream(AgentTask(user_id=1, goal="route"))]
 
         [trace] = await store.list_recent(limit=1, user_id=1)
         events = [event for step in trace.steps for event in step.events]

@@ -141,6 +141,7 @@ async def _run_with_controls(
     deadline: float | None = None,
 ) -> Any:
     """Await one provider task with cooperative cancellation and a deadline."""
+
     def discard_unstarted_operation() -> None:
         close = getattr(operation, "close", None)
         if close is not None:
@@ -170,9 +171,7 @@ async def _run_with_controls(
 
     provider_task = asyncio.ensure_future(operation)
     cancellation_task = (
-        asyncio.create_task(cancellation.wait())
-        if cancellation is not None
-        else None
+        asyncio.create_task(cancellation.wait()) if cancellation is not None else None
     )
     try:
         wait_set = {provider_task}
@@ -224,7 +223,10 @@ def provider_error_code(exc: BaseException) -> tuple[ProviderErrorCode, bool]:
         return explicit_code, False
     name = type(exc).__name__.lower()
     message = str(exc).lower()
-    if "hostname could not be resolved" in message or "resolved to no addresses" in message:
+    if (
+        "hostname could not be resolved" in message
+        or "resolved to no addresses" in message
+    ):
         return "dns", False
     if "provider endpoint" in message and (
         "resolved address" in message
@@ -316,7 +318,9 @@ def _annotate_call(
 ) -> ModelCallResult:
     kwargs = kwargs or {}
     provider_call_id = _field(response, "id") if response is not None else None
-    result.call_id = str(provider_call_id or kwargs.get("call_id") or result.call_id or uuid4().hex)
+    result.call_id = str(
+        provider_call_id or kwargs.get("call_id") or result.call_id or uuid4().hex
+    )
     result.trace_id = _trace_id_for_call(kwargs)
     return result
 
@@ -599,7 +603,9 @@ class LangChainModelAdapter:
         self.last_result = result
         return result
 
-    async def complete(self, *, messages: list[dict[str, Any]], **kwargs: Any) -> ModelCallResult:
+    async def complete(
+        self, *, messages: list[dict[str, Any]], **kwargs: Any
+    ) -> ModelCallResult:
         started = time.perf_counter()
         try:
             response = await self.model.ainvoke(messages, **kwargs)
@@ -615,8 +621,10 @@ class LangChainModelAdapter:
                 tool_calls=[
                     {
                         "id": _field(tool_call, "id"),
-                        "name": _field(tool_call, "name") or _field(_field(tool_call, "function"), "name"),
-                        "arguments": _field(tool_call, "args") or _field(_field(tool_call, "function"), "arguments", {}),
+                        "name": _field(tool_call, "name")
+                        or _field(_field(tool_call, "function"), "name"),
+                        "arguments": _field(tool_call, "args")
+                        or _field(_field(tool_call, "function"), "arguments", {}),
                     }
                     for tool_call in (_field(response, "tool_calls") or [])
                 ],
@@ -806,9 +814,7 @@ class OpenAIModelGateway:
         self.temperature = self.context.temperature
         self.deepseek_options = self.context.deepseek_options
         self.provider = (
-            "deepseek"
-            if "deepseek" in base_url.lower()
-            else "openai-compatible"
+            "deepseek" if "deepseek" in base_url.lower() else "openai-compatible"
         )
         self._owns_client = client is None and adapter is None
         if client is not None:
@@ -920,9 +926,18 @@ class OpenAIModelGateway:
         adapter_kwargs = {
             key: value
             for key, value in kwargs.items()
-            if key not in {
-                "goal", "messages", "model", "temperature", "context",
-                "run_id", "trace_id", "call_id", "cancellation", "deadline",
+            if key
+            not in {
+                "goal",
+                "messages",
+                "model",
+                "temperature",
+                "context",
+                "run_id",
+                "trace_id",
+                "call_id",
+                "cancellation",
+                "deadline",
                 "budget",
             }
         }
@@ -931,11 +946,7 @@ class OpenAIModelGateway:
             thinking_enabled = bool(self.deepseek_options.get("thinking", True))
             adapter_kwargs.setdefault(
                 "extra_body",
-                {
-                    "thinking": {
-                        "type": "enabled" if thinking_enabled else "disabled"
-                    }
-                },
+                {"thinking": {"type": "enabled" if thinking_enabled else "disabled"}},
             )
             if thinking_enabled:
                 effort = self.deepseek_options.get("reasoning_effort", "high")
@@ -1109,18 +1120,13 @@ class OpenAIModelGateway:
         **kwargs: Any,
     ) -> ModelCallResult:
         normalized = [
-            result.prompt_payload()
-            if isinstance(result, AgentResult)
-            else result
+            result.prompt_payload() if isinstance(result, AgentResult) else result
             for result in results
         ]
-        result_message = (
-            "[结构化执行结果]\n"
-            + json.dumps(
-                {"goal": goal, "results": normalized},
-                ensure_ascii=False,
-                default=str,
-            )
+        result_message = "[结构化执行结果]\n" + json.dumps(
+            {"goal": goal, "results": normalized},
+            ensure_ascii=False,
+            default=str,
         )
         safe_messages = [
             {
@@ -1143,9 +1149,7 @@ class OpenAIModelGateway:
         if self.deepseek_options:
             thinking_enabled = bool(self.deepseek_options.get("thinking", True))
             request["extra_body"] = {
-                "thinking": {
-                    "type": "enabled" if thinking_enabled else "disabled"
-                }
+                "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
             }
             if thinking_enabled:
                 effort = self.deepseek_options.get("reasoning_effort", "high")
@@ -1161,6 +1165,7 @@ class OpenAIModelGateway:
         synthesis_trace_id = (
             str(recorder.trace.trace_id) if recorder is not None else None
         )
+
         async def complete() -> ModelCallResult:
             return await self.adapter.complete(
                 messages=prompt_messages,

@@ -68,9 +68,13 @@ async def test_dispatcher_rejects_input_schema_before_domain_call() -> None:
             "additionalProperties": False,
         },
     )
-    registry, capability = _registry(descriptor, CapabilityResult.ok(value="unused").to_dict())
+    registry, capability = _registry(
+        descriptor, CapabilityResult.ok(value="unused").to_dict()
+    )
 
-    result = await Dispatcher(registry).dispatch(_decision({"limit": "not-an-int"}), _context())
+    result = await Dispatcher(registry).dispatch(
+        _decision({"limit": "not-an-int"}), _context()
+    )
 
     assert result.status == "denied"
     assert result.error_code == "invalid_request"
@@ -201,7 +205,8 @@ def test_action_specific_field_limit_preserves_complete_calendar() -> None:
     assert result.status == "succeeded"
     assert result.provenance["bounded"] is False
     assert [
-        day["weekday"]["id"] for day in result.model_projection()["safe_output"]["calendar"]
+        day["weekday"]["id"]
+        for day in result.model_projection()["safe_output"]["calendar"]
     ] == list(range(1, 8))
 
 

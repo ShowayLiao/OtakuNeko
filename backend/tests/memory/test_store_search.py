@@ -8,8 +8,28 @@ class TestStoreSearch:
     @pytest.mark.asyncio
     async def test_search_returns_matching_facts(self):
         store = InMemoryStore()
-        await store.aput(("facts", "thread-1"), "k1", {"content": "喜欢科幻", "importance": 0.9, "timestamp": "2025", "embedding": [0.1] * 1536, "source": "conv"})
-        await store.aput(("facts", "thread-1"), "k2", {"content": "讨厌恐怖片", "importance": 0.7, "timestamp": "2025", "embedding": [0.2] * 1536, "source": "conv"})
+        await store.aput(
+            ("facts", "thread-1"),
+            "k1",
+            {
+                "content": "喜欢科幻",
+                "importance": 0.9,
+                "timestamp": "2025",
+                "embedding": [0.1] * 1536,
+                "source": "conv",
+            },
+        )
+        await store.aput(
+            ("facts", "thread-1"),
+            "k2",
+            {
+                "content": "讨厌恐怖片",
+                "importance": 0.7,
+                "timestamp": "2025",
+                "embedding": [0.2] * 1536,
+                "source": "conv",
+            },
+        )
 
         items = await store.asearch(("facts", "thread-1"))
         assert len(items) == 2

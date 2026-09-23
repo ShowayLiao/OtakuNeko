@@ -24,7 +24,7 @@ logger = get_logger(__name__)
 _EXTRACTION_SYSTEM_PROMPT = (
     "请从以下对话中提取关于用户的重要信息（偏好、习惯、个人信息、重要决策），"
     "每条信息简洁概括（一句话）。不要提取琐碎的闲聊内容。\n"
-    "只返回 JSON 格式：{\"facts\": [{\"content\": \"...\", \"importance\": 0.8}]}"
+    '只返回 JSON 格式：{"facts": [{"content": "...", "importance": 0.8}]}'
 )
 
 
@@ -47,8 +47,7 @@ class LLMFactExtractor(MemoryExtractor):
     async def extract(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Run fact extraction over the given messages."""
         user_messages = [
-            message for message in messages
-            if message.get("role") in ("human", "user")
+            message for message in messages if message.get("role") in ("human", "user")
         ]
         if not user_messages:
             return []
@@ -88,8 +87,7 @@ class LLMFactExtractor(MemoryExtractor):
             return await self.extract(messages)
 
         user_messages = [
-            message for message in messages
-            if message.get("role") in ("human", "user")
+            message for message in messages if message.get("role") in ("human", "user")
         ]
         if not user_messages:
             return []
@@ -140,8 +138,16 @@ class LLMFactExtractor(MemoryExtractor):
         facts = result.get("facts", [])
         validated: list[dict[str, Any]] = []
         forbidden = {
-            "instruction", "instructions", "credential", "credentials",
-            "approval", "approve", "policy", "system", "tool", "external",
+            "instruction",
+            "instructions",
+            "credential",
+            "credentials",
+            "approval",
+            "approve",
+            "policy",
+            "system",
+            "tool",
+            "external",
             "prompt",
         }
         for fact in facts:

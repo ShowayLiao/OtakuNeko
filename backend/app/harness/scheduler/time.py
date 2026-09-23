@@ -17,10 +17,18 @@ def next_slot(schedule_expr: str, after: datetime, timezone_name: str) -> dateti
     """Return the next minute matching a small, deterministic cron subset."""
     validate_schedule(schedule_expr, timezone_name)
     zone = ZoneInfo(timezone_name)
-    local = after.astimezone(zone).replace(second=0, microsecond=0) + timedelta(minutes=1)
+    local = after.astimezone(zone).replace(second=0, microsecond=0) + timedelta(
+        minutes=1
+    )
     fields = schedule_expr.split()
     for _ in range(366 * 24 * 60):
-        values = (local.minute, local.hour, local.day, local.month, (local.weekday() + 1) % 7)
+        values = (
+            local.minute,
+            local.hour,
+            local.day,
+            local.month,
+            (local.weekday() + 1) % 7,
+        )
         if all(_matches(field, value) for field, value in zip(fields, values)):
             return local.astimezone(after.tzinfo or zone)
         local += timedelta(minutes=1)

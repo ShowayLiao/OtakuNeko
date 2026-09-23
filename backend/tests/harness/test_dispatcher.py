@@ -81,7 +81,9 @@ async def test_missing_capability_and_policy_deny_never_call_service() -> None:
     capability = FakeCapability(side_effect=True)
     registry = CapabilityRegistry()
     registry.register(capability)
-    dispatcher = Dispatcher(registry, policy_engine=PolicyEngine(allow_side_effects=False))
+    dispatcher = Dispatcher(
+        registry, policy_engine=PolicyEngine(allow_side_effects=False)
+    )
 
     missing = await dispatcher.dispatch(_decision("catalog.missing"), _context())
     denied = await dispatcher.dispatch(_decision("catalog.write"), _context())

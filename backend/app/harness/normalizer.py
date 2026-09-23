@@ -84,9 +84,15 @@ def _schema_error(value: Any, schema: dict[str, Any], path: str) -> str | None:
         return f"{path} must match enum"
 
     if isinstance(value, str):
-        if isinstance(schema.get("minLength"), int) and len(value) < schema["minLength"]:
+        if (
+            isinstance(schema.get("minLength"), int)
+            and len(value) < schema["minLength"]
+        ):
             return f"{path} is shorter than allowed"
-        if isinstance(schema.get("maxLength"), int) and len(value) > schema["maxLength"]:
+        if (
+            isinstance(schema.get("maxLength"), int)
+            and len(value) > schema["maxLength"]
+        ):
             return f"{path} is longer than allowed"
     if isinstance(value, dict):
         properties = schema.get("properties", {})
@@ -161,7 +167,9 @@ def _validate_bounds(
         if isinstance(item, dict):
             fields += len(item)
             if fields > max_fields:
-                raise OutputBoundsError(f"{label} field count exceeds the configured limit")
+                raise OutputBoundsError(
+                    f"{label} field count exceeds the configured limit"
+                )
             for key, child in item.items():
                 if not isinstance(key, str):
                     raise OutputBoundsError(f"{label} contains a non-string field")
@@ -169,7 +177,9 @@ def _validate_bounds(
         elif isinstance(item, list):
             fields += len(item)
             if fields > max_fields:
-                raise OutputBoundsError(f"{label} item count exceeds the configured limit")
+                raise OutputBoundsError(
+                    f"{label} item count exceeds the configured limit"
+                )
             for child in item:
                 visit(child, depth + 1)
         elif isinstance(item, str) and len(item.encode("utf-8")) > max_string_bytes:
@@ -177,11 +187,15 @@ def _validate_bounds(
 
     visit(value, 0)
     try:
-        payload_bytes = len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+        payload_bytes = len(
+            json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        )
     except (TypeError, ValueError) as exc:
         raise SchemaContractError(f"{label} is not JSON serializable") from exc
     if payload_bytes > max_payload_bytes:
-        raise OutputBoundsError(f"{label} payload exceeds the configured limit", payload_bytes=payload_bytes)
+        raise OutputBoundsError(
+            f"{label} payload exceeds the configured limit", payload_bytes=payload_bytes
+        )
 
 
 def _safe_value(value: Any, *, max_depth: int, max_string_bytes: int) -> Any:
@@ -193,11 +207,15 @@ def _safe_value(value: Any, *, max_depth: int, max_string_bytes: int) -> Any:
             if any(part in lowered for part in _SENSITIVE_KEY_PARTS):
                 safe[key_text] = "[REDACTED]"
             else:
-                safe[key_text] = _safe_value(child, max_depth=max_depth - 1, max_string_bytes=max_string_bytes)
+                safe[key_text] = _safe_value(
+                    child, max_depth=max_depth - 1, max_string_bytes=max_string_bytes
+                )
         return safe
     if isinstance(value, list):
         return [
-            _safe_value(child, max_depth=max_depth - 1, max_string_bytes=max_string_bytes)
+            _safe_value(
+                child, max_depth=max_depth - 1, max_string_bytes=max_string_bytes
+            )
             for child in value
         ]
     if isinstance(value, str):
@@ -232,7 +250,9 @@ class _BoundedProjection:
     reasons: set[str] = field(default_factory=set)
 
 
-def _schema_child(schema: dict[str, Any] | None, key: str | int) -> dict[str, Any] | None:
+def _schema_child(
+    schema: dict[str, Any] | None, key: str | int
+) -> dict[str, Any] | None:
     if not isinstance(schema, dict):
         return None
     if isinstance(key, int):
@@ -280,7 +300,9 @@ def _bounded_safe_value(
                 if any(part in key_text.lower() for part in _SENSITIVE_KEY_PARTS):
                     safe[key_text] = "[REDACTED]"
                     continue
-                child = visit(item[key], depth + 1, _schema_child(item_schema, key_text))
+                child = visit(
+                    item[key], depth + 1, _schema_child(item_schema, key_text)
+                )
                 if child is not _OMIT:
                     safe[key_text] = child
             return safe
@@ -311,7 +333,9 @@ def _bounded_safe_value(
 
 def _json_size(value: Any) -> int | None:
     try:
-        return len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
+        return len(
+            json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        )
     except (TypeError, ValueError):
         return None
 
@@ -339,7 +363,9 @@ def _truncate_one_string(value: Any) -> bool:
     if isinstance(value, dict):
         for key, child in value.items():
             if isinstance(child, str) and len(child.encode("utf-8")) > 1:
-                value[key] = _truncate_text(child, max(1, len(child.encode("utf-8")) // 2))
+                value[key] = _truncate_text(
+                    child, max(1, len(child.encode("utf-8")) // 2)
+                )
                 return True
             if _truncate_one_string(child):
                 return True
@@ -347,7 +373,9 @@ def _truncate_one_string(value: Any) -> bool:
     if isinstance(value, list):
         for index, child in enumerate(value):
             if isinstance(child, str) and len(child.encode("utf-8")) > 1:
-                value[index] = _truncate_text(child, max(1, len(child.encode("utf-8")) // 2))
+                value[index] = _truncate_text(
+                    child, max(1, len(child.encode("utf-8")) // 2)
+                )
                 return True
             if _truncate_one_string(child):
                 return True
@@ -360,7 +388,9 @@ def _remove_one_optional_field(value: Any, schema: dict[str, Any] | None) -> boo
         for key, child in value.items():
             if _remove_one_optional_field(child, _schema_child(schema, key)):
                 return True
-        required = set(schema.get("required", [])) if isinstance(schema, dict) else set()
+        required = (
+            set(schema.get("required", [])) if isinstance(schema, dict) else set()
+        )
         candidates = [key for key in value if key not in required]
         if candidates:
             key = max(candidates, key=lambda item: _json_size(value[item]) or 0)
@@ -480,11 +510,16 @@ class ResultNormalizer:
         success = bool(raw.get("success", True))
         error_code = str(raw.get("error_type")) if raw.get("error_type") else None
         retryable = bool(raw.get("retryable", False))
-        data = raw.get("data") if isinstance(raw.get("data"), dict) else {
-            key: value
-            for key, value in raw.items()
-            if key not in {"success", "error", "error_type", "retryable", "latency_ms"}
-        }
+        data = (
+            raw.get("data")
+            if isinstance(raw.get("data"), dict)
+            else {
+                key: value
+                for key, value in raw.items()
+                if key
+                not in {"success", "error", "error_type", "retryable", "latency_ms"}
+            }
+        )
         try:
             max_output_fields = (
                 descriptor.max_output_fields
@@ -517,7 +552,9 @@ class ResultNormalizer:
                 latency_ms=latency_ms,
             )
         except OutputBoundsError as exc:
-            digest = hashlib.sha256(repr(raw).encode("utf-8", errors="replace")).hexdigest()
+            digest = hashlib.sha256(
+                repr(raw).encode("utf-8", errors="replace")
+            ).hexdigest()
             projection = _bounded_safe_value(
                 data,
                 max_depth=DEFAULT_MAX_OUTPUT_DEPTH,
@@ -546,7 +583,11 @@ class ResultNormalizer:
                     "size_bytes": exc.payload_bytes or bounded_size,
                     "reasons": sorted(reasons),
                 }
-                safe_data = bounded_data if isinstance(bounded_data, dict) else {"value": bounded_data}
+                safe_data = (
+                    bounded_data
+                    if isinstance(bounded_data, dict)
+                    else {"value": bounded_data}
+                )
                 if not success:
                     safe_data = {
                         "error_type": error_code or "tool_error",
@@ -572,7 +613,10 @@ class ResultNormalizer:
                 status="failed",
                 error_code="payload_too_large",
                 retryable=False,
-                safe_output={"error_type": "payload_too_large", "message": "Capability output was bounded"},
+                safe_output={
+                    "error_type": "payload_too_large",
+                    "message": "Capability output was bounded",
+                },
                 artifacts=[
                     {
                         "artifact_id": digest,
@@ -592,7 +636,11 @@ class ResultNormalizer:
                 capability_version=descriptor.version,
             )
 
-        safe_data = _safe_value(data, max_depth=DEFAULT_MAX_OUTPUT_DEPTH, max_string_bytes=DEFAULT_MAX_OUTPUT_STRING_BYTES)
+        safe_data = _safe_value(
+            data,
+            max_depth=DEFAULT_MAX_OUTPUT_DEPTH,
+            max_string_bytes=DEFAULT_MAX_OUTPUT_STRING_BYTES,
+        )
         if not isinstance(safe_data, dict):
             safe_data = {"value": safe_data}
         if not success:
@@ -618,9 +666,16 @@ class ResultNormalizer:
 
     @staticmethod
     def _provenance(source: str, *, bounded: bool = False) -> dict[str, Any]:
-        return {"source": source, "trust": "untrusted", "bounded": bounded, "redacted": True}
+        return {
+            "source": source,
+            "trust": "untrusted",
+            "bounded": bounded,
+            "redacted": True,
+        }
 
-    def _failure(self, error_code: str, message: str, raw: Any, **metadata: Any) -> NormalizedResult:
+    def _failure(
+        self, error_code: str, message: str, raw: Any, **metadata: Any
+    ) -> NormalizedResult:
         return NormalizedResult(
             status="failed",
             error_code=error_code,

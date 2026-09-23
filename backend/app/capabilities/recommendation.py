@@ -105,10 +105,15 @@ class RecommendationCapability(BaseCapability):
         collections = await self._resolve_collections(kwargs)
         if not collections:
             return CapabilityResult.ok(
-                profile={"llm_summary": {"total_rated": 0, "taste_dictionary": {}},
-                         "chart_data": {"radar": [], "bar_count": [], "bar_score": []},
-                         "watched_ids": []},
-                evidence={"source": "empty_history", "message": _RECOMMEND_FALLBACK_MESSAGE},
+                profile={
+                    "llm_summary": {"total_rated": 0, "taste_dictionary": {}},
+                    "chart_data": {"radar": [], "bar_count": [], "bar_score": []},
+                    "watched_ids": [],
+                },
+                evidence={
+                    "source": "empty_history",
+                    "message": _RECOMMEND_FALLBACK_MESSAGE,
+                },
             )
 
         profile = generate_user_profile(collections)
@@ -134,7 +139,10 @@ class RecommendationCapability(BaseCapability):
                     "time_killers": [],
                     "avoid_tags": [],
                 },
-                evidence={"source": "empty_history", "message": _RECOMMEND_FALLBACK_MESSAGE},
+                evidence={
+                    "source": "empty_history",
+                    "message": _RECOMMEND_FALLBACK_MESSAGE,
+                },
             )
 
         profile = generate_user_profile(collections)
@@ -142,17 +150,21 @@ class RecommendationCapability(BaseCapability):
         from app.services.user_profile_service import _extract_four_quadrants
 
         tag_stats: dict[str, Any] = {}
-        for tag, tag_data in profile.get("llm_summary", {}).get(
-            "taste_dictionary", {}
-        ).items():
+        for tag, tag_data in (
+            profile.get("llm_summary", {}).get("taste_dictionary", {}).items()
+        ):
             count, avg_score = tag_data
             tag_stats[tag] = {"count": count, "avg_score": avg_score}
 
-        quadrants = _extract_four_quadrants(tag_stats) if tag_stats else {
-            "core_favorites": [],
-            "time_killers": [],
-            "avoid_tags": [],
-        }
+        quadrants = (
+            _extract_four_quadrants(tag_stats)
+            if tag_stats
+            else {
+                "core_favorites": [],
+                "time_killers": [],
+                "avoid_tags": [],
+            }
+        )
 
         chart_data = profile.get("chart_data", {})
         return CapabilityResult.ok(

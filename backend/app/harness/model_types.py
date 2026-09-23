@@ -90,8 +90,7 @@ class ProviderModelAdapter(Protocol):
         model: str,
         temperature: float = 0.6,
         **kwargs: Any,
-    ) -> ModelCallResult:
-        ...
+    ) -> ModelCallResult: ...
 
     def stream(
         self,
@@ -100,5 +99,4 @@ class ProviderModelAdapter(Protocol):
         model: str,
         temperature: float = 0.6,
         **kwargs: Any,
-    ) -> AsyncIterator[ModelDelta]:
-        ...
+    ) -> AsyncIterator[ModelDelta]: ...

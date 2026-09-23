@@ -106,7 +106,9 @@ class ContextManager:
                 return
             if len(content) > self.max_context_chars:
                 marker = "...[TRUNCATED]"
-                content = content[: max(0, self.max_context_chars - len(marker))] + marker
+                content = (
+                    content[: max(0, self.max_context_chars - len(marker))] + marker
+                )
                 truncated = True
             memory.append(
                 MemoryContextItem(

@@ -55,7 +55,9 @@ async def test_event_store_append_is_idempotent_and_ordered(db_session) -> None:
 
 
 @pytest.mark.asyncio
-async def test_event_store_rejects_payload_conflict_for_same_sequence(db_session) -> None:
+async def test_event_store_rejects_payload_conflict_for_same_sequence(
+    db_session,
+) -> None:
     await _create_run(db_session)
     store = EventStore(db_session)
     await store.append(

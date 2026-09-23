@@ -73,6 +73,20 @@ warn_redundant_casts = true
 show_error_codes = true
 pretty = true
 
+[tool.ruff]
+# `requires-python` declares 3.10 support, so pin the formatter target
+# explicitly instead of letting Ruff infer it, and keep `line-length` at the
+# value the format baseline in docs/quality-baselines was measured against.
+target-version = "py310"
+line-length = 88
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+# The repository stores LF (`core.autocrlf=true`, no .gitattributes), so force
+# LF rather than letting the Windows working tree and the Linux runner differ.
+line-ending = "lf"
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

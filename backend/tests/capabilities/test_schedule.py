@@ -30,8 +30,12 @@ class TestScheduleCapability:
     def test_write_actions_require_auth(self, capability):
         actions = {a.name: a for a in capability.actions()}
         for name in (
-            "create_schedule", "update_schedule", "delete_schedule",
-            "upsert_schedule", "bulk_upsert_schedules", "sync_bangumi_schedule",
+            "create_schedule",
+            "update_schedule",
+            "delete_schedule",
+            "upsert_schedule",
+            "bulk_upsert_schedules",
+            "sync_bangumi_schedule",
         ):
             assert actions[name].requires_auth is True, f"{name} must require auth"
 
@@ -52,18 +56,21 @@ class TestScheduleCapability:
 
     def test_bulk_schema_validates_each_schedule_item(self, capability):
         action = next(
-            action for action in capability.actions()
+            action
+            for action in capability.actions()
             if action.name == "bulk_upsert_schedules"
         )
 
         validate_input(
             {
-                "items": [{
-                    "source": "bangumi",
-                    "source_id": "1",
-                    "day_of_week": 1,
-                    "start_time": "20:00:00",
-                }],
+                "items": [
+                    {
+                        "source": "bangumi",
+                        "source_id": "1",
+                        "day_of_week": 1,
+                        "start_time": "20:00:00",
+                    }
+                ],
             },
             action,
         )
@@ -73,8 +80,12 @@ class TestScheduleCapability:
     @pytest.mark.asyncio
     async def test_missing_user_id_returns_unauthorized(self, capability):
         for action in (
-            "create_schedule", "update_schedule", "delete_schedule", "list_schedules",
-            "list_schedules_by_day", "list_unified_schedules",
+            "create_schedule",
+            "update_schedule",
+            "delete_schedule",
+            "list_schedules",
+            "list_schedules_by_day",
+            "list_unified_schedules",
         ):
             result = await capability.execute(action)
             assert result["success"] is False, f"{action} should reject missing user_id"

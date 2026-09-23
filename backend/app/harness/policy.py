@@ -58,12 +58,16 @@ class PolicyEngine:
         if descriptor.requires_auth and (
             principal is None or principal.principal_id <= 0
         ):
-            return PolicyDecision(False, "unauthorized", "Authenticated principal required")
+            return PolicyDecision(
+                False, "unauthorized", "Authenticated principal required"
+            )
 
         if descriptor.is_side_effect and (
             principal is None or principal.principal_id <= 0
         ):
-            return PolicyDecision(False, "unauthorized", "Authenticated principal required")
+            return PolicyDecision(
+                False, "unauthorized", "Authenticated principal required"
+            )
 
         if descriptor.is_side_effect and not self.allow_side_effects:
             return PolicyDecision(
@@ -73,7 +77,9 @@ class PolicyEngine:
             )
 
         if descriptor.approval_required and (
-            approval is None or not isinstance(approval, Approval) or not approval.approved
+            approval is None
+            or not isinstance(approval, Approval)
+            or not approval.approved
         ):
             return PolicyDecision(
                 False,
@@ -125,9 +131,21 @@ class ProactivePolicy:
         retries = int(value.get("max_retries", 3))
         timeout = int(value.get("timeout_seconds", 120))
         model_calls = int(value.get("max_model_calls", 3))
-        if retries < 0 or retries > 10 or timeout <= 0 or model_calls < 0 or model_calls > 20:
+        if (
+            retries < 0
+            or retries > 10
+            or timeout <= 0
+            or model_calls < 0
+            or model_calls > 20
+        ):
             raise ValueError("invalid proactive policy limits")
-        return cls(tuple(str(item) for item in capabilities), retries, timeout, model_calls, value)
+        return cls(
+            tuple(str(item) for item in capabilities),
+            retries,
+            timeout,
+            model_calls,
+            value,
+        )
 
     def allows(self, capability: str) -> bool:
         return capability in self.allowed_capabilities

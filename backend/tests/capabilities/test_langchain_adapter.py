@@ -34,7 +34,9 @@ class TestLangChainAdapter:
     def test_schedule_public_tool_schema_has_no_user_id(self):
         capability = ScheduleCapability()
         descriptor = next(
-            action for action in capability.actions() if action.name == "create_schedule"
+            action
+            for action in capability.actions()
+            if action.name == "create_schedule"
         )
         tool = _build_runtime_tool(capability, descriptor)
 

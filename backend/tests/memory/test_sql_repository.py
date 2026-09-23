@@ -32,8 +32,9 @@ class TestSqlMemoryRepository:
 
     @pytest.mark.asyncio
     async def test_put_fact_stores_kind(self, repo: SqlMemoryRepository):
-        await repo.put_fact("th1", "f1", "semantic fact", 0.9, "extraction",
-                            user_id=1, kind="semantic")
+        await repo.put_fact(
+            "th1", "f1", "semantic fact", 0.9, "extraction", user_id=1, kind="semantic"
+        )
 
         facts = await repo.get_facts("th1", user_id=1, kind="semantic")
         assert len(facts) == 1
@@ -60,8 +61,12 @@ class TestSqlMemoryRepository:
 
     @pytest.mark.asyncio
     async def test_kind_filtering(self, repo: SqlMemoryRepository):
-        await repo.put_fact("th1", "f1", "episodic", 0.5, "conv", user_id=1, kind="episodic")
-        await repo.put_fact("th1", "f2", "semantic", 0.5, "extract", user_id=1, kind="semantic")
+        await repo.put_fact(
+            "th1", "f1", "episodic", 0.5, "conv", user_id=1, kind="episodic"
+        )
+        await repo.put_fact(
+            "th1", "f2", "semantic", 0.5, "extract", user_id=1, kind="semantic"
+        )
 
         episodic = await repo.get_facts("th1", user_id=1, kind="episodic")
         assert len(episodic) == 1
@@ -81,7 +86,9 @@ class TestSqlMemoryRepository:
         assert u2_facts[0]["content"] == "user 2 fact"
 
     @pytest.mark.asyncio
-    async def test_two_users_same_thread_cannot_read_each_other(self, repo: SqlMemoryRepository):
+    async def test_two_users_same_thread_cannot_read_each_other(
+        self, repo: SqlMemoryRepository
+    ):
         """Two users with the same thread id cannot read each other's memory."""
         await repo.put_fact("shared", "f1", "alice data", 0.5, "test", user_id=1)
         await repo.put_fact("shared", "f2", "bob data", 0.5, "test", user_id=2)
@@ -99,32 +106,46 @@ class TestSqlMemoryRepository:
         self, repo: SqlMemoryRepository
     ):
         await repo.put_fact(
-            "thread-a", "semantic-a", "alice semantic", 0.7, "extract",
-            user_id=1, kind="semantic",
+            "thread-a",
+            "semantic-a",
+            "alice semantic",
+            0.7,
+            "extract",
+            user_id=1,
+            kind="semantic",
         )
         await repo.put_fact(
-            "thread-a", "profile-a", "alice profile", 0.9, "explicit",
-            user_id=1, kind="profile",
+            "thread-a",
+            "profile-a",
+            "alice profile",
+            0.9,
+            "explicit",
+            user_id=1,
+            kind="profile",
         )
         await repo.put_fact(
-            "thread-a", "episode-a", "alice episode", 0.5, "conversation",
-            user_id=1, kind="episodic",
+            "thread-a",
+            "episode-a",
+            "alice episode",
+            0.5,
+            "conversation",
+            user_id=1,
+            kind="episodic",
         )
         await repo.put_fact(
-            "thread-a", "semantic-b", "bob semantic", 0.7, "extract",
-            user_id=2, kind="semantic",
+            "thread-a",
+            "semantic-b",
+            "bob semantic",
+            0.7,
+            "extract",
+            user_id=2,
+            kind="semantic",
         )
 
-        semantic = await repo.get_facts(
-            "thread-b", user_id=1, kind="semantic"
-        )
-        profile = await repo.get_facts(
-            "thread-b", user_id=1, kind="profile"
-        )
+        semantic = await repo.get_facts("thread-b", user_id=1, kind="semantic")
+        profile = await repo.get_facts("thread-b", user_id=1, kind="profile")
         combined = await repo.get_facts("thread-b", user_id=1)
-        episodic = await repo.get_facts(
-            "thread-b", user_id=1, kind="episodic"
-        )
+        episodic = await repo.get_facts("thread-b", user_id=1, kind="episodic")
 
         assert [fact["content"] for fact in semantic] == ["alice semantic"]
         assert [fact["content"] for fact in profile] == ["alice profile"]
@@ -133,17 +154,20 @@ class TestSqlMemoryRepository:
             "alice profile",
         }
         assert episodic == []
-        assert await repo.count_facts(
-            "thread-b", user_id=1, kind="semantic"
-        ) == 1
+        assert await repo.count_facts("thread-b", user_id=1, kind="semantic") == 1
 
     @pytest.mark.asyncio
     async def test_long_term_fact_deletion_uses_user_scope(
         self, repo: SqlMemoryRepository
     ):
         await repo.put_fact(
-            "thread-a", "semantic-a", "alice semantic", 0.7, "extract",
-            user_id=1, kind="semantic",
+            "thread-a",
+            "semantic-a",
+            "alice semantic",
+            0.7,
+            "extract",
+            user_id=1,
+            kind="semantic",
         )
 
         deleted = await repo.delete_fact(
@@ -154,14 +178,10 @@ class TestSqlMemoryRepository:
         )
 
         assert deleted is True
-        assert await repo.get_facts(
-            "thread-a", user_id=1, kind="semantic"
-        ) == []
+        assert await repo.get_facts("thread-a", user_id=1, kind="semantic") == []
 
     @pytest.mark.asyncio
-    async def test_operations_require_user_ownership(
-        self, repo: SqlMemoryRepository
-    ):
+    async def test_operations_require_user_ownership(self, repo: SqlMemoryRepository):
         with pytest.raises(ValueError, match="user_id"):
             await repo.put_fact("th1", "f1", "private", 0.5, "test")
         with pytest.raises(ValueError, match="user_id"):
@@ -175,9 +195,7 @@ class TestSqlMemoryRepository:
         await repo.put_fact("th1", "f2", "user two", 0.5, "test", user_id=2)
         user_two = await repo.get_facts("th1", user_id=2)
 
-        deleted = await repo.delete_fact(
-            "th1", user_two[0]["id"], user_id=1
-        )
+        deleted = await repo.delete_fact("th1", user_two[0]["id"], user_id=1)
 
         assert deleted is False
         assert len(await repo.get_facts("th1", user_id=2)) == 1
@@ -197,16 +215,10 @@ class TestSqlMemoryRepository:
         self, repo: SqlMemoryRepository
     ):
         for content in ("first", "second", "third"):
-            await repo.put_fact(
-                "th1", content, content, 0.5, "test", user_id=1
-            )
+            await repo.put_fact("th1", content, content, 0.5, "test", user_id=1)
 
-        first_page = await repo.get_facts(
-            "th1", user_id=1, offset=0, limit=2
-        )
-        second_page = await repo.get_facts(
-            "th1", user_id=1, offset=2, limit=2
-        )
+        first_page = await repo.get_facts("th1", user_id=1, offset=0, limit=2)
+        second_page = await repo.get_facts("th1", user_id=1, offset=2, limit=2)
 
         assert [fact["content"] for fact in first_page] == ["first", "second"]
         assert [fact["content"] for fact in second_page] == ["third"]
@@ -224,10 +236,12 @@ class TestSqlMemoryRepository:
 
     @pytest.mark.asyncio
     async def test_count_with_kind_filter(self, repo: SqlMemoryRepository):
-        await repo.put_fact("th1", "f1", "semantic", 0.5, "extract",
-                            user_id=1, kind="semantic")
-        await repo.put_fact("th1", "f2", "episodic", 0.5, "conv",
-                            user_id=1, kind="episodic")
+        await repo.put_fact(
+            "th1", "f1", "semantic", 0.5, "extract", user_id=1, kind="semantic"
+        )
+        await repo.put_fact(
+            "th1", "f2", "episodic", 0.5, "conv", user_id=1, kind="episodic"
+        )
 
         sem = await repo.count_facts("th1", user_id=1, kind="semantic")
         epi = await repo.count_facts("th1", user_id=1, kind="episodic")
@@ -250,10 +264,12 @@ class TestSqlMemoryRepository:
 
     @pytest.mark.asyncio
     async def test_clear_user_memory_by_kind(self, repo: SqlMemoryRepository):
-        await repo.put_fact("th1", "f1", "episodic", 0.5, "conv",
-                            user_id=1, kind="episodic")
-        await repo.put_fact("th1", "f2", "semantic", 0.5, "extract",
-                            user_id=1, kind="semantic")
+        await repo.put_fact(
+            "th1", "f1", "episodic", 0.5, "conv", user_id=1, kind="episodic"
+        )
+        await repo.put_fact(
+            "th1", "f2", "semantic", 0.5, "extract", user_id=1, kind="semantic"
+        )
 
         deleted = await repo.clear_user_memory(1, kind="episodic")
         assert deleted == 1

@@ -11,7 +11,9 @@ from app.harness.state import AgentState
 
 
 @pytest.mark.asyncio
-async def test_scheduler_maps_runtime_terminal_result_instead_of_assuming_success() -> None:
+async def test_scheduler_maps_runtime_terminal_result_instead_of_assuming_success() -> (
+    None
+):
     task_def = SimpleNamespace(
         id=1,
         user_id=7,

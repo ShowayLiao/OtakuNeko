@@ -21,21 +21,34 @@ _current_parent_event_id: ContextVar[str | None] = ContextVar(
     "current_parent_trace_event_id", default=None
 )
 
-_OBSERVED_VALUE_KEYS = frozenset({
-    "arguments", "content", "input", "messages", "output", "prompt",
-    "raw_prompt", "response", "result", "text", "tool_output",
-})
+_OBSERVED_VALUE_KEYS = frozenset(
+    {
+        "arguments",
+        "content",
+        "input",
+        "messages",
+        "output",
+        "prompt",
+        "raw_prompt",
+        "response",
+        "result",
+        "text",
+        "tool_output",
+    }
+)
 _ERROR_VALUE_KEYS = frozenset({"error", "error_detail", "exception"})
-_USAGE_KEYS = frozenset({
-    "cached_tokens",
-    "completion_tokens",
-    "cost_usd",
-    "input_tokens",
-    "output_tokens",
-    "prompt_tokens",
-    "reasoning_tokens",
-    "total_tokens",
-})
+_USAGE_KEYS = frozenset(
+    {
+        "cached_tokens",
+        "completion_tokens",
+        "cost_usd",
+        "input_tokens",
+        "output_tokens",
+        "prompt_tokens",
+        "reasoning_tokens",
+        "total_tokens",
+    }
+)
 
 
 def safe_argument_shape(value: Any) -> Any:
@@ -131,11 +144,7 @@ class TraceRecorder:
             self.trace.run_id = run_id
         self.run_id = run_id or trace.run_id or trace.trace_id
         self._sequence = max(
-            (
-                event.sequence or 0
-                for step in trace.steps
-                for event in step.events
-            ),
+            (event.sequence or 0 for step in trace.steps for event in step.events),
             default=0,
         )
 

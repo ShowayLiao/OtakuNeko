@@ -50,7 +50,13 @@ class TestAgentStateInstantiation:
         task = AgentTask(user_id=2, goal="test")
         state = AgentState(task=task, current_step="speak", status="completed")
         data = state.model_dump()
-        assert set(data.keys()) == {"task", "current_step", "context", "result", "status"}
+        assert set(data.keys()) == {
+            "task",
+            "current_step",
+            "context",
+            "result",
+            "status",
+        }
         assert data["status"] == "completed"
         assert data["current_step"] == "speak"
         assert data["task"]["user_id"] == 2

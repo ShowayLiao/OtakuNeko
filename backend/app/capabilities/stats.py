@@ -97,7 +97,9 @@ class StatsCapability(BaseCapability):
             return CapabilityResult.fail(
                 "Statistics operation failed", error_type="internal"
             ).to_dict()
-        payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        payload = (
+            result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        )
         if action == "get_collection_statistics":
             return CapabilityResult.ok(statistics=payload).to_dict()
         return CapabilityResult.ok(stats=payload).to_dict()

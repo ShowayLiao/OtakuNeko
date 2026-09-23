@@ -42,7 +42,8 @@ class CapabilityAdapter:
         *,
         policy_engine: PolicyEngine | None = None,
         approval: Approval | None = None,
-        approval_provider: Callable[[ExecutionContext, str], Approval | None] | None = None,
+        approval_provider: Callable[[ExecutionContext, str], Approval | None]
+        | None = None,
         idempotency_store: Any | None = None,
         trusted_args: dict[str, Any] | None = None,
     ) -> None:
@@ -170,13 +171,25 @@ class CapabilityAdapter:
         if action in {"update_schedule", "delete_schedule"}:
             return f"schedule:{public_args.get('schedule_id', 'unknown')}"
         if action in {
-            "create_schedule", "upsert_schedule", "bulk_upsert_schedules",
+            "create_schedule",
+            "upsert_schedule",
+            "bulk_upsert_schedules",
             "sync_bangumi_schedule",
         }:
             return "schedule:collection"
-        if action in {"create_collection", "update_collection", "delete_collection", "upsert_collection"}:
+        if action in {
+            "create_collection",
+            "update_collection",
+            "delete_collection",
+            "upsert_collection",
+        }:
             return f"collection:{public_args.get('source', 'unknown')}:{public_args.get('source_id', 'unknown')}"
-        if action in {"batch_upsert_collections", "import_json_collections", "sync_bangumi_collections", "sync_douban_collections"}:
+        if action in {
+            "batch_upsert_collections",
+            "import_json_collections",
+            "sync_bangumi_collections",
+            "sync_douban_collections",
+        }:
             return "collection:bulk"
         if action in {"add_rss_feed", "upsert_rss_feed"}:
             return f"rss:feed:{public_args.get('name') or public_args.get('url', 'unknown')}"
@@ -231,9 +244,13 @@ class CapabilityAgent(BaseAgent):
         arguments = self._input_builder(task)
         actions = getattr(self._capability, "actions", None)
         descriptors = actions() if callable(actions) else ()
-        descriptor = next((item for item in descriptors if item.name == self._action), None)
-        if descriptor is not None and descriptor.is_side_effect and (
-            self._adapter is None or self._context is None
+        descriptor = next(
+            (item for item in descriptors if item.name == self._action), None
+        )
+        if (
+            descriptor is not None
+            and descriptor.is_side_effect
+            and (self._adapter is None or self._context is None)
         ):
             return AgentResult(
                 kind="capability",

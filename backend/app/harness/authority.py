@@ -53,9 +53,7 @@ def strip_runtime_owned_fields(value: Any) -> Any:
         required = value.get("required")
         if isinstance(required, list):
             copied["required"] = [
-                name
-                for name in required
-                if name not in RUNTIME_OWNED_FIELDS
+                name for name in required if name not in RUNTIME_OWNED_FIELDS
             ]
         return copied
     if isinstance(value, list):

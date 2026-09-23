@@ -49,9 +49,7 @@ async def test_complete_preserves_provider_reasoning_content():
     completions = FakeCompletions(
         completion_response(reasoning_content="先分析用户意图")
     )
-    adapter = OpenAICompatibleModelAdapter(
-        FakeClient(completions), provider="deepseek"
-    )
+    adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="deepseek")
 
     result = await adapter.complete(
         messages=[{"role": "user", "content": "hello"}],
@@ -306,11 +304,10 @@ async def test_runtime_emits_reasoning_events_for_primary_decision():
     assert event_types.index("thinking_start") < event_types.index("thinking_chunk")
     assert event_types.index("thinking_chunk") < event_types.index("thinking_end")
     assert event_types.index("thinking_end") < event_types.index("model_decision")
-    assert next(
-        event["content"]
-        for event in events
-        if event["type"] == "thinking_chunk"
-    ) == "先分析用户意图"
+    assert (
+        next(event["content"] for event in events if event["type"] == "thinking_chunk")
+        == "先分析用户意图"
+    )
 
 
 class StreamingReasoningGateway:
@@ -368,7 +365,9 @@ async def test_runtime_forwards_each_reasoning_delta_before_parsing_final_decisi
     assert event_types.count("thinking_chunk") == 2
     assert event_types.index("thinking_chunk") < event_types.index("thinking_end")
     assert event_types.index("thinking_end") < event_types.index("model_decision")
-    assert [event["content"] for event in events if event["type"] == "thinking_chunk"] == [
+    assert [
+        event["content"] for event in events if event["type"] == "thinking_chunk"
+    ] == [
         "先分析",
         "再决策",
     ]

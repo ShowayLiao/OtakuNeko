@@ -18,7 +18,9 @@ class TestRecommendationCapability:
         names = {a.name for a in capability.actions()}
         assert "generate_profile" in names
         assert "analyse_taste" in names
-        assert "collections" not in capability.actions()[0].input_schema.get("required", [])
+        assert "collections" not in capability.actions()[0].input_schema.get(
+            "required", []
+        )
 
     @pytest.mark.asyncio
     async def test_trusted_collection_source_overrides_public_collection_argument(

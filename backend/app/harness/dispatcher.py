@@ -74,11 +74,23 @@ class Dispatcher:
         # retry of the same proposal must not manufacture a new correlation id.
         invocation_id = decision.decision_id or uuid4().hex
         if decision.run_id != context.run_id:
-            return self._result(invocation_id, "denied", "policy_denied", "Run identity mismatch")
+            return self._result(
+                invocation_id, "denied", "policy_denied", "Run identity mismatch"
+            )
         if decision.action != "invoke":
-            return self._result(invocation_id, "denied", "invalid_request", "Only invoke decisions can be dispatched")
+            return self._result(
+                invocation_id,
+                "denied",
+                "invalid_request",
+                "Only invoke decisions can be dispatched",
+            )
         if not decision.capability or not decision.capability_version:
-            return self._result(invocation_id, "denied", "invalid_request", "Capability and version are required")
+            return self._result(
+                invocation_id,
+                "denied",
+                "invalid_request",
+                "Capability and version are required",
+            )
 
         try:
             request = InvocationRequest(
@@ -87,10 +99,16 @@ class Dispatcher:
                 capability=decision.capability,
                 capability_version=decision.capability_version,
                 arguments=decision.arguments,
-                idempotency_key=idempotency_key or decision.arguments.get("idempotency_key"),
+                idempotency_key=idempotency_key
+                or decision.arguments.get("idempotency_key"),
             )
         except ValidationError:
-            return self._result(invocation_id, "denied", "identity_spoofing", "Runtime-owned fields are not accepted")
+            return self._result(
+                invocation_id,
+                "denied",
+                "identity_spoofing",
+                "Runtime-owned fields are not accepted",
+            )
         cache_key = (
             request.run_id,
             request.invocation_id,
@@ -109,10 +127,20 @@ class Dispatcher:
             return cached.model_copy(deep=True)
         owner = self.registry.find_action(request.capability)
         if owner is None:
-            return self._result(invocation_id, "denied", "not_configured", "Capability action is not configured")
+            return self._result(
+                invocation_id,
+                "denied",
+                "not_configured",
+                "Capability action is not configured",
+            )
         capability, descriptor = owner
         if descriptor.version != request.capability_version:
-            return self._result(invocation_id, "denied", "not_configured", "Capability version is not configured")
+            return self._result(
+                invocation_id,
+                "denied",
+                "not_configured",
+                "Capability version is not configured",
+            )
         try:
             validate_input(request.arguments, descriptor)
         except (SchemaContractError, ValueError):
@@ -123,7 +151,11 @@ class Dispatcher:
                 "Capability arguments did not match the declared input contract",
             )
 
-        principal = Principal(context.principal_id) if context.principal_id is not None else None
+        principal = (
+            Principal(context.principal_id)
+            if context.principal_id is not None
+            else None
+        )
         policy = self.policy_engine.authorize(
             principal,
             descriptor,
@@ -131,26 +163,47 @@ class Dispatcher:
             request.idempotency_key,
         )
         if not policy.allowed:
-            return self._result(invocation_id, "denied", policy.error_type or "policy_denied", policy.reason or "Capability denied")
+            return self._result(
+                invocation_id,
+                "denied",
+                policy.error_type or "policy_denied",
+                policy.reason or "Capability denied",
+            )
         if descriptor.is_side_effect and self.idempotency_store is None:
-            return self._result(invocation_id, "denied", "idempotency_required", "An idempotency store is required for writes")
+            return self._result(
+                invocation_id,
+                "denied",
+                "idempotency_required",
+                "An idempotency store is required for writes",
+            )
         if context.capability_allowlist and not (
             request.capability in context.capability_allowlist
             or capability.name in context.capability_allowlist
             or descriptor.name in context.capability_allowlist
         ):
-            return self._result(invocation_id, "denied", "policy_denied", "Capability is not allowed for this run")
+            return self._result(
+                invocation_id,
+                "denied",
+                "policy_denied",
+                "Capability is not allowed for this run",
+            )
 
         if budget is not None:
             try:
                 budget.consume_tool_call()
             except Exception:
-                return self._result(invocation_id, "denied", "budget_exceeded", "Tool budget exceeded")
+                return self._result(
+                    invocation_id, "denied", "budget_exceeded", "Tool budget exceeded"
+                )
         cancellation = cancellation or CancellationToken()
         if cancellation.is_cancelled():
-            return self._result(invocation_id, "cancelled", "cancelled", "Invocation cancelled")
+            return self._result(
+                invocation_id, "cancelled", "cancelled", "Invocation cancelled"
+            )
 
-        await self._emit(request, "invocation_start", {"capability": request.capability})
+        await self._emit(
+            request, "invocation_start", {"capability": request.capability}
+        )
         adapter = (
             self.adapter_factory(capability)
             if self.adapter_factory is not None
@@ -190,7 +243,11 @@ class Dispatcher:
                 "not_configured",
             }
             success = normalized.status == "succeeded" and not error_type
-            status = "succeeded" if success else ("denied" if error_type in denied_types else "failed")
+            status = (
+                "succeeded"
+                if success
+                else ("denied" if error_type in denied_types else "failed")
+            )
             result = self._result(
                 invocation_id,
                 status,
@@ -210,15 +267,33 @@ class Dispatcher:
             result.provenance = normalized.provenance
             result.model_output = normalized.model_projection()
         except RunCancellationError:
-            result = self._result(invocation_id, "cancelled", "cancelled", "Invocation cancelled")
+            result = self._result(
+                invocation_id, "cancelled", "cancelled", "Invocation cancelled"
+            )
         except asyncio.TimeoutError:
-            result = self._result(invocation_id, "timeout", "timeout", "Capability execution timed out", retryable=True)
+            result = self._result(
+                invocation_id,
+                "timeout",
+                "timeout",
+                "Capability execution timed out",
+                retryable=True,
+            )
         except DeadlineExceededError:
-            result = self._result(invocation_id, "cancelled", "cancelled", "Invocation cancelled")
+            result = self._result(
+                invocation_id, "cancelled", "cancelled", "Invocation cancelled"
+            )
         except Exception:
-            result = self._result(invocation_id, "failed", "internal", "Capability execution failed")
-        result.output.setdefault("latency_ms", max(0, round((monotonic() - started) * 1000)))
-        await self._emit(request, "invocation_end", {"status": result.status, "error_code": result.error_code})
+            result = self._result(
+                invocation_id, "failed", "internal", "Capability execution failed"
+            )
+        result.output.setdefault(
+            "latency_ms", max(0, round((monotonic() - started) * 1000))
+        )
+        await self._emit(
+            request,
+            "invocation_end",
+            {"status": result.status, "error_code": result.error_code},
+        )
         if result.status == "succeeded":
             self._successful_invocations[cache_key] = result.model_copy(deep=True)
         return result
@@ -231,7 +306,11 @@ class Dispatcher:
     ) -> Any:
         task = asyncio.ensure_future(operation)
         cancel_event = getattr(cancellation, "_event", None)
-        cancel_task = asyncio.create_task(cancel_event.wait()) if cancel_event is not None else None
+        cancel_task = (
+            asyncio.create_task(cancel_event.wait())
+            if cancel_event is not None
+            else None
+        )
         try:
             wait_set = {task}
             if cancel_task is not None:
@@ -253,7 +332,9 @@ class Dispatcher:
                 cancel_task.cancel()
                 await asyncio.gather(cancel_task, return_exceptions=True)
 
-    async def _emit(self, request: InvocationRequest, event_type: str, payload: dict[str, Any]) -> None:
+    async def _emit(
+        self, request: InvocationRequest, event_type: str, payload: dict[str, Any]
+    ) -> None:
         self._sequence += 1
         event = RunEvent(
             run_id=request.run_id,

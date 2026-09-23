@@ -29,6 +29,7 @@ def _utc_now() -> datetime:
 # Event taxonomy (TRACE-002 Step 01)
 # ---------------------------------------------------------------------------
 
+
 class TraceEventType(StrEnum):
     NODE_START = "node_start"
     NODE_END = "node_end"

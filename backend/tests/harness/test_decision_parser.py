@@ -136,11 +136,21 @@ def test_invoke_decision_without_id_gets_runtime_correlation_id() -> None:
     [
         {"action": "invoke", "capability": "catalog.search"},
         {"action": "invoke", "capability_version": "v1"},
-        {"action": "unknown", "capability": "catalog.search", "capability_version": "v1"},
-        {"action": "invoke", "capability": "catalog.search", "capability_version": "v2"},
+        {
+            "action": "unknown",
+            "capability": "catalog.search",
+            "capability_version": "v1",
+        },
+        {
+            "action": "invoke",
+            "capability": "catalog.search",
+            "capability_version": "v2",
+        },
     ],
 )
-def test_invalid_invoke_shape_is_rejected_without_provider_payload(payload: dict) -> None:
+def test_invalid_invoke_shape_is_rejected_without_provider_payload(
+    payload: dict,
+) -> None:
     with pytest.raises(DecisionParseError) as exc_info:
         DecisionParser().parse(_result(payload))
 
@@ -148,7 +158,9 @@ def test_invalid_invoke_shape_is_rejected_without_provider_payload(payload: dict
     assert "fake" not in str(exc_info.value)
 
 
-@pytest.mark.parametrize("field", ["user_id", "principal_id", "tenant_id", "db", "token"])
+@pytest.mark.parametrize(
+    "field", ["user_id", "principal_id", "tenant_id", "db", "token"]
+)
 def test_model_owned_authority_fields_are_rejected(field: str) -> None:
     payload = {
         "schema_version": "v1",

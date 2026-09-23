@@ -102,7 +102,9 @@ class RuntimeAnimeCapability(BaseCapability):
 
 class NoModelGateway:
     async def infer(self, **kwargs):
-        raise AssertionError("recommendation specialist must not call the primary model")
+        raise AssertionError(
+            "recommendation specialist must not call the primary model"
+        )
 
 
 class CatalogCapability(BaseCapability):
@@ -281,9 +283,7 @@ async def test_runtime_returns_agent_result_to_model_gateway_before_final_messag
         "message_end",
     }
     assert {
-        chunk.get("content")
-        for chunk in chunks
-        if chunk["type"] == "message_chunk"
+        chunk.get("content") for chunk in chunks if chunk["type"] == "message_chunk"
     } == {"LLM 整合后的推荐报告"}
 
 
@@ -342,17 +342,16 @@ async def test_primary_decision_loop_passes_public_capability_catalog_to_model()
         capability_allowlist=frozenset({"catalog_lookup"}),
     )
 
-    chunks = [
-        chunk
-        async for chunk in runtime.stream_decision(task, context=context)
-    ]
+    chunks = [chunk async for chunk in runtime.stream_decision(task, context=context)]
 
     assert chunks[-1]["type"] == "run_completed"
     assert gateway.calls[0]["capability_catalog"][0]["public_name"] == "catalog_lookup"
 
 
 @pytest.mark.asyncio
-async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(monkeypatch):
+async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(
+    monkeypatch,
+):
     async def fake_calendar():
         return {"days": [{"weekday": {"id": 1}, "items": [{"id": 101}]}]}
 
@@ -363,7 +362,9 @@ async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(monk
         }
 
     monkeypatch.setattr("app.capabilities.anime.get_bangumi_calendar", fake_calendar)
-    monkeypatch.setattr("app.capabilities.anime.get_bangumi_subject_details", fake_details)
+    monkeypatch.setattr(
+        "app.capabilities.anime.get_bangumi_subject_details", fake_details
+    )
 
     class CalendarWorkflowGateway:
         def __init__(self):
@@ -383,7 +384,9 @@ async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(monk
                     "arguments": {},
                 }
             elif len(self.calls) == 2:
-                public_names = {item["public_name"] for item in kwargs["capability_catalog"]}
+                public_names = {
+                    item["public_name"] for item in kwargs["capability_catalog"]
+                }
                 assert "get_anime_info_batch" in public_names
                 decision = {
                     "schema_version": "v1",
@@ -461,10 +464,7 @@ async def test_primary_decision_loop_retries_once_after_invalid_model_decision()
         trace_id="trace-retry",
     )
 
-    chunks = [
-        chunk
-        async for chunk in runtime.stream_decision(task, context=context)
-    ]
+    chunks = [chunk async for chunk in runtime.stream_decision(task, context=context)]
 
     assert len(gateway.calls) == 2
     assert chunks[-1]["type"] == "run_completed"
@@ -503,10 +503,7 @@ async def test_primary_decision_loop_uses_provider_compatible_tool_feedback():
         capability_allowlist=frozenset({"catalog_lookup"}),
     )
 
-    chunks = [
-        chunk
-        async for chunk in runtime.stream_decision(task, context=context)
-    ]
+    chunks = [chunk async for chunk in runtime.stream_decision(task, context=context)]
 
     assert chunks[-1]["type"] == "run_completed"
     assert len(gateway.calls) == 2
@@ -565,10 +562,7 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
         ),
     )
 
-    chunks = [
-        chunk
-        async for chunk in runtime.stream_decision(task, context=context)
-    ]
+    chunks = [chunk async for chunk in runtime.stream_decision(task, context=context)]
 
     assert not gateway.__dict__.get("calls")
     assert [event.event_type for event in dispatcher.events] == [
@@ -591,15 +585,12 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
         "tool_call_end",
     ]
     assert max(
-        index
-        for index, chunk in enumerate(chunks)
-        if chunk["type"] == "tool_call_end"
+        index for index, chunk in enumerate(chunks) if chunk["type"] == "tool_call_end"
     ) < next(
         index for index, chunk in enumerate(chunks) if chunk["type"] == "agent_result"
     )
     assert any(
-        chunk["type"] == "message_chunk" and chunk["content"]
-        for chunk in chunks
+        chunk["type"] == "message_chunk" and chunk["content"] for chunk in chunks
     )
     assert chunks[-1]["type"] == "run_completed"
 
@@ -697,9 +688,7 @@ async def test_primary_runtime_uses_unique_specialist_invocation_ids_across_runs
                 {"generate_user_profile_tool", "search_anime_advanced"}
             ),
         )
-        return [
-            event async for event in runtime.stream_decision(task, context=context)
-        ]
+        return [event async for event in runtime.stream_decision(task, context=context)]
 
     first = await execute("run-specialist-1")
     second = await execute("run-specialist-2")

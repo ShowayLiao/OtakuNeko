@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 
 from tests.memory.test_service_typed import (
-    FakeRepository, _make_svc,
+    FakeRepository,
+    _make_svc,
 )
 
 
@@ -23,10 +24,12 @@ class TestRetentionEnforcement:
 
         # Store 3 episodic facts and 1 profile fact
         for i in range(3):
-            await svc.store_fact("th1", f"ep-{i}", importance=0.1,
-                                 user_id=1, kind="episodic")
-        await svc.store_fact("th1", "profile-taste", importance=0.9,
-                             user_id=1, kind="profile")
+            await svc.store_fact(
+                "th1", f"ep-{i}", importance=0.1, user_id=1, kind="episodic"
+            )
+        await svc.store_fact(
+            "th1", "profile-taste", importance=0.9, user_id=1, kind="profile"
+        )
 
         # Episodic should be at limit (2), profile should still be present
         epi = await repo.get_facts("th1", user_id=1, kind="episodic")
@@ -44,12 +47,14 @@ class TestRetentionEnforcement:
         svc.max_facts = 1
 
         # profile stored first
-        await svc.store_fact("th1", "profile-entry", importance=0.8,
-                             user_id=1, kind="profile")
+        await svc.store_fact(
+            "th1", "profile-entry", importance=0.8, user_id=1, kind="profile"
+        )
         # Then many episodic entries
         for i in range(3):
-            await svc.store_fact("th1", f"ep-{i}", importance=0.1,
-                                 user_id=1, kind="episodic")
+            await svc.store_fact(
+                "th1", f"ep-{i}", importance=0.1, user_id=1, kind="episodic"
+            )
 
         pro = await repo.get_facts("th1", user_id=1, kind="profile")
         assert len(pro) == 1
@@ -60,12 +65,8 @@ class TestRetentionEnforcement:
         svc = _make_svc(repo=repo)
         svc.max_facts = 1
 
-        await svc.store_fact(
-            "th1", "profile-one", user_id=1, kind="profile"
-        )
-        await svc.store_fact(
-            "th1", "profile-two", user_id=1, kind="profile"
-        )
+        await svc.store_fact("th1", "profile-one", user_id=1, kind="profile")
+        await svc.store_fact("th1", "profile-two", user_id=1, kind="profile")
 
         profile = await repo.get_facts("th1", user_id=1, kind="profile")
         assert len(profile) == 2
@@ -77,6 +78,7 @@ class TestRepositoryDeletion:
     @pytest.mark.asyncio
     async def test_clear_user_memory_idempotent(self, db_session):
         from app.memory.sql_repository import SqlMemoryRepository
+
         repo = SqlMemoryRepository(db_session)
         deleted = await repo.clear_user_memory(999)
         assert deleted == 0
@@ -84,6 +86,7 @@ class TestRepositoryDeletion:
     @pytest.mark.asyncio
     async def test_clear_thread_memory(self, db_session):
         from app.memory.sql_repository import SqlMemoryRepository
+
         repo = SqlMemoryRepository(db_session)
         await repo.put_fact("th1", "1", "a", 0.5, "test", user_id=1)
         await repo.put_fact("th2", "1", "b", 0.5, "test", user_id=1)

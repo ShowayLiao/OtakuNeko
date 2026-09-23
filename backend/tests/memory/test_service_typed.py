@@ -22,21 +22,28 @@ class FakeRepository(MemoryRepository):
         return self._store[key]
 
     async def put_fact(
-        self, thread_id: str, fact_id: str, content: str,
-        importance: float, source: str,
-        user_id: int | None = None, kind: str = "episodic",
+        self,
+        thread_id: str,
+        fact_id: str,
+        content: str,
+        importance: float,
+        source: str,
+        user_id: int | None = None,
+        kind: str = "episodic",
         metadata: dict | None = None,
     ) -> None:
-        self._ns(thread_id).append({
-            "id": fact_id,
-            "content": content,
-            "importance": importance,
-            "source": source,
-            "timestamp": "2026-01-01T00:00:00",
-            "kind": kind,
-            "user_id": user_id or 0,
-            "metadata": metadata or {},
-        })
+        self._ns(thread_id).append(
+            {
+                "id": fact_id,
+                "content": content,
+                "importance": importance,
+                "source": source,
+                "timestamp": "2026-01-01T00:00:00",
+                "kind": kind,
+                "user_id": user_id or 0,
+                "metadata": metadata or {},
+            }
+        )
 
     async def get_facts(
         self,
@@ -51,7 +58,7 @@ class FakeRepository(MemoryRepository):
             facts = [f for f in facts if f.get("user_id") == user_id]
         if kind is not None:
             facts = [f for f in facts if f.get("kind") == kind]
-        return list(facts[offset:offset + limit])
+        return list(facts[offset : offset + limit])
 
     async def delete_fact(
         self,
@@ -73,7 +80,10 @@ class FakeRepository(MemoryRepository):
         return len(self._store[thread_id]) < before
 
     async def count_facts(
-        self, thread_id: str, user_id: int | None = None, kind: str | None = None,
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
     ) -> int:
         return len(await self.get_facts(thread_id, user_id=user_id, kind=kind))
 
@@ -126,8 +136,12 @@ class TestServiceKindAware:
         await svc.store_fact("th1", "episodic", kind="episodic", user_id=1)
         await svc.store_fact("th1", "semantic", kind="semantic", user_id=1)
 
-        ctx_epi = await svc.retrieve_context("th1", "episodic", kind="episodic", user_id=1)
-        ctx_sem = await svc.retrieve_context("th1", "semantic", kind="semantic", user_id=1)
+        ctx_epi = await svc.retrieve_context(
+            "th1", "episodic", kind="episodic", user_id=1
+        )
+        ctx_sem = await svc.retrieve_context(
+            "th1", "semantic", kind="semantic", user_id=1
+        )
 
         assert len(ctx_epi.long_term_facts) == 1
         assert ctx_epi.long_term_facts[0]["content"] == "episodic"
@@ -181,20 +195,16 @@ class TestRetention:
         repo = FakeRepository()
         svc = _make_svc(
             repo=repo,
-            extractor=FakeExtractor([
-                {"content": "likes science fiction", "importance": 0.8}
-            ]),
+            extractor=FakeExtractor(
+                [{"content": "likes science fiction", "importance": 0.8}]
+            ),
         )
 
         count = await svc.extract_and_store_facts("th1", user_id=7)
 
         assert count == 1
-        stored = await repo.get_facts(
-            "th1", user_id=7, kind="semantic"
-        )
-        assert [fact["content"] for fact in stored] == [
-            "likes science fiction"
-        ]
+        stored = await repo.get_facts("th1", user_id=7, kind="semantic")
+        assert [fact["content"] for fact in stored] == ["likes science fiction"]
 
     @pytest.mark.asyncio
     async def test_untrusted_extractor_text_is_rejected(self):
@@ -209,9 +219,7 @@ class TestRetention:
         count = await svc.extract_and_store_facts("th-untrusted", user_id=7)
 
         assert count == 0
-        stored = await repo.get_facts(
-            "th-untrusted", user_id=7, kind="semantic"
-        )
+        stored = await repo.get_facts("th-untrusted", user_id=7, kind="semantic")
         assert stored == []
 
     @pytest.mark.asyncio
@@ -317,9 +325,7 @@ class TestProvenance:
     async def test_legacy_read_safe_blocks_unmarked_writes(self, monkeypatch):
         svc = _make_svc()
         monkeypatch.setenv("MEMORY_TRUST_MODE", "legacy-read-safe")
-        assert await svc.store_fact(
-            "thread-safe-mode", "unmarked", user_id=7
-        ) is None
+        assert await svc.store_fact("thread-safe-mode", "unmarked", user_id=7) is None
 
 
 class TestServiceContract:

@@ -48,7 +48,8 @@ def _simplify_search_results(items: list[dict[str, Any]]) -> list[dict[str, Any]
             "id": item.get("id"),
             "name": item.get("name"),
             "name_cn": item.get("name_cn"),
-            "summary": (item.get("summary", "") or "")[:_SEARCH_RESULT_SUMMARY_LENGTH] + "..."
+            "summary": (item.get("summary", "") or "")[:_SEARCH_RESULT_SUMMARY_LENGTH]
+            + "..."
             if item.get("summary")
             else "",
             "score": item.get("rating", {}).get("score", 0),
@@ -71,7 +72,9 @@ class AnimeCapability(BaseCapability):
 
     @property
     def description(self) -> str:
-        return "Search anime, get details, staff, cast, and audience reviews via Bangumi"
+        return (
+            "Search anime, get details, staff, cast, and audience reviews via Bangumi"
+        )
 
     def actions(self) -> list[ActionDescriptor]:
         subject_id_schema: dict[str, Any] = {
@@ -91,11 +94,15 @@ class AnimeCapability(BaseCapability):
                     "properties": {
                         "keyword": {"type": "string", "description": "Search keyword"},
                         "subject_types": {
-                            "type": "array", "items": {"type": "integer"},
+                            "type": "array",
+                            "items": {"type": "integer"},
                             "description": "Subject type filter (2=anime)",
                         },
                         "tags": {"type": "array", "items": {"type": "string"}},
-                        "limit": {"type": "integer", "description": "Max results (default 10)"},
+                        "limit": {
+                            "type": "integer",
+                            "description": "Max results (default 10)",
+                        },
                     },
                     "required": ["keyword"],
                 },
@@ -185,7 +192,9 @@ class AnimeCapability(BaseCapability):
         try:
             return await handler(**kwargs)
         except Exception as exc:
-            logger.error("anime_capability_failed", extra={"action": action, "error": str(exc)})
+            logger.error(
+                "anime_capability_failed", extra={"action": action, "error": str(exc)}
+            )
             return CapabilityResult.fail(str(exc), error_type="internal").to_dict()
 
     # -- action handlers -------------------------------------------------------
@@ -201,7 +210,9 @@ class AnimeCapability(BaseCapability):
             offset=kwargs.get("offset", 0),
         )
         simplified = _simplify_search_results(result.get("data", []))
-        return CapabilityResult.ok(total=result.get("total", 0), results=simplified).to_dict()
+        return CapabilityResult.ok(
+            total=result.get("total", 0), results=simplified
+        ).to_dict()
 
     async def _get_detail(self, **kwargs: Any) -> dict[str, Any]:
         subject_id = kwargs["subject_id"]
@@ -245,7 +256,9 @@ class AnimeCapability(BaseCapability):
 
     async def _get_calendar(self, **kwargs: Any) -> dict[str, Any]:
         result = await get_bangumi_calendar()
-        payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        payload = (
+            result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        )
         return CapabilityResult.ok(calendar=payload).to_dict()
 
     async def _get_bangumi_user(self, **kwargs: Any) -> dict[str, Any]:
@@ -256,5 +269,7 @@ class AnimeCapability(BaseCapability):
                 "Linked Bangumi account is required", error_type="not_configured"
             ).to_dict()
         result = await get_bangumi_user_info(username.strip())
-        payload = result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        payload = (
+            result.model_dump(mode="json") if hasattr(result, "model_dump") else result
+        )
         return CapabilityResult.ok(user=payload).to_dict()

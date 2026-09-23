@@ -54,7 +54,9 @@ _COLLECTION_FIELDS: dict[str, Any] = {
 }
 
 
-def _schema(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
+def _schema(
+    properties: dict[str, Any], required: list[str] | None = None
+) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": properties,
@@ -125,13 +127,15 @@ class CollectionCapability(BaseCapability):
                     "user. This action is not suitable for full-collection statistics; "
                     "use get_collection_statistics instead."
                 ),
-                input_schema=_schema({
-                    "type": {"type": "integer"},
-                    "status": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "skip": {"type": "integer", "minimum": 0},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "sort_by": {"type": "string"},
-                }),
+                input_schema=_schema(
+                    {
+                        "type": {"type": "integer"},
+                        "status": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "skip": {"type": "integer", "minimum": 0},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                        "sort_by": {"type": "string"},
+                    }
+                ),
                 requires_auth=True,
             ),
             ActionDescriptor(
@@ -145,28 +149,35 @@ class CollectionCapability(BaseCapability):
                 name="search_collections",
                 public_name="search_collections",
                 description="Search the authenticated user's collections by title",
-                input_schema=_schema({
-                    "keyword": {"type": "string", "minLength": 1},
-                    "status": {"type": "integer", "minimum": 1, "maximum": 5},
-                    "type": {"type": "integer"},
-                    "skip": {"type": "integer", "minimum": 0},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "sort_by": {"type": "string"},
-                }, ["keyword"]),
+                input_schema=_schema(
+                    {
+                        "keyword": {"type": "string", "minLength": 1},
+                        "status": {"type": "integer", "minimum": 1, "maximum": 5},
+                        "type": {"type": "integer"},
+                        "skip": {"type": "integer", "minimum": 0},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                        "sort_by": {"type": "string"},
+                    },
+                    ["keyword"],
+                ),
                 requires_auth=True,
             ),
             ActionDescriptor(
                 name="create_collection",
                 public_name="create_collection",
                 description="Create an owned collection entry",
-                input_schema=_schema(write_payload["properties"], ["source", "source_id", "type"]),
+                input_schema=_schema(
+                    write_payload["properties"], ["source", "source_id", "type"]
+                ),
                 **write_common,
             ),
             ActionDescriptor(
                 name="update_collection",
                 public_name="update_collection",
                 description="Update an owned collection entry",
-                input_schema=_schema(write_payload["properties"], ["source", "source_id"]),
+                input_schema=_schema(
+                    write_payload["properties"], ["source", "source_id"]
+                ),
                 **write_common,
             ),
             ActionDescriptor(
@@ -180,21 +191,28 @@ class CollectionCapability(BaseCapability):
                 name="upsert_collection",
                 public_name="upsert_collection",
                 description="Create or update one owned collection entry",
-                input_schema=_schema(write_payload["properties"], ["source", "source_id"]),
+                input_schema=_schema(
+                    write_payload["properties"], ["source", "source_id"]
+                ),
                 **write_common,
             ),
             ActionDescriptor(
                 name="batch_upsert_collections",
                 public_name="batch_upsert_collections",
                 description="Create or update a bounded batch of owned collections",
-                input_schema=_schema({
-                    "items": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": _schema(_COLLECTION_FIELDS, ["source", "source_id"]),
+                input_schema=_schema(
+                    {
+                        "items": {
+                            "type": "array",
+                            "maxItems": 100,
+                            "items": _schema(
+                                _COLLECTION_FIELDS, ["source", "source_id"]
+                            ),
+                        },
+                        "idempotency_key": {"type": "string"},
                     },
-                    "idempotency_key": {"type": "string"},
-                }, ["items"]),
+                    ["items"],
+                ),
                 max_payload_bytes=256 * 1024,
                 **write_common,
             ),
@@ -202,10 +220,13 @@ class CollectionCapability(BaseCapability):
                 name="import_json_collections",
                 public_name="import_json_collections",
                 description="Import a bounded external collection export into the owned account",
-                input_schema=_schema({
-                    "data": {"type": "object"},
-                    "idempotency_key": {"type": "string"},
-                }, ["data"]),
+                input_schema=_schema(
+                    {
+                        "data": {"type": "object"},
+                        "idempotency_key": {"type": "string"},
+                    },
+                    ["data"],
+                ),
                 max_payload_bytes=512 * 1024,
                 **write_common,
             ),
@@ -213,12 +234,14 @@ class CollectionCapability(BaseCapability):
                 name="sync_bangumi_collections",
                 public_name="sync_bangumi_collections",
                 description="Synchronize the authenticated user's linked Bangumi collections",
-                input_schema=_schema({
-                    "subject_type": {"type": "integer"},
-                    "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                    "offset": {"type": "integer", "minimum": 0},
-                    "idempotency_key": {"type": "string"},
-                }),
+                input_schema=_schema(
+                    {
+                        "subject_type": {"type": "integer"},
+                        "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                        "offset": {"type": "integer", "minimum": 0},
+                        "idempotency_key": {"type": "string"},
+                    }
+                ),
                 max_payload_bytes=16 * 1024,
                 **write_common,
             ),
@@ -226,14 +249,17 @@ class CollectionCapability(BaseCapability):
                 name="sync_douban_collections",
                 public_name="sync_douban_collections",
                 description="Import a bounded Douban collection export for the authenticated user",
-                input_schema=_schema({
-                    "data": {
-                        "type": "array",
-                        "maxItems": 100,
-                        "items": {"type": "object"},
+                input_schema=_schema(
+                    {
+                        "data": {
+                            "type": "array",
+                            "maxItems": 100,
+                            "items": {"type": "object"},
+                        },
+                        "idempotency_key": {"type": "string"},
                     },
-                    "idempotency_key": {"type": "string"},
-                }, ["data"]),
+                    ["data"],
+                ),
                 max_payload_bytes=512 * 1024,
                 **write_common,
             ),
@@ -255,69 +281,98 @@ class CollectionCapability(BaseCapability):
         }
         handler = handlers.get(action)
         if handler is None:
-            return CapabilityResult.fail(f"Unknown action: {action}", error_type="invalid_action").to_dict()
+            return CapabilityResult.fail(
+                f"Unknown action: {action}", error_type="invalid_action"
+            ).to_dict()
         try:
             return await handler(**kwargs)
         except ValueError as exc:
             return CapabilityResult.fail(str(exc), error_type="invalid_args").to_dict()
         except Exception:
             logger.exception("collection_capability_failed", extra={"action": action})
-            return CapabilityResult.fail("Collection operation failed", error_type="internal").to_dict()
+            return CapabilityResult.fail(
+                "Collection operation failed", error_type="internal"
+            ).to_dict()
 
     async def _list(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        result = await get_user_collections(db, CollectionSearchBase(
-            user_id=user_id,
-            type=kwargs.get("type"),
-            status=kwargs.get("status"),
-            keyword=None,
-            skip=kwargs.get("skip", 0),
-            limit=min(kwargs.get("limit", 10), 100),
-            sort_by=kwargs.get("sort_by", "updated_at"),
-        ))
+        result = await get_user_collections(
+            db,
+            CollectionSearchBase(
+                user_id=user_id,
+                type=kwargs.get("type"),
+                status=kwargs.get("status"),
+                keyword=None,
+                skip=kwargs.get("skip", 0),
+                limit=min(kwargs.get("limit", 10), 100),
+                sort_by=kwargs.get("sort_by", "updated_at"),
+            ),
+        )
         payload = _public(result)
-        return CapabilityResult.ok(total=payload.get("total", 0), collections=payload.get("items", [])).to_dict()
+        return CapabilityResult.ok(
+            total=payload.get("total", 0), collections=payload.get("items", [])
+        ).to_dict()
 
     async def _get(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        result = await get_collection(db, CollectionSearchByID(
-            user_id=user_id,
-            source=kwargs["source"],
-            source_id=str(kwargs["source_id"]),
-        ))
+        result = await get_collection(
+            db,
+            CollectionSearchByID(
+                user_id=user_id,
+                source=kwargs["source"],
+                source_id=str(kwargs["source_id"]),
+            ),
+        )
         if result is None:
-            return CapabilityResult.fail("Collection not found", error_type="not_found").to_dict()
+            return CapabilityResult.fail(
+                "Collection not found", error_type="not_found"
+            ).to_dict()
         return CapabilityResult.ok(collection=_public(result)).to_dict()
 
     async def _search(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        result = await search_collections(db, CollectionSearchByName(
-            user_id=user_id,
-            keyword=kwargs["keyword"],
-            type=kwargs.get("type"),
-            status=kwargs.get("status"),
-            skip=kwargs.get("skip", 0),
-            limit=min(kwargs.get("limit", 10), 100),
-            sort_by=kwargs.get("sort_by", "updated_at"),
-        ))
+        result = await search_collections(
+            db,
+            CollectionSearchByName(
+                user_id=user_id,
+                keyword=kwargs["keyword"],
+                type=kwargs.get("type"),
+                status=kwargs.get("status"),
+                skip=kwargs.get("skip", 0),
+                limit=min(kwargs.get("limit", 10), 100),
+                sort_by=kwargs.get("sort_by", "updated_at"),
+            ),
+        )
         payload = _public(result)
-        return CapabilityResult.ok(total=payload.get("total", 0), collections=payload.get("items", [])).to_dict()
+        return CapabilityResult.ok(
+            total=payload.get("total", 0), collections=payload.get("items", [])
+        ).to_dict()
 
     async def _create(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        data = {key: value for key, value in kwargs.items() if key in _COLLECTION_FIELDS}
+        data = {
+            key: value for key, value in kwargs.items() if key in _COLLECTION_FIELDS
+        }
         data["user_id"] = user_id
         result = await create_collection(db, CollectionCreate(**data))
         return CapabilityResult.ok(collection=_public(result)).to_dict()
@@ -325,33 +380,52 @@ class CollectionCapability(BaseCapability):
     async def _update(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        data = {key: value for key, value in kwargs.items() if key in _COLLECTION_FIELDS}
+        data = {
+            key: value for key, value in kwargs.items() if key in _COLLECTION_FIELDS
+        }
         data["user_id"] = user_id
         result = await update_collection(db, CollectionUpdate(**data))
         if result is None:
-            return CapabilityResult.fail("Collection not found or access denied", error_type="not_found").to_dict()
+            return CapabilityResult.fail(
+                "Collection not found or access denied", error_type="not_found"
+            ).to_dict()
         return CapabilityResult.ok(collection=_public(result)).to_dict()
 
     async def _delete(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        deleted = await delete_collection(db, CollectionSearchByID(
-            user_id=user_id, source=kwargs["source"], source_id=str(kwargs["source_id"])
-        ))
+        deleted = await delete_collection(
+            db,
+            CollectionSearchByID(
+                user_id=user_id,
+                source=kwargs["source"],
+                source_id=str(kwargs["source_id"]),
+            ),
+        )
         if not deleted:
-            return CapabilityResult.fail("Collection not found or access denied", error_type="not_found").to_dict()
+            return CapabilityResult.fail(
+                "Collection not found or access denied", error_type="not_found"
+            ).to_dict()
         return CapabilityResult.ok(deleted=True).to_dict()
 
     async def _upsert(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
-        data = {key: value for key, value in kwargs.items() if key in _COLLECTION_FIELDS}
+        data = {
+            key: value for key, value in kwargs.items() if key in _COLLECTION_FIELDS
+        }
         result = await upsert_collection(
             db,
             user_id,
@@ -364,21 +438,35 @@ class CollectionCapability(BaseCapability):
     async def _batch_upsert(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
         raw_items = kwargs.get("items") or []
-        items = [CollectionUpsert(user_id=user_id, **{
-            key: value for key, value in item.items() if key in _COLLECTION_FIELDS
-        }) for item in raw_items]
+        items = [
+            CollectionUpsert(
+                user_id=user_id,
+                **{
+                    key: value
+                    for key, value in item.items()
+                    if key in _COLLECTION_FIELDS
+                },
+            )
+            for item in raw_items
+        ]
         count = await batch_upsert_collections(
             db, CollectionUpsertList(total=len(items), collections=items), user_id
         )
-        return CapabilityResult.ok(processed_count=count, requested_count=len(items)).to_dict()
+        return CapabilityResult.ok(
+            processed_count=count, requested_count=len(items)
+        ).to_dict()
 
     async def _import_json(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
         count = await import_json_collections(db, kwargs["data"], user_id)
         return CapabilityResult.ok(processed_count=count).to_dict()
@@ -387,22 +475,31 @@ class CollectionCapability(BaseCapability):
         trusted = _trusted(kwargs)
         user = kwargs.get("user")
         if trusted is None or user is None:
-            return CapabilityResult.fail("Trusted db, principal, and linked account are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db, principal, and linked account are required",
+                error_type="invalid_args",
+            ).to_dict()
         db, _ = trusted
         from app.schemas.collection import CollectionSyncRequest
 
-        count = await sync_user_collections(db=db, user=user, request_data=CollectionSyncRequest(
-            subject_type=kwargs.get("subject_type"),
-            limit=kwargs.get("limit", 50),
-            offset=kwargs.get("offset", 0),
-            data=None,
-        ))
+        count = await sync_user_collections(
+            db=db,
+            user=user,
+            request_data=CollectionSyncRequest(
+                subject_type=kwargs.get("subject_type"),
+                limit=kwargs.get("limit", 50),
+                offset=kwargs.get("offset", 0),
+                data=None,
+            ),
+        )
         return CapabilityResult.ok(processed_count=count).to_dict()
 
     async def _sync_douban(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)
         if trusted is None:
-            return CapabilityResult.fail("Trusted db and principal are required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "Trusted db and principal are required", error_type="invalid_args"
+            ).to_dict()
         db, user_id = trusted
         count = await sync_user_collections_douban(user_id, db, kwargs["data"][:100])
         return CapabilityResult.ok(processed_count=count).to_dict()

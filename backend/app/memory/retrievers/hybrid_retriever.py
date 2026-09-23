@@ -13,14 +13,14 @@ class HybridRetriever:
         self.vector = vector
         self.alpha = alpha
 
-    async def retrieve(self, query: str, facts: list[dict], top_k: int = 5) -> list[dict]:
+    async def retrieve(
+        self, query: str, facts: list[dict], top_k: int = 5
+    ) -> list[dict]:
         facts_text = [f["content"] for f in facts]
         bm25_results = self.bm25.search(query, top_k=len(facts), facts=facts_text)
         vector_results = []
         if self.vector is not None:
-            vector_results = await self.vector.search(
-                query, facts, top_k=len(facts)
-            )
+            vector_results = await self.vector.search(query, facts, top_k=len(facts))
 
         scores: dict[int, float] = {}
         bm25_weight = self.alpha if self.vector is not None else 1.0

@@ -70,11 +70,10 @@ def _safe_value(value: Any, *, key: str = "", depth: int = 0) -> Any:
             for child_key, child_value in value.items()
         }
     if isinstance(value, list):
-        return [
-            _safe_value(child, depth=depth + 1)
-            for child in value
-        ]
-    raise EventPayloadError(f"event payload contains unsupported value: {type(value).__name__}")
+        return [_safe_value(child, depth=depth + 1) for child in value]
+    raise EventPayloadError(
+        f"event payload contains unsupported value: {type(value).__name__}"
+    )
 
 
 def _safe_payload_json(payload: dict[str, Any], max_bytes: int) -> str:
@@ -160,7 +159,9 @@ class EventStore:
 
         existing = await self._get_by_id(resolved_event_id)
         if existing is not None:
-            self._ensure_same(existing, run_id, sequence, event_type, invocation_id, payload_json)
+            self._ensure_same(
+                existing, run_id, sequence, event_type, invocation_id, payload_json
+            )
             return existing
         existing_sequence = await self._get_by_sequence(run_id, sequence)
         if existing_sequence is not None:
@@ -239,7 +240,9 @@ class EventStore:
         that span a conversation must order by the durable occurrence time and
         then by the per-Run sequence.
         """
-        normalized_ids = [str(run_id).strip() for run_id in run_ids if str(run_id).strip()]
+        normalized_ids = [
+            str(run_id).strip() for run_id in run_ids if str(run_id).strip()
+        ]
         if not normalized_ids:
             return []
         bounded_limit = max(1, min(limit, 10000))
@@ -254,7 +257,9 @@ class EventStore:
     async def _get_by_id(self, event_id: str) -> AgentRunEvent | None:
         return await self._session.get(AgentRunEvent, event_id)
 
-    async def _get_by_sequence(self, run_id: str, sequence: int) -> AgentRunEvent | None:
+    async def _get_by_sequence(
+        self, run_id: str, sequence: int
+    ) -> AgentRunEvent | None:
         statement = select(AgentRunEvent).where(
             _EVENT_RUN_ID == run_id,
             _EVENT_SEQUENCE == sequence,

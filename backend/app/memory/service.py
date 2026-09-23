@@ -43,9 +43,9 @@ _RETENTION_LIMITS: dict[str, int] = {
 
 _DEFAULT_KIND = "episodic"
 _LOCK_STRIPES = 64
-_WRITE_LOCKS: WeakKeyDictionary[
-    asyncio.AbstractEventLoop, list[asyncio.Lock]
-] = WeakKeyDictionary()
+_WRITE_LOCKS: WeakKeyDictionary[asyncio.AbstractEventLoop, list[asyncio.Lock]] = (
+    WeakKeyDictionary()
+)
 
 
 def _write_lock(user_id: int | None, thread_id: str, kind: str) -> asyncio.Lock:
@@ -119,10 +119,7 @@ class MemoryServiceImpl(MemoryService):
 
         Deduplication and retention are scoped to the same user+kind+thread.
         """
-        if (
-            os.getenv("MEMORY_TRUST_MODE") == "legacy-read-safe"
-            and source_type is None
-        ):
+        if os.getenv("MEMORY_TRUST_MODE") == "legacy-read-safe" and source_type is None:
             logger.warning(
                 "memory_write_blocked_legacy_read_safe",
                 extra={"kind": kind},
@@ -262,9 +259,7 @@ class MemoryServiceImpl(MemoryService):
             for f in long_facts:
                 parts.append(f"- {f['content']}")
         if completed_steps:
-            parts.append(
-                f"[执行进度] 已完成步骤: {', '.join(completed_steps)}"
-            )
+            parts.append(f"[执行进度] 已完成步骤: {', '.join(completed_steps)}")
         if terminal_output:
             parts.append(f"[终端输出] {terminal_output[:500]}")
         if short:
@@ -276,17 +271,21 @@ class MemoryServiceImpl(MemoryService):
         memory_facts = [MemoryFact.from_dict(fact) for fact in long_facts]
         tool_outputs: list[Any] = []
         if completed_steps:
-            tool_outputs.append({
-                "kind": "execution_progress",
-                "completed_steps": [
-                    str(step)[:100] for step in completed_steps[:20]
-                ],
-            })
+            tool_outputs.append(
+                {
+                    "kind": "execution_progress",
+                    "completed_steps": [
+                        str(step)[:100] for step in completed_steps[:20]
+                    ],
+                }
+            )
         if terminal_output:
-            tool_outputs.append({
-                "kind": "terminal_output",
-                "data": str(terminal_output),
-            })
+            tool_outputs.append(
+                {
+                    "kind": "terminal_output",
+                    "data": str(terminal_output),
+                }
+            )
         envelopes = self._compiler.compile(
             memory_facts=memory_facts,
             tool_outputs=tool_outputs,
@@ -342,7 +341,8 @@ class MemoryServiceImpl(MemoryService):
             return 0
 
         user_messages = [
-            message for message in recent_messages[-20:]
+            message
+            for message in recent_messages[-20:]
             if message.get("role") in {"user", "human"}
         ]
         try:
@@ -373,21 +373,19 @@ class MemoryServiceImpl(MemoryService):
             if not isinstance(content, str):
                 continue
             try:
-                importance = min(
-                    1.0, max(0.0, float(fact.get("importance", 0.5)))
-                )
+                importance = min(1.0, max(0.0, float(fact.get("importance", 0.5))))
             except (TypeError, ValueError):
                 importance = 0.5
-            source_type = fact.get(
-                "source_type", MemorySourceType.USER.value
-            )
+            source_type = fact.get("source_type", MemorySourceType.USER.value)
             if (
                 content
                 and source_type == MemorySourceType.USER.value
                 and not _looks_like_instruction_or_secret(str(content))
             ):
                 fact_id = await self.store_fact(
-                    thread_id, content, importance=importance,
+                    thread_id,
+                    content,
+                    importance=importance,
                     user_id=owner_id,
                     kind="semantic",
                     source="extraction",

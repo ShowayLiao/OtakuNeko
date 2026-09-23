@@ -38,9 +38,7 @@ def test_every_public_action_has_one_explicit_capability_owner():
 def test_derived_tools_preserve_all_public_action_names():
     from app.capabilities.langchain_adapter import derive_tools
 
-    derived_names = {
-        tool.name for tool in derive_tools(build_capability_registry())
-    }
+    derived_names = {tool.name for tool in derive_tools(build_capability_registry())}
 
     assert derived_names <= set(_public_names())
 
@@ -48,9 +46,7 @@ def test_derived_tools_preserve_all_public_action_names():
 def test_derived_tools_do_not_activate_side_effecting_actions():
     from app.capabilities.langchain_adapter import derive_tools
 
-    derived_names = {
-        tool.name for tool in derive_tools(build_capability_registry())
-    }
+    derived_names = {tool.name for tool in derive_tools(build_capability_registry())}
 
     assert "create_schedule" not in derived_names
     assert "update_schedule" not in derived_names

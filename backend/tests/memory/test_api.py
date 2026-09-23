@@ -96,9 +96,7 @@ async def test_authenticated_chat_uses_request_scoped_sql_repository(
 ):
     _CapturingMemoryService.instances.clear()
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeGateway)
-    monkeypatch.setattr(
-        agent_api, "MemoryServiceImpl", _CapturingMemoryService
-    )
+    monkeypatch.setattr(agent_api, "MemoryServiceImpl", _CapturingMemoryService)
     request = ChatRequest(
         model="test-model",
         messages=[Message(role="user", content="hello")],
@@ -127,9 +125,7 @@ async def test_anonymous_chat_does_not_construct_durable_memory(
 ):
     _CapturingMemoryService.instances.clear()
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeGateway)
-    monkeypatch.setattr(
-        agent_api, "MemoryServiceImpl", _CapturingMemoryService
-    )
+    monkeypatch.setattr(agent_api, "MemoryServiceImpl", _CapturingMemoryService)
     request = ChatRequest(
         model="test-model",
         messages=[Message(role="user", content="hello")],

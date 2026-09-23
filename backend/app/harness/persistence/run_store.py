@@ -37,9 +37,7 @@ class InvalidRunTransition(RunStoreError):
 
 _TRANSITIONS: dict[str, frozenset[str]] = {
     "queued": frozenset({"running", "cancelled", "abandoned", "failed"}),
-    "running": frozenset(
-        {"succeeded", "failed", "cancelled", "paused", "abandoned"}
-    ),
+    "running": frozenset({"succeeded", "failed", "cancelled", "paused", "abandoned"}),
     "paused": frozenset({"running", "cancelled", "abandoned"}),
     "succeeded": frozenset(),
     "failed": frozenset(),
@@ -97,7 +95,9 @@ class RunStore:
                 run.model,
             )
             if immutable != requested:
-                raise RunConflict(f"run id already exists with different identity: {run.run_id}")
+                raise RunConflict(
+                    f"run id already exists with different identity: {run.run_id}"
+                )
             return existing.model_copy(deep=True)
 
         try:
@@ -156,7 +156,10 @@ class RunStore:
             .order_by(AgentRun.thread_id)
             .limit(bounded_limit)
         )
-        return [str(thread_id) for thread_id in (await self._session.execute(statement)).scalars().all()]
+        return [
+            str(thread_id)
+            for thread_id in (await self._session.execute(statement)).scalars().all()
+        ]
 
     async def delete_thread(self, thread_id: str, *, user_id: int) -> int:
         """Delete one owner-scoped canonical thread and its dependent facts."""
@@ -244,13 +247,17 @@ class RunStore:
             return existing.model_copy(deep=True)
         if idempotency_key is not None:
             existing_key = (
-                await self._session.execute(
-                    select(AgentInvocation).where(
-                        _INVOCATION_RUN_ID == run_id,
-                        _INVOCATION_IDEMPOTENCY_KEY == idempotency_key,
+                (
+                    await self._session.execute(
+                        select(AgentInvocation).where(
+                            _INVOCATION_RUN_ID == run_id,
+                            _INVOCATION_IDEMPOTENCY_KEY == idempotency_key,
+                        )
                     )
                 )
-            ).scalars().one_or_none()
+                .scalars()
+                .one_or_none()
+            )
             if existing_key is not None:
                 self._ensure_invocation_same(
                     existing_key,
@@ -263,13 +270,17 @@ class RunStore:
                 )
                 return existing_key.model_copy(deep=True)
         existing_sequence = (
-            await self._session.execute(
-                select(AgentInvocation).where(
-                    _INVOCATION_RUN_ID == run_id,
-                    _INVOCATION_SEQUENCE == sequence,
+            (
+                await self._session.execute(
+                    select(AgentInvocation).where(
+                        _INVOCATION_RUN_ID == run_id,
+                        _INVOCATION_SEQUENCE == sequence,
+                    )
                 )
             )
-        ).scalars().one_or_none()
+            .scalars()
+            .one_or_none()
+        )
         if existing_sequence is not None:
             self._ensure_invocation_same(
                 existing_sequence,

@@ -119,4 +119,7 @@ class Scheduler:
 
 
 def _pairs(runs: Any) -> list[tuple[Any, Any]]:
-    return [(item.task_def, item.run) if hasattr(item, "task_def") else item for item in runs]
+    return [
+        (item.task_def, item.run) if hasattr(item, "task_def") else item
+        for item in runs
+    ]

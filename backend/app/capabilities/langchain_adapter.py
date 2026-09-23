@@ -78,13 +78,19 @@ def _build_runtime_tool(
     if public_input_schema:
         try:
             from pydantic import create_model, Field
+
             props = public_input_schema.get("properties", {})
             required = set(public_input_schema.get("required", []) or [])
             fields: dict[str, Any] = {}
             for field_name, field_schema in props.items():
                 field_type = _json_type_to_python(field_schema.get("type", "string"))
                 default = ... if field_name in required else None
-                fields[field_name] = (field_type, Field(default=default, description=field_schema.get("description", "")))
+                fields[field_name] = (
+                    field_type,
+                    Field(
+                        default=default, description=field_schema.get("description", "")
+                    ),
+                )
             if fields:
                 schema = create_model(f"{descriptor.name}_args", **fields)
                 _inner.args_schema = schema
@@ -107,7 +113,9 @@ def _public_schema(schema: dict[str, Any]) -> dict[str, Any]:
         }
     required = copied.get("required")
     if isinstance(required, list):
-        copied["required"] = [name for name in required if name not in _MODEL_OWNED_FIELDS]
+        copied["required"] = [
+            name for name in required if name not in _MODEL_OWNED_FIELDS
+        ]
     for key in ("items", "additionalProperties"):
         value = copied.get(key)
         if isinstance(value, dict):

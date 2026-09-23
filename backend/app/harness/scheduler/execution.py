@@ -10,9 +10,7 @@ from app.harness.policy import ProactivePolicy
 from app.harness.result import ErrorCode
 from app.harness.task import AgentTask
 
-SUPPORTED_SCHEDULED_TASK_TYPES = frozenset(
-    {"weekly_recommendation", "seasonal_scan"}
-)
+SUPPORTED_SCHEDULED_TASK_TYPES = frozenset({"weekly_recommendation", "seasonal_scan"})
 
 
 def build_agent_task(task_def: Any, run: Any) -> AgentTask:
@@ -86,7 +84,9 @@ async def handle_task_def(
             "scheduled execution requires a dispatcher-backed Runtime"
         )
     agent_task = build_agent_task(task_def, run)
-    agent_task.metadata["policy"] = json.loads(getattr(task_def, "policy", "{}") or "{}")
+    agent_task.metadata["policy"] = json.loads(
+        getattr(task_def, "policy", "{}") or "{}"
+    )
     run.trace_id = agent_task.metadata["trace_id"]
     decision = router.route(agent_task.goal) if router is not None else None
     agent = router.select(decision) if decision is not None else None
@@ -114,14 +114,18 @@ async def handle_task_def(
             run.status = "cancelled"
             run.error_category = "cancelled"
             if repository is not None:
-                await repository.finish(run, success=False, error_category="cancelled", lease_id=lease_id)
+                await repository.finish(
+                    run, success=False, error_category="cancelled", lease_id=lease_id
+                )
             raise
         except asyncio.TimeoutError:
             category = "timeout"
             run.error_category = category
             run.status = "failed"
             if repository is not None:
-                await repository.finish(run, success=False, error_category=category, lease_id=lease_id)
+                await repository.finish(
+                    run, success=False, error_category=category, lease_id=lease_id
+                )
             raise
         except Exception as exc:
             category = getattr(exc, "error_category", "permanent")
@@ -131,13 +135,14 @@ async def handle_task_def(
             run.error_category = category
             run.status = "failed"
             if repository is not None:
-                await repository.finish(run, success=False, error_category=category, lease_id=lease_id)
+                await repository.finish(
+                    run, success=False, error_category=category, lease_id=lease_id
+                )
             raise
         else:
             terminal = getattr(state, "terminal_result", None)
-            terminal_status = (
-                getattr(terminal, "status", None)
-                or getattr(state, "status", "failed")
+            terminal_status = getattr(terminal, "status", None) or getattr(
+                state, "status", "failed"
             )
             terminal_code = getattr(terminal, "error_code", None)
             category = (
@@ -148,12 +153,18 @@ async def handle_task_def(
                 else "permanent"
             )
             result = getattr(state, "result", None)
-            if isinstance(result, dict) and result.get("evidence", {}).get("reason") == "policy_denied":
+            if (
+                isinstance(result, dict)
+                and result.get("evidence", {}).get("reason") == "policy_denied"
+            ):
                 run.status = "failed"
                 run.error_category = "policy_denied"
                 if repository is not None:
                     await repository.finish(
-                        run, success=False, error_category="policy_denied", lease_id=lease_id
+                        run,
+                        success=False,
+                        error_category="policy_denied",
+                        lease_id=lease_id,
                     )
                 raise PermissionError("scheduled policy denied capability")
             if terminal_status == "completed":

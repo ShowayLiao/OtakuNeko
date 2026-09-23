@@ -43,10 +43,7 @@ def test_agent_memory_migration_upgrades_and_downgrades(tmp_path):
             )
         }
         indexes = {
-            row[1]
-            for row in connection.execute(
-                "PRAGMA index_list('agent_memory')"
-            )
+            row[1] for row in connection.execute("PRAGMA index_list('agent_memory')")
         }
     assert "agent_memory" in tables
     assert {

@@ -144,7 +144,9 @@ async def test_graph_error_is_failed_and_later_terminal_events_are_ignored() -> 
     result = _terminal(items)
     assert result.status == "failed"
     assert result.error_code == ErrorCode.TRANSIENT
-    assert len([event for event in coordinator.events if event.event_type == "error"]) == 1
+    assert (
+        len([event for event in coordinator.events if event.event_type == "error"]) == 1
+    )
     assert not any(
         isinstance(item, dict) and item.get("content") == "must not complete"
         for item in items
@@ -159,7 +161,9 @@ async def test_graph_error_is_failed_and_later_terminal_events_are_ignored() -> 
 async def test_error_code_controls_timeout_and_cancelled_status(
     error_code: str, status: str
 ) -> None:
-    coordinator = RunCoordinator(EventAdapter([{"type": "error", "error_code": error_code}]))
+    coordinator = RunCoordinator(
+        EventAdapter([{"type": "error", "error_code": error_code}])
+    )
     items = [
         item
         async for item in coordinator.stream(AgentTask(user_id=1, goal="status"), {})
@@ -211,7 +215,7 @@ async def test_deadline_is_reported_as_timeout() -> None:
 
 @pytest.mark.asyncio
 async def test_cancelled_token_stops_adapter_before_start() -> None:
-    adapter = EventAdapter([{ "type": "message_chunk", "content": "no" }])
+    adapter = EventAdapter([{"type": "message_chunk", "content": "no"}])
     token = CancellationToken()
     token.cancel()
     coordinator = RunCoordinator(adapter)

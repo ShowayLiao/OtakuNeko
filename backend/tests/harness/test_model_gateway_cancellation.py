@@ -113,7 +113,9 @@ async def test_gateway_maps_deadline_and_reclaims_provider_task() -> None:
 
 
 @pytest.mark.asyncio
-async def test_gateway_stream_infer_cancels_provider_iterator_and_waits_for_cleanup() -> None:
+async def test_gateway_stream_infer_cancels_provider_iterator_and_waits_for_cleanup() -> (
+    None
+):
     adapter = BlockingStreamingAdapter()
     gateway = OpenAIModelGateway(
         api_key="test-key",

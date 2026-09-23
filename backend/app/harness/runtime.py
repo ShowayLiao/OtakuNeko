@@ -127,15 +127,25 @@ def _utc_now() -> datetime:
 
 
 _SENSITIVE_ARGUMENT_PARTS = (
-    "password", "passwd", "secret", "token", "api_key", "apikey",
-    "private_key", "certificate", "credential", "authorization",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "private_key",
+    "certificate",
+    "credential",
+    "authorization",
 )
 
 
 def _safe_approval_arguments(value: Any, *, key: str = "", depth: int = 0) -> Any:
     """Project approval context without exposing credentials or large payloads."""
     lowered = key.lower()
-    if key in RUNTIME_OWNED_FIELDS or any(part in lowered for part in _SENSITIVE_ARGUMENT_PARTS):
+    if key in RUNTIME_OWNED_FIELDS or any(
+        part in lowered for part in _SENSITIVE_ARGUMENT_PARTS
+    ):
         return "[REDACTED]"
     if depth >= 3:
         return "[TRUNCATED]"
@@ -175,15 +185,13 @@ class AgentAdapter(Protocol):
     Non-streaming agents implement this protocol.
     """
 
-    async def run(self, state: AgentState) -> Any:
-        ...
+    async def run(self, state: AgentState) -> Any: ...
 
 
 class StreamingAgentAdapter(Protocol):
     """Protocol for agents that expose incremental output."""
 
-    async def stream(self, state: AgentState, **kwargs: Any) -> AsyncIterator[Any]:
-        ...
+    async def stream(self, state: AgentState, **kwargs: Any) -> AsyncIterator[Any]: ...
 
 
 class AgentRuntime:
@@ -316,9 +324,7 @@ class AgentRuntime:
             self.checkpoint_lease_seconds,
         )
         if lease is None:
-            raise CheckpointLeaseLost(
-                f"Run {run_id} is leased by another worker"
-            )
+            raise CheckpointLeaseLost(f"Run {run_id} is leased by another worker")
         self._checkpoint_lease = lease
 
     async def _observe_checkpoint_controls(
@@ -462,18 +468,18 @@ class AgentRuntime:
             )
             if existing_events and int(existing_events[0].sequence) == sequence:
                 existing = existing_events[0]
-                if (
-                    existing.event_type != canonical_type
-                    or existing.invocation_id != (
-                        str(invocation_id) if invocation_id else None
-                    )
+                if existing.event_type != canonical_type or existing.invocation_id != (
+                    str(invocation_id) if invocation_id else None
                 ):
-                    stored_sequence = max(
-                        int(item.sequence)
-                        for item in await self.event_store.list_after(
-                            str(event["run_id"]), after_sequence=0
+                    stored_sequence = (
+                        max(
+                            int(item.sequence)
+                            for item in await self.event_store.list_after(
+                                str(event["run_id"]), after_sequence=0
+                            )
                         )
-                    ) + 1
+                        + 1
+                    )
             if stored_sequence != sequence:
                 event["sequence"] = stored_sequence
             await self.event_store.append(
@@ -516,8 +522,7 @@ class AgentRuntime:
                 run_status = (
                     "paused"
                     if event_type == "approval_required"
-                    else
-                    "succeeded"
+                    else "succeeded"
                     if event_type == "run_completed"
                     else "cancelled"
                     if event_type == "run_cancelled"
@@ -560,7 +565,11 @@ class AgentRuntime:
             return
         try:
             current = await self.run_store.get(run_id)
-            if current is not None and current.status in {"queued", "running", "paused"}:
+            if current is not None and current.status in {
+                "queued",
+                "running",
+                "paused",
+            }:
                 await self.run_store.transition(
                     run_id,
                     "failed",
@@ -644,17 +653,17 @@ class AgentRuntime:
             if task.metadata.get("trace_id"):
                 trace.trace_id = str(task.metadata["trace_id"])
             scheduled_step = TraceStep(
-                    step_index=0,
-                    step_label="scheduled_context",
-                    agent_name=self.adapter_name,
-                    input_summary=str(
-                        {
-                            "task_def_id": task.metadata.get("task_def_id"),
-                            "run_id": task.metadata.get("run_id"),
-                            "scheduled_slot": task.metadata.get("scheduled_slot"),
-                        }
-                    ),
-                )
+                step_index=0,
+                step_label="scheduled_context",
+                agent_name=self.adapter_name,
+                input_summary=str(
+                    {
+                        "task_def_id": task.metadata.get("task_def_id"),
+                        "run_id": task.metadata.get("run_id"),
+                        "scheduled_slot": task.metadata.get("scheduled_slot"),
+                    }
+                ),
+            )
             scheduled_step.complete()
             trace.steps.append(scheduled_step)
 
@@ -710,9 +719,7 @@ class AgentRuntime:
         )
         try:
             trace_context = (
-                bind_trace(trace, run_id=run_id)
-                if trace is not None
-                else nullcontext()
+                bind_trace(trace, run_id=run_id) if trace is not None else nullcontext()
             )
             with trace_context as recorder:
                 if recorder is not None:
@@ -863,16 +870,22 @@ class AgentRuntime:
             capability_allowlist=frozenset(capability_allowlist or ()),
         )
         if trusted_context.run_id != run_id:
-            return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.INVALID_REQUEST)
+            return RunResult(
+                run_id=run_id, status="failed", error_code=ErrorCode.INVALID_REQUEST
+            )
         run_budget = budget or self._build_run_budget(task, {})
         run_cancellation = cancellation or CancellationToken()
         parser = DecisionParser()
         messages = list(task.metadata.get("messages") or [])
         parse_recovery_attempted = False
-        model_context = ContextManager(trusted_context).build_snapshot(
-            run_state="running",
-            memory_context=self.memory_context,
-        ).model_dump(mode="json")
+        model_context = (
+            ContextManager(trusted_context)
+            .build_snapshot(
+                run_state="running",
+                memory_context=self.memory_context,
+            )
+            .model_dump(mode="json")
+        )
         try:
             for _ in range(run_budget.max_model_calls):
                 run_cancellation.raise_if_cancelled()
@@ -906,12 +919,22 @@ class AgentRuntime:
                             {"role": "system", "content": _DECISION_REPAIR_PROMPT}
                         )
                         continue
-                    return RunResult(run_id=run_id, status="failed", error_code=exc.error_code)
+                    return RunResult(
+                        run_id=run_id, status="failed", error_code=exc.error_code
+                    )
 
                 if decision.run_id != run_id:
-                    return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.INVALID_REQUEST)
+                    return RunResult(
+                        run_id=run_id,
+                        status="failed",
+                        error_code=ErrorCode.INVALID_REQUEST,
+                    )
                 if decision.action in {"respond", "finish"}:
-                    return RunResult(run_id=run_id, status="completed", content=decision.content or "")
+                    return RunResult(
+                        run_id=run_id,
+                        status="completed",
+                        content=decision.content or "",
+                    )
 
                 messages.append(_assistant_continuation_message(model_result))
                 invocation = await self.dispatcher.dispatch(
@@ -943,15 +966,25 @@ class AgentRuntime:
                         error_code=safe_code,
                     )
                 messages.append(_tool_feedback_message(invocation))
-            return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED)
+            return RunResult(
+                run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED
+            )
         except asyncio.CancelledError:
-            return RunResult(run_id=run_id, status="cancelled", error_code=ErrorCode.CANCELLED)
+            return RunResult(
+                run_id=run_id, status="cancelled", error_code=ErrorCode.CANCELLED
+            )
         except (DeadlineExceededError, asyncio.TimeoutError):
-            return RunResult(run_id=run_id, status="timeout", error_code=ErrorCode.TIMEOUT)
+            return RunResult(
+                run_id=run_id, status="timeout", error_code=ErrorCode.TIMEOUT
+            )
         except BudgetExceededError:
-            return RunResult(run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED)
+            return RunResult(
+                run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED
+            )
         except RunCancellationError:
-            return RunResult(run_id=run_id, status="cancelled", error_code=ErrorCode.CANCELLED)
+            return RunResult(
+                run_id=run_id, status="cancelled", error_code=ErrorCode.CANCELLED
+            )
 
     async def stream_decision(
         self,
@@ -999,10 +1032,14 @@ class AgentRuntime:
         run_cancellation = cancellation or CancellationToken()
         parser = DecisionParser()
         messages = list(task.metadata.get("messages") or [])
-        model_context = ContextManager(trusted_context).build_snapshot(
-            run_state="running",
-            memory_context=self.memory_context,
-        ).model_dump(mode="json")
+        model_context = (
+            ContextManager(trusted_context)
+            .build_snapshot(
+                run_state="running",
+                memory_context=self.memory_context,
+            )
+            .model_dump(mode="json")
+        )
         sequence = 0
         state = AgentState(
             task=task,
@@ -1037,9 +1074,7 @@ class AgentRuntime:
                     "run_id": run_id,
                     "trace_id": trusted_context.trace_id,
                 }
-                messages = list(
-                    state.context.get("decision_messages") or messages
-                )
+                messages = list(state.context.get("decision_messages") or messages)
                 raw_pending_decision = state.context.get("pending_decision")
                 if isinstance(raw_pending_decision, dict):
                     pending_decision = AgentDecision.model_validate(
@@ -1060,9 +1095,7 @@ class AgentRuntime:
             return
 
         try:
-            existing_status = await self._canonical_start(
-                task, trusted_context, run_id
-            )
+            existing_status = await self._canonical_start(task, trusted_context, run_id)
         except CanonicalPersistenceError:
             state.status = "failed"
             state.terminal_result = RunResult(
@@ -1177,7 +1210,9 @@ class AgentRuntime:
                         return
 
                     specialist_call_index = 0
-                    specialist_event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+                    specialist_event_queue: asyncio.Queue[dict[str, Any]] = (
+                        asyncio.Queue()
+                    )
 
                     async def invoke_specialist_capability(
                         capability: str,
@@ -1212,7 +1247,9 @@ class AgentRuntime:
                         run_budget.check_deadline()
                         dispatcher = self.dispatcher
                         if dispatcher is None:
-                            raise RuntimeError("dispatcher is required for tool execution")
+                            raise RuntimeError(
+                                "dispatcher is required for tool execution"
+                            )
                         invocation = await dispatcher.dispatch(
                             decision,
                             trusted_context,
@@ -1256,7 +1293,10 @@ class AgentRuntime:
                     pending_event_task: asyncio.Task[Any] | None = None
                     try:
                         while True:
-                            if specialist_task.done() and specialist_event_queue.empty():
+                            if (
+                                specialist_task.done()
+                                and specialist_event_queue.empty()
+                            ):
                                 break
                             pending_event_task = asyncio.create_task(
                                 specialist_event_queue.get()
@@ -1275,7 +1315,10 @@ class AgentRuntime:
                             pending_event_task = None
                         specialist_raw = await specialist_task
                     finally:
-                        if pending_event_task is not None and not pending_event_task.done():
+                        if (
+                            pending_event_task is not None
+                            and not pending_event_task.done()
+                        ):
                             pending_event_task.cancel()
                             await asyncio.gather(
                                 pending_event_task, return_exceptions=True
@@ -1343,7 +1386,9 @@ class AgentRuntime:
                             run_id=run_id,
                             trace_id=trusted_context.trace_id,
                             context=model_context,
-                            capability_catalog=self._capability_catalog(trusted_context),
+                            capability_catalog=self._capability_catalog(
+                                trusted_context
+                            ),
                             cancellation=run_cancellation,
                             deadline=run_budget.remaining_seconds(),
                             budget=run_budget.snapshot(),
@@ -1373,7 +1418,9 @@ class AgentRuntime:
                             run_id=run_id,
                             trace_id=trusted_context.trace_id,
                             context=model_context,
-                            capability_catalog=self._capability_catalog(trusted_context),
+                            capability_catalog=self._capability_catalog(
+                                trusted_context
+                            ),
                             cancellation=run_cancellation,
                             deadline=run_budget.remaining_seconds(),
                             budget=run_budget.snapshot(),
@@ -1426,7 +1473,9 @@ class AgentRuntime:
                             and run_budget.model_calls_used < run_budget.max_model_calls
                         ):
                             parse_recovery_attempted = True
-                            messages.append(_assistant_continuation_message(model_result))
+                            messages.append(
+                                _assistant_continuation_message(model_result)
+                            )
                             messages.append(
                                 {
                                     "role": "system",
@@ -1548,7 +1597,9 @@ class AgentRuntime:
                         else None
                     )
                     owner_descriptor = (
-                        owner[1] if isinstance(owner, tuple) and len(owner) > 1 else None
+                        owner[1]
+                        if isinstance(owner, tuple) and len(owner) > 1
+                        else None
                     )
                     approval_required = bool(
                         getattr(owner_descriptor, "approval_required", False)
@@ -1697,7 +1748,9 @@ class AgentRuntime:
             await self._save_checkpoint(state)
             raise
         except CanonicalPersistenceError:
-            logger.exception("runtime_canonical_persistence_failed", extra={"run_id": run_id})
+            logger.exception(
+                "runtime_canonical_persistence_failed", extra={"run_id": run_id}
+            )
             state.status = "failed"
             state.terminal_result = RunResult(
                 run_id=run_id,
@@ -1778,9 +1831,7 @@ class AgentRuntime:
         )
         try:
             trace_context = (
-                bind_trace(trace, run_id=run_id)
-                if trace is not None
-                else nullcontext()
+                bind_trace(trace, run_id=run_id) if trace is not None else nullcontext()
             )
             with trace_context as recorder:
                 if recorder is not None:
@@ -1806,7 +1857,9 @@ class AgentRuntime:
 
                     terminal = terminal or coordinator.terminal_result
                     if terminal is None:
-                        raise RuntimeError("Coordinator ended without a terminal result")
+                        raise RuntimeError(
+                            "Coordinator ended without a terminal result"
+                        )
                     if coordinator.failure is not None:
                         raise coordinator.failure
                     if terminal.status == "completed":
@@ -1826,9 +1879,8 @@ class AgentRuntime:
                             yield {
                                 "type": "model_call",
                                 "call_id": memory_result.call_id,
-                                "trace_id": memory_result.trace_id or str(
-                                    task.metadata.get("trace_id") or run_id
-                                ),
+                                "trace_id": memory_result.trace_id
+                                or str(task.metadata.get("trace_id") or run_id),
                                 "provider": memory_result.provider,
                                 "model": memory_result.model,
                                 "operation": memory_result.operation,
@@ -1899,7 +1951,11 @@ class AgentRuntime:
                     elif terminal.status == "cancelled":
                         trace.mark_cancelled()
                     else:
-                        trace.mark_failed(terminal.error_code.value if terminal.error_code else terminal.status)
+                        trace.mark_failed(
+                            terminal.error_code.value
+                            if terminal.error_code
+                            else terminal.status
+                        )
         except (asyncio.CancelledError, GeneratorExit):
             state.status = "cancelled"
             state.terminal_result = coordinator.terminal_result
@@ -1926,9 +1982,7 @@ class AgentRuntime:
                 await self._record_trace(trace)
         await self._save_checkpoint(state)
 
-    def _build_run_budget(
-        self, task: AgentTask, context: dict[str, Any]
-    ) -> RunBudget:
+    def _build_run_budget(self, task: AgentTask, context: dict[str, Any]) -> RunBudget:
         policy = task.metadata.get("policy") or {}
         defaults = RunBudget()
         values: dict[str, Any] = {}
@@ -1948,7 +2002,9 @@ class AgentRuntime:
                 values[field] = getattr(defaults, field)
         return RunBudget(**values)
 
-    async def _legacy_stream(self, task: AgentTask, **kwargs: Any) -> AsyncIterator[Any]:
+    async def _legacy_stream(
+        self, task: AgentTask, **kwargs: Any
+    ) -> AsyncIterator[Any]:
         """Pre-BATCH-05 facade retained for the explicit rollback flag."""
         trace: AgentTrace | None = None
         run_id = self._ensure_run_id(task)
@@ -1970,9 +2026,7 @@ class AgentRuntime:
             if stream is None:
                 raise TypeError("The configured adapter does not support streaming")
             trace_context = (
-                bind_trace(trace, run_id=run_id)
-                if trace is not None
-                else nullcontext()
+                bind_trace(trace, run_id=run_id) if trace is not None else nullcontext()
             )
             with trace_context as recorder:
                 if recorder is not None:
@@ -2133,9 +2187,7 @@ class AgentRuntime:
                         if isinstance(data, dict)
                         else [],
                     },
-                    status=(
-                        "completed" if result_status == "completed" else "failed"
-                    ),
+                    status=("completed" if result_status == "completed" else "failed"),
                 )
                 return
             if chunk.get("type") == "route_decision":
@@ -2222,8 +2274,12 @@ class AgentRuntime:
                     if name:
                         names.append(str(name))
             if names:
-                return prefix + "候选内容：\n" + "\n".join(
-                    f"{index}. {name}" for index, name in enumerate(names, 1)
+                return (
+                    prefix
+                    + "候选内容：\n"
+                    + "\n".join(
+                        f"{index}. {name}" for index, name in enumerate(names, 1)
+                    )
                 )
         if reason == "model_budget_exhausted":
             return prefix + "暂时无法生成整合回答。"

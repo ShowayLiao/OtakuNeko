@@ -66,14 +66,14 @@ class StoreMemoryRepository(MemoryRepository):
         offset: int = 0,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        kinds = [kind] if kind is not None else [
-            "episodic", "semantic", "profile"
-        ]
+        kinds = [kind] if kind is not None else ["episodic", "semantic", "profile"]
         items = []
         for memory_kind in kinds:
-            items.extend(await self._store.asearch(
-                self._namespace(thread_id, user_id, memory_kind)
-            ))
+            items.extend(
+                await self._store.asearch(
+                    self._namespace(thread_id, user_id, memory_kind)
+                )
+            )
         facts: list[dict[str, Any]] = []
         for item in items:
             val = item.value
@@ -92,7 +92,7 @@ class StoreMemoryRepository(MemoryRepository):
                 }
             )
         facts.sort(key=lambda fact: (fact["timestamp"], fact["id"]))
-        return facts[offset:offset + limit]
+        return facts[offset : offset + limit]
 
     async def delete_fact(
         self,
@@ -113,9 +113,9 @@ class StoreMemoryRepository(MemoryRepository):
         user_id: int | None = None,
         kind: str | None = None,
     ) -> int:
-        return len(await self.get_facts(
-            thread_id, user_id=user_id, kind=kind, limit=1000
-        ))
+        return len(
+            await self.get_facts(thread_id, user_id=user_id, kind=kind, limit=1000)
+        )
 
     @staticmethod
     def _namespace(

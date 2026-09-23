@@ -31,7 +31,9 @@ class TestInMemoryCheckpointStore:
             worker_count=2,
         )
 
-    async def test_single_worker_lease_uses_fencing_and_rejects_stale_writer(self) -> None:
+    async def test_single_worker_lease_uses_fencing_and_rejects_stale_writer(
+        self,
+    ) -> None:
         now = [datetime.now(timezone.utc)]
         store = InMemoryCheckpointStore(clock=lambda: now[0])
         first = await store.claim_lease("run-lease", "thread-1", "worker-a", 10)
@@ -157,7 +159,9 @@ class TestSqliteCheckpointStore:
         path = str(tmp_path / "leases" / "checkpoints.db")
         now = [datetime.now(timezone.utc)]
         first_store = SqliteCheckpointStore(path, clock=lambda: now[0])
-        first = await first_store.claim_lease("run-sqlite-lease", "thread-1", "worker-a", 10)
+        first = await first_store.claim_lease(
+            "run-sqlite-lease", "thread-1", "worker-a", 10
+        )
         assert first is not None
         second_store = SqliteCheckpointStore(path, clock=lambda: now[0])
         assert (

@@ -38,7 +38,9 @@ class TestEventContract:
     def test_trace_steps_serialize_deterministically(self):
         trace = AgentTrace(task_id=1, goal="test")
         step = TraceStep(step_index=0, step_label="search", agent_name="AnimeAgent")
-        step.events.append(TraceEvent(event_type="capability_call", data={"action": "search"}))
+        step.events.append(
+            TraceEvent(event_type="capability_call", data={"action": "search"})
+        )
         trace.add_step(step)
         trace.mark_completed()
 
@@ -83,7 +85,11 @@ class TestEventContract:
 
 class TestRedaction:
     def test_secret_keys_redacted(self):
-        payload = {"api_key": "sk-123456", "query": "hello", "authorization": "Bearer xyz"}
+        payload = {
+            "api_key": "sk-123456",
+            "query": "hello",
+            "authorization": "Bearer xyz",
+        }
         result = redact(payload)
         assert result["api_key"] == "[REDACTED]"
         assert result["authorization"] == "[REDACTED]"

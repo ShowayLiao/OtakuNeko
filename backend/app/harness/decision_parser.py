@@ -55,7 +55,11 @@ def _decode_json_object(text: str) -> dict[str, Any]:
     """Decode a provider JSON object while tolerating an outer markdown fence."""
     candidate = text.strip()
     lines = candidate.splitlines()
-    if len(lines) >= 3 and lines[0].strip().lower() in {"```", "```json"} and lines[-1].strip() == "```":
+    if (
+        len(lines) >= 3
+        and lines[0].strip().lower() in {"```", "```json"}
+        and lines[-1].strip() == "```"
+    ):
         candidate = "\n".join(lines[1:-1]).strip()
     payload = json.loads(candidate)
     if not isinstance(payload, dict):
@@ -88,10 +92,18 @@ class DecisionParser:
         if not isinstance(result, ModelCallResult):
             raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
         if result.status == "cancelled" or result.error_code == "cancelled":
-            raise DecisionParseError(ErrorCode.CANCELLED, "Model decision was cancelled")
+            raise DecisionParseError(
+                ErrorCode.CANCELLED, "Model decision was cancelled"
+            )
         if result.status == "failed":
-            code = result.error_code if result.error_code in _SAFE_PROVIDER_CODES else "permanent"
-            mapped = ErrorCode.CANCELLED if code == "cancelled" else ErrorCode.PROVIDER_ERROR
+            code = (
+                result.error_code
+                if result.error_code in _SAFE_PROVIDER_CODES
+                else "permanent"
+            )
+            mapped = (
+                ErrorCode.CANCELLED if code == "cancelled" else ErrorCode.PROVIDER_ERROR
+            )
             raise DecisionParseError(mapped, "Model decision failed")
 
         payload = self._payload(result)
@@ -107,13 +119,17 @@ class DecisionParser:
         if expected_run_id is not None:
             proposed_run_id = payload.get("run_id")
             if proposed_run_id not in {None, expected_run_id}:
-                raise DecisionParseError(ErrorCode.INVALID_REQUEST, "Run identity mismatch")
+                raise DecisionParseError(
+                    ErrorCode.INVALID_REQUEST, "Run identity mismatch"
+                )
             payload = {**payload, "run_id": expected_run_id}
 
         # Some compatible providers follow the action/content shape but omit
         # the correlation field. Runtime owns the fallback identity so a valid
         # Decision is not rejected solely for that omission.
-        if payload.get("action") in {"invoke", "respond", "finish"} and not payload.get("decision_id"):
+        if payload.get("action") in {"invoke", "respond", "finish"} and not payload.get(
+            "decision_id"
+        ):
             payload = {**payload, "decision_id": f"model-decision-{uuid4().hex}"}
 
         if payload.get("action") == "invoke":
@@ -138,7 +154,9 @@ class DecisionParser:
                     retryable=True,
                 )
             if _contains_authority(decision.arguments):
-                raise DecisionParseError(ErrorCode.UNAUTHORIZED, "Authority fields are runtime-owned")
+                raise DecisionParseError(
+                    ErrorCode.UNAUTHORIZED, "Authority fields are runtime-owned"
+                )
             try:
                 encoded = json.dumps(
                     decision.arguments,
@@ -147,7 +165,9 @@ class DecisionParser:
                     separators=(",", ":"),
                 ).encode("utf-8")
             except (TypeError, ValueError) as exc:
-                raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True) from exc
+                raise DecisionParseError(
+                    ErrorCode.INVALID_REQUEST, retryable=True
+                ) from exc
             if len(encoded) > self.max_arguments_bytes:
                 raise DecisionParseError(
                     ErrorCode.INVALID_REQUEST,
@@ -174,14 +194,17 @@ class DecisionParser:
                 try:
                     arguments = json.loads(arguments or "{}")
                 except json.JSONDecodeError as exc:
-                    raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True) from exc
+                    raise DecisionParseError(
+                        ErrorCode.INVALID_REQUEST, retryable=True
+                    ) from exc
             return {
                 "schema_version": call.get("schema_version", self.schema_version),
                 "decision_id": call.get("decision_id") or "model-decision",
                 "run_id": call.get("run_id") or result.model,
                 "action": "invoke",
                 "capability": call.get("capability") or call.get("name"),
-                "capability_version": call.get("capability_version") or call.get("version"),
+                "capability_version": call.get("capability_version")
+                or call.get("version"),
                 "arguments": arguments,
             }
         if not result.text:

@@ -122,7 +122,8 @@ class MemoryFact:
         return (
             self.verified
             and self.confidence >= 0.8
-            and self.source_type in {
+            and self.source_type
+            in {
                 MemorySourceType.USER,
                 MemorySourceType.SYSTEM,
             }
@@ -167,9 +168,8 @@ class MemoryFact:
             kind=kind,
             importance=value.get("importance", 0.5),
             source=value.get("source", "conversation"),
-            created_at=_parse_datetime(
-                value.get("created_at", value.get("timestamp"))
-            ) or datetime.now(timezone.utc),
+            created_at=_parse_datetime(value.get("created_at", value.get("timestamp")))
+            or datetime.now(timezone.utc),
             metadata=metadata,
         )
 
@@ -181,9 +181,7 @@ class MemoryFact:
             "source_id": self.source_id,
             "confidence": self.confidence,
             "verified": self.verified,
-            "expires_at": (
-                self.expires_at.isoformat() if self.expires_at else None
-            ),
+            "expires_at": (self.expires_at.isoformat() if self.expires_at else None),
         }
         return {
             "id": self.id,
@@ -197,9 +195,7 @@ class MemoryFact:
             "source_id": self.source_id,
             "confidence": self.confidence,
             "verified": self.verified,
-            "expires_at": (
-                self.expires_at.isoformat() if self.expires_at else None
-            ),
+            "expires_at": (self.expires_at.isoformat() if self.expires_at else None),
             "created_at": self.created_at.isoformat(),
             "metadata": metadata,
         }
@@ -265,9 +261,7 @@ class MemoryRecord:
             "source_id": self.source_id,
             "confidence": self.confidence,
             "verified": self.verified,
-            "expires_at": (
-                self.expires_at.isoformat() if self.expires_at else None
-            ),
+            "expires_at": (self.expires_at.isoformat() if self.expires_at else None),
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
         }

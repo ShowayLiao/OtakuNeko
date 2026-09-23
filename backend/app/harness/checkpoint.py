@@ -106,14 +106,11 @@ class CheckpointStore(Protocol):
         *,
         worker_id: str | None = None,
         fencing_token: int | None = None,
-    ) -> None:
-        ...
+    ) -> None: ...
 
-    async def load(self, run_id: str, thread_id: str) -> AgentState | None:
-        ...
+    async def load(self, run_id: str, thread_id: str) -> AgentState | None: ...
 
-    async def mark_abandoned(self, run_id: str, reason: str) -> None:
-        ...
+    async def mark_abandoned(self, run_id: str, reason: str) -> None: ...
 
     async def claim_lease(
         self,
@@ -121,18 +118,15 @@ class CheckpointStore(Protocol):
         thread_id: str,
         worker_id: str,
         lease_seconds: int,
-    ) -> CheckpointLease | None:
-        ...
+    ) -> CheckpointLease | None: ...
 
     async def renew_lease(
         self,
         lease: CheckpointLease,
         lease_seconds: int,
-    ) -> CheckpointLease | None:
-        ...
+    ) -> CheckpointLease | None: ...
 
-    async def release_lease(self, lease: CheckpointLease) -> bool:
-        ...
+    async def release_lease(self, lease: CheckpointLease) -> bool: ...
 
     async def request_cancellation(
         self,
@@ -140,25 +134,19 @@ class CheckpointStore(Protocol):
         *,
         requester: str,
         reason: str,
-    ) -> CancellationRequest:
-        ...
+    ) -> CancellationRequest: ...
 
-    async def get_cancellation(self, run_id: str) -> CancellationRequest | None:
-        ...
+    async def get_cancellation(self, run_id: str) -> CancellationRequest | None: ...
 
-    async def is_cancellation_requested(self, run_id: str) -> bool:
-        ...
+    async def is_cancellation_requested(self, run_id: str) -> bool: ...
 
-    async def recover_expired(self, run_id: str, reason: str) -> bool:
-        ...
+    async def recover_expired(self, run_id: str, reason: str) -> bool: ...
 
     # Legacy Runtime compatibility. These methods remain available while the
     # runtime's older task-id checkpoint hook is migrated in a later batch.
-    async def save_state(self, state: AgentState) -> None:
-        ...
+    async def save_state(self, state: AgentState) -> None: ...
 
-    async def load_state(self, task_id: int) -> AgentState | None:
-        ...
+    async def load_state(self, task_id: int) -> AgentState | None: ...
 
 
 class InMemoryCheckpointStore:
@@ -343,9 +331,7 @@ class InMemoryCheckpointStore:
             or worker_id != current.worker_id
             or fencing_token != current.fencing_token
         ):
-            raise CheckpointLeaseLost(
-                f"checkpoint lease lost for {run_id}/{thread_id}"
-            )
+            raise CheckpointLeaseLost(f"checkpoint lease lost for {run_id}/{thread_id}")
 
     async def save_state(self, state: AgentState) -> None:
         task_id = state.task.task_id
@@ -485,9 +471,9 @@ class SqliteCheckpointStore:
             if previous is not None:
                 try:
                     previous_version = int(
-                        json.loads(previous[0]).get("context", {}).get(
-                            "checkpoint_version", 0
-                        )
+                        json.loads(previous[0])
+                        .get("context", {})
+                        .get("checkpoint_version", 0)
                     )
                 except (TypeError, ValueError, json.JSONDecodeError):
                     previous_version = 0
@@ -763,9 +749,7 @@ class SqliteCheckpointStore:
             or worker_id != current[0]
             or fencing_token != int(current[1])
         ):
-            raise CheckpointLeaseLost(
-                f"checkpoint lease lost for {run_id}/{thread_id}"
-            )
+            raise CheckpointLeaseLost(f"checkpoint lease lost for {run_id}/{thread_id}")
 
     async def save_state(self, state: AgentState) -> None:
         scope = self._legacy_scope(state)

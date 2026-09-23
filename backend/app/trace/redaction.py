@@ -10,29 +10,44 @@ from typing import Any
 
 from app.trace import AgentTrace
 
-_SECRET_KEYS = frozenset({
-    "api_key", "apikey",
-    "authorization",
-    "token", "access_token", "refresh_token",
-    "secret", "password", "passwd",
-    "x_api_key", "x_api_token",
-    "credential", "credentials",
-})
+_SECRET_KEYS = frozenset(
+    {
+        "api_key",
+        "apikey",
+        "authorization",
+        "token",
+        "access_token",
+        "refresh_token",
+        "secret",
+        "password",
+        "passwd",
+        "x_api_key",
+        "x_api_token",
+        "credential",
+        "credentials",
+    }
+)
 
-_COT_KEYS = frozenset({
-    "chain_of_thought", "reasoning_trace",
-    "reasoning_content", "internal_thought",
-})
+_COT_KEYS = frozenset(
+    {
+        "chain_of_thought",
+        "reasoning_trace",
+        "reasoning_content",
+        "internal_thought",
+    }
+)
 
-_PRIVATE_KEYS = frozenset({
-    "goal",
-    "prompt",
-    "messages",
-    "memory",
-    "raw_memory",
-    "raw_prompt",
-    "content",
-})
+_PRIVATE_KEYS = frozenset(
+    {
+        "goal",
+        "prompt",
+        "messages",
+        "memory",
+        "raw_memory",
+        "raw_prompt",
+        "content",
+    }
+)
 
 _MAX_STRING_LENGTH = 2000
 _MAX_COLLECTION_ITEMS = 200

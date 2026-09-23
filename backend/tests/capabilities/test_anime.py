@@ -77,9 +77,16 @@ def test_calendar_and_linked_user_actions_are_discoverable():
     assert actions["get_bangumi_calendar"].requires_auth is False
     assert actions["get_bangumi_calendar"].max_output_fields == 8192
     assert actions["get_detail_batch"].requires_auth is False
-    assert actions["get_detail_batch"].input_schema["properties"]["subject_ids"]["maxItems"] == 5
+    assert (
+        actions["get_detail_batch"].input_schema["properties"]["subject_ids"][
+            "maxItems"
+        ]
+        == 5
+    )
     assert actions["get_bangumi_user_info"].requires_auth is True
-    assert "username" not in actions["get_bangumi_user_info"].input_schema.get("properties", {})
+    assert "username" not in actions["get_bangumi_user_info"].input_schema.get(
+        "properties", {}
+    )
 
 
 @pytest.mark.asyncio
@@ -90,7 +97,9 @@ async def test_batch_anime_details_uses_subject_ids(monkeypatch):
             "failed_subject_ids": [],
         }
 
-    monkeypatch.setattr("app.capabilities.anime.get_bangumi_subject_details", fake_details)
+    monkeypatch.setattr(
+        "app.capabilities.anime.get_bangumi_subject_details", fake_details
+    )
 
     result = await AnimeCapability().execute("get_detail_batch", subject_ids=[123])
 
@@ -122,7 +131,9 @@ async def test_linked_user_info_does_not_fallback_to_local_username(monkeypatch)
     async def unexpected_lookup(username):
         pytest.fail(f"unexpected Bangumi lookup for local username: {username}")
 
-    monkeypatch.setattr("app.capabilities.anime.get_bangumi_user_info", unexpected_lookup)
+    monkeypatch.setattr(
+        "app.capabilities.anime.get_bangumi_user_info", unexpected_lookup
+    )
     result = await AnimeCapability().execute(
         "get_bangumi_user_info",
         user=type("User", (), {"bangumi_name": None, "username": "local"})(),

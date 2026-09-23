@@ -22,9 +22,14 @@ class FakeRepository(MemoryRepository):
         return self._store[thread_id]
 
     async def put_fact(
-        self, thread_id: str, fact_id: str, content: str,
-        importance: float, source: str,
-        user_id: int | None = None, kind: str = "episodic",
+        self,
+        thread_id: str,
+        fact_id: str,
+        content: str,
+        importance: float,
+        source: str,
+        user_id: int | None = None,
+        kind: str = "episodic",
         metadata: dict | None = None,
     ) -> None:
         self._ns(thread_id)[fact_id] = {
@@ -50,15 +55,17 @@ class FakeRepository(MemoryRepository):
                 continue
             if kind is not None and val.get("kind") != kind:
                 continue
-            result.append({
-                "id": fact_id,
-                "content": val["content"],
-                "importance": val.get("importance", 0.5),
-                "timestamp": "",
-                "source": val.get("source", "conversation"),
-                "kind": val.get("kind", "episodic"),
-            })
-        return result[offset:offset + limit]
+            result.append(
+                {
+                    "id": fact_id,
+                    "content": val["content"],
+                    "importance": val.get("importance", 0.5),
+                    "timestamp": "",
+                    "source": val.get("source", "conversation"),
+                    "kind": val.get("kind", "episodic"),
+                }
+            )
+        return result[offset : offset + limit]
 
     async def delete_fact(
         self,
@@ -78,7 +85,10 @@ class FakeRepository(MemoryRepository):
         return True
 
     async def count_facts(
-        self, thread_id: str, user_id: int | None = None, kind: str | None = None,
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
     ) -> int:
         return len(await self.get_facts(thread_id, user_id=user_id, kind=kind))
 

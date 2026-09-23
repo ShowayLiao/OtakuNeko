@@ -37,6 +37,7 @@ def _public(value: Any) -> Any:
         return [_public(item) for item in value]
     return value
 
+
 def _idempotency_key(user_id: int, action: str, payload: dict[str, Any]) -> str:
     """Derive a stable idempotency key from (user, action, payload)."""
     business_payload = {
@@ -84,18 +85,29 @@ class ScheduleCapability(BaseCapability):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "source": {"type": "string", "description": "Data source (bangumi/douban)"},
+                        "source": {
+                            "type": "string",
+                            "description": "Data source (bangumi/douban)",
+                        },
                         "source_id": {
-                            "type": "string", "description": "ID from the source system",
+                            "type": "string",
+                            "description": "ID from the source system",
                         },
                         "day_of_week": {
-                            "type": "integer", "minimum": 0, "maximum": 6,
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 6,
                             "description": "Day of week (0=Sun, 6=Sat)",
                         },
                         "start_time": {
-                            "type": "string", "description": "Broadcast time (HH:MM:SS)",
+                            "type": "string",
+                            "description": "Broadcast time (HH:MM:SS)",
                         },
-                        "watch_day": {"type": ["integer", "null"], "minimum": 0, "maximum": 6},
+                        "watch_day": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                            "maximum": 6,
+                        },
                         "watch_time": {"type": ["string", "null"]},
                         "duration": {"type": ["integer", "null"], "minimum": 0},
                         "watch_type": {"type": ["integer", "null"]},
@@ -105,7 +117,10 @@ class ScheduleCapability(BaseCapability):
                         },
                     },
                     "required": [
-                        "source", "source_id", "day_of_week", "start_time",
+                        "source",
+                        "source_id",
+                        "day_of_week",
+                        "start_time",
                     ],
                 },
                 requires_auth=True,
@@ -119,10 +134,20 @@ class ScheduleCapability(BaseCapability):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "schedule_id": {"type": "integer", "description": "Schedule record ID"},
+                        "schedule_id": {
+                            "type": "integer",
+                            "description": "Schedule record ID",
+                        },
                         "day_of_week": {"type": "integer", "minimum": 0, "maximum": 6},
-                        "start_time": {"type": "string", "description": "Broadcast time (HH:MM:SS)"},
-                        "watch_day": {"type": ["integer", "null"], "minimum": 0, "maximum": 6},
+                        "start_time": {
+                            "type": "string",
+                            "description": "Broadcast time (HH:MM:SS)",
+                        },
+                        "watch_day": {
+                            "type": ["integer", "null"],
+                            "minimum": 0,
+                            "maximum": 6,
+                        },
                         "watch_time": {"type": ["string", "null"]},
                         "duration": {"type": ["integer", "null"], "minimum": 0},
                         "watch_type": {"type": ["integer", "null"]},
@@ -144,7 +169,10 @@ class ScheduleCapability(BaseCapability):
                 input_schema={
                     "type": "object",
                     "properties": {
-                        "schedule_id": {"type": "integer", "description": "Schedule record ID"},
+                        "schedule_id": {
+                            "type": "integer",
+                            "description": "Schedule record ID",
+                        },
                         "idempotency_key": {
                             "type": "string",
                             "description": "Client-generated idempotency key",
@@ -158,26 +186,34 @@ class ScheduleCapability(BaseCapability):
             ),
         ]
 
-        actions.extend([
-            ActionDescriptor(
-                name="list_schedules_by_day",
-                public_name="list_schedules_by_day",
-                description="List the authenticated user's schedules for one weekday",
-                input_schema={
-                    "type": "object",
-                    "properties": {"day_of_week": {"type": "integer", "minimum": 0, "maximum": 6}},
-                    "required": ["day_of_week"],
-                },
-                requires_auth=True,
-            ),
-            ActionDescriptor(
-                name="list_unified_schedules",
-                public_name="list_unified_schedules",
-                description="List schedules with their related subject and collection data",
-                input_schema={"type": "object", "properties": {}, "required": []},
-                requires_auth=True,
-            ),
-        ])
+        actions.extend(
+            [
+                ActionDescriptor(
+                    name="list_schedules_by_day",
+                    public_name="list_schedules_by_day",
+                    description="List the authenticated user's schedules for one weekday",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "day_of_week": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 6,
+                            }
+                        },
+                        "required": ["day_of_week"],
+                    },
+                    requires_auth=True,
+                ),
+                ActionDescriptor(
+                    name="list_unified_schedules",
+                    public_name="list_unified_schedules",
+                    description="List schedules with their related subject and collection data",
+                    input_schema={"type": "object", "properties": {}, "required": []},
+                    requires_auth=True,
+                ),
+            ]
+        )
 
         write_common: dict[str, Any] = {
             "requires_auth": True,
@@ -194,7 +230,9 @@ class ScheduleCapability(BaseCapability):
                 "day_of_week": {"type": "integer", "minimum": 0, "maximum": 6},
                 "start_time": {"type": "string"},
                 "watch_day": {
-                    "type": ["integer", "null"], "minimum": 0, "maximum": 6,
+                    "type": ["integer", "null"],
+                    "minimum": 0,
+                    "maximum": 6,
                 },
                 "watch_time": {"type": ["string", "null"]},
                 "duration": {"type": ["integer", "null"], "minimum": 0},
@@ -203,57 +241,76 @@ class ScheduleCapability(BaseCapability):
             "required": ["source", "source_id", "day_of_week", "start_time"],
             "additionalProperties": False,
         }
-        actions.extend([
-            ActionDescriptor(
-                name="upsert_schedule",
-                public_name="upsert_schedule",
-                description="Create or update one schedule entry",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": ["integer", "null"]},
-                        "source": {"type": "string"},
-                        "source_id": {"type": "string"},
-                        "day_of_week": {"type": "integer", "minimum": 0, "maximum": 6},
-                        "start_time": {"type": "string"},
-                        "watch_day": {"type": ["integer", "null"], "minimum": 0, "maximum": 6},
-                        "watch_time": {"type": ["string", "null"]},
-                        "duration": {"type": ["integer", "null"], "minimum": 0},
-                        "watch_type": {"type": ["integer", "null"]},
-                        "idempotency_key": {"type": "string"},
-                    },
-                    "required": ["source", "source_id", "day_of_week", "start_time"],
-                },
-                **write_common,
-            ),
-            ActionDescriptor(
-                name="bulk_upsert_schedules",
-                public_name="bulk_upsert_schedules",
-                description="Create or update up to 100 schedule entries",
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "items": {
-                            "type": "array",
-                            "items": schedule_item_schema,
-                            "maxItems": 100,
+        actions.extend(
+            [
+                ActionDescriptor(
+                    name="upsert_schedule",
+                    public_name="upsert_schedule",
+                    description="Create or update one schedule entry",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": ["integer", "null"]},
+                            "source": {"type": "string"},
+                            "source_id": {"type": "string"},
+                            "day_of_week": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 6,
+                            },
+                            "start_time": {"type": "string"},
+                            "watch_day": {
+                                "type": ["integer", "null"],
+                                "minimum": 0,
+                                "maximum": 6,
+                            },
+                            "watch_time": {"type": ["string", "null"]},
+                            "duration": {"type": ["integer", "null"], "minimum": 0},
+                            "watch_type": {"type": ["integer", "null"]},
+                            "idempotency_key": {"type": "string"},
                         },
-                        "idempotency_key": {"type": "string"},
+                        "required": [
+                            "source",
+                            "source_id",
+                            "day_of_week",
+                            "start_time",
+                        ],
                     },
-                    "required": ["items"],
-                },
-                max_payload_bytes=256 * 1024,
-                **write_common,
-            ),
-            ActionDescriptor(
-                name="sync_bangumi_schedule",
-                public_name="sync_bangumi_schedule",
-                description="Synchronize the authenticated user's schedule from Bangumi calendar data",
-                input_schema={"type": "object", "properties": {"idempotency_key": {"type": "string"}}, "required": []},
-                max_payload_bytes=16 * 1024,
-                **write_common,
-            ),
-        ])
+                    **write_common,
+                ),
+                ActionDescriptor(
+                    name="bulk_upsert_schedules",
+                    public_name="bulk_upsert_schedules",
+                    description="Create or update up to 100 schedule entries",
+                    input_schema={
+                        "type": "object",
+                        "properties": {
+                            "items": {
+                                "type": "array",
+                                "items": schedule_item_schema,
+                                "maxItems": 100,
+                            },
+                            "idempotency_key": {"type": "string"},
+                        },
+                        "required": ["items"],
+                    },
+                    max_payload_bytes=256 * 1024,
+                    **write_common,
+                ),
+                ActionDescriptor(
+                    name="sync_bangumi_schedule",
+                    public_name="sync_bangumi_schedule",
+                    description="Synchronize the authenticated user's schedule from Bangumi calendar data",
+                    input_schema={
+                        "type": "object",
+                        "properties": {"idempotency_key": {"type": "string"}},
+                        "required": [],
+                    },
+                    max_payload_bytes=16 * 1024,
+                    **write_common,
+                ),
+            ]
+        )
         return actions
 
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
@@ -342,14 +399,22 @@ class ScheduleCapability(BaseCapability):
 
         update_data = {}
         for field in (
-            "source", "source_id", "day_of_week", "start_time", "watch_day",
-            "watch_time", "duration", "watch_type",
+            "source",
+            "source_id",
+            "day_of_week",
+            "start_time",
+            "watch_day",
+            "watch_time",
+            "duration",
+            "watch_type",
         ):
             if field in kwargs:
                 update_data[field] = kwargs[field]
 
         schedule_update = ScheduleUpdate(**update_data)
-        schedule = await ScheduleService.update_schedule(db, schedule_id, user_id, schedule_update)
+        schedule = await ScheduleService.update_schedule(
+            db, schedule_id, user_id, schedule_update
+        )
         if schedule is None:
             return CapabilityResult.fail(
                 "Schedule not found or access denied", error_type="not_found"
@@ -375,7 +440,9 @@ class ScheduleCapability(BaseCapability):
     async def _list_by_day(self, **kwargs: Any) -> dict[str, Any]:
         db = kwargs.get("db")
         if db is None:
-            return CapabilityResult.fail("db session is required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "db session is required", error_type="invalid_args"
+            ).to_dict()
         schedules = await ScheduleService.get_schedules_by_day(
             db, kwargs["user_id"], kwargs["day_of_week"]
         )
@@ -386,7 +453,9 @@ class ScheduleCapability(BaseCapability):
     async def _list_unified(self, **kwargs: Any) -> dict[str, Any]:
         db = kwargs.get("db")
         if db is None:
-            return CapabilityResult.fail("db session is required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "db session is required", error_type="invalid_args"
+            ).to_dict()
         result = await ScheduleService.get_unified_user_schedules(db, kwargs["user_id"])
         payload = _public(result)
         return CapabilityResult.ok(
@@ -398,8 +467,15 @@ class ScheduleCapability(BaseCapability):
         return {
             field: kwargs[field]
             for field in (
-                "id", "source", "source_id", "day_of_week", "start_time", "watch_day",
-                "watch_time", "duration", "watch_type",
+                "id",
+                "source",
+                "source_id",
+                "day_of_week",
+                "start_time",
+                "watch_day",
+                "watch_time",
+                "duration",
+                "watch_type",
             )
             if field in kwargs
         }
@@ -407,12 +483,18 @@ class ScheduleCapability(BaseCapability):
     async def _upsert(self, **kwargs: Any) -> dict[str, Any]:
         db = kwargs.get("db")
         if db is None:
-            return CapabilityResult.fail("db session is required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "db session is required", error_type="invalid_args"
+            ).to_dict()
         data = self._schedule_fields(kwargs)
         data["user_id"] = kwargs["user_id"]
-        result = await ScheduleService.upsert_schedule(db, kwargs["user_id"], ScheduleUpsert(**data))
+        result = await ScheduleService.upsert_schedule(
+            db, kwargs["user_id"], ScheduleUpsert(**data)
+        )
         if result is None:
-            return CapabilityResult.fail("Schedule upsert failed", error_type="not_found").to_dict()
+            return CapabilityResult.fail(
+                "Schedule upsert failed", error_type="not_found"
+            ).to_dict()
         return CapabilityResult.ok(
             schedule=_public(result), idempotency_key=kwargs.get("idempotency_key")
         ).to_dict()
@@ -420,10 +502,14 @@ class ScheduleCapability(BaseCapability):
     async def _bulk_upsert(self, **kwargs: Any) -> dict[str, Any]:
         db = kwargs.get("db")
         if db is None:
-            return CapabilityResult.fail("db session is required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "db session is required", error_type="invalid_args"
+            ).to_dict()
         raw_items = kwargs.get("items") or []
         if len(raw_items) > 100:
-            return CapabilityResult.fail("At most 100 schedules may be written", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "At most 100 schedules may be written", error_type="invalid_args"
+            ).to_dict()
         items = []
         for item in raw_items:
             data = self._schedule_fields(item)
@@ -433,17 +519,21 @@ class ScheduleCapability(BaseCapability):
             db, kwargs["user_id"], ScheduleUpsertList(items=items)
         )
         return CapabilityResult.ok(
-            schedules=[_public(item) for item in result], count=len(result),
+            schedules=[_public(item) for item in result],
+            count=len(result),
             idempotency_key=kwargs.get("idempotency_key"),
         ).to_dict()
 
     async def _sync_bangumi(self, **kwargs: Any) -> dict[str, Any]:
         db = kwargs.get("db")
         if db is None:
-            return CapabilityResult.fail("db session is required", error_type="invalid_args").to_dict()
+            return CapabilityResult.fail(
+                "db session is required", error_type="invalid_args"
+            ).to_dict()
         result = await ScheduleService.sync_bangumi_calendar(db, kwargs["user_id"])
         payload = _public(result)
         return CapabilityResult.ok(
-            schedules=payload.get("items", []), count=payload.get("total", 0),
+            schedules=payload.get("items", []),
+            count=payload.get("total", 0),
             idempotency_key=kwargs.get("idempotency_key"),
         ).to_dict()

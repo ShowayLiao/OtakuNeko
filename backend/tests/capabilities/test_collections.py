@@ -9,7 +9,11 @@ def test_collection_actions_hide_runtime_identity_and_mark_writes():
     capability = CollectionCapability()
     actions = {action.name: action for action in capability.actions()}
 
-    assert {"list_collections", "get_collection", "search_collections"} <= actions.keys()
+    assert {
+        "list_collections",
+        "get_collection",
+        "search_collections",
+    } <= actions.keys()
     assert {
         "create_collection",
         "update_collection",
@@ -22,16 +26,19 @@ def test_collection_actions_hide_runtime_identity_and_mark_writes():
     } <= actions.keys()
     for action in actions.values():
         assert "user_id" not in action.input_schema.get("properties", {})
-    assert all(actions[name].is_side_effect for name in {
-        "create_collection",
-        "update_collection",
-        "delete_collection",
-        "upsert_collection",
-        "batch_upsert_collections",
-        "import_json_collections",
-        "sync_bangumi_collections",
-        "sync_douban_collections",
-    })
+    assert all(
+        actions[name].is_side_effect
+        for name in {
+            "create_collection",
+            "update_collection",
+            "delete_collection",
+            "upsert_collection",
+            "batch_upsert_collections",
+            "import_json_collections",
+            "sync_bangumi_collections",
+            "sync_douban_collections",
+        }
+    )
 
 
 @pytest.mark.asyncio
@@ -41,7 +48,11 @@ async def test_list_collections_uses_trusted_user_id(monkeypatch):
     async def fake_list(db, search_data):
         captured["db"] = db
         captured["user_id"] = search_data.user_id
-        return type("ListResult", (), {"model_dump": lambda self, **_: {"total": 0, "items": []}})()
+        return type(
+            "ListResult",
+            (),
+            {"model_dump": lambda self, **_: {"total": 0, "items": []}},
+        )()
 
     monkeypatch.setattr("app.capabilities.collections.get_user_collections", fake_list)
     result = await CollectionCapability().execute(

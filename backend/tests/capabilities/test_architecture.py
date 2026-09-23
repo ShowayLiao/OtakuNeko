@@ -40,9 +40,7 @@ def test_tools_do_not_import_services_directly():
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
                 if node.module and node.module.startswith("app.services"):
-                    violations.append(
-                        f"{module_name}.py imports {node.module}"
-                    )
+                    violations.append(f"{module_name}.py imports {node.module}")
 
     assert not violations, (
         "Tools must use capabilities, not import services directly.\n"

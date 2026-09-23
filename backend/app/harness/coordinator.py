@@ -80,7 +80,9 @@ def _adapt_stream_event(
         payload = {
             "name": str(event.get("name") or event.get("capability") or "unknown"),
             "argument_keys": sorted(
-                event.get("argument_keys", inputs.keys() if isinstance(inputs, dict) else [])
+                event.get(
+                    "argument_keys", inputs.keys() if isinstance(inputs, dict) else []
+                )
             ),
         }
     elif event_type == "tool_call_end":
@@ -286,9 +288,7 @@ class RunCoordinator:
                     "timeout",
                     "cancelled",
                 }:
-                    error_code = self._error_code(
-                        chunk.get("error_code") or chunk_type
-                    )
+                    error_code = self._error_code(chunk.get("error_code") or chunk_type)
                     self._finish(
                         "timeout"
                         if error_code == ErrorCode.TIMEOUT
@@ -433,7 +433,9 @@ class RunCoordinator:
             if cancellation_task in done:
                 raise RunCancellationError()
             execution_state.result = adapter_task.result()
-            self._finish("completed", None, self._result_content(execution_state.result))
+            self._finish(
+                "completed", None, self._result_content(execution_state.result)
+            )
         except RunCancellationError:
             self._finish("cancelled", ErrorCode.CANCELLED)
         except DeadlineExceededError:
@@ -462,7 +464,9 @@ class RunCoordinator:
 
         execution_state.terminal_result = self.terminal_result
         execution_state.status = (
-            self.terminal_result.status if self.terminal_result is not None else "failed"
+            self.terminal_result.status
+            if self.terminal_result is not None
+            else "failed"
         )
         execution_state.budget = self.budget.snapshot()
         return execution_state
@@ -506,7 +510,8 @@ class RunCoordinator:
             try:
                 content = await gateway.synthesize(
                     goal=task.goal,
-                    messages=context.get("messages") or task.metadata.get("messages", []),
+                    messages=context.get("messages")
+                    or task.metadata.get("messages", []),
                     results=execution_results,
                     model_calls_used=synthesis_used + 1,
                     cancellation=self.cancellation,
@@ -514,9 +519,7 @@ class RunCoordinator:
                     budget=self.budget.snapshot(),
                 )
                 gateway_result = getattr(gateway, "last_result", None)
-                self.budget.record_model_usage(
-                    getattr(gateway_result, "usage", None)
-                )
+                self.budget.record_model_usage(getattr(gateway_result, "usage", None))
                 gateway_terminal = self._gateway_terminal(gateway_result)
                 if gateway_terminal is not None:
                     self._finish(*gateway_terminal)
@@ -532,9 +535,7 @@ class RunCoordinator:
                 raise
             except Exception as exc:
                 gateway_result = getattr(gateway, "last_result", None)
-                self.budget.record_model_usage(
-                    getattr(gateway_result, "usage", None)
-                )
+                self.budget.record_model_usage(getattr(gateway_result, "usage", None))
                 exception_code = self._exception_code(exc)
                 if exception_code in {
                     ErrorCode.TIMEOUT,
@@ -543,7 +544,9 @@ class RunCoordinator:
                     ErrorCode.TRANSIENT,
                 }:
                     self._finish(
-                        "timeout" if exception_code == ErrorCode.TIMEOUT else (
+                        "timeout"
+                        if exception_code == ErrorCode.TIMEOUT
+                        else (
                             "cancelled"
                             if exception_code == ErrorCode.CANCELLED
                             else "failed"
@@ -602,9 +605,7 @@ class RunCoordinator:
             converted = converted.model_copy(
                 update={
                     "payload": {
-                        "error_code": self._error_code(
-                            chunk.get("error_code")
-                        ).value
+                        "error_code": self._error_code(chunk.get("error_code")).value
                     }
                 }
             )
@@ -736,7 +737,9 @@ class RunCoordinator:
                 invocation_id = event.invocation_id or (
                     f"inv-{event.run_id}-{self._persist_sequence}"
                 )
-                self._active_invocations.setdefault(capability, []).append(invocation_id)
+                self._active_invocations.setdefault(capability, []).append(
+                    invocation_id
+                )
                 await self.run_store.create_invocation(
                     run_id=event.run_id,
                     invocation_id=invocation_id,
@@ -838,9 +841,7 @@ class RunCoordinator:
                 )
 
     @classmethod
-    def _gateway_terminal(
-        cls, result: Any
-    ) -> tuple[str, ErrorCode] | None:
+    def _gateway_terminal(cls, result: Any) -> tuple[str, ErrorCode] | None:
         if result is None or getattr(result, "status", None) == "completed":
             return None
         provider_code = str(getattr(result, "error_code", "permanent"))
