@@ -598,3 +598,15 @@ Use this section for rules unique to this repository.
 - 没有明确任务范围时，不重写 LangGraph 图、不替换模型框架，也不整体迁移收藏/日程等业务 Service；相关变更必须保留受控 Runtime、Registry、Policy 和 adapter 边界。
 - 不执行生产部署、生产数据库操作或生产迁移；不把真实 Secret、Token、完整用户数据或 raw Provider payload 写入仓库、日志、测试、Eval fixture 或文档。
 - 用户未明确要求时，不同步或修改 TickTick 等外部项目状态，也不扩展到与当前任务无关的业务功能。
+
+
+## Model delegation
+
+Use the `model-router-luna` skill when a coding task contains substantial bounded execution work.
+
+The primary model remains the coordinator. It owns architecture, unresolved requirements,
+consequential decisions, integration, and final review. Delegate only settled,
+independently verifiable implementation slices to `luna_worker`.
+
+Do not recursively delegate from Luna. If Luna encounters a missing consequential decision
+or repeated failure, escalate the task back to the primary model.
