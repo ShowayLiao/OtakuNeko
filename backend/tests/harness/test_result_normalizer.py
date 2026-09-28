@@ -304,3 +304,78 @@ def test_authority_contract_is_recursive_and_shared() -> None:
         "approval_state",
     } <= RUNTIME_OWNED_FIELDS
     assert contains_runtime_owned_field({"nested": [{"scope": "forged"}]})
+
+
+def _bounded_descriptor() -> ActionDescriptor:
+    """声明了数值边界的 descriptor，形状对齐 capabilities 里的真实用法。"""
+    return ActionDescriptor(
+        name="read",
+        public_name="normalizer.read",
+        description="read",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "minimum": 1, "maximum": 100},
+                "skip": {"type": "integer", "minimum": 0},
+                "rate": {"type": ["integer", "null"], "minimum": 0, "maximum": 10},
+                "flag": {"type": "boolean", "minimum": 1},
+            },
+            "additionalProperties": False,
+        },
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"limit": 0},
+        {"limit": -1},
+        {"limit": 101},
+        {"skip": -1},
+        {"rate": 11},
+    ],
+)
+async def test_dispatcher_rejects_out_of_range_numbers(arguments: dict) -> None:
+    """minimum/maximum 是 descriptor 的声明，runtime 路径必须和 MCP 路径一样拦下来。
+
+    守护的缺陷：`_schema_error` 没有数值分支，于是 `limit: 0` 之类的越界值一路
+    走到能力层被 `min(kwargs.get("limit", 10), 100)` 接住，再被服务层的
+    `limit or 10` 悄悄改成 10；负 offset 则在 SQLite 上静默、在 PostgreSQL 上 500。
+    """
+    registry, capability = _registry(
+        _bounded_descriptor(), {"success": True, "value": "unused"}
+    )
+
+    result = await Dispatcher(registry).dispatch(_decision(arguments), _context())
+
+    assert result.status == "denied"
+    assert result.error_code == "invalid_request"
+    assert capability.calls == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"limit": 1},
+        {"limit": 100},
+        {"skip": 0},
+        {"rate": None},
+        {"rate": 0},
+        {"rate": 10},
+        # False 不能被当成 0 参与 minimum 比较（bool 是 int 的子类）
+        {"flag": False},
+    ],
+)
+async def test_dispatcher_accepts_numbers_within_declared_bounds(
+    arguments: dict,
+) -> None:
+    registry, capability = _registry(
+        _bounded_descriptor(), {"success": True, "value": "once"}
+    )
+
+    result = await Dispatcher(registry).dispatch(_decision(arguments), _context())
+
+    assert result.status == "succeeded", result.error_code
+    assert capability.calls == 1

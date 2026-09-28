@@ -83,6 +83,17 @@ def _schema_error(value: Any, schema: dict[str, Any], path: str) -> str | None:
     if "enum" in schema and value not in schema["enum"]:
         return f"{path} must match enum"
 
+    # 数值边界与 mcp_server._argument_error 保持一致：两边都按 descriptor 声明的
+    # minimum/maximum 拒绝非法值，否则同一份 schema 走 MCP 被拦、走 runtime 放行。
+    # bool 排除在外，避免 True/False 被当成 1/0 参与比较。
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        minimum = schema.get("minimum")
+        if isinstance(minimum, (int, float)) and value < minimum:
+            return f"{path} is below the allowed minimum"
+        maximum = schema.get("maximum")
+        if isinstance(maximum, (int, float)) and value > maximum:
+            return f"{path} is above the allowed maximum"
+
     if isinstance(value, str):
         if (
             isinstance(schema.get("minLength"), int)

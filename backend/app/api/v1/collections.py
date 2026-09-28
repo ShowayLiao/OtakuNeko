@@ -94,8 +94,8 @@ async def get_user_collect(
     subject_type: Optional[int] = Query(None),
     status: Optional[int] = Query(None),
     keyword: Optional[str] = Query(None),
-    limit: int = Query(20),
-    offset: int = Query(0),
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     sort_by: str = Query("updated_at"),
     db: AsyncSession = Depends(get_session),
 ):
