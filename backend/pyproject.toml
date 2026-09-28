@@ -87,6 +87,12 @@ indent-style = "space"
 # LF rather than letting the Windows working tree and the Linux runner differ.
 line-ending = "lf"
 
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+langgraph = { msg = "Business code must use the controlled Agent Runtime boundary." }
+langchain_core = { msg = "Business code must use the controlled Agent adapter boundary." }
+langchain_openai = { msg = "Business code must use the controlled provider adapter boundary." }
+openai = { msg = "Business code must use the controlled provider gateway boundary." }
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

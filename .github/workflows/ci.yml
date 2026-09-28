@@ -39,6 +39,9 @@ jobs:
       - name: Run backend lint
         run: uv run --locked ruff check app tests
 
+      - name: Enforce business-layer import boundaries
+        run: uv run --locked ruff check --select TID251 app/services app/models app/repositories app/schemas
+
       - name: Run backend tests
         run: uv run --locked pytest
 
