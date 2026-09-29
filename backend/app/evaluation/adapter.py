@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from typing import Any, AsyncIterator, Protocol
+from typing import Any, AsyncIterator, Literal, Protocol
 
 from app.capabilities.factory import build_capability_registry
 from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent
@@ -58,7 +58,9 @@ def normalize_events(
     recovered = False
     latency_ms = 0.0
     structured: Any = None
-    run_status = "completed"
+    run_status: Literal["completed", "failed", "cancelled", "timeout"] = (
+        "completed"
+    )
     tool_call_count = 0
     tool_success_count = 0
     tool_failure_count = 0

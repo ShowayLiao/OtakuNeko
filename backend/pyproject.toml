@@ -61,8 +61,10 @@ per_rule_ignores = { DEP002 = ["asyncpg", "lxml", "python-dotenv", "uvicorn"] }
 python_version = "3.11"
 explicit_package_bases = true
 files = [
+    "app/api",
     "app/harness",
     "app/capabilities",
+    "app/evaluation",
     "app/memory",
     "app/trace",
 ]

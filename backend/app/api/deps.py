@@ -3,6 +3,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlmodel import col
 
 from app.db.database import get_session
 from app.models.user import User
@@ -63,7 +64,7 @@ async def get_current_user(
         raise credentials_exception
     
     result = await db.execute(
-        select(User).where(User.id == user_id)
+        select(User).where(col(User.id) == user_id)
     )
     user = result.scalars().first()
     
@@ -150,7 +151,7 @@ async def get_optional_user(
         user_id = int(user_id_str)
     except ValueError:
         raise credentials_exception from None
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(col(User.id) == user_id))
     user = result.scalars().first()
     if user is None:
         raise credentials_exception

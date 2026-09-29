@@ -109,28 +109,6 @@ class UserRepo:
             raise
     
     @staticmethod
-    async def get_by_email(db: AsyncSession, email: str) -> Optional[User]:
-        """
-        根据邮箱获取用户
-        
-        Args:
-            db: 数据库会话
-            email: 邮箱地址
-        
-        Returns:
-            User对象或None
-        
-        Raises:
-            SQLAlchemyError: 数据库操作异常
-        """
-        try:
-            result = await db.execute(select(User).where(User.email == email))
-            return result.scalar_one_or_none()
-        except SQLAlchemyError as e:
-            logger.error(f"获取用户失败: {e}")
-            raise
-    
-    @staticmethod
     async def get_all(db: AsyncSession, search_data: UserSearch) -> List[User]:
         """
         获取所有用户

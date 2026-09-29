@@ -4,7 +4,7 @@ import inspect
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Path, Query
+from fastapi import APIRouter, Body, Depends, Header, HTTPException, Path, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +20,7 @@ from app.harness.persistence.collection_http import (
 )
 from app.harness.persistence.idempotency import IdempotencyStore
 from app.schemas.adaptersV2 import UnifiedList
+from app.schemas.user import UserRead
 from app.schemas.collection import (
     CollectionList,
     CollectionRead,
@@ -29,6 +30,7 @@ from app.schemas.collection import (
     CollectionUpdate,
     CollectionUpsertRequest,
 )
+from app.models.enums import SubjectType
 from app.services.bangumi_service import sync_user_collections
 from app.services.collection_service import (
     batch_upsert_collections,
@@ -67,7 +69,7 @@ def _request_payload(data: object) -> dict[str, Any]:
 async def _execute_collection_write(
     *,
     store: object,
-    current_user: object,
+    current_user: UserRead,
     method: str,
     resource_key: str,
     idempotency_key: str,
@@ -104,20 +106,21 @@ async def get_user_collect(
 
     status_enum = CollectionStatus(status) if status is not None else None
     if keyword:
-        search_data = CollectionSearchByName(
+        search_by_name = CollectionSearchByName(
             user_id=current_user.id,
             status=status_enum,
-            type=subject_type,
+            type=SubjectType(subject_type) if subject_type is not None else None,
             keyword=keyword,
             sort_by=sort_by,
             limit=limit,
             skip=offset,
         )
-        return await search_collections(db, search_data)
-    search_data = CollectionSearchBase(
+        return await search_collections(db, search_by_name)
+    search_data: CollectionSearchBase = CollectionSearchBase(
         user_id=current_user.id,
         status=status_enum,
-        type=subject_type,
+        type=SubjectType(subject_type) if subject_type is not None else None,
+        keyword=None,
         limit=limit,
         skip=offset,
         sort_by=sort_by,
@@ -128,7 +131,7 @@ async def get_user_collect(
 @router.post("/", response_model=CollectionRead)
 async def create_collection(
     sid: Optional[int] = Query(None),
-    data: CollectionUpsertRequest = ...,
+    data: CollectionUpsertRequest = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
@@ -137,12 +140,16 @@ async def create_collection(
     async def operation() -> HttpWriteResult:
         try:
             collection = await upsert_collection(db, current_user.id, sid, data)
-            source = collection.source if hasattr(collection, "source") else collection["source"]
-            source_id = (
-                collection.source_id
-                if hasattr(collection, "source_id")
-                else collection["source_id"]
-            )
+            if isinstance(collection, dict):
+                source = collection["source"]
+                source_id = collection["source_id"]
+            else:
+                if collection.collection is None:
+                    raise HTTPException(
+                        status_code=500, detail="Collection write result unavailable"
+                    )
+                source = collection.collection.source
+                source_id = collection.collection.source_id
             from app.schemas.collection import CollectionSearchByID
 
             collection_read = await get_collection(
@@ -211,7 +218,7 @@ async def get_collection_endpoint(
 async def update_collection_endpoint(
     source: str = Path(...),
     source_id: str = Path(...),
-    data: CollectionUpdate = ...,
+    data: CollectionUpdate = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
@@ -302,7 +309,7 @@ async def delete_collection_endpoint(
 
 @router.post("/batch", response_model=dict)
 async def batch_upsert_collections_endpoint(
-    data: CollectionList = ...,
+    data: CollectionList = Body(...),
     idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),

@@ -9,7 +9,7 @@ from app.models import Collection, CollectionStatus, Subject
 from app.repositories.collection_repo import CollectionRepo
 from app.repositories.subject_repo import SubjectRepo
 from app.schemas.collection import (
-    CollectionCreate, CollectionUpdate, CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionUpsert, CollectionUpsertList, CollectionUpsertRequest
+    CollectionCreate, CollectionUpdate, CollectionSearchByID, CollectionSearchBase, CollectionSearchByName, CollectionUpsert, CollectionUpsertList, CollectionList, CollectionUpsertRequest
 )
 from app.schemas.subject import SubjectSearchByID
 from app.schemas.adaptersV2 import (
@@ -379,7 +379,7 @@ async def upsert_collection(
 
 async def batch_upsert_collections(
     db: AsyncSession,
-    collections: CollectionUpsertList,
+    collections: CollectionUpsertList | CollectionList,
     user_id: int
 ) -> int:
     """

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
@@ -12,6 +12,7 @@ from app.schemas.subject import (
     SubjectSearchByName, SubjectSearchByID
 )
 from app.api.deps import get_current_user
+from app.models.enums import SubjectType
 
 from fastapi_cache.decorator import cache
 
@@ -48,7 +49,7 @@ async def search_subjects_endpoint(
     # 使用search_mixed函数进行混合搜索
     search_data = SubjectSearchByName(
         keyword=q or "",
-        type=type,
+        type=SubjectType(type) if type is not None else None,
         skip=offset,
         limit=limit,
         user_id=user_id
@@ -96,7 +97,7 @@ async def get_subject(
 @router.put("/{subject_id}", response_model=UnifiedCollectionSubject)
 async def update_subject(
     subject_id: int,
-    data: SubjectUpdate,
+    data: SubjectUpdate = Body(...),
     source: str = Query("bangumi", description="数据来源: bangumi/douban"),
     current_user = Depends(get_current_user),
     db: AsyncSession = Depends(get_session)
@@ -207,7 +208,8 @@ async def delete_subject_endpoint(
     # 创建SubjectSearchByID对象
     search_data = SubjectSearchByID(
         source=source,
-        source_id=str(subject_id)
+        source_id=str(subject_id),
+        user_id=current_user.id,
     )
     
     # 调用服务层的delete_subject函数

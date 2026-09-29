@@ -98,7 +98,7 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --locked --dev
 
-      - name: Run backend type and dependency legality baselines
+      - name: Typecheck API, Harness, Capability, Evaluation and related boundaries
         run: |
           set +e
           uv run --locked mypy
@@ -111,10 +111,8 @@ jobs:
           test "$mypy_exit" -eq 0 && test "$deptry_exit" -eq 0
 
       - name: Run backend format check on the enforced scope
-        # Blocking. The scope is the same first-wave architecture boundary the
-        # mypy baseline covers; files outside it are measured by the debt report
-        # below instead of being reformatted, so this gate never forces unrelated
-        # reflow on code nobody has touched.
+        # Blocking first-wave formatting scope. Mypy checks a wider boundary;
+        # formatting debt outside this scope is measured by the report below.
         run: |
           uv run --locked ruff format --check \
             app/harness app/capabilities app/memory app/trace \

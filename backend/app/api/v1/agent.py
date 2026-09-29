@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 import httpx
 from sqlalchemy import func, select as sa_select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlmodel import col
 from app.schemas.agent import ChatRequest
 from app.schemas.user import UserRead
 from app.capabilities.factory import build_capability_registry
@@ -192,10 +193,10 @@ async def _recover_stale_run(run, db: AsyncSession):
             error_code="checkpoint_lease_expired",
         )
     except InvalidRunTransition:
-        recovered = await run_store.get(run.run_id, user_id=run.user_id)
-        if recovered is None:
+        existing_run = await run_store.get(run.run_id, user_id=run.user_id)
+        if existing_run is None:
             raise HTTPException(status_code=404, detail="Run not found") from None
-        return recovered
+        return existing_run
     if _checkpoint_adapter_enabled():
         checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
         try:
@@ -211,7 +212,7 @@ async def _recover_stale_run(run, db: AsyncSession):
 async def _last_event_sequence(run_id: str, db: AsyncSession) -> int:
     result = await db.execute(
         sa_select(func.max(AgentRunEvent.sequence)).where(
-            AgentRunEvent.run_id == run_id
+            col(AgentRunEvent.run_id) == run_id
         )
     )
     return int(result.scalar_one() or 0)
@@ -495,14 +496,15 @@ async def chat_endpoint(
                 ),
             )
             if user is not None:
+                memory_api_key = api_key or "local"
                 memory = MemoryServiceImpl(
                     repository=SqlMemoryRepository(db),
                     extractor=LLMFactExtractor(
-                        api_key=api_key,
+                        api_key=memory_api_key,
                         base_url=base_url,
                         model_gateway=model_gateway,
                     ),
-                    api_key=api_key,
+                    api_key=memory_api_key,
                     base_url=base_url,
                     default_user_id=user.id,
                     run_id=run_id,
@@ -555,7 +557,7 @@ async def chat_endpoint(
             task = AgentTask(
                 user_id=user.id if user is not None else 0,
                 goal=goal,
-                metadata={
+                task_metadata={
                     "thread_id": thread_scope.internal_id,
                     "messages": formatted_messages,
                     "run_id": run_id,
@@ -882,7 +884,7 @@ async def check_connection(
 
         from openai import AsyncOpenAI
 
-        client = AsyncOpenAI(
+        provider_client = AsyncOpenAI(
             api_key=x_api_key or settings.OPENAI_API_KEY or "local",
             base_url=base_url,
             timeout=5.0,
@@ -890,11 +892,11 @@ async def check_connection(
         )
         try:
             result = await OpenAICompatibleModelAdapter(
-                client,
+                provider_client,
                 provider=provider,
             ).check_connection()
         finally:
-            await client.close()
+            await provider_client.close()
         if result.status == "completed":
             return {"status": "ok", "message": "Connection successful"}
         detail = {
@@ -906,7 +908,7 @@ async def check_connection(
             "cancelled": "Provider request was cancelled",
             "dns": "Provider DNS resolution failed",
             "ssrf": "Provider endpoint is not allowed",
-        }.get(result.error_code, "Provider connection failed")
+        }.get(result.error_code or "", "Provider connection failed")
         raise HTTPException(status_code=400, detail=detail)
 
     except HTTPException:

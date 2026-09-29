@@ -247,6 +247,7 @@ class UserService:
                 
                 # 直接使用 UserLogin schema 转换为 UserUpdate schema
                 update_data = UserUpdate(
+                    username=login_data.username,
                     avatar_url=login_data.avatar_url,
                     bangumi_id=login_data.bangumi_id,
                     bangumi_name=login_data.bangumi_name,
@@ -254,6 +255,8 @@ class UserService:
                 )
                 
                 # 更新用户
+                if existing_user.id is None:
+                    raise ValueError("Persisted user has no ID")
                 updated_user = await UserRepo.update(db, existing_user.id, update_data)
                 logger.info(f"用户 {login_data.username} 登录成功，已更新用户信息")
                 return UserRead.model_validate(updated_user)
