@@ -98,17 +98,11 @@ jobs:
       - name: Install backend dependencies
         run: uv sync --locked --dev
 
-      - name: Typecheck API, Harness, Capability, Evaluation and related boundaries
-        run: |
-          set +e
-          uv run --locked mypy
-          mypy_exit=$?
-          uv run --locked deptry .
-          deptry_exit=$?
-          set -e
-          echo "mypy exit code: $mypy_exit"
-          echo "deptry exit code: $deptry_exit"
-          test "$mypy_exit" -eq 0 && test "$deptry_exit" -eq 0
+      - name: Typecheck all backend source and tests against audited debt
+        run: uv run --locked python scripts/check_type_baseline.py
+
+      - name: Check backend dependency declarations
+        run: uv run --locked deptry .
 
       - name: Run backend format check on the enforced scope
         # Blocking first-wave formatting scope. Mypy checks a wider boundary;

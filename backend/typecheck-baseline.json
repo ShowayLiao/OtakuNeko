@@ -1,0 +1,1541 @@
+{
+  "checked_files": 298,
+  "errors": [
+    {
+      "path": "alembic/versions/2739cf766725_add_source_and_source_id_fields_to_.py",
+      "code": "attr-defined",
+      "message": "Module has no attribute \"sql\"",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/adapter.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"get\" of \"dict\" has incompatible type \"Any | None\"; expected \"str\"",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/adapter.py",
+      "code": "call-overload",
+      "message": "No overload variant of \"create_model\" matches argument types \"str\", \"dict[str, tuple[Any, Any]]\"",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/connection_pool.py",
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"Task[Any]\")",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/heartbeat.py",
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"Task[Any]\")",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/sse_transport.py",
+      "code": "assignment",
+      "message": "Incompatible default for parameter \"headers\" (default has type \"None\", parameter has type \"dict[str, str]\")",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/sse_transport.py",
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"AsyncClient\")",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "assignment",
+      "message": "Incompatible default for parameter \"args\" (default has type \"None\", parameter has type \"list[str]\")",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "assignment",
+      "message": "Incompatible default for parameter \"env\" (default has type \"None\", parameter has type \"dict[str, str]\")",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"Process\")",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"None\", variable has type \"Task[Any]\")",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "attr-defined",
+      "message": "\"StreamReader\" has no attribute \"close\"",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamReader | None\" has no attribute \"readline\"",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamWriter | None\" has no attribute \"close\"",
+      "count": 1
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamWriter | None\" has no attribute \"drain\"",
+      "count": 2
+    },
+    {
+      "path": "app/agents/mcp/stdio_transport.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamWriter | None\" has no attribute \"write\"",
+      "count": 2
+    },
+    {
+      "path": "app/agents/registry.py",
+      "code": "union-attr",
+      "message": "Item \"dict[str, Any]\" of \"type[BaseModel] | dict[str, Any]\" has no attribute \"model_json_schema\"",
+      "count": 1
+    },
+    {
+      "path": "app/main.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"from_url\" of \"Redis\" has incompatible type \"str | None\"; expected \"str\"",
+      "count": 1
+    },
+    {
+      "path": "app/mcp_server/__init__.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"get\" of \"dict\" has incompatible type \"tuple[int | None, str, str | None]\"; expected \"tuple[int, str, str]\"",
+      "count": 3
+    },
+    {
+      "path": "app/mcp_server/__init__.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"pop\" of \"dict\" has incompatible type \"tuple[int | None, str, str | None]\"; expected \"tuple[int, str, str]\"",
+      "count": 2
+    },
+    {
+      "path": "app/mcp_server/__init__.py",
+      "code": "index",
+      "message": "Invalid index type \"tuple[int | None, str, str | None]\" for \"dict[tuple[int, str, str], tuple[str, Future[dict[str, Any]]]]\"; expected type \"tuple[int, str, str]\"",
+      "count": 1
+    },
+    {
+      "path": "app/mcp_server/__init__.py",
+      "code": "index",
+      "message": "Invalid index type \"tuple[int | None, str, str | None]\" for \"dict[tuple[int, str, str], tuple[str, dict[str, Any], float]]\"; expected type \"tuple[int, str, str]\"",
+      "count": 1
+    },
+    {
+      "path": "scripts/cleanup_empty_subjects.py",
+      "code": "attr-defined",
+      "message": "\"str\" has no attribute \"is_\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_cancel_and_recovery.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_capability_boundary.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"DecisionGateway\"; expected \"ModelGateway | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_capability_boundary.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_capability_boundary.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_harness_baseline.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"load_state\" of \"InMemoryCheckpointStore\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_primary_decision_path.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"FakeModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_decision_path.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_decision_path.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"FakeReadCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_decision_path.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_flow.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_DecisionGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_flow.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_flow.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_ReadCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_flow.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_recovery.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_security.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_OneDecisionGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_security.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_security.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_SecureCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_security.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_side_effects.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_WriteGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_side_effects.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_side_effects.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_WriteCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_side_effects.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_harness_side_effects.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"ErrorCode | None\" has no attribute \"value\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_canonical_persistence.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"Any | _Gateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_canonical_persistence.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_canonical_persistence.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_Catalog\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_canonical_persistence.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 7
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument \"dispatcher\" to \"AgentRuntime\" has incompatible type \"_TerminalDispatcher\"; expected \"Dispatcher | None\"",
+      "count": 4
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_ControlObservingGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_DecisionGateway\"; expected \"ModelGateway | None\"",
+      "count": 6
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_ModelResultGateway\"; expected \"ModelGateway | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_RepeatingDecisionGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 10
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_CatalogCapability\"; expected \"BaseCapability\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_primary_runtime_decision_loop.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 10
+    },
+    {
+      "path": "tests/acceptance/test_restart_recovery.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"AgentState | None\" has no attribute \"context\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_restart_recovery.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"AgentState | None\" has no attribute \"status\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_run_persistence.py",
+      "code": "arg-type",
+      "message": "Argument \"event_store\" to \"RunCoordinator\" has incompatible type \"FailingEventStore\"; expected \"EventStore | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_runtime_single_owner.py",
+      "code": "arg-type",
+      "message": "Argument \"event_store\" to \"RunCoordinator\" has incompatible type \"FailingEvents\"; expected \"EventStore | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_runtime_single_owner.py",
+      "code": "arg-type",
+      "message": "Argument \"event_store\" to \"RunCoordinator\" has incompatible type \"MemoryEventStore\"; expected \"EventStore | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_runtime_single_owner.py",
+      "code": "arg-type",
+      "message": "Argument \"run_store\" to \"RunCoordinator\" has incompatible type \"MemoryRunStore\"; expected \"RunStore | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_runtime_single_owner.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 2
+    },
+    {
+      "path": "tests/acceptance/test_runtime_single_owner.py",
+      "code": "var-annotated",
+      "message": "Need type annotation for \"events\" (hint: \"events: list[<type>] = ...\")",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_004_contract.py",
+      "code": "arg-type",
+      "message": "Argument \"checkpointer\" to \"MemoryManager\" has incompatible type \"_CapturingCheckpointer\"; expected \"AsyncSqliteSaver | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_004_contract.py",
+      "code": "arg-type",
+      "message": "Argument \"checkpointer\" to \"MemoryManager\" has incompatible type \"_RunScopedCheckpointer\"; expected \"AsyncSqliteSaver | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_004_contract.py",
+      "code": "arg-type",
+      "message": "Argument \"extractor\" to \"MemoryServiceImpl\" has incompatible type \"_EmptyExtractor\"; expected \"MemoryExtractor\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_004_contract.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"LLMFactExtractor\" has incompatible type \"_ExtractionGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_004_contract.py",
+      "code": "arg-type",
+      "message": "Argument \"repository\" to \"MemoryServiceImpl\" has incompatible type \"_EmptyRepository\"; expected \"MemoryRepository\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"cancel_run\" has incompatible type \"object\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"chat_endpoint\" has incompatible type \"object\"; expected \"AsyncSession\"",
+      "count": 10
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"resume_chat\" has incompatible type \"object\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument \"error_code\" to \"ModelCallResult\" has incompatible type \"str\"; expected \"Literal['auth', 'rate_limited', 'timeout', 'invalid_request', 'transient', 'permanent', 'cancelled', 'dns', 'ssrf'] | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument \"user\" to \"cancel_run\" has incompatible type \"SimpleNamespace\"; expected \"UserRead\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument \"user\" to \"resume_chat\" has incompatible type \"SimpleNamespace\"; expected \"UserRead\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_CatalogCapability\"; expected \"BaseCapability\"",
+      "count": 4
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_SlowCatalogCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_UnknownCatalogCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_api_cutover.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_entrypoints.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"_ReadCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_entrypoints.py",
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"capability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/acceptance/test_task_post_audit_010_entrypoints.py",
+      "code": "attr-defined",
+      "message": "\"object\" has no attribute \"principal_id\"",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/mcp/test_adapter.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"type[BaseModel] | dict[str, Any] | None\" has no attribute \"model_fields\"",
+      "count": 2
+    },
+    {
+      "path": "tests/agents/mcp/test_adapter.py",
+      "code": "union-attr",
+      "message": "Item \"dict[str, Any]\" of \"type[BaseModel] | dict[str, Any] | None\" has no attribute \"model_fields\"",
+      "count": 2
+    },
+    {
+      "path": "tests/agents/mcp/test_integration.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"MCPConnectionPool\" has incompatible type \"FakeTransport\"; expected \"MCPTransport\"",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_base_agent.py",
+      "code": "abstract",
+      "message": "Cannot instantiate abstract class \"BaseAgent\" with abstract attributes \"execute\", \"plan\" and \"reflect\"",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_chat_schema.py",
+      "code": "list-item",
+      "message": "List item 0 has incompatible type \"dict[str, str]\"; expected \"Message\"",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_multi_agent_integration.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRouter\" has incompatible type \"Registry\"; expected \"AgentRegistry\"",
+      "count": 2
+    },
+    {
+      "path": "tests/agents/test_recommendation_agent.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_recommendation_agent.py",
+      "code": "index",
+      "message": "Value of type \"Any | None\" is not indexable",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_workflow_lifecycle.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"_Gateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_workflow_lifecycle.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/agents/test_workflow_lifecycle.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/api/test_collections_write_regression.py",
+      "code": "arg-type",
+      "message": "Argument 2 to \"_reload\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 2
+    },
+    {
+      "path": "tests/api/test_dashboard_statistics.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"get_collection_statistics_endpoint\" has incompatible type \"str\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/api/test_dashboard_statistics.py",
+      "code": "arg-type",
+      "message": "Argument \"subject_type\" to \"get_collection_statistics_endpoint\" has incompatible type \"int\"; expected \"SubjectType\"",
+      "count": 1
+    },
+    {
+      "path": "tests/capabilities/test_action_contract.py",
+      "code": "misc",
+      "message": "Property \"name\" defined in \"ActionDescriptor\" is read-only",
+      "count": 1
+    },
+    {
+      "path": "tests/capabilities/test_recommendation.py",
+      "code": "var-annotated",
+      "message": "Need type annotation for \"captured\" (hint: \"captured: dict[<type>, <type>] = ...\")",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_judge.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"JudgeRequest\" has incompatible type \"**dict[str, Collection[str]]\"; expected \"dict[str, Any]\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_judge.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"JudgeRequest\" has incompatible type \"**dict[str, Collection[str]]\"; expected \"dict[str, str]\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_judge.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"JudgeRequest\" has incompatible type \"**dict[str, Collection[str]]\"; expected \"str\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"CaseAssertions\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"Category\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"ExecutionFixture\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"ExpectedRoute | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"UserFixture\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"list[InputMessage]\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"list[MemoryFixture]\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"list[str]\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"EvalCase\" has incompatible type \"**dict[str, object]\"; expected \"str\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"Literal['completed', 'failed', 'cancelled', 'timeout']\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"bool\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"float | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"float\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"int | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"int\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"list[str]\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"str | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"ExecutionResult\" has incompatible type \"**dict[str, object]\"; expected \"str\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "list-item",
+      "message": "List item 0 has incompatible type \"dict[str, str]\"; expected \"ScriptEvent\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_metrics.py",
+      "code": "list-item",
+      "message": "List item 1 has incompatible type \"dict[str, str]\"; expected \"ScriptEvent\"",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_runner.py",
+      "code": "operator",
+      "message": "Unsupported right operand type for in (\"str | None\")",
+      "count": 1
+    },
+    {
+      "path": "tests/evaluation/test_runner.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"str | None\" has no attribute \"endswith\"",
+      "count": 3
+    },
+    {
+      "path": "tests/harness/test_checkpoint.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_checkpoint.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"AgentState | None\" has no attribute \"status\"",
+      "count": 3
+    },
+    {
+      "path": "tests/harness/test_checkpoint.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"CancellationRequest | None\" has no attribute \"requester\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_coordinator.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"RunCoordinator\" has incompatible type \"FakeGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_coordinator.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"_terminal\" has incompatible type \"list[dict[str, Any] | RunResult]\"; expected \"list[object]\"",
+      "count": 7
+    },
+    {
+      "path": "tests/harness/test_dispatcher.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"FakeCapability\"; expected \"BaseCapability\"",
+      "count": 5
+    },
+    {
+      "path": "tests/harness/test_dispatcher.py",
+      "code": "method-assign",
+      "message": "Cannot assign to a method",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_model_gateway.py",
+      "code": "arg-type",
+      "message": "Argument \"status\" to \"ModelCallResult\" has incompatible type \"Literal['unknown']\"; expected \"Literal['completed', 'degraded', 'failed', 'cancelled']\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_model_gateway.py",
+      "code": "method-assign",
+      "message": "Cannot assign to a method",
+      "count": 3
+    },
+    {
+      "path": "tests/harness/test_model_gateway_cancellation.py",
+      "code": "arg-type",
+      "message": "Argument \"adapter\" to \"OpenAIModelGateway\" has incompatible type \"BlockingAdapter\"; expected \"ProviderModelAdapter | None\"",
+      "count": 3
+    },
+    {
+      "path": "tests/harness/test_model_gateway_cancellation.py",
+      "code": "arg-type",
+      "message": "Argument \"adapter\" to \"OpenAIModelGateway\" has incompatible type \"ResultAdapter\"; expected \"ProviderModelAdapter | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_reasoning_forwarding.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"ReasoningGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_reasoning_forwarding.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"StreamingReasoningGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_reasoning_forwarding.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"ThinkingContinuationGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_reasoning_forwarding.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 3
+    },
+    {
+      "path": "tests/harness/test_reasoning_forwarding.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 3
+    },
+    {
+      "path": "tests/harness/test_result_normalizer.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"CapabilityRegistry\" has incompatible type \"NormalizerCapability\"; expected \"BaseCapability\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_run_store.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"AgentRun | None\" has no attribute \"model\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime.py",
+      "code": "assignment",
+      "message": "Incompatible types in assignment (expression has type \"AgentState\", variable has type \"None\")",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"event_store\" to \"AgentRuntime\" has incompatible type \"tests.harness.test_runtime_orchestration.EventStore@636\"; expected \"app.harness.persistence.event_store.EventStore | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"CalendarWorkflowGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"DecisionModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"FailingModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"FakeModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"NoModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"RetryDecisionModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"model_gateway\" to \"AgentRuntime\" has incompatible type \"ToolFeedbackModelGateway\"; expected \"ModelGateway | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument \"run_store\" to \"AgentRuntime\" has incompatible type \"StrictRunStore\"; expected \"RunStore | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"AgentRuntime\" has incompatible type \"object\"; expected \"AgentAdapter | StreamingAgentAdapter | None\"",
+      "count": 6
+    },
+    {
+      "path": "tests/harness/test_runtime_orchestration.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 7
+    },
+    {
+      "path": "tests/harness/test_task.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"metadata\" for \"AgentTask\"; did you mean \"task_metadata\"?",
+      "count": 2
+    },
+    {
+      "path": "tests/mcp/test_protocol_hardening.py",
+      "code": "index",
+      "message": "Value of type \"dict[str, Any] | None\" is not indexable",
+      "count": 6
+    },
+    {
+      "path": "tests/mcp/test_server.py",
+      "code": "index",
+      "message": "Value of type \"dict[str, Any] | None\" is not indexable",
+      "count": 6
+    },
+    {
+      "path": "tests/mcp/test_server.py",
+      "code": "operator",
+      "message": "Unsupported right operand type for in (\"dict[str, Any] | None\")",
+      "count": 1
+    },
+    {
+      "path": "tests/mcp/test_stdio_e2e.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamReader | None\" has no attribute \"readline\"",
+      "count": 16
+    },
+    {
+      "path": "tests/mcp/test_stdio_e2e.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamWriter | None\" has no attribute \"close\"",
+      "count": 2
+    },
+    {
+      "path": "tests/mcp/test_stdio_e2e.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamWriter | None\" has no attribute \"drain\"",
+      "count": 16
+    },
+    {
+      "path": "tests/mcp/test_stdio_e2e.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"StreamWriter | None\" has no attribute \"write\"",
+      "count": 17
+    },
+    {
+      "path": "tests/memory/test_injection.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"_row_to_dict\" of \"SqlMemoryRepository\" has incompatible type \"SimpleNamespace\"; expected \"AgentMemory\"",
+      "count": 1
+    },
+    {
+      "path": "tests/memory/test_injection.py",
+      "code": "method-assign",
+      "message": "Cannot assign to a method",
+      "count": 1
+    },
+    {
+      "path": "tests/memory/test_injection.py",
+      "code": "union-attr",
+      "message": "Item \"None\" of \"_Call | None\" has no attribute \"kwargs\"",
+      "count": 1
+    },
+    {
+      "path": "tests/memory/test_interfaces.py",
+      "code": "arg-type",
+      "message": "Argument \"extractor\" to \"MemoryServiceImpl\" has incompatible type \"FakeExtractor\"; expected \"MemoryExtractor\"",
+      "count": 4
+    },
+    {
+      "path": "tests/memory/test_manager.py",
+      "code": "attr-defined",
+      "message": "\"FakeCheckpoint\" has no attribute \"checkpoint\"",
+      "count": 1
+    },
+    {
+      "path": "tests/memory/test_memory_logging.py",
+      "code": "attr-defined",
+      "message": "\"FakeCheckpoint\" has no attribute \"checkpoint\"",
+      "count": 1
+    },
+    {
+      "path": "tests/memory/test_types.py",
+      "code": "arg-type",
+      "message": "Argument \"kind\" to \"MemoryRecord\" has incompatible type \"str\"; expected \"MemoryKind\"",
+      "count": 2
+    },
+    {
+      "path": "tests/proactive/test_scheduler.py",
+      "code": "operator",
+      "message": "Unsupported operand types for < (\"datetime\" and \"None\")",
+      "count": 1
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "arg-type",
+      "message": "Argument \"user_id\" to \"CollectionSearchByID\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "arg-type",
+      "message": "Argument \"user_id\" to \"CollectionUpsert\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "arg-type",
+      "message": "Argument 2 to \"_reload\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "arg-type",
+      "message": "Argument 2 to \"_seed_collection\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"comment\" for \"CollectionUpdate\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"comment\" for \"CollectionUpsert\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"rate\" for \"CollectionUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"rate\" for \"CollectionUpsert\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"tags\" for \"CollectionUpdate\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"tags\" for \"CollectionUpsert\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"type\" for \"CollectionUpdate\"",
+      "count": 1
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"type\" for \"CollectionUpsert\"",
+      "count": 1
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"updated_at\" for \"CollectionUpdate\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"updated_at\" for \"CollectionUpsert\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_collection_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"user_id\" for \"CollectionUpdate\"",
+      "count": 1
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "arg-type",
+      "message": "Argument 2 to \"_reload\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 4
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"air_time\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"air_weekday\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"collection\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"date\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"date\" for \"SubjectUpsert\"",
+      "count": 4
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"eps\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"eps\" for \"SubjectUpsert\"",
+      "count": 4
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"image\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"images\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"infobox\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"last_sync\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"locked\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"meta_tags\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"name\" for \"SubjectUpsert\"",
+      "count": 1
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"nsfw\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"platform\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"platform\" for \"SubjectUpsert\"",
+      "count": 4
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"rating\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"series\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"summary\" for \"SubjectCreate\"",
+      "count": 3
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"summary\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"summary\" for \"SubjectUpsert\"",
+      "count": 4
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"tags\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"type\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"user_id\" for \"SubjectSearchByID\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"volumes\" for \"SubjectUpdate\"",
+      "count": 2
+    },
+    {
+      "path": "tests/repositories/test_subject_repo_write_paths.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"volumes\" for \"SubjectUpsert\"",
+      "count": 4
+    },
+    {
+      "path": "tests/services/test_bangumi_client.py",
+      "code": "attr-defined",
+      "message": "\"Callable[[BangumiClient], Awaitable[list[dict[str, Any]] | Response]]\" has no attribute \"__wrapped__\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_bangumi_service.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"sync_subject_detail\" has incompatible type \"None\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_bangumi_service.py",
+      "code": "attr-defined",
+      "message": "\"Callable[[], Coroutine[Any, Any, Any]]\" has no attribute \"__wrapped__\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_bangumi_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"name_cn\" for \"SubjectDetail\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_bangumi_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"rank\" for \"SubjectDetail\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_bangumi_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"score\" for \"SubjectDetail\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "arg-type",
+      "message": "Argument \"type\" to \"CollectionBase\" has incompatible type \"int\"; expected \"CollectionStatus\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "arg-type",
+      "message": "Argument \"type\" to \"CollectionUpdate\" has incompatible type \"int\"; expected \"CollectionStatus | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"batch_upsert_collections\" has incompatible type \"FakeSession\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"upsert_collection\" has incompatible type \"object\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"comment\" for \"CollectionBase\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"comment\" for \"CollectionUpdate\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"rate\" for \"CollectionBase\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"rate\" for \"CollectionUpdate\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"subject\" for \"CollectionUpsertRequest\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"tags\" for \"CollectionBase\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"tags\" for \"CollectionUpdate\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"updated_at\" for \"CollectionBase\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"updated_at\" for \"CollectionUpdate\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"source\" for \"UnifiedCollectionSubject\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"source_id\" for \"UnifiedCollectionSubject\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"type\" for \"UnifiedCollectionSubject\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_collection_service.py",
+      "code": "call-arg",
+      "message": "Unexpected keyword argument \"user_id\" for \"UnifiedCollectionSubject\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_stats_service.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"get_collection_statistics\" has incompatible type \"int | None\"; expected \"int\"",
+      "count": 2
+    },
+    {
+      "path": "tests/services/test_subject_service.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"search_mixed\" has incompatible type \"None\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_subject_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"type\" for \"SubjectSearchBase\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_subject_service.py",
+      "code": "call-arg",
+      "message": "Missing named argument \"user_id\" for \"SubjectSearchBase\"",
+      "count": 1
+    },
+    {
+      "path": "tests/services/test_user_profile_service.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"generate_user_profile\" has incompatible type \"list[SimpleNamespace]\"; expected \"list[CollectionSubject]\"",
+      "count": 3
+    },
+    {
+      "path": "tests/services/test_user_profile_service.py",
+      "code": "list-item",
+      "message": "List item 0 has incompatible type \"SimpleNamespace\"; expected \"CollectionSubject\"",
+      "count": 3
+    },
+    {
+      "path": "tests/services/test_user_profile_service.py",
+      "code": "list-item",
+      "message": "List item 1 has incompatible type \"SimpleNamespace\"; expected \"CollectionSubject\"",
+      "count": 2
+    },
+    {
+      "path": "tests/trace/test_agent_instrumentation.py",
+      "code": "arg-type",
+      "message": "Argument \"checkpoint_store\" to \"AgentRuntime\" has incompatible type \"RecordingCheckpointStore\"; expected \"CheckpointStore | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_agent_instrumentation.py",
+      "code": "arg-type",
+      "message": "Argument \"trace_store\" to \"AgentRuntime\" has incompatible type \"FailingStore\"; expected \"TraceStore | None\"",
+      "count": 2
+    },
+    {
+      "path": "tests/trace/test_agent_instrumentation.py",
+      "code": "attr-defined",
+      "message": "\"AsyncIterator[Any]\" has no attribute \"aclose\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_agent_instrumentation.py",
+      "code": "type-var",
+      "message": "Value of type variable \"SupportsRichComparisonT\" of \"sorted\" cannot be \"int | None\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_boundary_spans.py",
+      "code": "arg-type",
+      "message": "Argument 1 to \"register\" of \"MCPConnectionPool\" has incompatible type \"Transport\"; expected \"MCPTransport\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_event_contract.py",
+      "code": "arg-type",
+      "message": "Argument \"event_type\" to \"TraceEvent\" has incompatible type \"str\"; expected \"TraceEventType\"",
+      "count": 5
+    },
+    {
+      "path": "tests/trace/test_regressions.py",
+      "code": "arg-type",
+      "message": "Argument \"db\" to \"list_traces\" has incompatible type \"None\"; expected \"AsyncSession\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_regressions.py",
+      "code": "arg-type",
+      "message": "Argument \"user\" to \"list_traces\" has incompatible type \"User\"; expected \"UserRead\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_sql_store.py",
+      "code": "arg-type",
+      "message": "Argument \"event_type\" to \"TraceEvent\" has incompatible type \"str\"; expected \"TraceEventType\"",
+      "count": 2
+    },
+    {
+      "path": "tests/trace/test_sql_store.py",
+      "code": "attr-defined",
+      "message": "\"type[AgentTraceModel]\" has no attribute \"__table__\"",
+      "count": 2
+    },
+    {
+      "path": "tests/trace/test_sql_store.py",
+      "code": "attr-defined",
+      "message": "\"type[TraceEventModel]\" has no attribute \"__table__\"",
+      "count": 1
+    },
+    {
+      "path": "tests/trace/test_trace.py",
+      "code": "arg-type",
+      "message": "Argument \"event_type\" to \"TraceEvent\" has incompatible type \"str\"; expected \"TraceEventType\"",
+      "count": 1
+    }
+  ]
+}
