@@ -25,9 +25,13 @@ class DeepSeekChatOpenAI(ChatOpenAI):
         )
         choices = chunk.get("choices") or chunk.get("chunk", {}).get("choices") or []
         delta = choices[0].get("delta") if choices else None
-        reasoning_content = delta.get("reasoning_content") if isinstance(delta, dict) else None
+        reasoning_content = (
+            delta.get("reasoning_content") if isinstance(delta, dict) else None
+        )
         if generation is not None and reasoning_content:
-            generation.message.additional_kwargs["reasoning_content"] = reasoning_content
+            generation.message.additional_kwargs["reasoning_content"] = (
+                reasoning_content
+            )
         return generation
 
     def _get_request_payload(

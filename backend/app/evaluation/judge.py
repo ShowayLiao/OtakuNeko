@@ -36,8 +36,7 @@ class JudgeScore(_StrictModel):
 
 
 class Judge(Protocol):
-    async def evaluate(self, request: JudgeRequest) -> JudgeScore:
-        ...
+    async def evaluate(self, request: JudgeRequest) -> JudgeScore: ...
 
 
 class JudgeCache:
@@ -144,8 +143,7 @@ class OpenAICompatibleJudge:
         prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
         completion_tokens = getattr(usage, "completion_tokens", 0) or 0
         cost = (
-            prompt_tokens * self._input_rate
-            + completion_tokens * self._output_rate
+            prompt_tokens * self._input_rate + completion_tokens * self._output_rate
         ) / 1_000_000
         return JudgeScore(
             score=data["score"],
@@ -244,9 +242,7 @@ class Baseline(_StrictModel):
                 continue
             actual = actual_metrics[metric.metric]
             if self.is_regression(actual, metric.metric):
-                failures.append(
-                    f"baseline regression: {metric.metric}={actual}"
-                )
+                failures.append(f"baseline regression: {metric.metric}={actual}")
         return failures
 
 
@@ -254,9 +250,7 @@ def load_baseline(path: str | Path) -> Baseline | None:
     baseline_path = Path(path)
     if not baseline_path.exists():
         return None
-    return Baseline.model_validate_json(
-        baseline_path.read_text(encoding="utf-8")
-    )
+    return Baseline.model_validate_json(baseline_path.read_text(encoding="utf-8"))
 
 
 def save_baseline(

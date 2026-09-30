@@ -22,11 +22,13 @@ def _make_server() -> MCPServer:
     registry.register(AnimeCapability())
     registry.register(RecommendationCapability())
     registry.register(ScheduleCapability())
-    exposure = ExposureMap({
-        "anime": ["search", "get_detail", "get_staff", "get_cast", "get_reviews"],
-        "recommendation": ["generate_profile", "analyse_taste"],
-        "schedule": ["create_schedule", "list_schedules"],
-    })
+    exposure = ExposureMap(
+        {
+            "anime": ["search", "get_detail", "get_staff", "get_cast", "get_reviews"],
+            "recommendation": ["generate_profile", "analyse_taste"],
+            "schedule": ["create_schedule", "list_schedules"],
+        }
+    )
     return MCPServer(registry, exposure)
 
 
@@ -87,7 +89,8 @@ class TestAuthAndPolicyIntegration:
     async def test_anonymous_rejected(self):
         """Auth-required action without context is denied."""
         result = await self.server.call_tool(
-            "recommendation_generate_profile", {"collections": []},
+            "recommendation_generate_profile",
+            {"collections": []},
         )
         assert result["success"] is False
         assert result["error_type"] == "unauthorized"
@@ -105,7 +108,8 @@ class TestAuthAndPolicyIntegration:
 
         monkeypatch.setattr(
             self.server._registry.get("recommendation"),
-            "execute", capture_execute,
+            "execute",
+            capture_execute,
         )
 
         result = await self.server.call_tool(
@@ -134,8 +138,12 @@ class TestAuthAndPolicyIntegration:
         """Side-effecting action without policy is denied."""
         result = await self.server.call_tool(
             "schedule_create_schedule",
-            {"source": "bangumi", "source_id": "1",
-             "day_of_week": 0, "start_time": "18:00:00"},
+            {
+                "source": "bangumi",
+                "source_id": "1",
+                "day_of_week": 0,
+                "start_time": "18:00:00",
+            },
             context=MCPContext(user_id=1),
         )
         assert result["success"] is False
@@ -152,13 +160,18 @@ class TestAuthAndPolicyIntegration:
 
         monkeypatch.setattr(
             self.server._registry.get("schedule"),
-            "execute", capture_execute,
+            "execute",
+            capture_execute,
         )
 
         result = await self.server.call_tool(
             "schedule_create_schedule",
-            {"source": "bangumi", "source_id": "1",
-             "day_of_week": 0, "start_time": "18:00:00"},
+            {
+                "source": "bangumi",
+                "source_id": "1",
+                "day_of_week": 0,
+                "start_time": "18:00:00",
+            },
             context=MCPContext(user_id=1),
             policy=Policy(allow_side_effects=True, idempotency_key="create-1"),
         )
@@ -169,8 +182,12 @@ class TestAuthAndPolicyIntegration:
     async def test_side_effect_requires_idempotency_key(self):
         result = await self.server.call_tool(
             "schedule_create_schedule",
-            {"source": "bangumi", "source_id": "1",
-             "day_of_week": 0, "start_time": "18:00:00"},
+            {
+                "source": "bangumi",
+                "source_id": "1",
+                "day_of_week": 0,
+                "start_time": "18:00:00",
+            },
             context=MCPContext(user_id=1),
             policy=Policy(allow_side_effects=True),
         )
@@ -267,9 +284,7 @@ class TestAuthAndPolicyIntegration:
             "day_of_week": 0,
             "start_time": "18:00:00",
         }
-        await self.server.call_tool(
-            "schedule_create_schedule", base, context, policy
-        )
+        await self.server.call_tool("schedule_create_schedule", base, context, policy)
 
         result = await self.server.call_tool(
             "schedule_create_schedule",
@@ -308,9 +323,7 @@ class TestAuthAndPolicyIntegration:
         assert len(self.server._completed_writes) == 1
 
     @pytest.mark.asyncio
-    async def test_full_idempotency_cache_still_replays_existing_key(
-        self, monkeypatch
-    ):
+    async def test_full_idempotency_cache_still_replays_existing_key(self, monkeypatch):
         import app.mcp_server as module
 
         calls = 0
@@ -385,17 +398,19 @@ class TestAuthAndPolicyIntegration:
             "execute",
             slow_execute,
         )
-        task = asyncio.create_task(self.server.call_tool(
-            "schedule_create_schedule",
-            {
-                "source": "bangumi",
-                "source_id": "1",
-                "day_of_week": 0,
-                "start_time": "18:00:00",
-            },
-            MCPContext(user_id=1),
-            Policy(allow_side_effects=True, idempotency_key="cancelled-write"),
-        ))
+        task = asyncio.create_task(
+            self.server.call_tool(
+                "schedule_create_schedule",
+                {
+                    "source": "bangumi",
+                    "source_id": "1",
+                    "day_of_week": 0,
+                    "start_time": "18:00:00",
+                },
+                MCPContext(user_id=1),
+                Policy(allow_side_effects=True, idempotency_key="cancelled-write"),
+            )
+        )
         await started.wait()
 
         task.cancel()
@@ -408,7 +423,8 @@ class TestAuthAndPolicyIntegration:
     async def test_json_serializable_error_has_type(self):
         """Denied responses are JSON serializable with error_type."""
         result = await self.server.call_tool(
-            "recommendation_generate_profile", {"collections": []},
+            "recommendation_generate_profile",
+            {"collections": []},
         )
         text = json.dumps(result, ensure_ascii=False)
         assert '"error_type"' in text

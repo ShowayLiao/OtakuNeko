@@ -128,7 +128,9 @@ def _validate_input_schema(schema: dict[str, Any], public_name: str) -> None:
     try:
         json.dumps(schema, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"Tool '{public_name}' schema is not JSON serializable") from exc
+        raise ValueError(
+            f"Tool '{public_name}' schema is not JSON serializable"
+        ) from exc
     _validate_schema_node(schema, f"Tool '{public_name}' inputSchema", root=True)
 
 
@@ -323,7 +325,9 @@ class MCPServer:
         if not self._exposure.is_exposed(cap_name, action.name):
             return self._denied(tool_name, f"Unknown tool: {tool_name}", "not_found")
         if not isinstance(arguments, dict):
-            return self._denied(tool_name, "Tool arguments must be an object", "invalid_args")
+            return self._denied(
+                tool_name, "Tool arguments must be an object", "invalid_args"
+            )
 
         if action.requires_auth and not ctx.is_authenticated:
             return self._denied(
@@ -458,9 +462,7 @@ class MCPServer:
                             trusted_args=dependencies,
                         ),
                     )
-                    decision_id = (
-                        f"mcp:{tool_name}:{policy.idempotency_key or 'read'}"
-                    )
+                    decision_id = f"mcp:{tool_name}:{policy.idempotency_key or 'read'}"
                     decision = AgentDecision(
                         decision_id=decision_id,
                         run_id=execution_context.run_id,
@@ -620,11 +622,14 @@ class MCPServer:
         if (
             request.get("jsonrpc") != RPC_VERSION
             or not isinstance(request.get("method"), str)
-            or (has_id and (
-                request_id is None
-                or isinstance(request_id, bool)
-                or not isinstance(request_id, (str, int))
-            ))
+            or (
+                has_id
+                and (
+                    request_id is None
+                    or isinstance(request_id, bool)
+                    or not isinstance(request_id, (str, int))
+                )
+            )
         ):
             return _rpc_error(request_id if has_id else None, -32600, "Invalid Request")
 
@@ -632,8 +637,10 @@ class MCPServer:
         is_notification = not has_id
         params = request.get("params", {})
         if not isinstance(params, dict):
-            return None if is_notification else _rpc_error(
-                request_id, -32602, "Invalid params"
+            return (
+                None
+                if is_notification
+                else _rpc_error(request_id, -32602, "Invalid params")
             )
 
         if is_notification:
@@ -757,18 +764,15 @@ class StdioServer:
         ):
             return False
         request_id = request["params"].get("requestId")
-        if (
-            isinstance(request_id, bool)
-            or not isinstance(request_id, (str, int))
-        ):
+        if isinstance(request_id, bool) or not isinstance(request_id, (str, int)):
             return False
         self.cancel_request(request_id)
         return True
 
     async def _write_response(self, response: dict[str, Any]) -> None:
-        payload = json.dumps(
-            response, ensure_ascii=False, allow_nan=False
-        ).encode("utf-8")
+        payload = json.dumps(response, ensure_ascii=False, allow_nan=False).encode(
+            "utf-8"
+        )
         if len(payload) > MAX_RESPONSE_SIZE:
             payload = json.dumps(
                 _rpc_error(response.get("id"), -32603, "Response exceeds size limit"),
@@ -791,9 +795,7 @@ class StdioServer:
             raise
         except Exception:
             logger.exception("mcp_request_failed")
-            await self._write_response(
-                _rpc_error(request_id, -32603, "Internal error")
-            )
+            await self._write_response(_rpc_error(request_id, -32603, "Internal error"))
         finally:
             if request_id is not None:
                 self._pending_requests.pop(request_id, None)

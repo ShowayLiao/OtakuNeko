@@ -54,7 +54,7 @@ def public_thread_id(user_id: int, internal_id: str) -> str | None:
     prefix = f"user:{user_id}:thread:"
     if not isinstance(internal_id, str) or not internal_id.startswith(prefix):
         return None
-    candidate = internal_id[len(prefix):]
+    candidate = internal_id[len(prefix) :]
     try:
         return _validate_public_id(candidate)
     except ValueError:

@@ -25,11 +25,7 @@ class FailingAdapter:
 
 
 def _event_types(trace) -> set[TraceEventType]:
-    return {
-        event.event_type
-        for step in trace.steps
-        for event in step.events
-    }
+    return {event.event_type for step in trace.steps for event in step.events}
 
 
 class TestAcceptance:
@@ -40,9 +36,7 @@ class TestAcceptance:
         store = InMemoryTraceStore()
         runtime = AgentRuntime(StubAdapter(), trace_store=store)
 
-        state = await runtime.execute(
-            AgentTask(user_id=1, goal="推荐动漫")
-        )
+        state = await runtime.execute(AgentTask(user_id=1, goal="推荐动漫"))
 
         assert state.status == "completed"
         assert state.result == {"text": "ok"}
@@ -60,9 +54,7 @@ class TestAcceptance:
         runtime = AgentRuntime(FailingAdapter(), trace_store=store)
 
         with pytest.raises(RuntimeError, match="adapter failed"):
-            await runtime.execute(
-                AgentTask(user_id=1, goal="failing task")
-            )
+            await runtime.execute(AgentTask(user_id=1, goal="failing task"))
 
         [trace] = await store.list_recent(limit=1, user_id=1)
         assert trace.status == "failed"
@@ -85,10 +77,7 @@ class TestAcceptance:
         runtime = AgentRuntime(StubAdapter(), trace_store=store)
 
         chunks = [
-            chunk
-            async for chunk in runtime.stream(
-                AgentTask(user_id=1, goal="stream")
-            )
+            chunk async for chunk in runtime.stream(AgentTask(user_id=1, goal="stream"))
         ]
 
         assert chunks == [

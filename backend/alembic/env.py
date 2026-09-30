@@ -7,6 +7,7 @@ from alembic import context
 # 导入数据库配置
 from app.core.config import settings
 from sqlmodel import SQLModel
+
 # Importing the models package registers every table in SQLModel.metadata.
 import app.models  # noqa: F401
 
@@ -70,12 +71,8 @@ async def run_migrations_online() -> None:
 
 
 def do_run_migrations(connection):
-    """Helper function to run migrations synchronously on an async connection.
-    """
-    context.configure(
-        connection=connection,
-        target_metadata=target_metadata
-    )
+    """Helper function to run migrations synchronously on an async connection."""
+    context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
         context.run_migrations()

@@ -58,7 +58,11 @@ async def generate_user_profile_tool(collections: List[Dict[str, Any]]) -> dict:
             "success": False,
             "error": f"生成用户画像失败: {str(e)}",
             "profile": {
-                "llm_summary": {"total_rated": 0, "taste_dictionary": {}, "error": str(e)},
+                "llm_summary": {
+                    "total_rated": 0,
+                    "taste_dictionary": {},
+                    "error": str(e),
+                },
                 "chart_data": {"radar": [], "bar_count": [], "bar_score": []},
                 "watched_ids": [],
             },

@@ -20,8 +20,7 @@ from app.memory.interfaces import MemoryContext
 
 
 class EvaluationTarget(Protocol):
-    async def evaluate(self, case: EvalCase) -> ExecutionResult:
-        ...
+    async def evaluate(self, case: EvalCase) -> ExecutionResult: ...
 
 
 class ScriptedProviderWorkflow:
@@ -58,9 +57,7 @@ def normalize_events(
     recovered = False
     latency_ms = 0.0
     structured: Any = None
-    run_status: Literal["completed", "failed", "cancelled", "timeout"] = (
-        "completed"
-    )
+    run_status: Literal["completed", "failed", "cancelled", "timeout"] = "completed"
     tool_call_count = 0
     tool_success_count = 0
     tool_failure_count = 0
@@ -96,9 +93,7 @@ def normalize_events(
         if isinstance(total, int) and total >= 0:
             return total
         input_tokens = usage.get("prompt_tokens", usage.get("input_tokens"))
-        output_tokens = usage.get(
-            "completion_tokens", usage.get("output_tokens")
-        )
+        output_tokens = usage.get("completion_tokens", usage.get("output_tokens"))
         if isinstance(input_tokens, int) and isinstance(output_tokens, int):
             return input_tokens + output_tokens
         return None
@@ -254,9 +249,7 @@ class RuntimeEvaluationTarget:
                     event.model_dump() for event in case.fixtures.events
                 ],
                 "response_schema": case.assertions.response_schema,
-                "messages": [
-                    message.model_dump() for message in case.input_messages
-                ],
+                "messages": [message.model_dump() for message in case.input_messages],
                 "memory_fixtures": [
                     fixture.model_dump() for fixture in case.memory_fixtures
                 ],
@@ -303,8 +296,7 @@ class FixtureMemory:
                 )
             )
         sections.extend(
-            f"{fact['kind']} memory: {fact['content']}"
-            for fact in self._facts
+            f"{fact['kind']} memory: {fact['content']}" for fact in self._facts
         )
         return MemoryContext(
             long_term_facts=list(self._facts),
@@ -351,9 +343,7 @@ class ProductionRuntimeTarget:
             goal=case.input_messages[-1].content,
             task_metadata={
                 "model": self._model,
-                "messages": [
-                    message.model_dump() for message in case.input_messages
-                ],
+                "messages": [message.model_dump() for message in case.input_messages],
                 "thread_id": run_id,
                 "run_id": run_id,
             },
@@ -405,9 +395,7 @@ def normalize_production_result(
 ) -> ExecutionResult:
     """Normalize a provider-neutral Runtime result into evaluation fields."""
     capabilities = [
-        str(call.get("name"))
-        for call in raw["tool_calls"]
-        if call.get("name")
+        str(call.get("name")) for call in raw["tool_calls"] if call.get("name")
     ]
     route = classify_route(
         raw["all_events"],
@@ -417,13 +405,9 @@ def normalize_production_result(
     evidence: list[str] = []
     for call in raw["tool_calls"]:
         output = call.get("output")
-        if isinstance(output, dict) and isinstance(
-            output.get("evidence"), list
-        ):
+        if isinstance(output, dict) and isinstance(output.get("evidence"), list):
             evidence.extend(str(item) for item in output["evidence"])
-    had_error = any(
-        event.get("type") == "error" for event in raw["all_events"]
-    )
+    had_error = any(event.get("type") == "error" for event in raw["all_events"])
     return ExecutionResult(
         route=route,
         capabilities=capabilities,

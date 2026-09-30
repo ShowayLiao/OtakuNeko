@@ -43,7 +43,9 @@ class _MemoryRunStore:
         self.invocations[fields["invocation_id"]] = dict(fields, status="running")
         return self.invocations[fields["invocation_id"]]
 
-    async def finish_invocation(self, invocation_id: str, status: str, *, error_code=None):
+    async def finish_invocation(
+        self, invocation_id: str, status: str, *, error_code=None
+    ):
         self.invocations[invocation_id].update(status=status, error_code=error_code)
         return self.invocations[invocation_id]
 
@@ -54,7 +56,11 @@ class _MemoryEventStore:
 
     async def append(self, event: RunEvent, **kwargs):
         existing = next(
-            (item for item in self.events if item.run_id == event.run_id and item.sequence == event.sequence),
+            (
+                item
+                for item in self.events
+                if item.run_id == event.run_id and item.sequence == event.sequence
+            ),
             None,
         )
         if existing is not None:
@@ -64,7 +70,11 @@ class _MemoryEventStore:
         return event
 
     async def list_after(self, run_id: str, after_sequence: int = 0, **kwargs):
-        return [item for item in self.events if item.run_id == run_id and item.sequence > after_sequence]
+        return [
+            item
+            for item in self.events
+            if item.run_id == run_id and item.sequence > after_sequence
+        ]
 
 
 class _Catalog:
@@ -203,7 +213,11 @@ async def test_primary_runtime_persists_one_replayable_canonical_sequence() -> N
             AgentTask(
                 user_id=7,
                 goal="search",
-                metadata={"run_id": "run-canonical", "thread_id": "thread-1", "messages": []},
+                metadata={
+                    "run_id": "run-canonical",
+                    "thread_id": "thread-1",
+                    "messages": [],
+                },
             ),
             context=ExecutionContext(
                 principal_id=7,
@@ -228,7 +242,9 @@ async def test_primary_runtime_persists_one_replayable_canonical_sequence() -> N
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_does_not_report_success_when_event_persistence_fails() -> None:
+async def test_primary_runtime_does_not_report_success_when_event_persistence_fails() -> (
+    None
+):
     class _FailingEventStore(_MemoryEventStore):
         async def append(self, event: RunEvent, **kwargs):
             if event.event_type != "run.started":
@@ -241,7 +257,11 @@ async def test_primary_runtime_does_not_report_success_when_event_persistence_fa
     events = [
         event
         async for event in runtime.stream_decision(
-            AgentTask(user_id=7, goal="persist", metadata={"run_id": "run-fail", "messages": []}),
+            AgentTask(
+                user_id=7,
+                goal="persist",
+                metadata={"run_id": "run-fail", "messages": []},
+            ),
             context=ExecutionContext(
                 principal_id=7,
                 run_id="run-fail",
@@ -256,7 +276,9 @@ async def test_primary_runtime_does_not_report_success_when_event_persistence_fa
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_replay_of_terminal_run_does_not_invoke_gateway_again() -> None:
+async def test_primary_runtime_replay_of_terminal_run_does_not_invoke_gateway_again() -> (
+    None
+):
     run_store = _MemoryRunStore()
     event_store = _MemoryEventStore()
     first_gateway = _Gateway()
@@ -273,11 +295,15 @@ async def test_primary_runtime_replay_of_terminal_run_does_not_invoke_gateway_ag
         capability_allowlist=frozenset({"catalog.search"}),
     )
 
-    first = [event async for event in first_runtime.stream_decision(task, context=context)]
+    first = [
+        event async for event in first_runtime.stream_decision(task, context=context)
+    ]
     second_gateway = _Gateway()
     second = [
         event
-        async for event in _runtime(run_store, event_store, second_gateway).stream_decision(
+        async for event in _runtime(
+            run_store, event_store, second_gateway
+        ).stream_decision(
             task,
             context=context,
         )
@@ -427,11 +453,15 @@ async def test_primary_runtime_rehydrates_pending_approval_after_restart() -> No
                 principal_id=7,
                 action="write",
             ),
-        ).stream_decision(task, context=context, approval=Approval(
-            approval_id="approval-run-approval-recovery",
-            principal_id=7,
-            action="write",
-        ))
+        ).stream_decision(
+            task,
+            context=context,
+            approval=Approval(
+                approval_id="approval-run-approval-recovery",
+                principal_id=7,
+                action="write",
+            ),
+        )
     ]
 
     assert second_events[-1]["type"] == "run_completed"
@@ -441,7 +471,9 @@ async def test_primary_runtime_rehydrates_pending_approval_after_restart() -> No
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_persists_terminal_state_when_checkpoint_lease_is_lost() -> None:
+async def test_primary_runtime_persists_terminal_state_when_checkpoint_lease_is_lost() -> (
+    None
+):
     class _LeaseLostCheckpointStore(InMemoryCheckpointStore):
         async def renew_lease(self, lease, lease_seconds):
             return None

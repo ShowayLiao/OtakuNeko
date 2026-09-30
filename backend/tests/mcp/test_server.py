@@ -13,7 +13,11 @@ from app.capabilities.schedule import ScheduleCapability
 
 
 _ANIME_ACTIONS = [
-    "search", "get_detail", "get_staff", "get_cast", "get_reviews",
+    "search",
+    "get_detail",
+    "get_staff",
+    "get_cast",
+    "get_reviews",
 ]
 
 
@@ -89,27 +93,39 @@ class TestMCPServer:
     @pytest.mark.asyncio
     async def test_handle_initialize(self):
         server = self._make_server()
-        resp = await server.handle_request({
-            "jsonrpc": "2.0", "id": 1, "method": "initialize",
-            "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
-        })
+        resp = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
+            }
+        )
         assert resp["result"]["protocolVersion"] == "2024-11-05"
         assert "tools" in resp["result"]["capabilities"]
 
     @pytest.mark.asyncio
     async def test_handle_tools_list(self):
         server = self._make_server()
-        resp = await server.handle_request({
-            "jsonrpc": "2.0", "id": 2, "method": "tools/list",
-        })
+        resp = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/list",
+            }
+        )
         assert len(resp["result"]["tools"]) == 5
 
     @pytest.mark.asyncio
     async def test_handle_unknown_method(self):
         server = self._make_server()
-        resp = await server.handle_request({
-            "jsonrpc": "2.0", "id": 9, "method": "bogus/method",
-        })
+        resp = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 9,
+                "method": "bogus/method",
+            }
+        )
         assert "error" in resp
         assert resp["error"]["code"] == -32601
 
@@ -122,10 +138,14 @@ class TestMCPServer:
     @pytest.mark.asyncio
     async def test_handle_tools_call_unknown(self):
         server = self._make_server()
-        resp = await server.handle_request({
-            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": {"name": "bogus", "arguments": {}},
-        })
+        resp = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {"name": "bogus", "arguments": {}},
+            }
+        )
         assert resp["error"]["code"] == -32602
 
     @pytest.mark.asyncio
@@ -142,13 +162,17 @@ class TestMCPServer:
 
         monkeypatch.setattr(capability, "execute", execute)
 
-        resp = await server.handle_request({
-            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
-            "params": {
-                "name": "anime_search",
-                "arguments": {"keyword": "Frieren"},
-            },
-        })
+        resp = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "anime_search",
+                    "arguments": {"keyword": "Frieren"},
+                },
+            }
+        )
 
         content = resp["result"]["content"][0]["text"]
         assert json.loads(content) == {
@@ -159,9 +183,12 @@ class TestMCPServer:
     @pytest.mark.asyncio
     async def test_handle_notifications_initialized(self):
         server = self._make_server()
-        resp = await server.handle_request({
-            "jsonrpc": "2.0", "method": "notifications/initialized",
-        })
+        resp = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "method": "notifications/initialized",
+            }
+        )
         assert resp is None
 
     @pytest.mark.asyncio
@@ -215,9 +242,7 @@ class TestMCPServer:
         async def fake_execute(action_name, **kwargs):
             return {"success": True, "action": action_name}
 
-        monkeypatch.setattr(
-            registry.get("recommendation"), "execute", fake_execute
-        )
+        monkeypatch.setattr(registry.get("recommendation"), "execute", fake_execute)
 
         result = await server.call_tool(
             "recommendation_generate_profile",
@@ -242,14 +267,16 @@ class TestMCPServer:
         async def fake_execute(action_name, **kwargs):
             return {"success": True, "action": action_name}
 
-        monkeypatch.setattr(
-            registry.get("schedule"), "execute", fake_execute
-        )
+        monkeypatch.setattr(registry.get("schedule"), "execute", fake_execute)
 
         result = await server.call_tool(
             "schedule_create_schedule",
-            {"source": "bangumi", "source_id": "42",
-             "day_of_week": 0, "start_time": "18:00:00"},
+            {
+                "source": "bangumi",
+                "source_id": "42",
+                "day_of_week": 0,
+                "start_time": "18:00:00",
+            },
             context=MCPContext(user_id=1),
             policy=Policy(allow_side_effects=True, idempotency_key="create-42"),
         )

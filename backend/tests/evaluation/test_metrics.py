@@ -155,12 +155,14 @@ def test_aggregate_observability_metrics_cover_run_tool_policy_budget_and_usage(
 
 
 def test_unknown_cost_counts_each_model_call():
-    aggregates = aggregate_observability([
-        _result(
-            model_call_count=2,
-            model_tokens=None,
-            estimated_cost_usd=None,
-        )
-    ])
+    aggregates = aggregate_observability(
+        [
+            _result(
+                model_call_count=2,
+                model_tokens=None,
+                estimated_cost_usd=None,
+            )
+        ]
+    )
 
     assert aggregates["estimated_cost_unknown_count"] == 2.0

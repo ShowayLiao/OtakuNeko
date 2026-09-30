@@ -41,13 +41,17 @@ def _repo(request: Request) -> Any:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_task(request: Request, body: TaskCreate, user=Depends(get_current_user)):
+async def create_task(
+    request: Request, body: TaskCreate, user=Depends(get_current_user)
+):
     try:
         policy = ProactivePolicy.from_json(body.policy)
         if policy.extra.get("requires_side_effect") and not body.confirm_side_effects:
             raise ValueError("explicit confirmation is required for side-effect tasks")
         task = AgentTaskDef(user_id=user.id, **body.model_dump())
-        task.next_run = next_slot(body.schedule_expr, datetime.now(timezone.utc), body.timezone)
+        task.next_run = next_slot(
+            body.schedule_expr, datetime.now(timezone.utc), body.timezone
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     await _repo(request).add(task)
@@ -68,14 +72,18 @@ async def preview_task(
 
 
 @router.patch("/{task_id}")
-async def update_task(task_id: int, request: Request, body: TaskUpdate, user=Depends(get_current_user)):
+async def update_task(
+    task_id: int, request: Request, body: TaskUpdate, user=Depends(get_current_user)
+):
     values = body.model_dump(exclude_none=True)
     confirmation = values.pop("confirm_side_effects", False)
     try:
         if "policy" in values:
             policy = ProactivePolicy.from_json(values["policy"])
             if policy.extra.get("requires_side_effect") and not confirmation:
-                raise ValueError("explicit confirmation is required for side-effect tasks")
+                raise ValueError(
+                    "explicit confirmation is required for side-effect tasks"
+                )
         task = await _repo(request).update(task_id, user.id, values)
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

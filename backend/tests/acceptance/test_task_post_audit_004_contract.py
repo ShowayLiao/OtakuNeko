@@ -73,7 +73,9 @@ async def test_provider_adapter_keeps_call_id_and_does_not_send_trace_context() 
 
 
 @pytest.mark.asyncio
-async def test_model_gateway_does_not_forward_trusted_runtime_context_to_provider() -> None:
+async def test_model_gateway_does_not_forward_trusted_runtime_context_to_provider() -> (
+    None
+):
     client = _CompletionClient()
     gateway = OpenAIModelGateway(
         api_key="test-key",
@@ -197,9 +199,7 @@ async def test_typed_memory_service_reads_the_current_run_namespace() -> None:
         checkpointer=checkpointer,
     )
 
-    await service.retrieve_context(
-        "thread-1", "query", user_id=7, run_id="run-a"
-    )
+    await service.retrieve_context("thread-1", "query", user_id=7, run_id="run-a")
 
     assert checkpointer.configs == [
         {"configurable": {"thread_id": "thread-1", "checkpoint_ns": "run-a"}}
@@ -237,7 +237,9 @@ async def test_memory_run_a_cannot_read_run_b_short_term_context() -> None:
     assert run_b.short_term_messages[0]["content"] == "message-run-b"
 
 
-def test_provider_endpoint_rejects_dns_rebinding_to_private_address(monkeypatch) -> None:
+def test_provider_endpoint_rejects_dns_rebinding_to_private_address(
+    monkeypatch,
+) -> None:
     def fake_getaddrinfo(host, port, type=None):
         assert host == "provider.example"
         return [

@@ -58,11 +58,14 @@ def test_provider_redirect_uses_the_same_canonical_allowlist(monkeypatch):
 
     monkeypatch.setattr(provider_endpoint.socket, "getaddrinfo", fake_getaddrinfo)
 
-    assert validate_provider_redirect(
-        "HTTPS://provider.example:443/v1",
-        allowed_hosts={"PROVIDER.EXAMPLE."},
-        allowed_ports={443},
-    ) == "HTTPS://provider.example:443/v1"
+    assert (
+        validate_provider_redirect(
+            "HTTPS://provider.example:443/v1",
+            allowed_hosts={"PROVIDER.EXAMPLE."},
+            allowed_ports={443},
+        )
+        == "HTTPS://provider.example:443/v1"
+    )
 
     with pytest.raises(ValueError, match="allowlisted"):
         validate_provider_redirect(

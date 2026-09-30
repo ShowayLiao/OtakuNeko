@@ -157,9 +157,7 @@ async def test_delete_removes_the_row(db_session):
 
     deleted = await CollectionRepo.delete(
         db_session,
-        CollectionSearchByID(
-            user_id=user.id, source="bangumi", source_id=SUBJECT_ID
-        ),
+        CollectionSearchByID(user_id=user.id, source="bangumi", source_id=SUBJECT_ID),
     )
 
     assert deleted is True
@@ -172,9 +170,7 @@ async def test_delete_returns_false_for_a_missing_collection(db_session):
 
     deleted = await CollectionRepo.delete(
         db_session,
-        CollectionSearchByID(
-            user_id=user.id, source="bangumi", source_id="missing"
-        ),
+        CollectionSearchByID(user_id=user.id, source="bangumi", source_id="missing"),
     )
 
     assert deleted is False
@@ -248,9 +244,7 @@ async def test_batch_upsert_conflict_updates_only_provided_fields(db_session):
 async def test_batch_upsert_rejects_a_missing_type(db_session):
     """type 是 NOT NULL，数据库在冲突解析之前就会校验，必须明确拒绝。"""
     user = await _seed_user(db_session)
-    upsert = CollectionUpsert(
-        user_id=user.id, source="bangumi", source_id=SUBJECT_ID
-    )
+    upsert = CollectionUpsert(user_id=user.id, source="bangumi", source_id=SUBJECT_ID)
     assert upsert.type is None
 
     with pytest.raises(ValueError, match="type"):

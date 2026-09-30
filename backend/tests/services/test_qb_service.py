@@ -36,9 +36,7 @@ class FakeQBClient:
         self.url = ""
 
     def rss_add_feed(self, *, url: str, item_path: str) -> None:
-        self.calls.append(
-            ("rss_add_feed", {"url": url, "item_path": item_path})
-        )
+        self.calls.append(("rss_add_feed", {"url": url, "item_path": item_path}))
         if self.add_failures:
             raise self.add_failures.pop(0)
         self.url = url
@@ -136,9 +134,7 @@ def test_only_connection_errors_are_retryable() -> None:
     client.add_failures = [ConnectionFailure("connection detail")]
 
     with pytest.raises(QBServiceError) as error:
-        _service(client).add_rss_feed(
-            url="https://secret.example/feed", name="feed"
-        )
+        _service(client).add_rss_feed(url="https://secret.example/feed", name="feed")
 
     assert error.value.error_code == "qb_connection_error"
     assert error.value.retryable is True
@@ -150,9 +146,7 @@ def test_unknown_qb_error_is_safe_and_not_retryable(caplog) -> None:
     client.add_failures = [RuntimeError("raw provider payload")]
 
     with pytest.raises(QBServiceError) as error:
-        _service(client).add_rss_feed(
-            url="https://secret.example/feed", name="feed"
-        )
+        _service(client).add_rss_feed(url="https://secret.example/feed", name="feed")
 
     assert error.value.error_code == "qb_operation_failed"
     assert error.value.retryable is False
@@ -195,6 +189,7 @@ async def test_sql_idempotency_replays_after_database_restart(tmp_path) -> None:
     calls = 0
 
     async with first_factory() as session:
+
         async def first_operation() -> dict[str, str]:
             nonlocal calls
             calls += 1
@@ -211,6 +206,7 @@ async def test_sql_idempotency_replays_after_database_restart(tmp_path) -> None:
     second_engine = create_async_engine(database_url)
     second_factory = async_sessionmaker(second_engine, expire_on_commit=False)
     async with second_factory() as session:
+
         async def replay_operation() -> dict[str, str]:
             nonlocal calls
             calls += 1

@@ -85,8 +85,7 @@ def _checkpoint_adapter_enabled() -> bool:
 def format_sse(event: str, data: dict, *, event_id: int | str | None = None) -> str:
     identifier = f"id: {event_id}\n" if event_id is not None else ""
     return (
-        f"{identifier}event: {event}\n"
-        f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        f"{identifier}event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
     )
 
 
@@ -99,11 +98,16 @@ def _capability_adapter_factory(
     idempotency_store: Any | None,
 ):
     """Build adapters with trusted request dependencies, never model arguments."""
+
     def factory(capability: Any) -> CapabilityAdapter:
         capability_name = getattr(capability, "name", "")
         trusted_args: dict[str, Any] = {}
         if capability_name in {
-            "collections", "subjects", "stats", "schedule", "recommendation"
+            "collections",
+            "subjects",
+            "stats",
+            "schedule",
+            "recommendation",
         }:
             trusted_args["db"] = db
         if user is not None and capability_name in {"collections", "anime"}:
@@ -696,7 +700,9 @@ async def resume_chat(
     thread_scope = _resolve_user_thread(user, thread_id)
 
     if decision not in ("approve", "reject"):
-        raise HTTPException(status_code=400, detail="decision must be 'approve' or 'reject'")
+        raise HTTPException(
+            status_code=400, detail="decision must be 'approve' or 'reject'"
+        )
 
     if not isinstance(run_id, str) or not run_id.strip():
         raise HTTPException(status_code=400, detail="run_id is required")
@@ -727,7 +733,9 @@ async def resume_chat(
     owner = capability_registry.find_action(str(capability_name or ""))
     if owner is None or not owner[1].approval_required:
         await checkpoint_store.close()
-        raise HTTPException(status_code=409, detail="Run approval target is no longer configured")
+        raise HTTPException(
+            status_code=409, detail="Run approval target is no longer configured"
+        )
 
     approval = Approval(
         approval_id=f"approval:{run_id}:{pending.get('decision_id', 'pending')}",

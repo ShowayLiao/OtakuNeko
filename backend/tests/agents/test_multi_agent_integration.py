@@ -19,7 +19,11 @@ class StubCapability:
             "profile": {
                 "llm_summary": {"total_rated": 5, "taste_dictionary": {"热血": [2, 8]}},
                 "candidates": [{"id": 1, "name": "鬼灭之刃", "score": 9}],
-                "chart_data": {"radar": [{"label": "热血", "value": 80}], "bar_count": [{"name": "鬼灭之刃", "score": 9}], "bar_score": []},
+                "chart_data": {
+                    "radar": [{"label": "热血", "value": 80}],
+                    "bar_count": [{"name": "鬼灭之刃", "score": 9}],
+                    "bar_score": [],
+                },
                 "watched_ids": [],
             },
             "evidence": {"source": "profile", "total_rated": 5, "taste_tags": ["热血"]},

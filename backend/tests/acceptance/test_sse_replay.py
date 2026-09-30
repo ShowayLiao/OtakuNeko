@@ -38,7 +38,9 @@ def test_format_sse_adds_replayable_id_without_changing_event_data() -> None:
     assert '"content": "hello"' in frame
 
 
-def test_chat_sse_projection_declares_durability_without_mutating_runtime_data() -> None:
+def test_chat_sse_projection_declares_durability_without_mutating_runtime_data() -> (
+    None
+):
     runtime_event = {"type": "run_completed", "run_id": "run-1", "sequence": 4}
 
     durable_projection = _chat_sse_projection(runtime_event, durable=True)
@@ -110,9 +112,7 @@ async def test_run_and_event_projection_is_scoped_and_replayable(db_session) -> 
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://test"
     ) as client:
-        run_response = await client.get(
-            "/v1/runs/run-replay?thread_id=thread-1"
-        )
+        run_response = await client.get("/v1/runs/run-replay?thread_id=thread-1")
         assert run_response.status_code == 200
         assert run_response.json()["status"] == "succeeded"
         assert run_response.json()["last_sequence"] == 3

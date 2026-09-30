@@ -13,8 +13,7 @@ CALL_TIMEOUT = 30.0
 
 
 class SSETransport(MCPTransport):
-    def __init__(self, server_name: str, url: str,
-                 headers: Dict[str, str] = None):
+    def __init__(self, server_name: str, url: str, headers: Dict[str, str] = None):
         self.server_name = server_name
         self.url = url
         self.headers = headers or {}
@@ -27,9 +26,12 @@ class SSETransport(MCPTransport):
         if self._connected:
             return
 
-        logger.info("sse_connecting", extra={
-            "server_name": self.server_name,
-        })
+        logger.info(
+            "sse_connecting",
+            extra={
+                "server_name": self.server_name,
+            },
+        )
 
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(CONNECT_TIMEOUT, read=CALL_TIMEOUT),
@@ -40,11 +42,14 @@ class SSETransport(MCPTransport):
             },
         )
 
-        init_response = await self._send_request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
-        })
+        init_response = await self._send_request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
+            },
+        )
 
         if "error" in init_response:
             await self.close()
@@ -52,10 +57,13 @@ class SSETransport(MCPTransport):
 
         await self._send_notification("notifications/initialized", {})
         self._connected = True
-        logger.info("sse_connected", extra={
-            "server_name": self.server_name,
-            "server_info": init_response.get("result", {}).get("serverInfo", {}),
-        })
+        logger.info(
+            "sse_connected",
+            extra={
+                "server_name": self.server_name,
+                "server_info": init_response.get("result", {}).get("serverInfo", {}),
+            },
+        )
 
     async def close(self) -> None:
         self._connected = False
@@ -69,10 +77,13 @@ class SSETransport(MCPTransport):
         return response.get("result", {}).get("tools", [])
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
-        response = await self._send_request("tools/call", {
-            "name": name,
-            "arguments": arguments,
-        })
+        response = await self._send_request(
+            "tools/call",
+            {
+                "name": name,
+                "arguments": arguments,
+            },
+        )
         if "error" in response:
             raise RuntimeError(f"MCP tool '{name}' error: {response['error']}")
         result = response.get("result", {})
@@ -89,7 +100,9 @@ class SSETransport(MCPTransport):
 
         try:
             headers = {"Mcp-Session-Id": self._session_id} if self._session_id else {}
-            resp = await self._client.post(self.url, json=request_payload, headers=headers)
+            resp = await self._client.post(
+                self.url, json=request_payload, headers=headers
+            )
             resp.raise_for_status()
             session_id = resp.headers.get("Mcp-Session-Id")
             if session_id:

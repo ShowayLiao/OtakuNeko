@@ -43,20 +43,14 @@ def compute_case_metrics(
     )
     response_lower = result.text.lower()
     forbidden_phrases = [
-        phrase
-        for phrase in case.forbidden_phrases
-        if phrase.lower() in response_lower
+        phrase for phrase in case.forbidden_phrases if phrase.lower() in response_lower
     ]
     required_evidence = set(case.assertions.required_evidence)
     present_evidence = required_evidence & set(result.evidence)
     evidence_value = (
-        len(present_evidence) / len(required_evidence)
-        if required_evidence
-        else 1.0
+        len(present_evidence) / len(required_evidence) if required_evidence else 1.0
     )
-    recovery_passed = (
-        not case.assertions.require_recovery or result.recovered
-    )
+    recovery_passed = not case.assertions.require_recovery or result.recovered
     latency_passed = result.latency_ms <= case.assertions.max_latency_ms
     calls_passed = result.call_count <= case.assertions.max_calls
 
@@ -110,9 +104,7 @@ def compute_case_metrics(
             metric="call_budget",
             value=float(result.call_count),
             passed=calls_passed,
-            detail=(
-                f"actual={result.call_count}, max={case.assertions.max_calls}"
-            ),
+            detail=(f"actual={result.call_count}, max={case.assertions.max_calls}"),
         ),
     ]
 
@@ -171,9 +163,7 @@ def observability_snapshot(result: ExecutionResult) -> dict[str, float]:
         result.tool_call_count,
         result.tool_success_count + result.tool_failure_count,
     )
-    tool_success_rate = (
-        result.tool_success_count / tool_calls if tool_calls else 1.0
-    )
+    tool_success_rate = result.tool_success_count / tool_calls if tool_calls else 1.0
     unknown_costs = result.estimated_cost_unknown_count
     if result.model_call_count and result.estimated_cost_usd is None:
         unknown_costs = max(unknown_costs, result.model_call_count)
@@ -225,12 +215,13 @@ def aggregate_observability_snapshots(
         else:
             aggregates[metric] = sum(values)
     total_tool_calls = sum(
-        float(snapshot.get("tool_call_count", 0.0))
-        for snapshot in snapshots
+        float(snapshot.get("tool_call_count", 0.0)) for snapshot in snapshots
     )
     if total_tool_calls:
-        aggregates["tool_success_rate"] = sum(
-            float(snapshot.get("tool_success_count", 0.0))
-            for snapshot in snapshots
-        ) / total_tool_calls
+        aggregates["tool_success_rate"] = (
+            sum(
+                float(snapshot.get("tool_success_count", 0.0)) for snapshot in snapshots
+            )
+            / total_tool_calls
+        )
     return aggregates

@@ -19,10 +19,12 @@ class HeartbeatStatus:
 
 
 class MCPHeartbeat:
-    def __init__(self,
-                 interval: float = DEFAULT_HEARTBEAT_INTERVAL,
-                 timeout: float = DEFAULT_HEARTBEAT_TIMEOUT,
-                 max_misses: int = 3):
+    def __init__(
+        self,
+        interval: float = DEFAULT_HEARTBEAT_INTERVAL,
+        timeout: float = DEFAULT_HEARTBEAT_TIMEOUT,
+        max_misses: int = 3,
+    ):
         self._interval = interval
         self._timeout = timeout
         self._max_misses = max_misses
@@ -39,10 +41,13 @@ class MCPHeartbeat:
             return
         self._running = True
         self._task = asyncio.create_task(self._loop())
-        logger.info("heartbeat_started", extra={
-            "interval_s": self._interval,
-            "timeout_s": self._timeout,
-        })
+        logger.info(
+            "heartbeat_started",
+            extra={
+                "interval_s": self._interval,
+                "timeout_s": self._timeout,
+            },
+        )
 
     async def stop(self):
         self._running = False
@@ -73,14 +78,23 @@ class MCPHeartbeat:
                 if elapsed > self._timeout:
                     status.alive = False
                     status.consecutive_misses += 1
-                    logger.warning("heartbeat_miss", extra={
-                        "server_name": name,
-                        "elapsed_s": round(elapsed, 1),
-                        "consecutive_misses": status.consecutive_misses,
-                    })
-                    if status.consecutive_misses >= self._max_misses and self._on_dead_callback:
-                        logger.error("heartbeat_dead", extra={
+                    logger.warning(
+                        "heartbeat_miss",
+                        extra={
                             "server_name": name,
+                            "elapsed_s": round(elapsed, 1),
                             "consecutive_misses": status.consecutive_misses,
-                        })
+                        },
+                    )
+                    if (
+                        status.consecutive_misses >= self._max_misses
+                        and self._on_dead_callback
+                    ):
+                        logger.error(
+                            "heartbeat_dead",
+                            extra={
+                                "server_name": name,
+                                "consecutive_misses": status.consecutive_misses,
+                            },
+                        )
                         await self._on_dead_callback(name)

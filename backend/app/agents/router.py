@@ -54,7 +54,9 @@ class AgentRouter:
         self._classifier_lock = threading.Lock()
         self._classifier_inflight = False
 
-    def route(self, goal: str, messages: list[dict[str, Any]] | None = None) -> RouteDecision:
+    def route(
+        self, goal: str, messages: list[dict[str, Any]] | None = None
+    ) -> RouteDecision:
         """Produce a routing decision without executing any side effects.
 
         Tries deterministic patterns first.  Falls back to classifier
@@ -71,7 +73,9 @@ class AgentRouter:
                 classified = self._classify_with_timeout(goal, messages or [])
                 if classified is None:
                     raise ValueError("classifier returned no decision")
-                if classified.confidence >= 0.5 and self._registry_has(classified.selected_agent):
+                if classified.confidence >= 0.5 and self._registry_has(
+                    classified.selected_agent
+                ):
                     return classified
             except Exception:
                 logger.warning("router_classifier_failed", exc_info=True)

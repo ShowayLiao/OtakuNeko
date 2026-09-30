@@ -13,8 +13,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '4b578619fc54'
-down_revision: Union[str, Sequence[str], None] = 'bbd93366421b'
+revision: str = "4b578619fc54"
+down_revision: Union[str, Sequence[str], None] = "bbd93366421b"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -28,8 +28,15 @@ def upgrade() -> None:
         sa.Column("thread_id", sa.String(), nullable=True),
         sa.Column("kind", sa.String(), nullable=False),
         sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("importance", sa.Float(), nullable=False, server_default=sa.text("0.5")),
-        sa.Column("source", sa.String(), nullable=False, server_default=sa.text("'conversation'")),
+        sa.Column(
+            "importance", sa.Float(), nullable=False, server_default=sa.text("0.5")
+        ),
+        sa.Column(
+            "source",
+            sa.String(),
+            nullable=False,
+            server_default=sa.text("'conversation'"),
+        ),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("metadata_json", sa.Text(), nullable=True),
         sa.CheckConstraint(

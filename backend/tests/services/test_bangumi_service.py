@@ -36,14 +36,18 @@ async def test_get_bangumi_calendar_refreshes_incomplete_cached_data(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_get_bangumi_subject_details_deduplicates_ids_and_keeps_failures(monkeypatch):
+async def test_get_bangumi_subject_details_deduplicates_ids_and_keeps_failures(
+    monkeypatch,
+):
     requested: list[int] = []
 
     async def fake_fetch(subject_id: int):
         requested.append(subject_id)
         if subject_id == 2:
             raise RuntimeError("provider failure")
-        return SubjectDetail(id=subject_id, name=f"Anime {subject_id}", summary="summary")
+        return SubjectDetail(
+            id=subject_id, name=f"Anime {subject_id}", summary="summary"
+        )
 
     monkeypatch.setattr(bangumi_service, "fetch_subject_by_id", fake_fetch)
 
@@ -83,7 +87,9 @@ async def test_sync_subject_detail_does_not_clear_schedule_fields(monkeypatch):
         "fetch_subject_detail",
         fake_fetch_subject_detail,
     )
-    monkeypatch.setattr("app.services.subject_service.batch_update_subjects", fake_batch_update)
+    monkeypatch.setattr(
+        "app.services.subject_service.batch_update_subjects", fake_batch_update
+    )
     monkeypatch.setattr(
         "app.repositories.subject_repo.SubjectRepo.get_by_source",
         fake_get_by_source,

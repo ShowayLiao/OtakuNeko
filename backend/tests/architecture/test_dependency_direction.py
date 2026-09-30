@@ -83,9 +83,7 @@ def _imported_modules(
             if base:
                 imports.add(base)
                 imports.update(
-                    f"{base}.{alias.name}"
-                    for alias in node.names
-                    if alias.name != "*"
+                    f"{base}.{alias.name}" for alias in node.names if alias.name != "*"
                 )
         elif isinstance(node, ast.Import):
             imports.update(alias.name for alias in node.names)
@@ -134,8 +132,7 @@ def test_module_walker_includes_nested_modules(tmp_path):
     )
 
     modules = {
-        module_name
-        for module_name, _, _ in _walk_modules(package, "sample_package")
+        module_name for module_name, _, _ in _walk_modules(package, "sample_package")
     }
 
     assert "sample_package.nested.router" in modules
@@ -161,8 +158,7 @@ def test_api_service_dependencies_do_not_exceed_legacy_baseline():
     actual = _dependencies(APP_ROOT / "api", "app.api", "app.services")
     unexpected = actual - LEGACY_API_SERVICE_IMPORTS
     assert not unexpected, (
-        "New direct API-to-service dependencies are not allowed: "
-        f"{sorted(unexpected)}"
+        f"New direct API-to-service dependencies are not allowed: {sorted(unexpected)}"
     )
 
 
@@ -171,8 +167,7 @@ def test_api_agent_dependencies_do_not_exceed_legacy_baseline():
     actual = _dependencies(APP_ROOT / "api", "app.api", "app.agents")
     unexpected = actual - LEGACY_API_AGENT_IMPORTS
     assert not unexpected, (
-        "New direct API-to-agent dependencies are not allowed: "
-        f"{sorted(unexpected)}"
+        f"New direct API-to-agent dependencies are not allowed: {sorted(unexpected)}"
     )
 
 
@@ -207,6 +202,4 @@ def test_harness_does_not_import_api():
         "app.harness",
         "app.api",
     )
-    assert not violations, (
-        f"Harness modules must not import API: {sorted(violations)}"
-    )
+    assert not violations, f"Harness modules must not import API: {sorted(violations)}"

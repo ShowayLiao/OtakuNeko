@@ -31,7 +31,11 @@ class StubCapability:
         return {
             "success": True,
             "profile": self._profile,
-            "evidence": {"source": "profile", "total_rated": 10, "taste_tags": ["科幻"]},
+            "evidence": {
+                "source": "profile",
+                "total_rated": 10,
+                "taste_tags": ["科幻"],
+            },
         }
 
 
@@ -41,7 +45,9 @@ class RecordingMemory:
 
     async def retrieve_context(self, thread_id, query, **kwargs):
         self.calls.append((thread_id, query, kwargs))
-        return type("Context", (), {"summary": "prefers science fiction", "long_term_facts": []})()
+        return type(
+            "Context", (), {"summary": "prefers science fiction", "long_term_facts": []}
+        )()
 
 
 class StubAnimeCapability:
@@ -99,18 +105,24 @@ class TestRecommendationAgent:
 
     @pytest.mark.asyncio
     async def test_cold_start_returns_fallback(self):
-        cap = StubCapability(profile={
-            "llm_summary": {"total_rated": 0, "taste_dictionary": {}},
-            "chart_data": {"radar": [], "bar_count": [], "bar_score": []},
-            "watched_ids": [],
-        })
+        cap = StubCapability(
+            profile={
+                "llm_summary": {"total_rated": 0, "taste_dictionary": {}},
+                "chart_data": {"radar": [], "bar_count": [], "bar_score": []},
+                "watched_ids": [],
+            }
+        )
         agent = RecommendationAgent(cap)
         task = AgentTask(user_id=1, goal="推荐动漫")
         result = await agent.execute(task)
 
         assert result["role"] == "assistant"
         assert len(result["candidates"]) == 0
-        assert "暂时没有" in result["content"] or "暂时" in result["content"] or "暂无" in result.get("content", "")
+        assert (
+            "暂时没有" in result["content"]
+            or "暂时" in result["content"]
+            or "暂无" in result.get("content", "")
+        )
 
     @pytest.mark.asyncio
     async def test_capability_failure_returns_honest_fallback(self):
@@ -125,11 +137,16 @@ class TestRecommendationAgent:
     @pytest.mark.asyncio
     async def test_candidate_search_failure_returns_honest_fallback(self):
         agent = RecommendationAgent(
-            StubCapability(profile={
-                "llm_summary": {"total_rated": 10, "taste_dictionary": {"科幻": [3, 8.0]}},
-                "chart_data": {"radar": [], "bar_count": []},
-                "watched_ids": [],
-            }),
+            StubCapability(
+                profile={
+                    "llm_summary": {
+                        "total_rated": 10,
+                        "taste_dictionary": {"科幻": [3, 8.0]},
+                    },
+                    "chart_data": {"radar": [], "bar_count": []},
+                    "watched_ids": [],
+                }
+            ),
             anime_capability=FailingAnimeCapability(),
         )
 
@@ -144,11 +161,16 @@ class TestRecommendationAgent:
     async def test_memory_is_retrieved_and_model_budget_is_enforced(self):
         memory = RecordingMemory()
         agent = RecommendationAgent(
-            StubCapability(profile={
-                "llm_summary": {"total_rated": 10, "taste_dictionary": {"科幻": [3, 8.0]}},
-                "chart_data": {"radar": [], "bar_count": []},
-                "watched_ids": [],
-            }),
+            StubCapability(
+                profile={
+                    "llm_summary": {
+                        "total_rated": 10,
+                        "taste_dictionary": {"科幻": [3, 8.0]},
+                    },
+                    "chart_data": {"radar": [], "bar_count": []},
+                    "watched_ids": [],
+                }
+            ),
             anime_capability=StubAnimeCapability(),
             memory_service=memory,
             max_model_calls=1,
@@ -232,8 +254,11 @@ class TestRecommendationAgent:
         result = await agent.execute(AgentTask(user_id=1, goal="推荐动漫"))
 
         assert result["candidates"] == [{"id": 2, "name": "未知标签"}]
+
     @pytest.mark.asyncio
-    async def test_candidate_search_uses_independent_routes_and_strong_avoid_filter(self):
+    async def test_candidate_search_uses_independent_routes_and_strong_avoid_filter(
+        self,
+    ):
         profile = {
             "llm_summary": {
                 "total_rated": 8,
@@ -249,20 +274,35 @@ class TestRecommendationAgent:
             },
             "watched_ids": [1],
         }
-        anime = MultiRouteAnimeCapability({
-            "tag-a": {"success": True, "results": [
-                {"id": 1, "name": "watched", "tags": ["tag-a"]},
-                {"id": 2, "name": "soft", "tags": ["tag-a", "soft-avoid"]},
-                {"id": 3, "name": "hard", "tags": ["tag-a", "hard-avoid"]},
-            ]},
-            "tag-b": {"success": True, "results": [
-                {"id": 2, "name": "soft-duplicate", "tags": ["tag-b", "soft-avoid"]},
-                {"id": 4, "name": "plain", "tags": ["tag-b"]},
-            ]},
-            "tag-c": {"success": True, "results": [
-                {"id": 5, "name": "third", "tags": ["tag-c"]},
-            ]},
-        })
+        anime = MultiRouteAnimeCapability(
+            {
+                "tag-a": {
+                    "success": True,
+                    "results": [
+                        {"id": 1, "name": "watched", "tags": ["tag-a"]},
+                        {"id": 2, "name": "soft", "tags": ["tag-a", "soft-avoid"]},
+                        {"id": 3, "name": "hard", "tags": ["tag-a", "hard-avoid"]},
+                    ],
+                },
+                "tag-b": {
+                    "success": True,
+                    "results": [
+                        {
+                            "id": 2,
+                            "name": "soft-duplicate",
+                            "tags": ["tag-b", "soft-avoid"],
+                        },
+                        {"id": 4, "name": "plain", "tags": ["tag-b"]},
+                    ],
+                },
+                "tag-c": {
+                    "success": True,
+                    "results": [
+                        {"id": 5, "name": "third", "tags": ["tag-c"]},
+                    ],
+                },
+            }
+        )
 
         agent = RecommendationAgent(
             StubCapability(profile=profile),
@@ -273,7 +313,11 @@ class TestRecommendationAgent:
         result = await agent.execute(AgentTask(user_id=1, goal="recommend"))
 
         assert [call["keyword"] for call in anime.calls] == ["", "", ""]
-        assert [call["tags"] for call in anime.calls] == [["tag-a"], ["tag-b"], ["tag-c"]]
+        assert [call["tags"] for call in anime.calls] == [
+            ["tag-a"],
+            ["tag-b"],
+            ["tag-c"],
+        ]
         assert all(call["limit"] >= 20 for call in anime.calls)
         assert {item["id"] for item in result["candidates"]} == {2, 4, 5}
 
@@ -287,11 +331,13 @@ class TestRecommendationAgent:
             },
             "watched_ids": [],
         }
-        anime = MultiRouteAnimeCapability({
-            "tag-a": {"success": False, "error": "timeout"},
-            "tag-b": {"success": True, "results": [{"id": 2, "name": "second"}]},
-            "tag-c": {"success": True, "results": [{"id": 3, "name": "third"}]},
-        })
+        anime = MultiRouteAnimeCapability(
+            {
+                "tag-a": {"success": False, "error": "timeout"},
+                "tag-b": {"success": True, "results": [{"id": 2, "name": "second"}]},
+                "tag-c": {"success": True, "results": [{"id": 3, "name": "third"}]},
+            }
+        )
 
         agent = RecommendationAgent(
             StubCapability(profile=profile),
@@ -309,9 +355,11 @@ class TestRecommendationAgent:
             "llm_summary": {"favorite_tags": ["tag-a"], "strong_avoid_tags": []},
             "watched_ids": [],
         }
-        anime = MultiRouteAnimeCapability({
-            "tag-a": {"success": True, "results": []},
-        })
+        anime = MultiRouteAnimeCapability(
+            {
+                "tag-a": {"success": True, "results": []},
+            }
+        )
 
         result = await RecommendationAgent(
             StubCapability(profile=profile), anime_capability=anime
@@ -329,12 +377,17 @@ class TestRecommendationAgent:
             },
             "watched_ids": [1],
         }
-        anime = MultiRouteAnimeCapability({
-            "tag-a": {"success": True, "results": [
-                {"id": 1, "name": "watched"},
-                {"id": 2, "name": "hard", "tags": ["hard-avoid"]},
-            ]},
-        })
+        anime = MultiRouteAnimeCapability(
+            {
+                "tag-a": {
+                    "success": True,
+                    "results": [
+                        {"id": 1, "name": "watched"},
+                        {"id": 2, "name": "hard", "tags": ["hard-avoid"]},
+                    ],
+                },
+            }
+        )
 
         result = await RecommendationAgent(
             StubCapability(profile=profile), anime_capability=anime
@@ -350,9 +403,11 @@ class TestRecommendationAgent:
             "llm_summary": {"favorite_tags": ["tag-a"], "strong_avoid_tags": []},
             "watched_ids": [],
         }
-        anime = MultiRouteAnimeCapability({
-            "tag-a": {"success": True, "results": [{"id": 1, "name": "one"}]},
-        })
+        anime = MultiRouteAnimeCapability(
+            {
+                "tag-a": {"success": True, "results": [{"id": 1, "name": "one"}]},
+            }
+        )
         trace = AgentTrace(user_id=1, agent_name="recommendation")
 
         with bind_trace(trace):

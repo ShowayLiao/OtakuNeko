@@ -52,9 +52,7 @@ def upgrade() -> None:
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("finished_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error_code", sa.String(), nullable=True),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["agent_run.run_id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["run_id"], ["agent_run.run_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("invocation_id"),
         sa.UniqueConstraint(
             "run_id", "sequence", name="uq_agent_invocation_run_sequence"
@@ -87,9 +85,7 @@ def upgrade() -> None:
         sa.Column("invocation_id", sa.String(), nullable=True),
         sa.Column("payload_json", sa.Text(), nullable=False),
         sa.Column("occurred_at", sa.DateTime(timezone=True), nullable=False),
-        sa.ForeignKeyConstraint(
-            ["run_id"], ["agent_run.run_id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["run_id"], ["agent_run.run_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("event_id"),
         sa.UniqueConstraint(
             "run_id", "sequence", name="uq_agent_run_event_run_sequence"
@@ -121,9 +117,7 @@ def downgrade() -> None:
     op.drop_table("agent_run_event")
 
     op.drop_index("ix_agent_invocation_run_sequence", table_name="agent_invocation")
-    op.drop_index(
-        "ix_agent_invocation_idempotency_key", table_name="agent_invocation"
-    )
+    op.drop_index("ix_agent_invocation_idempotency_key", table_name="agent_invocation")
     op.drop_index("ix_agent_invocation_status", table_name="agent_invocation")
     op.drop_index("ix_agent_invocation_run_id", table_name="agent_invocation")
     op.drop_table("agent_invocation")

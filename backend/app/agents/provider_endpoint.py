@@ -35,9 +35,7 @@ class ProviderEndpointPolicy:
 
 def _canonical_hosts(values: Iterable[str]) -> frozenset[str]:
     return frozenset(
-        item.strip().rstrip(".").lower()
-        for item in values
-        if item and item.strip()
+        item.strip().rstrip(".").lower() for item in values if item and item.strip()
     )
 
 
@@ -49,9 +47,7 @@ def parse_provider_allowlists(
     hosts = _canonical_hosts(allowed_hosts.split(","))
     try:
         ports = frozenset(
-            int(item.strip())
-            for item in allowed_ports.split(",")
-            if item.strip()
+            int(item.strip()) for item in allowed_ports.split(",") if item.strip()
         )
     except ValueError as exc:
         raise ProviderEndpointError(
@@ -117,7 +113,9 @@ def make_provider_endpoint_policy(
         allow_local=deploy_mode.lower() == "local",
         resolve_dns=resolve_dns and deploy_mode.lower() != "local",
         allowed_hosts=_canonical_hosts(allowed_hosts),
-        allowed_ports=frozenset(allowed_ports) if deploy_mode.lower() != "local" else frozenset(),
+        allowed_ports=frozenset(allowed_ports)
+        if deploy_mode.lower() != "local"
+        else frozenset(),
         allowed_schemes=(
             frozenset({"http", "https"})
             if deploy_mode.lower() == "local"
@@ -172,7 +170,9 @@ def is_local_endpoint(value: str | None) -> bool:
     if not value:
         return False
     host = (urlparse(value).hostname or "").rstrip(".").lower()
-    return host in _LOCAL_HOSTS or host.endswith(".local") or host in {"127.0.0.1", "::1"}
+    return (
+        host in _LOCAL_HOSTS or host.endswith(".local") or host in {"127.0.0.1", "::1"}
+    )
 
 
 def validate_provider_endpoint(
@@ -223,7 +223,9 @@ def validate_provider_endpoint(
         address = None
     if address is not None:
         if _blocked_address(host) and not (allow_local and local_endpoint):
-            raise ProviderEndpointError("private or link-local provider endpoints are disabled")
+            raise ProviderEndpointError(
+                "private or link-local provider endpoints are disabled"
+            )
     elif resolve_dns and not (allow_local and local_endpoint):
         _validate_resolved_addresses(host, port)
 
@@ -255,6 +257,7 @@ def create_provider_http_client(
     timeout: float | httpx.Timeout = 90,
 ) -> httpx.AsyncClient:
     """Create the only HTTP client shape allowed for provider requests."""
+
     async def validate_redirect(response: httpx.Response) -> None:
         if not 300 <= response.status_code < 400:
             return

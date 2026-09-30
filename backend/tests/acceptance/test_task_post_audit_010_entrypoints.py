@@ -100,6 +100,8 @@ async def test_scheduler_rejects_direct_specialist_bypass() -> None:
             return True
 
     with pytest.raises(PermissionError, match="Dispatcher"):
-        await handle_task_def(task_def, run, _Runtime(), _Router(), repository=_Repository())
+        await handle_task_def(
+            task_def, run, _Runtime(), _Router(), repository=_Repository()
+        )
     assert run.status == "failed"
     assert run.error_category == "policy_denied"

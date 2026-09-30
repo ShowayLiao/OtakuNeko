@@ -71,12 +71,8 @@ def test_full_dataset_matches_production_event_contract():
     }
 
     assert dataset.dataset_version == "v1-full"
-    assert all(
-        case.assertions.max_latency_ms >= 5000 for case in dataset.cases
-    )
-    assert all(
-        not case.assertions.required_evidence for case in dataset.cases
-    )
+    assert all(case.assertions.max_latency_ms >= 5000 for case in dataset.cases)
+    assert all(not case.assertions.required_evidence for case in dataset.cases)
     required_tools = {
         tool for case in dataset.cases for tool in case.required_capabilities
     }
@@ -87,9 +83,7 @@ def test_full_dataset_matches_production_event_contract():
 @pytest.mark.asyncio
 async def test_fixture_memory_exposes_user_attributes_and_memory_to_workflow():
     dataset = load_dataset("evals/datasets/v1-full.jsonl")
-    case = next(
-        case for case in dataset.cases if case.id == "recommendation-profile"
-    )
+    case = next(case for case in dataset.cases if case.id == "recommendation-profile")
 
     context = await FixtureMemory(case).retrieve_context(
         "eval-recommendation-profile",
@@ -103,7 +97,9 @@ async def test_fixture_memory_exposes_user_attributes_and_memory_to_workflow():
 
 def test_production_normalizer_passes_representative_full_contract():
     dataset = load_dataset("evals/datasets/v1-full.jsonl")
-    anime_case = next(case for case in dataset.cases if case.id == "anime-search-frieren")
+    anime_case = next(
+        case for case in dataset.cases if case.id == "anime-search-frieren"
+    )
     result = normalize_production_result(
         anime_case,
         {
@@ -206,9 +202,11 @@ async def test_runtime_target_uses_agent_runtime_and_filters_tags():
 
     assert isinstance(target.runtime, AgentRuntime)
     assert report.total > 0
-    assert all("fast" in case.tags for case in dataset.cases if case.id in {
-        result.case_id for result in report.cases
-    })
+    assert all(
+        "fast" in case.tags
+        for case in dataset.cases
+        if case.id in {result.case_id for result in report.cases}
+    )
     assert report.failed_count == 0
     assert target.executed_event_count > report.total
     assert report.evaluation_budget["judge_enabled"] is False
@@ -262,27 +260,27 @@ async def test_one_case_failure_does_not_abort_report():
     assert report.total > 1
     assert report.failed_count == 1
     assert report.passed_count == report.total - 1
-    assert report.aggregates["pass_rate"] == (
-        report.total - 1
-    ) / report.total
+    assert report.aggregates["pass_rate"] == (report.total - 1) / report.total
     assert report.aggregates["routing_accuracy"] < 1.0
     assert any(result.error for result in report.cases)
 
 
 def test_gate_uses_threshold_direction_and_missing_required_metrics():
-    config = EvaluationConfig.model_validate({
-        "name": "gate",
-        "dataset": "x",
-        "thresholds": {
-            "pass_rate": {"direction": "min", "value": 0.9},
-            "latency_ms": {"direction": "max", "value": 100},
-            "required_metric": {
-                "direction": "min",
-                "value": 1,
-                "required": True,
+    config = EvaluationConfig.model_validate(
+        {
+            "name": "gate",
+            "dataset": "x",
+            "thresholds": {
+                "pass_rate": {"direction": "min", "value": 0.9},
+                "latency_ms": {"direction": "max", "value": 100},
+                "required_metric": {
+                    "direction": "min",
+                    "value": 1,
+                    "required": True,
+                },
             },
-        },
-    })
+        }
+    )
 
     failures = evaluate_gate(
         config,
@@ -295,17 +293,19 @@ def test_gate_uses_threshold_direction_and_missing_required_metrics():
 
 @pytest.mark.asyncio
 async def test_required_judge_unavailability_is_visible_and_fails_gate():
-    config = EvaluationConfig.model_validate({
-        "name": "judge-required",
-        "dataset": "evals/datasets/v1.jsonl",
-        "tags": ["safety"],
-        "judge": {
-            "enabled": True,
-            "required": True,
-            "model": "judge-model",
-            "provider": "judge-provider",
-        },
-    })
+    config = EvaluationConfig.model_validate(
+        {
+            "name": "judge-required",
+            "dataset": "evals/datasets/v1.jsonl",
+            "tags": ["safety"],
+            "judge": {
+                "enabled": True,
+                "required": True,
+                "model": "judge-model",
+                "provider": "judge-provider",
+            },
+        }
+    )
     dataset = load_dataset(config.dataset)
 
     report = await run_evaluation(
@@ -324,20 +324,22 @@ async def test_judge_score_threshold_is_applied_after_judging():
         async def evaluate(self, request):
             return JudgeScore(score=0.5)
 
-    config = EvaluationConfig.model_validate({
-        "name": "judge-threshold",
-        "dataset": "evals/datasets/v1.jsonl",
-        "tags": ["safety"],
-        "thresholds": {
-            "judge_score": {"direction": "min", "value": 0.8},
-        },
-        "judge": {
-            "enabled": True,
-            "required": True,
-            "model": "judge-model",
-            "provider": "judge-provider",
-        },
-    })
+    config = EvaluationConfig.model_validate(
+        {
+            "name": "judge-threshold",
+            "dataset": "evals/datasets/v1.jsonl",
+            "tags": ["safety"],
+            "thresholds": {
+                "judge_score": {"direction": "min", "value": 0.8},
+            },
+            "judge": {
+                "enabled": True,
+                "required": True,
+                "model": "judge-model",
+                "provider": "judge-provider",
+            },
+        }
+    )
 
     report = await run_evaluation(
         config,

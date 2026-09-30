@@ -162,7 +162,9 @@ async def test_missing_or_unsafe_key_is_rejected_before_qb(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_authenticated_principal_is_part_of_idempotency_scope(monkeypatch) -> None:
+async def test_authenticated_principal_is_part_of_idempotency_scope(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
     monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7,8")
     monkeypatch.setattr(rss_module, "QBService", FakeQBService)

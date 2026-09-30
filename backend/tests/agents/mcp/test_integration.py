@@ -24,17 +24,20 @@ class TestMCPIntegration:
 
     @pytest.mark.asyncio
     async def test_adapter_wraps_transport_tool_correctly(self):
-        transport = FakeTransport("filesystem", [
-            {
-                "name": "read_file",
-                "description": "Read a file",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {"path": {"type": "string"}},
-                    "required": ["path"],
+        transport = FakeTransport(
+            "filesystem",
+            [
+                {
+                    "name": "read_file",
+                    "description": "Read a file",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {"path": {"type": "string"}},
+                        "required": ["path"],
+                    },
                 },
-            },
-        ])
+            ],
+        )
 
         tool = MCPToolAdapter.to_langchain_tool(
             transport.list_tools()[0],

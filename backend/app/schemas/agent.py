@@ -43,14 +43,17 @@ class Message(BaseModel):
     role: str
     content: str
 
+
 class PromptConfig(BaseModel):
     persona: str = ""
     tone: str = ""
     rules: str = ""
 
+
 class DeepSeekOptions(BaseModel):
     thinking: bool = True
     reasoning_effort: Literal["high", "max"] = "high"
+
 
 class ChatRequest(BaseModel):
     model: str

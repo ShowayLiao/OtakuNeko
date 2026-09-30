@@ -1,16 +1,21 @@
 from pydantic import BaseModel, Field, RootModel
 from typing import List, Optional, Dict, Any
 
+
 # 1. 单个 Staff 的结构
 class StaffInfo(BaseModel):
     name: str = Field(..., description="人名或公司名")
     role: str = Field(..., description="标准化后的职位 (e.g., Director, Studio)")
 
+
 # 2. 单个角色的配音信息
 class CastInfo(BaseModel):
     character_name: str = Field(..., description="角色名")
     role: str = Field(..., description="角色重要度 (如: 主角, 配角)")
-    cv_names: List[str] = Field(default_factory=list, description="配音演员(声优)姓名列表")
+    cv_names: List[str] = Field(
+        default_factory=list, description="配音演员(声优)姓名列表"
+    )
+
 
 # 3. 整个条目的结构
 class SubjectDetail(BaseModel):
@@ -20,12 +25,17 @@ class SubjectDetail(BaseModel):
     summary: str = Field(..., description="剧情简介")
     score: Optional[float] = Field(None, description="Bangumi 评分")
     rank: Optional[int] = Field(None, description="Bangumi 排名")
-    
+
     # 我们把核心 Staff 直接放在这里，作为分析的关键依据
-    core_staff: List[StaffInfo] = Field(default_factory=list, description="核心制作阵容：监督、脚本、制作公司等")
-    
+    core_staff: List[StaffInfo] = Field(
+        default_factory=list, description="核心制作阵容：监督、脚本、制作公司等"
+    )
+
     # 核心声优阵容
-    main_cast: List[CastInfo] = Field(default_factory=list, description="核心角色的配音阵容")
+    main_cast: List[CastInfo] = Field(
+        default_factory=list, description="核心角色的配音阵容"
+    )
+
 
 # 3. 日历相关的结构
 class BangumiCalendarImage(BaseModel):
@@ -34,11 +44,13 @@ class BangumiCalendarImage(BaseModel):
     medium: Optional[str] = Field(None, description="中中图 URL")
     small: Optional[str] = Field(None, description="小图 URL")
 
+
 class BangumiCalendarRating(BaseModel):
     score: Optional[float] = Field(None, description="评分")
     total: Optional[int] = Field(None, description="评分人数")
     rank: Optional[int] = Field(None, description="排名")
     count: Optional[Dict[str, int]] = Field(None, description="各评分等级的人数分布")
+
 
 class BangumiCalendarCollection(BaseModel):
     wish: Optional[int] = Field(None, description="想看人数")
@@ -47,6 +59,7 @@ class BangumiCalendarCollection(BaseModel):
     done: Optional[int] = Field(None, description="已看人数")
     on_hold: Optional[int] = Field(None, description="搁置人数")
     dropped: Optional[int] = Field(None, description="抛弃人数")
+
 
 class BangumiCalendarItem(BaseModel):
     id: int = Field(..., description="动画 ID")
@@ -59,25 +72,35 @@ class BangumiCalendarItem(BaseModel):
     air_weekday: Optional[int] = Field(None, description="放送星期几")
     images: Optional[BangumiCalendarImage] = Field(None, description="图片信息")
     rating: Optional[BangumiCalendarRating] = Field(None, description="评分信息")
-    collection: Optional[BangumiCalendarCollection] = Field(None, description="收藏信息")
+    collection: Optional[BangumiCalendarCollection] = Field(
+        None, description="收藏信息"
+    )
+
 
 class BangumiCalendarDay(BaseModel):
     weekday: Dict[str, Any] = Field(..., description="星期信息")
-    items: List[BangumiCalendarItem] = Field(default_factory=list, description="当天放送的动画列表")
+    items: List[BangumiCalendarItem] = Field(
+        default_factory=list, description="当天放送的动画列表"
+    )
+
 
 class BangumiCalendar(RootModel):
     """
     Bangumi 每日放送信息
     """
+
     root: List[BangumiCalendarDay]
+
 
 # 观众评价相关结构
 class ShortComment(BaseModel):
     content: str = Field(..., description="吐槽内容")
 
+
 class LongReview(BaseModel):
     title: str = Field(..., description="标题")
     summary: str = Field(..., description="摘要")
+
 
 class AudienceFeedback(BaseModel):
     subject_id: int = Field(..., description="条目 ID")

@@ -58,9 +58,7 @@ def build_context() -> MCPContext:
     try:
         user_id = int(raw_user_id)
     except ValueError as exc:
-        raise ValueError(
-            "OTAKUNEKO_MCP_USER_ID must be a positive integer"
-        ) from exc
+        raise ValueError("OTAKUNEKO_MCP_USER_ID must be a positive integer") from exc
     if user_id <= 0:
         raise ValueError("OTAKUNEKO_MCP_USER_ID must be a positive integer")
     return MCPContext(user_id=user_id)

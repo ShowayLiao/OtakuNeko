@@ -126,7 +126,9 @@ class _MemoryChildService:
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_loop_owns_decision_dispatch_and_terminal_result() -> None:
+async def test_primary_runtime_loop_owns_decision_dispatch_and_terminal_result() -> (
+    None
+):
     capability = _CatalogCapability()
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -367,7 +369,9 @@ async def test_primary_runtime_loop_preserves_dispatcher_timeout_code() -> None:
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_maps_cancelled_model_result_without_parsing_or_dispatching() -> None:
+async def test_primary_runtime_maps_cancelled_model_result_without_parsing_or_dispatching() -> (
+    None
+):
     gateway = _ModelResultGateway(
         ModelCallResult(
             provider="fake",
@@ -436,7 +440,9 @@ async def test_primary_runtime_maps_provider_timeout_without_next_decision() -> 
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_passes_controls_without_double_budget_deduction() -> None:
+async def test_primary_runtime_passes_controls_without_double_budget_deduction() -> (
+    None
+):
     gateway = _ControlObservingGateway(
         ModelCallResult(
             provider="fake",

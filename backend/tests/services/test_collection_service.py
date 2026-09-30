@@ -18,7 +18,9 @@ from app.services import collection_service
 
 
 @pytest.mark.asyncio
-async def test_upsert_ignores_body_user_id_and_injects_trusted_principal(monkeypatch) -> None:
+async def test_upsert_ignores_body_user_id_and_injects_trusted_principal(
+    monkeypatch,
+) -> None:
     captured: list[Any] = []
 
     async def fake_subject(*args: Any, **kwargs: Any):

@@ -88,9 +88,7 @@ async def test_coordinator_persists_read_only_run_and_graph_failure(tmp_path) ->
         assert stored.status == "succeeded"
         events = await event_store.list_after(result.run_id, after_sequence=0)
         assert events[-1].event_type == "run.succeeded"
-        assert [event.sequence for event in events] == list(
-            range(1, len(events) + 1)
-        )
+        assert [event.sequence for event in events] == list(range(1, len(events) + 1))
 
         tool_coordinator = RunCoordinator(
             ToolAdapter(), run_store=run_store, event_store=event_store
@@ -102,9 +100,7 @@ async def test_coordinator_persists_read_only_run_and_graph_failure(tmp_path) ->
             )
         ]
         tool_result = next(item for item in tool_items if isinstance(item, RunResult))
-        invocations = (
-            await session.execute(select(AgentInvocation))
-        ).scalars().all()
+        invocations = (await session.execute(select(AgentInvocation))).scalars().all()
         assert tool_result.status == "completed"
         assert len(invocations) == 1
         assert invocations[0].status == "succeeded"
@@ -121,9 +117,7 @@ async def test_coordinator_persists_read_only_run_and_graph_failure(tmp_path) ->
         persistence_result = next(
             item for item in persistence_items if isinstance(item, RunResult)
         )
-        persistence_stored = await run_store.get(
-            persistence_result.run_id, user_id=7
-        )
+        persistence_stored = await run_store.get(persistence_result.run_id, user_id=7)
         assert persistence_result.status == "failed"
         assert persistence_stored is not None
         assert persistence_stored.status == "failed"

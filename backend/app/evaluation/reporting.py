@@ -11,12 +11,14 @@ from app.trace.redaction import redact
 
 def report_payload(report: EvalReport) -> dict:
     payload = redact(report.model_dump(mode="json"))
-    payload.update({
-        "total": report.total,
-        "passed_count": report.passed_count,
-        "failed_count": report.failed_count,
-        "pass_rate": report.pass_rate,
-    })
+    payload.update(
+        {
+            "total": report.total,
+            "passed_count": report.passed_count,
+            "failed_count": report.failed_count,
+            "pass_rate": report.pass_rate,
+        }
+    )
     return payload
 
 

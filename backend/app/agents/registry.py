@@ -54,14 +54,16 @@ class ToolRegistry:
             if hasattr(tool, "args_schema") and tool.args_schema:
                 parameters = tool.args_schema.model_json_schema()
                 parameters.pop("title", None)
-                schemas.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool.name,
-                        "description": tool.description,
-                        "parameters": parameters,
-                    },
-                })
+                schemas.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "parameters": parameters,
+                        },
+                    }
+                )
 
         for client in self._mcp_clients:
             for tool_def in await client.list_tools():

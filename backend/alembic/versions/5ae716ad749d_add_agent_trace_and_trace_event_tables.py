@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = '5ae716ad749d'
-down_revision: Union[str, Sequence[str], None] = 'bf40dc9e653e'
+revision: str = "5ae716ad749d"
+down_revision: Union[str, Sequence[str], None] = "bf40dc9e653e"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -25,9 +25,13 @@ def upgrade() -> None:
         sa.Column("trace_id", sa.String(), nullable=False),
         sa.Column("user_id", sa.Integer(), nullable=True),
         sa.Column("task_id", sa.Integer(), nullable=True),
-        sa.Column("agent_name", sa.String(), nullable=False, server_default=sa.text("''")),
+        sa.Column(
+            "agent_name", sa.String(), nullable=False, server_default=sa.text("''")
+        ),
         sa.Column("goal", sa.Text(), nullable=False, server_default=sa.text("''")),
-        sa.Column("status", sa.String(), nullable=False, server_default=sa.text("'completed'")),
+        sa.Column(
+            "status", sa.String(), nullable=False, server_default=sa.text("'completed'")
+        ),
         sa.Column("headers_json", sa.Text(), nullable=True),
         sa.Column("started_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -47,10 +51,18 @@ def upgrade() -> None:
         "trace_event",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("trace_id", sa.String(), nullable=False),
-        sa.Column("step_index", sa.Integer(), nullable=False, server_default=sa.text("0")),
-        sa.Column("step_label", sa.String(), nullable=False, server_default=sa.text("''")),
-        sa.Column("agent_name", sa.String(), nullable=False, server_default=sa.text("''")),
-        sa.Column("status", sa.String(), nullable=False, server_default=sa.text("'completed'")),
+        sa.Column(
+            "step_index", sa.Integer(), nullable=False, server_default=sa.text("0")
+        ),
+        sa.Column(
+            "step_label", sa.String(), nullable=False, server_default=sa.text("''")
+        ),
+        sa.Column(
+            "agent_name", sa.String(), nullable=False, server_default=sa.text("''")
+        ),
+        sa.Column(
+            "status", sa.String(), nullable=False, server_default=sa.text("'completed'")
+        ),
         sa.Column("step_json", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(

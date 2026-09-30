@@ -26,8 +26,17 @@ async def get_current_time() -> dict:
     """
     try:
         from datetime import datetime
+
         now = datetime.now()
-        weekday_map = {0: "星期一", 1: "星期二", 2: "星期三", 3: "星期四", 4: "星期五", 5: "星期六", 6: "星期日"}
+        weekday_map = {
+            0: "星期一",
+            1: "星期二",
+            2: "星期三",
+            3: "星期四",
+            4: "星期五",
+            5: "星期六",
+            6: "星期日",
+        }
         return {
             "success": True,
             "current_time": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -41,7 +50,7 @@ async def get_current_time() -> dict:
             "weekday": now.weekday(),
             "weekday_cn": weekday_map.get(now.weekday(), "未知"),
             "timestamp": now.timestamp(),
-            "timezone": "本地时间"
+            "timezone": "本地时间",
         }
     except Exception as e:
         return {"success": False, "error": f"获取当前时间失败: {str(e)}"}

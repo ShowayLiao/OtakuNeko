@@ -86,9 +86,7 @@ async def test_sync_subject_air_time_persists_air_time_and_weekday(
 
     seeded = await _seed_subject(db_session)
     subject_id = seeded.id
-    _patch_bangumi_data(
-        monkeypatch, _catalog("123", "2024-04-07T01:05:00.000000Z")
-    )
+    _patch_bangumi_data(monkeypatch, _catalog("123", "2024-04-07T01:05:00.000000Z"))
 
     assert await subject_service.sync_subject_air_time(db_session, "123") is True
 
@@ -115,9 +113,7 @@ async def test_sync_subject_air_time_derives_weekday_from_the_original_offset(
 
     seeded = await _seed_subject(db_session)
     subject_id = seeded.id
-    _patch_bangumi_data(
-        monkeypatch, _catalog("123", "2024-04-07T00:30:00+09:00")
-    )
+    _patch_bangumi_data(monkeypatch, _catalog("123", "2024-04-07T00:30:00+09:00"))
 
     assert await subject_service.sync_subject_air_time(db_session, "123") is True
 
@@ -141,9 +137,7 @@ async def test_sync_subject_air_time_returns_false_for_an_unknown_subject(
 
 
 @pytest.mark.asyncio
-async def test_sync_subject_air_time_propagates_fetch_failures(
-    db_session, monkeypatch
-):
+async def test_sync_subject_air_time_propagates_fetch_failures(db_session, monkeypatch):
     """抓取失败是内部故障，必须抛出去让路由回 500，不能伪装成条目不存在。"""
     from app.services.bangumi_data_sync import BangumiDataSyncService
 

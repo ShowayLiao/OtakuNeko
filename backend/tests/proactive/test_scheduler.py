@@ -94,8 +94,12 @@ class TestScheduler:
     async def test_repository_claims_a_slot_once_and_recovers_expired_lease(self):
         now = datetime(2026, 1, 1, 9, tzinfo=timezone.utc)
         task_def = AgentTaskDef(
-            id=1, user_id=1, task_type="weekly_recommendation",
-            schedule_expr="0 9 * * 1", timezone="UTC", next_run=now,
+            id=1,
+            user_id=1,
+            task_type="weekly_recommendation",
+            schedule_expr="0 9 * * 1",
+            timezone="UTC",
+            next_run=now,
         )
         repository = InMemoryTaskRepository([task_def])
         first = await repository.claim_due(now, lease_seconds=10)
@@ -111,17 +115,31 @@ class TestScheduler:
     @pytest.mark.asyncio
     async def test_expired_worker_cannot_fence_new_lease(self):
         now = datetime(2026, 1, 1, 9, tzinfo=timezone.utc)
-        task_def = AgentTaskDef(id=2, user_id=1, task_type="x", schedule_expr="0 9 * * 1", timezone="UTC", next_run=now)
+        task_def = AgentTaskDef(
+            id=2,
+            user_id=1,
+            task_type="x",
+            schedule_expr="0 9 * * 1",
+            timezone="UTC",
+            next_run=now,
+        )
         repository = InMemoryTaskRepository([task_def])
         first = (await repository.claim_due(now, lease_seconds=1))[0]
         old_lease = first.run.lease_id
-        second = (await repository.claim_due(now.replace(minute=10), lease_seconds=1))[0]
+        second = (await repository.claim_due(now.replace(minute=10), lease_seconds=1))[
+            0
+        ]
         assert second.run.lease_id != old_lease
-        assert await repository.finish(second.run, success=True, lease_id=old_lease) is False
+        assert (
+            await repository.finish(second.run, success=True, lease_id=old_lease)
+            is False
+        )
         assert second.run.status == "running"
 
     def test_next_slot_respects_timezone(self):
-        slot = next_slot("0 9 * * 1", datetime(2026, 1, 5, 1, tzinfo=timezone.utc), "Asia/Shanghai")
+        slot = next_slot(
+            "0 9 * * 1", datetime(2026, 1, 5, 1, tzinfo=timezone.utc), "Asia/Shanghai"
+        )
         assert slot.hour == 1 and slot.weekday() == 0
 
 
@@ -133,7 +151,9 @@ class TestExecution:
             task_type="weekly_recommendation",
             payload='{"genre": "action"}',
         )
-        run = AgentTaskRun(id=42, task_def_id=7, user_id=3, scheduled_slot=datetime.now(timezone.utc))
+        run = AgentTaskRun(
+            id=42, task_def_id=7, user_id=3, scheduled_slot=datetime.now(timezone.utc)
+        )
 
         agent_task = build_agent_task(task_def, run)
 
@@ -146,8 +166,17 @@ class TestExecution:
 
     @pytest.mark.asyncio
     async def test_disabled_task_skipped(self):
-        task_def = type("FakeDef", (), {"id": 1, "user_id": 1, "enabled": False,
-                                        "task_type": "x", "payload": "{}"})()
+        task_def = type(
+            "FakeDef",
+            (),
+            {
+                "id": 1,
+                "user_id": 1,
+                "enabled": False,
+                "task_type": "x",
+                "payload": "{}",
+            },
+        )()
         run = type("FakeRun", (), {"id": 1})()
 
         class FakeRuntime:

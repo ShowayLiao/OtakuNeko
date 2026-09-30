@@ -51,7 +51,9 @@ def test_parse_calendar_html_returns_all_weekdays_and_deduplicates_subject_links
 
 
 @pytest.mark.asyncio
-async def test_get_calendar_falls_back_to_web_calendar_and_merges_api_details(monkeypatch):
+async def test_get_calendar_falls_back_to_web_calendar_and_merges_api_details(
+    monkeypatch,
+):
     api_calendar = [
         {
             "weekday": {"en": "Mon", "cn": "星期一", "ja": "月曜日", "id": 1},
@@ -96,7 +98,9 @@ async def test_get_calendar_falls_back_to_web_calendar_and_merges_api_details(mo
                 return FakeResponse(api_calendar)
             return FakeResponse(_calendar_html())
 
-    monkeypatch.setattr("app.services.bangumi_client.httpx.AsyncClient", FakeAsyncClient)
+    monkeypatch.setattr(
+        "app.services.bangumi_client.httpx.AsyncClient", FakeAsyncClient
+    )
 
     result = await BangumiClient.get_calendar.__wrapped__(BangumiClient())
 

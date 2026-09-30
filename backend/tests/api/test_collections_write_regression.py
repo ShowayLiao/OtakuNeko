@@ -107,9 +107,7 @@ async def _reload(db_session, collection_id: int) -> Collection | None:
 
 
 @pytest.mark.asyncio
-async def test_put_updates_the_collection_and_persists(
-    db_session, wired_app
-) -> None:
+async def test_put_updates_the_collection_and_persists(db_session, wired_app) -> None:
     seeded = await _seed(db_session)
     collection_id = seeded.id
 
@@ -135,9 +133,7 @@ async def test_put_updates_the_collection_and_persists(
 
 
 @pytest.mark.asyncio
-async def test_put_replays_for_the_same_idempotency_key(
-    db_session, wired_app
-) -> None:
+async def test_put_replays_for_the_same_idempotency_key(db_session, wired_app) -> None:
     await _seed(db_session)
     path = f"/v1/collections/{SOURCE}/{SOURCE_ID}"
     payload = {"type": 2, "rate": 9}
@@ -152,9 +148,7 @@ async def test_put_replays_for_the_same_idempotency_key(
 
 
 @pytest.mark.asyncio
-async def test_put_returns_404_for_a_missing_collection(
-    db_session, wired_app
-) -> None:
+async def test_put_returns_404_for_a_missing_collection(db_session, wired_app) -> None:
     await _seed(db_session)
 
     response = await _request(

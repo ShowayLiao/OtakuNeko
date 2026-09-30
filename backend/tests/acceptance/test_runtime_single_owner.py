@@ -46,7 +46,8 @@ async def test_execute_and_stream_share_one_terminal_contract() -> None:
     checkpoints = InMemoryCheckpointStore()
     stream_runtime = AgentRuntime(SuccessAdapter(), checkpoint_store=checkpoints)
     streamed = [
-        item async for item in stream_runtime.stream(
+        item
+        async for item in stream_runtime.stream(
             AgentTask(task_id=2, user_id=7, goal="stream")
         )
     ]
@@ -61,7 +62,9 @@ async def test_execute_and_stream_share_one_terminal_contract() -> None:
 
 
 @pytest.mark.asyncio
-async def test_coordinator_execute_persists_one_terminal_event_and_cannot_overwrite_it() -> None:
+async def test_coordinator_execute_persists_one_terminal_event_and_cannot_overwrite_it() -> (
+    None
+):
     run_store = MemoryRunStore()
     event_store = MemoryEventStore()
     coordinator = RunCoordinator(
@@ -78,7 +81,9 @@ async def test_coordinator_execute_persists_one_terminal_event_and_cannot_overwr
     assert state.terminal_result == coordinator.terminal_result
     assert state.terminal_result is not None
     assert state.terminal_result.status == "completed"
-    terminal_events = [event for event in event_store.events if event.event_type == "run.succeeded"]
+    terminal_events = [
+        event for event in event_store.events if event.event_type == "run.succeeded"
+    ]
     assert len(terminal_events) == 1
     assert run_store.statuses[-1] == "succeeded"
 
@@ -87,7 +92,10 @@ async def test_coordinator_execute_persists_one_terminal_event_and_cannot_overwr
 async def test_persistence_failure_is_not_reported_as_success() -> None:
     class FailingEvents(MemoryEventStore):
         async def append(self, event):
-            if event.event_type.startswith("run.") and event.event_type != "run.started":
+            if (
+                event.event_type.startswith("run.")
+                and event.event_type != "run.started"
+            ):
                 raise RuntimeError("event store unavailable")
             return await super().append(event)
 
@@ -97,7 +105,9 @@ async def test_persistence_failure_is_not_reported_as_success() -> None:
         event_store=FailingEvents(),
     )
     state = await coordinator.execute(
-        AgentTask(task_id=4, user_id=7, goal="persistence", metadata={"run_id": "run-4"})
+        AgentTask(
+            task_id=4, user_id=7, goal="persistence", metadata={"run_id": "run-4"}
+        )
     )
 
     assert state.terminal_result is not None

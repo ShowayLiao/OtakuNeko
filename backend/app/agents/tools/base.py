@@ -10,7 +10,9 @@ from app.trace.redaction import redact
 logger = get_logger(__name__)
 
 
-def _safe_tool_result(result: Any, tool_name: str, duration_ms: float) -> dict[str, Any]:
+def _safe_tool_result(
+    result: Any, tool_name: str, duration_ms: float
+) -> dict[str, Any]:
     """Return a bounded, redacted result for ToolNode and downstream adapters."""
     if isinstance(result, dict):
         safe_result = redact(result)
@@ -41,7 +43,9 @@ class ToolResult(BaseModel):
     success: bool
     data: Any = None
     error: Optional[str] = None
-    error_type: Optional[Literal["network", "not_found", "invalid_args", "internal"]] = None
+    error_type: Optional[
+        Literal["network", "not_found", "invalid_args", "internal"]
+    ] = None
     tool_name: str
     duration_ms: float
 
@@ -56,31 +60,37 @@ def log_tool_call(tool_name: str):
                 duration_ms = (time.perf_counter() - t0) * 1000
                 safe_result = _safe_tool_result(result, tool_name, duration_ms)
                 success = safe_result["success"]
-                logger.info("tool_called", extra={
-                    "tool_name": tool_name,
-                    "argument_shape": {
-                        "count": len(kwargs),
-                        "types": sorted(
-                            type(value).__name__ for value in kwargs.values()
-                        ),
+                logger.info(
+                    "tool_called",
+                    extra={
+                        "tool_name": tool_name,
+                        "argument_shape": {
+                            "count": len(kwargs),
+                            "types": sorted(
+                                type(value).__name__ for value in kwargs.values()
+                            ),
+                        },
+                        "duration_ms": round(duration_ms, 2),
+                        "success": success,
                     },
-                    "duration_ms": round(duration_ms, 2),
-                    "success": success,
-                })
+                )
                 return safe_result
             except Exception as exc:
                 duration_ms = (time.perf_counter() - t0) * 1000
-                logger.error("tool_failed", extra={
-                    "tool_name": tool_name,
-                    "argument_shape": {
-                        "count": len(kwargs),
-                        "types": sorted(
-                            type(value).__name__ for value in kwargs.values()
-                        ),
+                logger.error(
+                    "tool_failed",
+                    extra={
+                        "tool_name": tool_name,
+                        "argument_shape": {
+                            "count": len(kwargs),
+                            "types": sorted(
+                                type(value).__name__ for value in kwargs.values()
+                            ),
+                        },
+                        "duration_ms": round(duration_ms, 2),
+                        "error_category": type(exc).__name__,
                     },
-                    "duration_ms": round(duration_ms, 2),
-                    "error_category": type(exc).__name__,
-                })
+                )
                 return {
                     "success": False,
                     "error": "Tool execution failed",
@@ -88,5 +98,7 @@ def log_tool_call(tool_name: str):
                     "tool_name": tool_name,
                     "duration_ms": round(duration_ms, 2),
                 }
+
         return wrapper
+
     return decorator

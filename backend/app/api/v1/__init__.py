@@ -1,5 +1,17 @@
 from fastapi import APIRouter
-from . import subjects, collections, dashboard, users, auth, bangumi, agent, rss, trace, memory, proactive
+from . import (
+    subjects,
+    collections,
+    dashboard,
+    users,
+    auth,
+    bangumi,
+    agent,
+    rss,
+    trace,
+    memory,
+    proactive,
+)
 from .endpoints import schedules
 
 api_router = APIRouter(prefix="/v1")

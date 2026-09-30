@@ -49,9 +49,9 @@ def _app(user_id: int = 7) -> FastAPI:
         return _user(user_id)
 
     app.dependency_overrides[get_current_user] = override_user
-    app.dependency_overrides[
-        collections_module.get_collection_idempotency_store
-    ] = lambda: store
+    app.dependency_overrides[collections_module.get_collection_idempotency_store] = (
+        lambda: store
+    )
     app.dependency_overrides[collections_module.get_session] = lambda: None
     return app
 
@@ -82,13 +82,16 @@ def test_collection_scope_contains_principal_method_and_canonical_resource() -> 
 
     resource = canonical_collection_resource_key("BANGUMI", "001")
     assert resource == "collections/bangumi/001"
-    assert canonical_collection_resource_key("bangumi", "a/b") == "collections/bangumi/a%2Fb"
+    assert (
+        canonical_collection_resource_key("bangumi", "a/b")
+        == "collections/bangumi/a%2Fb"
+    )
     assert collection_idempotency_scope(7, "put", resource) == (
         "principal:7|method:PUT|resource:collections/bangumi/001"
     )
-    assert collection_payload_hash({"user_id": 7, "type": 2}) == collection_payload_hash(
-        {"user_id": 999, "type": 2}
-    )
+    assert collection_payload_hash(
+        {"user_id": 7, "type": 2}
+    ) == collection_payload_hash({"user_id": 999, "type": 2})
 
 
 @pytest.mark.asyncio
@@ -119,7 +122,9 @@ async def test_claim_failure_never_calls_collection_operation() -> None:
 
 
 @pytest.mark.asyncio
-async def test_missing_or_oversized_header_is_rejected_before_write(monkeypatch) -> None:
+async def test_missing_or_oversized_header_is_rejected_before_write(
+    monkeypatch,
+) -> None:
     calls = 0
 
     async def fake_upsert(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -145,7 +150,9 @@ async def test_missing_or_oversized_header_is_rejected_before_write(monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_same_payload_replays_without_a_second_collection_write(monkeypatch) -> None:
+async def test_same_payload_replays_without_a_second_collection_write(
+    monkeypatch,
+) -> None:
     calls = 0
 
     async def fake_upsert(*args: Any, **kwargs: Any) -> dict[str, Any]:
@@ -243,7 +250,9 @@ async def test_same_key_isolated_by_authenticated_principal(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
-async def test_cache_clear_failure_is_a_warning_after_successful_write(monkeypatch) -> None:
+async def test_cache_clear_failure_is_a_warning_after_successful_write(
+    monkeypatch,
+) -> None:
     async def fake_upsert(*args: Any, **kwargs: Any) -> dict[str, Any]:
         return _collection()
 
@@ -292,9 +301,9 @@ async def test_batch_item_limit_is_rejected_before_idempotency_claim() -> None:
 async def test_anonymous_collection_write_is_denied() -> None:
     app = FastAPI()
     app.include_router(collections_router, prefix="/v1")
-    app.dependency_overrides[
-        collections_module.get_collection_idempotency_store
-    ] = lambda: InMemoryIdempotencyStore()
+    app.dependency_overrides[collections_module.get_collection_idempotency_store] = (
+        lambda: InMemoryIdempotencyStore()
+    )
 
     response = await _post(
         app,

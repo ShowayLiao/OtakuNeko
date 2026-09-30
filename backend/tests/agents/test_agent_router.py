@@ -81,6 +81,7 @@ class TestClassifierFallback:
         class LowConfClassifier:
             def classify(self, goal, messages):
                 from app.agents.routing import RouteDecision, RouteIntent
+
                 return RouteDecision(
                     intent=RouteIntent.UNKNOWN,
                     selected_agent="recommendation",
@@ -111,7 +112,9 @@ class TestClassifierFallback:
                 return None
 
         classifier = SlowClassifier()
-        router = AgentRouter(registry, classifier=classifier, classifier_timeout_seconds=0.01)
+        router = AgentRouter(
+            registry, classifier=classifier, classifier_timeout_seconds=0.01
+        )
         started = time.perf_counter()
         d = router.route("any input")
         second = router.route("another input")

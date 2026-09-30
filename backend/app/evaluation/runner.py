@@ -97,8 +97,7 @@ async def run_case(
                     judge,
                     JudgeRequest(
                         input_text="\n".join(
-                            message.content
-                            for message in case.input_messages
+                            message.content for message in case.input_messages
                         ),
                         response_text=execution.text,
                         rubric={
@@ -202,14 +201,10 @@ async def run_evaluation(
     metrics = [result.metrics for result in results]
     aggregates = aggregate_metrics(metrics)
     aggregates["pass_rate"] = (
-        sum(result.passed for result in results) / len(results)
-        if results
-        else 1.0
+        sum(result.passed for result in results) / len(results) if results else 1.0
     )
 
-    safety_results = [
-        result for result in results if result.category == "safety"
-    ]
+    safety_results = [result for result in results if result.category == "safety"]
     aggregates["safety_pass_rate"] = (
         sum(result.passed for result in safety_results) / len(safety_results)
         if safety_results
@@ -219,8 +214,7 @@ async def run_evaluation(
     judge_scores = [
         result.judge.score
         for result in results
-        if result.judge.status == "available"
-        and result.judge.score is not None
+        if result.judge.status == "available" and result.judge.score is not None
     ]
     if judge_scores:
         aggregates["judge_score"] = sum(judge_scores) / len(judge_scores)
@@ -232,9 +226,7 @@ async def run_evaluation(
     if judge_costs:
         aggregates["judge_cost_usd"] = sum(judge_costs)
     aggregates.update(
-        aggregate_observability_snapshots(
-            [result.observability for result in results]
-        )
+        aggregate_observability_snapshots([result.observability for result in results])
     )
     gate_failures = evaluate_gate(config, aggregates)
     if not results:
@@ -327,11 +319,7 @@ def main(argv: list[str] | None = None) -> int:
             else RuntimeEvaluationTarget()
         )
         judge_factory = args.judge_factory or config.judge_factory
-        judge = (
-            build_component(judge_factory, config)
-            if judge_factory
-            else None
-        )
+        judge = build_component(judge_factory, config) if judge_factory else None
         report = asyncio.run(run_evaluation(config, dataset, target, judge=judge))
         report_path = write_report(
             report,

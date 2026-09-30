@@ -127,7 +127,9 @@ async def _body(response) -> str:
 
 
 @pytest.mark.asyncio
-async def test_default_chat_does_not_construct_legacy_langgraph_loop(monkeypatch) -> None:
+async def test_default_chat_does_not_construct_legacy_langgraph_loop(
+    monkeypatch,
+) -> None:
     _FakeModelGateway.instances.clear()
     _FakeModelGateway.decisions = [
         {
@@ -138,7 +140,9 @@ async def test_default_chat_does_not_construct_legacy_langgraph_loop(monkeypatch
         }
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     response = await agent_api.chat_endpoint(
@@ -156,7 +160,9 @@ async def test_default_chat_does_not_construct_legacy_langgraph_loop(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_default_chat_routes_tool_execution_through_dispatcher(monkeypatch) -> None:
+async def test_default_chat_routes_tool_execution_through_dispatcher(
+    monkeypatch,
+) -> None:
     capability = _CatalogCapability()
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -179,7 +185,9 @@ async def test_default_chat_routes_tool_execution_through_dispatcher(monkeypatch
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     response = await agent_api.chat_endpoint(
@@ -199,7 +207,9 @@ async def test_default_chat_routes_tool_execution_through_dispatcher(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_denied_capability_never_calls_domain_service(monkeypatch) -> None:
+async def test_main_api_eval_denied_capability_never_calls_domain_service(
+    monkeypatch,
+) -> None:
     capability = _CatalogCapability(requires_auth=True)
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -216,7 +226,9 @@ async def test_main_api_eval_denied_capability_never_calls_domain_service(monkey
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -252,7 +264,9 @@ async def test_main_api_eval_requires_trusted_approval(monkeypatch) -> None:
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -370,9 +384,13 @@ async def test_main_api_resume_approval_rehydrates_runtime(
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_maps_provider_failure_to_terminal_event(monkeypatch) -> None:
+async def test_main_api_eval_maps_provider_failure_to_terminal_event(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FailedModelGateway)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -390,7 +408,9 @@ async def test_main_api_eval_maps_provider_failure_to_terminal_event(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(monkeypatch) -> None:
+async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(
+    monkeypatch,
+) -> None:
     capability = _SlowCatalogCapability(timeout_seconds=0.001)
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -407,7 +427,9 @@ async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(m
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -425,7 +447,9 @@ async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(m
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_preserves_unknown_outcome_as_safe_terminal_failure(monkeypatch) -> None:
+async def test_main_api_eval_preserves_unknown_outcome_as_safe_terminal_failure(
+    monkeypatch,
+) -> None:
     capability = _UnknownCatalogCapability()
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -442,7 +466,9 @@ async def test_main_api_eval_preserves_unknown_outcome_as_safe_terminal_failure(
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
     monkeypatch.setattr(agent_api, "build_capability_registry", lambda: registry)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -473,7 +499,9 @@ async def test_main_api_eval_cancellation_stops_before_model_call(monkeypatch) -
 
     monkeypatch.setattr(agent_api.cancellation_store, "register", cancel_on_register)
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -491,7 +519,9 @@ async def test_main_api_eval_cancellation_stops_before_model_call(monkeypatch) -
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_rejects_prompt_injection_authority_fields(monkeypatch) -> None:
+async def test_main_api_eval_rejects_prompt_injection_authority_fields(
+    monkeypatch,
+) -> None:
     _FakeModelGateway.instances.clear()
     _FakeModelGateway.decisions = [
         {
@@ -504,7 +534,9 @@ async def test_main_api_eval_rejects_prompt_injection_authority_fields(monkeypat
         }
     ]
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FakeModelGateway)
-    monkeypatch.setattr(agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com")
+    monkeypatch.setattr(
+        agent_api, "_resolve_provider_base_url", lambda value: "https://api.openai.com"
+    )
     monkeypatch.setattr(agent_api, "SqlTraceStore", lambda db: None)
 
     body = await _body(
@@ -593,6 +625,7 @@ async def test_cancel_endpoint_only_records_request_for_runtime(monkeypatch) -> 
 
     monkeypatch.setattr(agent_api, "_get_scoped_run", _scoped_run)
     monkeypatch.setattr(agent_api, "_checkpoint_adapter_enabled", lambda: False)
+
     async def _last_event_sequence(*args):
         return 0
 

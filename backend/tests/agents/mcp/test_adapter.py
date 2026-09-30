@@ -32,10 +32,14 @@ class TestMCPToolAdapter:
             },
         }
 
-        transport = type("Fake", (), {
-            "call_tool": lambda self, name, args: {"result": f"{name}: {args}"},
-            "server_name": "fake",
-        })()
+        transport = type(
+            "Fake",
+            (),
+            {
+                "call_tool": lambda self, name, args: {"result": f"{name}: {args}"},
+                "server_name": "fake",
+            },
+        )()
 
         tool = MCPToolAdapter.to_langchain_tool(mcp_def, transport)
         assert isinstance(tool, BaseTool)

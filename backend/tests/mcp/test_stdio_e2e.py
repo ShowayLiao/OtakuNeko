@@ -20,15 +20,17 @@ from app.mcp_server import MAX_REQUEST_SIZE
 
 def _build_initialize() -> bytes:
     return (
-        json.dumps({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-            },
-        })
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                },
+            }
+        )
         + "\n"
     ).encode()
 
@@ -56,8 +58,7 @@ async def test_initialize_and_tools_list():
 
         # tools/list
         proc.stdin.write(
-            json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
-            .encode()
+            json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).encode()
             + b"\n"
         )
         await proc.stdin.drain()
@@ -106,15 +107,20 @@ async def test_tools_call_anime_search():
         await asyncio.wait_for(proc.stdout.readline(), timeout=15)
 
         # tools/call anime_search
-        payload = json.dumps({
-            "jsonrpc": "2.0",
-            "id": 3,
-            "method": "tools/call",
-            "params": {
-                "name": "anime_search",
-                "arguments": {"keyword": "Frieren"},
-            },
-        }) + "\n"
+        payload = (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 3,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "anime_search",
+                        "arguments": {"keyword": "Frieren"},
+                    },
+                }
+            )
+            + "\n"
+        )
         proc.stdin.write(payload.encode())
         await proc.stdin.drain()
 
@@ -150,9 +156,16 @@ async def test_unknown_method_returns_error():
         await proc.stdin.drain()
         await asyncio.wait_for(proc.stdout.readline(), timeout=15)
 
-        payload = json.dumps({
-            "jsonrpc": "2.0", "id": 5, "method": "bogus/method",
-        }) + "\n"
+        payload = (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 5,
+                    "method": "bogus/method",
+                }
+            )
+            + "\n"
+        )
         proc.stdin.write(payload.encode())
         await proc.stdin.drain()
 
@@ -181,10 +194,17 @@ async def test_unknown_tool_returns_failure():
         await proc.stdin.drain()
         await asyncio.wait_for(proc.stdout.readline(), timeout=15)
 
-        payload = json.dumps({
-            "jsonrpc": "2.0", "id": 6, "method": "tools/call",
-            "params": {"name": "nonexistent", "arguments": {}},
-        }) + "\n"
+        payload = (
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 6,
+                    "method": "tools/call",
+                    "params": {"name": "nonexistent", "arguments": {}},
+                }
+            )
+            + "\n"
+        )
         proc.stdin.write(payload.encode())
         await proc.stdin.drain()
 
@@ -217,8 +237,7 @@ async def test_malformed_json_returns_parse_error_and_server_continues():
         assert response["error"]["code"] == -32700
 
         proc.stdin.write(
-            json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/list"})
-            .encode()
+            json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/list"}).encode()
             + b"\n"
         )
         await proc.stdin.drain()
@@ -243,8 +262,7 @@ async def test_nonstandard_json_constant_returns_parse_error():
 
     try:
         proc.stdin.write(
-            b'{"jsonrpc":"2.0","id":12,"method":"tools/list",'
-            b'"params":{"value":NaN}}\n'
+            b'{"jsonrpc":"2.0","id":12,"method":"tools/list","params":{"value":NaN}}\n'
         )
         await proc.stdin.drain()
         response = json.loads(
@@ -269,15 +287,16 @@ async def test_initialized_notification_emits_no_protocol_frame():
 
     try:
         proc.stdin.write(
-            json.dumps({
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-            }).encode()
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "method": "notifications/initialized",
+                }
+            ).encode()
             + b"\n"
         )
         proc.stdin.write(
-            json.dumps({"jsonrpc": "2.0", "id": 9, "method": "tools/list"})
-            .encode()
+            json.dumps({"jsonrpc": "2.0", "id": 9, "method": "tools/list"}).encode()
             + b"\n"
         )
         await proc.stdin.drain()
@@ -311,12 +330,14 @@ async def test_authenticated_media_call_uses_trusted_environment():
         await proc.stdin.drain()
         await asyncio.wait_for(proc.stdout.readline(), timeout=15)
         proc.stdin.write(
-            json.dumps({
-                "jsonrpc": "2.0",
-                "id": 10,
-                "method": "tools/call",
-                "params": {"name": "media_list_rss_feeds", "arguments": {}},
-            }).encode()
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 10,
+                    "method": "tools/call",
+                    "params": {"name": "media_list_rss_feeds", "arguments": {}},
+                }
+            ).encode()
             + b"\n"
         )
         await proc.stdin.drain()
@@ -352,8 +373,7 @@ async def test_oversized_request_returns_error_and_server_continues():
         assert response["error"]["code"] == -32600
 
         proc.stdin.write(
-            json.dumps({"jsonrpc": "2.0", "id": 11, "method": "tools/list"})
-            .encode()
+            json.dumps({"jsonrpc": "2.0", "id": 11, "method": "tools/list"}).encode()
             + b"\n"
         )
         await proc.stdin.drain()

@@ -93,7 +93,9 @@ async def test_cooperative_cancel_before_and_during_execute() -> None:
 
 
 @pytest.mark.asyncio
-async def test_resume_loads_nonterminal_checkpoint_and_does_not_rerun_terminal_state() -> None:
+async def test_resume_loads_nonterminal_checkpoint_and_does_not_rerun_terminal_state() -> (
+    None
+):
     checkpoints = InMemoryCheckpointStore()
     adapter = ResumeAdapter()
     runtime = AgentRuntime(adapter, checkpoint_store=checkpoints)

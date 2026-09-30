@@ -69,7 +69,9 @@ def validate_handoff(decision: RouteDecision) -> None:
         if handoff.from_agent in visited and handoff.from_agent != previous_to:
             raise ValueError(f"Cycle detected: agent '{handoff.from_agent}' revisited")
         if handoff.to_agent in visited:
-            raise ValueError(f"Cycle detected: agent '{handoff.to_agent}' visited twice")
+            raise ValueError(
+                f"Cycle detected: agent '{handoff.to_agent}' visited twice"
+            )
         visited.add(handoff.from_agent)
         visited.add(handoff.to_agent)
         previous_to = handoff.to_agent

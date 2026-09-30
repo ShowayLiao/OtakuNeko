@@ -76,9 +76,7 @@ class QBService:
         try:
             current_feeds = client.rss_items(include_feed_data=True)
             existing = (
-                current_feeds.get(name)
-                if isinstance(current_feeds, dict)
-                else None
+                current_feeds.get(name) if isinstance(current_feeds, dict) else None
             )
             existing_url = self._field(existing, "url")
             old_resource_id = self._resource_id(existing, name or "rss-feed")
@@ -115,9 +113,7 @@ class QBService:
                     old_resource_id=old_resource_id,
                     retryable=self._classify(error).retryable,
                 )
-            verified_feed = (
-                verified.get(name) if isinstance(verified, dict) else None
-            )
+            verified_feed = verified.get(name) if isinstance(verified, dict) else None
             if self._field(verified_feed, "url") != url:
                 return self._attention_result(
                     error_code="qb_upsert_verify_failed",

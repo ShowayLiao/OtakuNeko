@@ -20,10 +20,12 @@ def _server() -> MCPServer:
 
 @pytest.mark.asyncio
 async def test_initialized_notification_has_no_response():
-    response = await _server().handle_request({
-        "jsonrpc": "2.0",
-        "method": "notifications/initialized",
-    })
+    response = await _server().handle_request(
+        {
+            "jsonrpc": "2.0",
+            "method": "notifications/initialized",
+        }
+    )
 
     assert response is None
 
@@ -37,12 +39,14 @@ async def test_invalid_request_returns_json_rpc_error():
 
 @pytest.mark.asyncio
 async def test_invalid_tool_arguments_return_protocol_error():
-    response = await _server().handle_request({
-        "jsonrpc": "2.0",
-        "id": 2,
-        "method": "tools/call",
-        "params": {"name": "anime_search", "arguments": {}},
-    })
+    response = await _server().handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {"name": "anime_search", "arguments": {}},
+        }
+    )
 
     assert response["error"]["code"] == -32602
 
@@ -59,12 +63,14 @@ def test_nullable_json_schema_types_are_validated_at_call_time():
 
 @pytest.mark.asyncio
 async def test_unknown_tool_returns_protocol_error():
-    response = await _server().handle_request({
-        "jsonrpc": "2.0",
-        "id": 3,
-        "method": "tools/call",
-        "params": {"name": "missing", "arguments": {}},
-    })
+    response = await _server().handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {"name": "missing", "arguments": {}},
+        }
+    )
 
     assert response["error"]["code"] == -32602
 
@@ -77,12 +83,14 @@ async def test_failed_capability_result_sets_is_error(monkeypatch):
         return {"success": False, "error": "upstream failed", "error_type": "upstream"}
 
     monkeypatch.setattr(server._registry.get("anime"), "execute", fail)
-    response = await server.handle_request({
-        "jsonrpc": "2.0",
-        "id": 4,
-        "method": "tools/call",
-        "params": {"name": "anime_search", "arguments": {"keyword": "x"}},
-    })
+    response = await server.handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "tools/call",
+            "params": {"name": "anime_search", "arguments": {"keyword": "x"}},
+        }
+    )
 
     assert response["result"]["isError"] is True
 
@@ -98,12 +106,14 @@ async def test_oversized_tool_result_remains_valid_json(monkeypatch):
 
     monkeypatch.setattr(server._registry.get("anime"), "execute", large)
     monkeypatch.setattr(module, "MAX_RESPONSE_SIZE", 100)
-    response = await server.handle_request({
-        "jsonrpc": "2.0",
-        "id": 5,
-        "method": "tools/call",
-        "params": {"name": "anime_search", "arguments": {"keyword": "x"}},
-    })
+    response = await server.handle_request(
+        {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "method": "tools/call",
+            "params": {"name": "anime_search", "arguments": {"keyword": "x"}},
+        }
+    )
 
     content = json.loads(response["result"]["content"][0]["text"])
     assert response["result"]["isError"] is True

@@ -47,9 +47,7 @@ async def _seed_subject(
 async def _reload(db_session, subject_id: int) -> Subject | None:
     """清空身份映射后重新查询，证明数据真的落库。"""
     db_session.expire_all()
-    result = await db_session.execute(
-        select(Subject).where(Subject.id == subject_id)
-    )
+    result = await db_session.execute(select(Subject).where(Subject.id == subject_id))
     return result.scalar_one_or_none()
 
 

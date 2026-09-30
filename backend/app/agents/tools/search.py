@@ -12,7 +12,9 @@ def _build_air_date_ranges(min_year, max_year, min_month, max_month, min_day, ma
     adjusted_min_year = min_year
     adjusted_max_year = max_year
 
-    if (min_month is not None or max_month is not None) and (min_year is None and max_year is None):
+    if (min_month is not None or max_month is not None) and (
+        min_year is None and max_year is None
+    ):
         adjusted_min_year = current_year
         adjusted_max_year = current_year
 
@@ -58,7 +60,7 @@ async def search_anime_advanced(
     max_month: Optional[int] = None,
     min_day: Optional[int] = None,
     max_day: Optional[int] = None,
-    limit: int = 10
+    limit: int = 10,
 ) -> dict:
     """
     Bangumi 动画搜索。按关键词、标签、评分、时间段筛选。当用户想找动画时使用。
@@ -89,28 +91,39 @@ async def search_anime_advanced(
             if max_rating is not None:
                 rating_ranges.append(f"<={max_rating}")
 
-        air_ranges = _build_air_date_ranges(min_year, max_year, min_month, max_month, min_day, max_day)
+        air_ranges = _build_air_date_ranges(
+            min_year, max_year, min_month, max_month, min_day, max_day
+        )
 
         result = await _anime_capability.execute(
             "search",
-            keyword=keyword, subject_types=subject_types, tags=tag_list,
+            keyword=keyword,
+            subject_types=subject_types,
+            tags=tag_list,
             rating_ranges=rating_ranges if rating_ranges else None,
             air_date_ranges=air_ranges if air_ranges else None,
-            limit=limit, offset=0
+            limit=limit,
+            offset=0,
         )
 
         if result.get("success") and result.get("total", 0) <= 3 and air_ranges:
             fallback = await _anime_capability.execute(
                 "search",
-                keyword=keyword, subject_types=subject_types, tags=tag_list,
+                keyword=keyword,
+                subject_types=subject_types,
+                tags=tag_list,
                 rating_ranges=rating_ranges if rating_ranges else None,
-                air_date_ranges=None, limit=limit, offset=0
+                air_date_ranges=None,
+                limit=limit,
+                offset=0,
             )
             fallback_results = fallback.get("results", [])
             return {
-                "success": fallback.get("success", False), "total": fallback.get("total", 0), "limit": limit,
+                "success": fallback.get("success", False),
+                "total": fallback.get("total", 0),
+                "limit": limit,
                 "results": fallback_results,
-                "note": "Bangumi 中该时间段准确 air_date 条目较少，已展示相关结果"
+                "note": "Bangumi 中该时间段准确 air_date 条目较少，已展示相关结果",
             }
 
         result["limit"] = limit

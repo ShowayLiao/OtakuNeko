@@ -37,7 +37,9 @@ class TestStdioTransport:
         mock_proc.stdout = fake_stream
         mock_proc.stderr = MagicMock()
 
-        with patch("asyncio.create_subprocess_exec", new=AsyncMock(return_value=mock_proc)):
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=mock_proc)
+        ):
             transport = StdioTransport("test", "echo", ["hello"])
             await transport.connect()
             assert transport._connected
@@ -62,7 +64,8 @@ class TestSSETransport:
         mock_client = AsyncMock()
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "jsonrpc": "2.0", "id": 1,
+            "jsonrpc": "2.0",
+            "id": 1,
             "result": {"tools": [{"name": "tool-a"}]},
         }
         mock_client.post = AsyncMock(return_value=mock_response)
@@ -75,7 +78,10 @@ class TestSSETransport:
             tools = await transport.list_tools()
             assert len(tools) == 1
             assert tools[0]["name"] == "tool-a"
-            methods = [call.kwargs["json"]["method"] for call in mock_client.post.call_args_list]
+            methods = [
+                call.kwargs["json"]["method"]
+                for call in mock_client.post.call_args_list
+            ]
             assert methods[:2] == ["initialize", "notifications/initialized"]
 
     def test_server_name_is_set(self):
@@ -103,7 +109,8 @@ class TestMCPConnectionPool:
         pool = MCPConnectionPool()
         with pytest.raises(RuntimeError, match="not found"):
             asyncio.get_event_loop().run_until_complete(
-                pool.call_tool("ghost", "tool", {}))
+                pool.call_tool("ghost", "tool", {})
+            )
 
     @pytest.mark.asyncio
     async def test_retry_exhausted_raises(self):

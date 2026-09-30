@@ -2,6 +2,7 @@ from typing import Optional
 from pydantic_settings import BaseSettings
 from pydantic import computed_field
 
+
 class Settings(BaseSettings):
     PROJECT_NAME: str = "OtakuNeko"
     API_V1_STR: str = "/api/v1"
@@ -71,5 +72,6 @@ class Settings(BaseSettings):
         env_file = ".env"
         case_sensitive = True
         extra = "ignore"
+
 
 settings = Settings()

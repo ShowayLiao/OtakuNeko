@@ -70,7 +70,9 @@ async def test_forged_identity_is_rejected_before_capability_execution() -> None
     )
 
     result = await runtime.execute_decision(
-        AgentTask(task_id=2, user_id=7, goal="read", metadata={"run_id": "run-security"}),
+        AgentTask(
+            task_id=2, user_id=7, goal="read", metadata={"run_id": "run-security"}
+        ),
         capability_allowlist={"secure.read"},
     )
 

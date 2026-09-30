@@ -48,7 +48,9 @@ class _DecisionGateway:
 
 
 @pytest.mark.asyncio
-async def test_primary_runtime_path_dispatches_and_returns_structured_response() -> None:
+async def test_primary_runtime_path_dispatches_and_returns_structured_response() -> (
+    None
+):
     capability = _ReadCapability()
     registry = CapabilityRegistry()
     registry.register(capability)

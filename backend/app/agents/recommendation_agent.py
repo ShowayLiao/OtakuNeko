@@ -51,7 +51,9 @@ class RecommendationAgent(BaseAgent):
         self.max_candidates = max_candidates
         self.max_model_calls = max_model_calls
 
-    def bind_runtime(self, *, capability_invoker: CapabilityInvoker) -> RecommendationAgent:
+    def bind_runtime(
+        self, *, capability_invoker: CapabilityInvoker
+    ) -> RecommendationAgent:
         """Return a copy that executes capabilities through the Runtime."""
         return RecommendationAgent(
             self._capability,
@@ -69,10 +71,14 @@ class RecommendationAgent(BaseAgent):
         metadata = getattr(task, "metadata", None) or {}
         policy = metadata.get("policy") or {}
         allowed = policy.get("allowed_capabilities", ())
-        if "allowed_capabilities" in policy and "recommendation.generate_profile" not in allowed:
+        if (
+            "allowed_capabilities" in policy
+            and "recommendation.generate_profile" not in allowed
+        ):
             return self._fallback("policy_denied")
         max_model_calls = min(
-            self.max_model_calls, int(policy.get("max_model_calls", self.max_model_calls))
+            self.max_model_calls,
+            int(policy.get("max_model_calls", self.max_model_calls)),
         )
         collections = self._resolve_collections(task)
         if self._response_generator is not None and max_model_calls < 1:
@@ -184,9 +190,7 @@ class RecommendationAgent(BaseAgent):
     ) -> dict[str, Any]:
         if self._capability_invoker is not None:
             public_arguments = {
-                key: value
-                for key, value in kwargs.items()
-                if key != "memory_context"
+                key: value for key, value in kwargs.items() if key != "memory_context"
             }
             return await self._capability_invoker(
                 public_action,
@@ -194,9 +198,7 @@ class RecommendationAgent(BaseAgent):
             )
 
         capability = (
-            self._capability
-            if action == "generate_profile"
-            else self._anime_capability
+            self._capability if action == "generate_profile" else self._anime_capability
         )
         if capability is None:
             return {"success": False, "error_type": "not_configured"}
@@ -230,8 +232,12 @@ class RecommendationAgent(BaseAgent):
             "favorite_tags": list(summary.get("favorite_tags", []))[:20],
             "avoid_tags": list(summary.get("avoid_tags", []))[:20],
             "strong_avoid_tags": list(summary.get("strong_avoid_tags", []))[:20],
-            "taste_dictionary": dict(list(summary.get("taste_dictionary", {}).items())[:20]),
-            "tag_preferences": dict(list(summary.get("tag_preferences", {}).items())[:20]),
+            "taste_dictionary": dict(
+                list(summary.get("taste_dictionary", {}).items())[:20]
+            ),
+            "tag_preferences": dict(
+                list(summary.get("tag_preferences", {}).items())[:20]
+            ),
         }
 
     @staticmethod
@@ -253,9 +259,7 @@ class RecommendationAgent(BaseAgent):
         }
         for candidate in candidates:
             item = {
-                key: value
-                for key, value in candidate.items()
-                if key in allowed_keys
+                key: value for key, value in candidate.items() if key in allowed_keys
             }
             if isinstance(item.get("summary"), str):
                 item["summary"] = item["summary"][:1000]
@@ -282,7 +286,9 @@ class RecommendationAgent(BaseAgent):
         }
         profile_candidates = profile.get("candidates", [])
         if profile_candidates:
-            stats["final_candidates"] = min(len(profile_candidates), self.max_candidates)
+            stats["final_candidates"] = min(
+                len(profile_candidates), self.max_candidates
+            )
             return profile_candidates[: self.max_candidates], None, stats
         if self._anime_capability is None:
             return [], None, stats
@@ -328,7 +334,9 @@ class RecommendationAgent(BaseAgent):
         seen_ids: set[Any] = set()
         for index, candidate in enumerate(raw_candidates):
             candidate_id = candidate.get("id")
-            dedupe_key = candidate_id if candidate_id is not None else ("missing-id", index)
+            dedupe_key = (
+                candidate_id if candidate_id is not None else ("missing-id", index)
+            )
             if dedupe_key in seen_ids:
                 continue
             seen_ids.add(dedupe_key)
@@ -395,7 +403,11 @@ class RecommendationAgent(BaseAgent):
             for tag in candidate_tags & soft_avoid_tags
         )
         quality_score = float(candidate.get("score") or 0)
-        return preference_score - soft_penalty * 20, quality_score, -float(candidate.get("id") or 0)
+        return (
+            preference_score - soft_penalty * 20,
+            quality_score,
+            -float(candidate.get("id") or 0),
+        )
 
     @staticmethod
     def _candidate_tags(candidate: dict[str, Any]) -> set[str]:
@@ -418,7 +430,9 @@ class RecommendationAgent(BaseAgent):
         return bool(candidate_tags & avoid_tags)
 
     @staticmethod
-    def _fallback(reason: str, search_stats: dict[str, int] | None = None) -> dict[str, Any]:
+    def _fallback(
+        reason: str, search_stats: dict[str, int] | None = None
+    ) -> dict[str, Any]:
         content = {
             "candidate_search_failed": "推荐服务暂时不可用，请稍后重试。",
             "no_search_results": "当前没有找到匹配的动画作品。",

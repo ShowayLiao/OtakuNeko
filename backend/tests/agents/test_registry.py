@@ -53,6 +53,7 @@ class TestToolRegistry:
         tools = registry.get_all()
         assert len(tools) == 1
         from langchain_core.tools import BaseTool
+
         assert all(isinstance(t, BaseTool) for t in tools)
 
     def test_get_raises_keyerror_for_missing(self, registry):

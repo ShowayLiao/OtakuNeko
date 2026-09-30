@@ -28,7 +28,9 @@ def test_models_check_requires_business_authentication_dependency():
 def test_models_check_rate_limit_is_scoped_to_authenticated_owner(monkeypatch):
     monkeypatch.setattr(agent, "_MODEL_CHECK_ATTEMPTS", {}, raising=False)
     monkeypatch.setattr(agent.settings, "MODEL_CHECK_RATE_LIMIT", 1, raising=False)
-    monkeypatch.setattr(agent.settings, "MODEL_CHECK_RATE_WINDOW_SECONDS", 60, raising=False)
+    monkeypatch.setattr(
+        agent.settings, "MODEL_CHECK_RATE_WINDOW_SECONDS", 60, raising=False
+    )
 
     assert agent._consume_model_check_rate_limit(_user(7)) is True
     assert agent._consume_model_check_rate_limit(_user(7)) is False
@@ -36,7 +38,9 @@ def test_models_check_rate_limit_is_scoped_to_authenticated_owner(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_models_check_maps_endpoint_rejection_without_leaking_address(monkeypatch):
+async def test_models_check_maps_endpoint_rejection_without_leaking_address(
+    monkeypatch,
+):
     monkeypatch.setattr(agent, "_MODEL_CHECK_ATTEMPTS", {}, raising=False)
     monkeypatch.setattr(
         agent,

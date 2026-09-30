@@ -21,7 +21,11 @@ def test_exposure_map_limits_to_approved_actions():
 
     # Anime: all 5 read-only actions
     assert actions["anime"] == [
-        "search", "get_detail", "get_staff", "get_cast", "get_reviews",
+        "search",
+        "get_detail",
+        "get_staff",
+        "get_cast",
+        "get_reviews",
     ]
 
     # Schedule: only list_schedules (read-only)

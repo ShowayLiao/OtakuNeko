@@ -44,7 +44,9 @@ class FakeModelGateway:
 
 
 @pytest.mark.asyncio
-async def test_primary_task_path_is_model_decision_policy_dispatch_and_response() -> None:
+async def test_primary_task_path_is_model_decision_policy_dispatch_and_response() -> (
+    None
+):
     capability = FakeReadCapability()
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -72,7 +74,9 @@ async def test_primary_task_path_is_model_decision_policy_dispatch_and_response(
 
     runtime = AgentRuntime(object(), model_gateway=gateway, dispatcher=dispatcher)
     result = await runtime.execute_decision(
-        AgentTask(task_id=1, user_id=7, goal="find anime", metadata={"run_id": "run-1"}),
+        AgentTask(
+            task_id=1, user_id=7, goal="find anime", metadata={"run_id": "run-1"}
+        ),
         capability_allowlist={"catalog.search"},
     )
 

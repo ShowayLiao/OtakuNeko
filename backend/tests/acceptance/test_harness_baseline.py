@@ -102,7 +102,9 @@ class ScenarioAdapter:
         yield self._event("message_end", status="success")
 
 
-async def _run_scenario(scenario: str, task_id: int) -> tuple[list[dict[str, Any]], Any]:
+async def _run_scenario(
+    scenario: str, task_id: int
+) -> tuple[list[dict[str, Any]], Any]:
     checkpoints = InMemoryCheckpointStore()
     runtime = AgentRuntime(
         ScenarioAdapter(scenario),
@@ -170,15 +172,18 @@ async def test_agent_stream_baseline_paths_are_deterministic(
         range(1, len(chunks) + 1)
     )
     assert saved.status == "completed"
-    assert all("content" not in chunk for chunk in chunks if chunk["type"] != "message_chunk")
-    tool_events = [
-        chunk for chunk in chunks if chunk["type"].startswith("tool_call")
-    ]
+    assert all(
+        "content" not in chunk for chunk in chunks if chunk["type"] != "message_chunk"
+    )
+    tool_events = [chunk for chunk in chunks if chunk["type"].startswith("tool_call")]
     assert all(chunk["name"].startswith("fake.") for chunk in tool_events)
     if scenario == "tool-error":
-        assert next(chunk for chunk in chunks if chunk["type"] == "tool_call_end")[
-            "status"
-        ] == "error"
+        assert (
+            next(chunk for chunk in chunks if chunk["type"] == "tool_call_end")[
+                "status"
+            ]
+            == "error"
+        )
 
 
 @pytest.mark.asyncio
@@ -271,11 +276,39 @@ def _rss_requests() -> list[tuple[str, str, dict[str, Any] | None]]:
     return [
         ("GET", "/v1/rss/list", None),
         ("GET", "/v1/rss/rules", None),
-        ("POST", "/v1/rss/add", {"url": "https://example.test/feed", "name": "feed", "idempotency_key": "baseline-add"}),
-        ("POST", "/v1/rss/upsert", {"url": "https://example.test/feed", "name": "feed", "idempotency_key": "baseline-upsert"}),
-        ("DELETE", "/v1/rss/remove", {"item_path": "feed", "idempotency_key": "baseline-remove"}),
-        ("POST", "/v1/rss/set-rule", {"rule_name": "rule", "rule": rule, "idempotency_key": "baseline-set-rule"}),
-        ("DELETE", "/v1/rss/remove-rule", {"rule_name": "rule", "idempotency_key": "baseline-remove-rule"}),
+        (
+            "POST",
+            "/v1/rss/add",
+            {
+                "url": "https://example.test/feed",
+                "name": "feed",
+                "idempotency_key": "baseline-add",
+            },
+        ),
+        (
+            "POST",
+            "/v1/rss/upsert",
+            {
+                "url": "https://example.test/feed",
+                "name": "feed",
+                "idempotency_key": "baseline-upsert",
+            },
+        ),
+        (
+            "DELETE",
+            "/v1/rss/remove",
+            {"item_path": "feed", "idempotency_key": "baseline-remove"},
+        ),
+        (
+            "POST",
+            "/v1/rss/set-rule",
+            {"rule_name": "rule", "rule": rule, "idempotency_key": "baseline-set-rule"},
+        ),
+        (
+            "DELETE",
+            "/v1/rss/remove-rule",
+            {"rule_name": "rule", "idempotency_key": "baseline-remove-rule"},
+        ),
     ]
 
 
@@ -284,6 +317,7 @@ def _make_rss_app(user: UserRead | None = None) -> FastAPI:
     app.include_router(rss_router, prefix="/v1")
     app.dependency_overrides[get_idempotency_store] = InMemoryIdempotencyStore
     if user is not None:
+
         async def override_user() -> UserRead:
             return user
 
@@ -323,7 +357,9 @@ def test_qb_allowed_user_id_parser_fails_closed(raw_value: str, expected) -> Non
 
 
 @pytest.mark.asyncio
-async def test_qb_routes_fail_closed_for_anonymous_and_unauthorized_users(monkeypatch) -> None:
+async def test_qb_routes_fail_closed_for_anonymous_and_unauthorized_users(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
     monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7", raising=False)
     monkeypatch.setattr(rss_module, "QBService", FakeQBService)
@@ -368,7 +404,9 @@ async def test_authorized_user_can_reach_all_qb_routes(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_authorized_write_without_idempotency_key_is_rejected(monkeypatch) -> None:
+async def test_authorized_write_without_idempotency_key_is_rejected(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
     monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7")
     monkeypatch.setattr(rss_module, "QBService", FakeQBService)

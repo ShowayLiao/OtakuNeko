@@ -28,18 +28,26 @@ class AgentTaskDef(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="users.id", index=True, nullable=False)
-    task_type: str = Field(nullable=False)  # e.g. "seasonal_scan", "weekly_recommendation"
+    task_type: str = Field(
+        nullable=False
+    )  # e.g. "seasonal_scan", "weekly_recommendation"
     payload: str = Field(default="{}")  # JSON, validated at creation
-    schedule_expr: str = Field(default="* * * * *", nullable=False)  # cron-like: "0 9 * * 1"
+    schedule_expr: str = Field(
+        default="* * * * *", nullable=False
+    )  # cron-like: "0 9 * * 1"
     timezone: str = Field(default="Asia/Shanghai")
     enabled: bool = Field(default=True)
     deleted_at: Optional[datetime] = Field(default=None)
     next_run: Optional[datetime] = Field(default=None)
     catch_up: str = Field(default="latest", nullable=False)  # skip | latest | all
-    policy: str = Field(default="{}", nullable=False)  # JSON policy, validated at creation
+    policy: str = Field(
+        default="{}", nullable=False
+    )  # JSON policy, validated at creation
     idempotency_key: Optional[str] = Field(default=None, index=True)
     created_at: datetime = Field(default_factory=_utc_now)
-    updated_at: datetime = Field(default_factory=_utc_now, sa_column_kwargs={"onupdate": _utc_now})
+    updated_at: datetime = Field(
+        default_factory=_utc_now, sa_column_kwargs={"onupdate": _utc_now}
+    )
 
     def __init__(self, **data: Any) -> None:
         super().__init__(**data)
@@ -63,16 +71,24 @@ class AgentTaskRun(SQLModel, table=True):
     """Execution record for a single scheduled slot."""
 
     __tablename__ = "agent_task_run"
-    __table_args__ = (UniqueConstraint("task_def_id", "scheduled_slot", name="uq_agent_task_run_slot"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "task_def_id", "scheduled_slot", name="uq_agent_task_run_slot"
+        ),
+    )
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    task_def_id: int = Field(foreign_key="agent_task_def.id", index=True, nullable=False)
+    task_def_id: int = Field(
+        foreign_key="agent_task_def.id", index=True, nullable=False
+    )
     user_id: int = Field(foreign_key="users.id", index=True, nullable=False)
     scheduled_slot: datetime = Field(nullable=False)  # the UTC slot this run belongs to
     attempt: int = Field(default=0)
     lease_id: Optional[str] = Field(default=None)
     lease_expires_at: Optional[datetime] = Field(default=None)
-    status: str = Field(default="pending")  # pending | running | success | failed | cancelled
+    status: str = Field(
+        default="pending"
+    )  # pending | running | success | failed | cancelled
     trace_id: Optional[str] = Field(default=None)
     error_category: Optional[str] = Field(default=None)
     started_at: Optional[datetime] = Field(default=None)
@@ -81,7 +97,15 @@ class AgentTaskRun(SQLModel, table=True):
 
 
 _CRON_TOKEN = re.compile(r"^(\*|\d{1,2})(/(\d{1,2}))?(,((\*|\d{1,2})(/(\d{1,2}))?))*$")
-_SECRET_KEYS = {"api_key", "apikey", "token", "secret", "password", "credential", "credentials"}
+_SECRET_KEYS = {
+    "api_key",
+    "apikey",
+    "token",
+    "secret",
+    "password",
+    "credential",
+    "credentials",
+}
 
 
 def _validate_schedule(schedule_expr: str) -> None:
@@ -95,7 +119,9 @@ def _validate_schedule(schedule_expr: str) -> None:
                 raise ValueError("cron step must be greater than zero")
             base = part.split("/", 1)[0]
             if base != "*" and not minimum <= int(base) <= maximum:
-                raise ValueError("schedule_expr contains a value outside its field range")
+                raise ValueError(
+                    "schedule_expr contains a value outside its field range"
+                )
 
 
 def _validate_json_payload(raw: str) -> None:
@@ -110,7 +136,9 @@ def _validate_json_payload(raw: str) -> None:
         if isinstance(item, dict):
             for key, child in item.items():
                 if str(key).lower().replace("-", "_") in _SECRET_KEYS:
-                    raise ValueError("provider credentials are not allowed in scheduled task data")
+                    raise ValueError(
+                        "provider credentials are not allowed in scheduled task data"
+                    )
                 walk(child)
         elif isinstance(item, list):
             for child in item:

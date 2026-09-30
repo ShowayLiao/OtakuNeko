@@ -8,8 +8,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.core.logging import get_logger
 from ..models import Collection, Subject
 from ..schemas.collection import (
-    CollectionCreate, CollectionUpdate, CollectionSearchByID, 
-    CollectionSearchByName, CollectionWithSubject, CollectionWithSubjectList, CollectionUpsertList
+    CollectionCreate,
+    CollectionUpdate,
+    CollectionSearchByID,
+    CollectionSearchByName,
+    CollectionWithSubject,
+    CollectionWithSubjectList,
+    CollectionUpsertList,
 )
 
 logger = get_logger(__name__)
@@ -45,23 +50,23 @@ class CollectionRepo:
     Collection 数据访问层
     封装所有与 Collection 相关的数据库操作
     """
-    
+
     @staticmethod
     def _is_valid_subject(subject):
         return subject is not None and subject.name and subject.name.strip()
-    
+
     @staticmethod
     async def create(db: AsyncSession, collection_data: CollectionCreate) -> Collection:
         """
         创建新的 Collection 记录
-        
+
         Args:
             db: 数据库会话
             collection_data: 收藏数据，使用 CollectionCreate schema
-        
+
         Returns:
             创建的Collection对象
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
@@ -71,46 +76,54 @@ class CollectionRepo:
             db.add(new_collection)
             await db.commit()
             await db.refresh(new_collection)
-            
-            logger.info(f"Created collection: user_id={new_collection.user_id}, source={new_collection.source}, source_id={new_collection.source_id}")
+
+            logger.info(
+                f"Created collection: user_id={new_collection.user_id}, source={new_collection.source}, source_id={new_collection.source_id}"
+            )
             return new_collection
         except SQLAlchemyError as e:
             logger.error(f"创建收藏记录失败: {e}")
             await db.rollback()
             raise
-    
+
     @staticmethod
-    async def get_by_user_and_subject(db: AsyncSession, search_data: CollectionSearchByID) -> Optional[CollectionWithSubject]:
+    async def get_by_user_and_subject(
+        db: AsyncSession, search_data: CollectionSearchByID
+    ) -> Optional[CollectionWithSubject]:
         """
         根据用户ID和条目ID获取Collection，并左外连接Subject表
-        
+
         Args:
             db: 数据库会话
             search_data: 搜索数据，使用 CollectionSearchByID schema
-        
+
         Returns:
             CollectionWithSubject对象，如果Collection不存在则返回None
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
         try:
             # 构建查询，左外连接Subject表
-            query = select(Collection, Subject).outerjoin(
-                Subject, 
-                and_(
-                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
-                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID
+            query = (
+                select(Collection, Subject)
+                .outerjoin(
+                    Subject,
+                    and_(
+                        _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                        _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID,
+                    ),
                 )
-            ).where(
-                _COLLECTION_USER_ID == search_data.user_id,
-                _COLLECTION_SOURCE == search_data.source,
-                _COLLECTION_SOURCE_ID == search_data.source_id
+                .where(
+                    _COLLECTION_USER_ID == search_data.user_id,
+                    _COLLECTION_SOURCE == search_data.source,
+                    _COLLECTION_SOURCE_ID == search_data.source_id,
+                )
             )
-            
+
             result = await db.execute(query)
             row = result.first()
-            
+
             if row:
                 collection, subject = row
                 if not CollectionRepo._is_valid_subject(subject):
@@ -160,10 +173,18 @@ class CollectionRepo:
             raise
 
     @staticmethod
-    async def get_by_user(db: AsyncSession, user_id: int, subject_type: Optional[int] = None, status: Optional[int] = None, skip: int = 0, limit: Optional[int] = 100, sort_by: str = 'updated_at') -> CollectionWithSubjectList:
+    async def get_by_user(
+        db: AsyncSession,
+        user_id: int,
+        subject_type: Optional[int] = None,
+        status: Optional[int] = None,
+        skip: int = 0,
+        limit: Optional[int] = 100,
+        sort_by: str = "updated_at",
+    ) -> CollectionWithSubjectList:
         """
         根据用户ID获取所有Collection，并左外连接Subject表
-        
+
         Args:
             db: 数据库会话
             user_id: 用户ID
@@ -172,130 +193,143 @@ class CollectionRepo:
             skip: 跳过的记录数
             limit: 返回的最大记录数
             sort_by: 排序字段
-        
+
         Returns:
             CollectionWithSubjectList对象，包含收藏及其关联条目信息的列表
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
         try:
             # 构建查询，左外连接Subject表
-            query = select(Collection, Subject).outerjoin(
-                Subject, 
-                and_(
-                    _COLLECTION_SOURCE == _SUBJECT_SOURCE,
-                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID
+            query = (
+                select(Collection, Subject)
+                .outerjoin(
+                    Subject,
+                    and_(
+                        _COLLECTION_SOURCE == _SUBJECT_SOURCE,
+                        _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID,
+                    ),
                 )
-            ).where(_COLLECTION_USER_ID == user_id)
-            
+                .where(_COLLECTION_USER_ID == user_id)
+            )
+
             # 应用条目类型过滤
             if subject_type is not None:
                 # 使用 OR 条件：要么 subject 存在且类型匹配，要么 subject 不存在
                 from sqlmodel import or_
+
                 query = query.where(
-                    or_(
-                        (_SUBJECT_TYPE == subject_type),
-                        (_SUBJECT_ID.is_(None))
-                    )
+                    or_((_SUBJECT_TYPE == subject_type), (_SUBJECT_ID.is_(None)))
                 )
-            
+
             # 应用状态过滤
             if status is not None:
                 query = query.where(_COLLECTION_TYPE == status)
-            
+
             # 应用排序
-            if sort_by == 'updated_at':
+            if sort_by == "updated_at":
                 query = query.order_by(desc(_COLLECTION_UPDATED_AT))
-            elif sort_by == 'rate':
+            elif sort_by == "rate":
                 query = query.order_by(desc(_COLLECTION_RATE))
-            elif sort_by == 'score':
+            elif sort_by == "score":
                 # 使用 rating 字段中的 score 值进行排序
                 from sqlalchemy import cast, Float
-                query = query.order_by(desc(cast(_SUBJECT_RATING.op('->>')('score'), Float)))
-            elif sort_by == 'date':
+
+                query = query.order_by(
+                    desc(cast(_SUBJECT_RATING.op("->>")("score"), Float))
+                )
+            elif sort_by == "date":
                 query = query.order_by(desc(_SUBJECT_DATE))
-            
+
             # 保留 offset；limit=None 用于受控的内部全量画像查询。
             query = query.offset(skip)
             if limit is not None:
                 query = query.limit(limit)
-            
+
             # 执行查询
             result = await db.execute(query)
             rows = result.all()
-            
+
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
                 if not CollectionRepo._is_valid_subject(subject):
                     continue
-                items.append(CollectionWithSubject(collection=collection, subject=subject))
-            
+                items.append(
+                    CollectionWithSubject(collection=collection, subject=subject)
+                )
+
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
         except SQLAlchemyError as e:
             logger.error(f"获取用户收藏列表失败: {e}")
             raise
-    
+
     @staticmethod
-    async def get_all(db: AsyncSession, skip: int = 0, limit: int = 100) -> CollectionWithSubjectList:
+    async def get_all(
+        db: AsyncSession, skip: int = 0, limit: int = 100
+    ) -> CollectionWithSubjectList:
         """
         获取所有Collection记录，并左外连接Subject表
-        
+
         Args:
             db: 数据库会话
             skip: 跳过的记录数
             limit: 返回的最大记录数
-        
+
         Returns:
             CollectionWithSubjectList对象，包含收藏及其关联条目信息的列表
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
         try:
             # 构建查询，左外连接Subject表
             query = select(Collection, Subject).outerjoin(
-                Subject, 
+                Subject,
                 and_(
                     Collection.source == Subject.source,
-                    Collection.source_id == Subject.source_id
-                )
+                    Collection.source_id == Subject.source_id,
+                ),
             )
-            
+
             # 添加分页
             query = query.offset(skip).limit(limit)
-            
+
             # 执行查询
             result = await db.execute(query)
             rows = result.all()
-            
+
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
                 if not CollectionRepo._is_valid_subject(subject):
                     continue
-                items.append(CollectionWithSubject(collection=collection, subject=subject))
-            
+                items.append(
+                    CollectionWithSubject(collection=collection, subject=subject)
+                )
+
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
         except SQLAlchemyError as e:
             logger.error(f"获取收藏列表失败: {e}")
             raise
-    
+
     @staticmethod
-    async def update(db: AsyncSession, collection_data: CollectionUpdate) -> Optional[Collection]:
+    async def update(
+        db: AsyncSession, collection_data: CollectionUpdate
+    ) -> Optional[Collection]:
         """
         更新 Collection 记录
-        
+
         Args:
             db: 数据库会话
             collection_data: 更新的收藏数据，使用 CollectionUpdate schema
-        
+
         Returns:
             更新后的Collection对象或None
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
@@ -336,25 +370,27 @@ class CollectionRepo:
 
             await db.commit()
 
-            logger.info(f"Updated collection: user_id={collection.user_id}, source={collection.source}, source_id={collection.source_id}")
+            logger.info(
+                f"Updated collection: user_id={collection.user_id}, source={collection.source}, source_id={collection.source_id}"
+            )
             return collection
         except SQLAlchemyError as e:
             logger.error(f"更新收藏记录失败: {e}")
             await db.rollback()
             raise
-    
+
     @staticmethod
     async def delete(db: AsyncSession, search_data: CollectionSearchByID) -> bool:
         """
         删除 Collection 记录
-        
+
         Args:
             db: 数据库会话
             search_data: 搜索数据，使用 CollectionSearchByID schema
-        
+
         Returns:
             删除成功返回True，收藏记录不存在返回False
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
@@ -372,32 +408,31 @@ class CollectionRepo:
 
             await db.delete(collection)
             await db.commit()
-            
+
             # 清除用户的统计数据缓存
-            await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+            await FastAPICache.clear(key=f"dashboard:stats:{user_id}")
             logger.info(f"Cleared stats cache for user_id: {user_id}")
-            
+
             return True
         except SQLAlchemyError as e:
             logger.error(f"删除收藏记录失败: {e}")
             await db.rollback()
             raise
-    
+
     @staticmethod
     async def search_by_keyword(
-        db: AsyncSession,
-        search_data: CollectionSearchByName
+        db: AsyncSession, search_data: CollectionSearchByName
     ) -> CollectionWithSubjectList:
         """
         根据关键词搜索收藏记录，并左外连接Subject表获取关联条目
-        
+
         Args:
             db: 数据库会话
             search_data: 搜索数据，使用 CollectionSearchByName schema
-        
+
         Returns:
             CollectionWithSubjectList对象，包含收藏及其关联条目信息的列表
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
@@ -405,19 +440,19 @@ class CollectionRepo:
             from sqlmodel import or_
             from app.schemas.collection import CollectionWithSubjectList
             from app.schemas.collection import CollectionWithSubject
-            
+
             # 构建查询，左外连接Subject表
             query = select(Collection, Subject).outerjoin(
-                Subject, 
+                Subject,
                 and_(
                     _COLLECTION_SOURCE == _SUBJECT_SOURCE,
-                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID
-                )
+                    _COLLECTION_SOURCE_ID == _SUBJECT_SOURCE_ID,
+                ),
             )
-            
+
             # 添加用户过滤条件
             query = query.where(_COLLECTION_USER_ID == search_data.user_id)
-            
+
             # 添加关键词搜索条件，搜索多个字段
             if search_data.keyword:
                 keyword_pattern = f"%{search_data.keyword}%"
@@ -428,109 +463,112 @@ class CollectionRepo:
                     # Subject 表字段
                     _SUBJECT_NAME.ilike(keyword_pattern),
                     _SUBJECT_NAME_CN.ilike(keyword_pattern),
-                    _SUBJECT_SUMMARY.ilike(keyword_pattern)
+                    _SUBJECT_SUMMARY.ilike(keyword_pattern),
                 ]
-                
+
                 # 添加 JSON 字段搜索（使用PostgreSQL兼容的操作）
                 from sqlalchemy import cast, String
+
                 # Collection.tags 搜索
                 conditions.append(
-                    _COLLECTION_TAGS.isnot(None) &
-                    cast(_COLLECTION_TAGS, String).ilike(f"%{search_data.keyword}%")
+                    _COLLECTION_TAGS.isnot(None)
+                    & cast(_COLLECTION_TAGS, String).ilike(f"%{search_data.keyword}%")
                 )
                 # Subject.tags 搜索
                 conditions.append(
-                    _SUBJECT_TAGS.isnot(None) &
-                    cast(_SUBJECT_TAGS, String).ilike(f"%{search_data.keyword}%")
+                    _SUBJECT_TAGS.isnot(None)
+                    & cast(_SUBJECT_TAGS, String).ilike(f"%{search_data.keyword}%")
                 )
                 # Subject.meta_tags 搜索
                 conditions.append(
-                    _SUBJECT_META_TAGS.isnot(None) &
-                    cast(_SUBJECT_META_TAGS, String).ilike(f"%{search_data.keyword}%")
+                    _SUBJECT_META_TAGS.isnot(None)
+                    & cast(_SUBJECT_META_TAGS, String).ilike(f"%{search_data.keyword}%")
                 )
                 # Subject.infobox 搜索
                 conditions.append(
-                    _SUBJECT_INFOBOX.isnot(None) &
-                    cast(_SUBJECT_INFOBOX, String).ilike(f"%{search_data.keyword}%")
+                    _SUBJECT_INFOBOX.isnot(None)
+                    & cast(_SUBJECT_INFOBOX, String).ilike(f"%{search_data.keyword}%")
                 )
-                
+
                 query = query.where(or_(*conditions))
-            
+
             # 应用状态过滤
-            if getattr(search_data, 'status', None) is not None:
+            if getattr(search_data, "status", None) is not None:
                 query = query.where(_COLLECTION_TYPE == search_data.status)
-            
+
             # 应用排序
-            sort_by = getattr(search_data, 'sort_by', 'updated_at')
-            if sort_by == 'updated_at':
+            sort_by = getattr(search_data, "sort_by", "updated_at")
+            if sort_by == "updated_at":
                 query = query.order_by(desc(_COLLECTION_UPDATED_AT))
-            elif sort_by == 'rate':
+            elif sort_by == "rate":
                 query = query.order_by(desc(_COLLECTION_RATE))
-            elif sort_by == 'score':
+            elif sort_by == "score":
                 # 使用 rating 字段中的 score 值进行排序
                 from sqlalchemy import cast, Float
-                query = query.order_by(desc(cast(_SUBJECT_RATING.op('->>')('score'), Float)))
-            elif sort_by == 'date':
+
+                query = query.order_by(
+                    desc(cast(_SUBJECT_RATING.op("->>")("score"), Float))
+                )
+            elif sort_by == "date":
                 query = query.order_by(desc(_SUBJECT_DATE))
-            
+
             # 添加分页
             query = query.offset(search_data.skip).limit(search_data.limit)
-            
+
             # 执行查询
             result = await db.execute(query)
             rows = result.all()
-            
+
             # 转换为CollectionWithSubject对象列表
             items = []
             for collection, subject in rows:
                 if not CollectionRepo._is_valid_subject(subject):
                     continue
-                items.append(CollectionWithSubject(
-                    collection=collection,
-                    subject=subject
-                ))
-            
+                items.append(
+                    CollectionWithSubject(collection=collection, subject=subject)
+                )
+
             # 创建并返回CollectionWithSubjectList对象
-            return CollectionWithSubjectList(
-                total=len(items),
-                items=items
-            )
+            return CollectionWithSubjectList(total=len(items), items=items)
         except SQLAlchemyError as e:
             logger.error(f"搜索收藏记录失败: {e}")
             raise
-    
+
     @staticmethod
     async def batch_upsert(db: AsyncSession, data_list: CollectionUpsertList) -> None:
         """
         批量 Upsert 收藏记录
-        
+
         Args:
             db: 数据库会话
             data_list: 收藏列表数据，使用 CollectionUpsertList schema
-        
+
         Raises:
             SQLAlchemyError: 数据库操作异常
         """
         try:
             from fastapi_cache import FastAPICache
             from ..core.config import settings
+
             if settings.DEPLOY_MODE == "local":
                 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+
                 insert = cast(Any, sqlite_insert)
             elif settings.DEPLOY_MODE == "cloud":
                 from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+
                 insert = cast(Any, postgresql_insert)
             else:
                 logger.error("Deploy mode not supported")
-                return 
+                return
 
             if not data_list.collections:
                 return
 
             # 固定唯一键字段
-            unique_fields = ['user_id', 'source', 'source_id']
+            unique_fields = ["user_id", "source", "source_id"]
             # 唯一键与自增主键都不参与 on-conflict 更新
-            non_updatable_fields = {'id', 'created_at'}
+            non_updatable_fields = {"id", "created_at"}
 
             now = datetime.now(timezone.utc)
             user_ids: set[int] = set()
@@ -570,8 +608,10 @@ class CollectionRepo:
             #    这里必须从语句实际包含的列推导，不能用模型全部列，否则
             #    stmt.excluded.<col> 会指向语句中不存在的列。
             update_cols = (
-                provided_columns | {"updated_at"}
-            ) - set(unique_fields) - non_updatable_fields
+                (provided_columns | {"updated_at"})
+                - set(unique_fields)
+                - non_updatable_fields
+            )
 
             # 3. 构建 set_ 字典
             # 这里的 getattr(stmt.excluded, col) 是核心
@@ -579,22 +619,21 @@ class CollectionRepo:
 
             # 4. 添加 On Conflict 子句
             stmt = stmt.on_conflict_do_update(
-                index_elements=unique_fields,
-                set_=set_dict
+                index_elements=unique_fields, set_=set_dict
             )
-            
+
             await db.execute(stmt)
             await db.commit()
-            
+
             # 清除所有涉及用户的统计数据缓存
             for user_id in user_ids:
-                await FastAPICache.clear(key=f'dashboard:stats:{user_id}')
+                await FastAPICache.clear(key=f"dashboard:stats:{user_id}")
                 logger.info(f"Cleared stats cache for user_id: {user_id}")
-            
-            logger.info(f"批量 Upsert 收藏记录成功，处理了 {len(data_list.collections)} 条记录")
+
+            logger.info(
+                f"批量 Upsert 收藏记录成功，处理了 {len(data_list.collections)} 条记录"
+            )
         except SQLAlchemyError as e:
             logger.error(f"批量 Upsert 收藏记录失败: {e}")
             await db.rollback()
             raise
-
-

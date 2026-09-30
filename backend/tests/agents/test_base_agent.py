@@ -7,6 +7,7 @@ from app.agents.base import BaseAgent
 
 class ConcreteAgent(BaseAgent):
     """Minimal concrete implementation for testing the interface."""
+
     async def execute(self, task):
         return {"result": "done"}
 

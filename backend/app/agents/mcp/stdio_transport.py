@@ -13,8 +13,13 @@ CALL_TIMEOUT = 30.0
 
 
 class StdioTransport(MCPTransport):
-    def __init__(self, server_name: str, command: str, args: List[str] = None,
-                 env: Dict[str, str] = None):
+    def __init__(
+        self,
+        server_name: str,
+        command: str,
+        args: List[str] = None,
+        env: Dict[str, str] = None,
+    ):
         self.server_name = server_name
         self.command = command
         self.args = args or []
@@ -29,13 +34,17 @@ class StdioTransport(MCPTransport):
         if self._connected:
             return
 
-        logger.info("stdio_connecting", extra={
-            "server_name": self.server_name,
-            "command": self.command,
-        })
+        logger.info(
+            "stdio_connecting",
+            extra={
+                "server_name": self.server_name,
+                "command": self.command,
+            },
+        )
 
         self._process = await asyncio.create_subprocess_exec(
-            self.command, *self.args,
+            self.command,
+            *self.args,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -45,21 +54,27 @@ class StdioTransport(MCPTransport):
         self._reader_task = asyncio.create_task(self._read_loop())
         self._connected = True
 
-        init_response = await self._send_request("initialize", {
-            "protocolVersion": "2024-11-05",
-            "capabilities": {},
-            "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
-        })
+        init_response = await self._send_request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
+            },
+        )
 
         if "error" in init_response:
             await self.close()
             raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
 
         await self._send_notification("notifications/initialized", {})
-        logger.info("stdio_connected", extra={
-            "server_name": self.server_name,
-            "server_info": init_response.get("result", {}).get("serverInfo", {}),
-        })
+        logger.info(
+            "stdio_connected",
+            extra={
+                "server_name": self.server_name,
+                "server_info": init_response.get("result", {}).get("serverInfo", {}),
+            },
+        )
 
     async def close(self) -> None:
         self._connected = False
@@ -88,10 +103,13 @@ class StdioTransport(MCPTransport):
         return response.get("result", {}).get("tools", [])
 
     async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
-        response = await self._send_request("tools/call", {
-            "name": name,
-            "arguments": arguments,
-        })
+        response = await self._send_request(
+            "tools/call",
+            {
+                "name": name,
+                "arguments": arguments,
+            },
+        )
         result = response.get("result", {})
         if "error" in response:
             raise RuntimeError(f"MCP tool '{name}' error: {response['error']}")

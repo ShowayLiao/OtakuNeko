@@ -53,9 +53,7 @@ async def test_collection_statistics_endpoint_rejects_unknown_subject_type(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        response = await client.get(
-            "/dashboard/collection-statistics?subject_type=5"
-        )
+        response = await client.get("/dashboard/collection-statistics?subject_type=5")
 
     assert response.status_code == 422
     assert service_called is False

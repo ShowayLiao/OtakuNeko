@@ -40,9 +40,7 @@ class AgentRun(SQLModel, table=True):
     """Durable lifecycle header for one interactive Agent Run."""
 
     __tablename__ = "agent_run"
-    __table_args__ = (
-        Index("ix_agent_run_status_created_at", "status", "created_at"),
-    )
+    __table_args__ = (Index("ix_agent_run_status_created_at", "status", "created_at"),)
 
     run_id: str = Field(primary_key=True, nullable=False)
     user_id: Optional[int] = Field(

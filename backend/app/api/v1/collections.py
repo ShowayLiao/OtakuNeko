@@ -132,7 +132,9 @@ async def get_user_collect(
 async def create_collection(
     sid: Optional[int] = Query(None),
     data: CollectionUpsertRequest = Body(...),
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -161,7 +163,9 @@ async def create_collection(
                 ),
             )
             if collection_read is None:
-                raise HTTPException(status_code=500, detail="Collection write result unavailable")
+                raise HTTPException(
+                    status_code=500, detail="Collection write result unavailable"
+                )
             cache = await _cache_outcome(current_user.id)
             return HttpWriteResult(collection_read, cache_status=cache["status"])
         except ValueError as error:
@@ -171,9 +175,7 @@ async def create_collection(
             raise
 
     resource_key = (
-        f"collections/subject/{sid}"
-        if sid is not None
-        else "collections/create"
+        f"collections/subject/{sid}" if sid is not None else "collections/create"
     )
     return await _execute_collection_write(
         store=store,
@@ -211,7 +213,9 @@ async def get_collection_endpoint(
         raise
     except Exception as error:
         await db.rollback()
-        raise HTTPException(status_code=500, detail="Failed to get collection") from error
+        raise HTTPException(
+            status_code=500, detail="Failed to get collection"
+        ) from error
 
 
 @router.put("/{source}/{source_id}", response_model=CollectionRead)
@@ -219,7 +223,9 @@ async def update_collection_endpoint(
     source: str = Path(...),
     source_id: str = Path(...),
     data: CollectionUpdate = Body(...),
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -244,7 +250,9 @@ async def update_collection_endpoint(
                 ),
             )
             if result is None:
-                raise HTTPException(status_code=500, detail="Collection write result unavailable")
+                raise HTTPException(
+                    status_code=500, detail="Collection write result unavailable"
+                )
             cache = await _cache_outcome(current_user.id)
             return HttpWriteResult(result, cache_status=cache["status"])
         except ValueError as error:
@@ -259,7 +267,11 @@ async def update_collection_endpoint(
         method="PUT",
         resource_key=canonical_collection_resource_key(source, source_id),
         idempotency_key=idempotency_key,
-        payload={"source": source, "source_id": source_id, "data": _request_payload(data)},
+        payload={
+            "source": source,
+            "source_id": source_id,
+            "data": _request_payload(data),
+        },
         operation=operation,
     )
 
@@ -268,7 +280,9 @@ async def update_collection_endpoint(
 async def delete_collection_endpoint(
     source: str = Path(...),
     source_id: str = Path(...),
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -289,7 +303,10 @@ async def delete_collection_endpoint(
                 raise HTTPException(status_code=404, detail="Collection not found")
             cache = await _cache_outcome(current_user.id)
             return HttpWriteResult(
-                {"status": "success", "message": f"Collection {source_id} deleted successfully"},
+                {
+                    "status": "success",
+                    "message": f"Collection {source_id} deleted successfully",
+                },
                 cache_status=cache["status"],
             )
         except Exception:
@@ -310,7 +327,9 @@ async def delete_collection_endpoint(
 @router.post("/batch", response_model=dict)
 async def batch_upsert_collections_endpoint(
     data: CollectionList = Body(...),
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -352,7 +371,9 @@ async def batch_upsert_collections_endpoint(
 @router.post("/sync/bgm")
 async def sync_bgm(
     data: CollectionSyncRequest,
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -377,12 +398,18 @@ async def sync_bgm(
             )
         except httpx.HTTPStatusError as error:
             if error.response.status_code == 404:
-                raise HTTPException(status_code=404, detail="Bangumi user not found") from error
+                raise HTTPException(
+                    status_code=404, detail="Bangumi user not found"
+                ) from error
             raise HTTPException(status_code=502, detail="Bangumi API error") from error
         except httpx.RequestError as error:
-            raise HTTPException(status_code=502, detail="Bangumi network error") from error
+            raise HTTPException(
+                status_code=502, detail="Bangumi network error"
+            ) from error
         except ValueError as error:
-            raise HTTPException(status_code=400, detail="Data validation failed") from error
+            raise HTTPException(
+                status_code=400, detail="Data validation failed"
+            ) from error
         except Exception:
             await db.rollback()
             raise
@@ -402,7 +429,9 @@ async def sync_bgm(
 @router.post("/upload/douban")
 async def upload_douban(
     data: dict,
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -438,7 +467,9 @@ async def upload_douban(
                 item_count=import_count,
             )
         except ValueError as error:
-            raise HTTPException(status_code=400, detail="Data validation failed") from error
+            raise HTTPException(
+                status_code=400, detail="Data validation failed"
+            ) from error
         except Exception:
             await db.rollback()
             raise
@@ -458,7 +489,9 @@ async def upload_douban(
 @router.post("/sync/manual")
 async def sync_manual(
     data: CollectionSyncRequest,
-    idempotency_key: str = Header(..., alias="Idempotency-Key", min_length=1, max_length=128),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=1, max_length=128
+    ),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
     store: IdempotencyStore = Depends(get_collection_idempotency_store),
@@ -466,7 +499,9 @@ async def sync_manual(
     from app.services.collection_service import import_json_collections
 
     if not data.data:
-        raise HTTPException(status_code=400, detail="Data is required when source is 'manual'")
+        raise HTTPException(
+            status_code=400, detail="Data is required when source is 'manual'"
+        )
     item_count = validate_collection_item_count(len(data.data))
 
     async def operation() -> HttpWriteResult:
@@ -489,7 +524,9 @@ async def sync_manual(
                 item_count=item_count,
             )
         except ValueError as error:
-            raise HTTPException(status_code=400, detail="Data validation failed") from error
+            raise HTTPException(
+                status_code=400, detail="Data validation failed"
+            ) from error
         except Exception:
             await db.rollback()
             raise
