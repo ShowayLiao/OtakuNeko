@@ -1,14 +1,14 @@
 from logging.config import fileConfig
 import asyncio
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import pool
 from alembic import context
-from alembic.script import ScriptDirectory
 
 # 导入数据库配置
 from app.core.config import settings
 from sqlmodel import SQLModel
-from app.models import collection, subject, user, agent_memory, agent_run  # 导入所有模型，确保它们被注册
+# Importing the models package registers every table in SQLModel.metadata.
+import app.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

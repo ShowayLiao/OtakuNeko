@@ -37,7 +37,7 @@ jobs:
         run: uv sync --locked --dev
 
       - name: Run backend lint
-        run: uv run --locked ruff check app tests
+        run: uv run --locked ruff check app tests alembic scripts __init__.py
 
       - name: Enforce business-layer import boundaries
         run: uv run --locked ruff check --select TID251 app/services app/models app/repositories app/schemas
