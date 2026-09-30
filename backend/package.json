@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "lucide-react": "^0.562.0",
-    "recharts": "^3.6.0",
-    "tailwind-merge": "^3.4.0"
-  }
-}

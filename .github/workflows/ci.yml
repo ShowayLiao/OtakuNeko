@@ -1,0 +1,206 @@
+name: CI
+
+on:
+  # Every pull request runs the gates regardless of its base branch: the
+  # repository's default branch is release-1.0 while integration work happens on
+  # feature-* branches, so a `main`-only filter meant CI never ran at all.
+  pull_request:
+  push:
+    branches: [main, release-1.0]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  software:
+    name: software
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run backend lint
+        run: uv run --locked ruff check app tests alembic scripts __init__.py
+
+      - name: Enforce business-layer import boundaries
+        run: uv run --locked ruff check --select TID251 app/services app/models app/repositories app/schemas
+
+      - name: Run backend tests
+        run: uv run --locked pytest
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Run frontend lint
+        run: pnpm lint
+        working-directory: frontend
+
+      - name: Run frontend typecheck
+        run: pnpm typecheck
+        working-directory: frontend
+
+      - name: Run frontend tests
+        run: pnpm test
+        working-directory: frontend
+
+      - name: Build frontend
+        run: pnpm build
+        working-directory: frontend
+
+  backend-quality-baseline:
+    name: backend-quality-baseline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Typecheck all backend source and tests against audited debt
+        run: uv run --locked python scripts/check_type_baseline.py
+
+      - name: Check backend dependency declarations
+        run: uv run --locked deptry .
+
+      - name: Check formatting across all backend Python code
+        run: uv run --locked ruff format --check app tests alembic scripts __init__.py
+
+  harness:
+    name: harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run deterministic Harness regression
+        run: uv run --locked pytest tests/harness tests/acceptance tests/capabilities tests/trace -q
+
+      - name: Lint Harness boundaries
+        run: uv run --locked ruff check app/harness app/capabilities app/trace tests/harness tests/acceptance tests/capabilities tests/trace
+
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run offline fast evaluation
+        run: uv run --locked python -m app.evaluation.runner --config evals/config/fast.yaml
+
+      - name: Upload offline evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-evaluation-report
+          path: backend/.runtime/evaluation/fast.json
+          if-no-files-found: error
+
+  repository-quality:
+    name: repository-quality
+    needs: [software, frontend, backend-quality-baseline, harness, benchmark]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize required gates
+        env:
+          SOFTWARE_RESULT: ${{ needs.software.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BACKEND_QUALITY_RESULT: ${{ needs.backend-quality-baseline.result }}
+          HARNESS_RESULT: ${{ needs.harness.result }}
+          BENCHMARK_RESULT: ${{ needs.benchmark.result }}
+        run: |
+          {
+            echo '| Gate | Result |'
+            echo '| --- | --- |'
+            echo "| software | $SOFTWARE_RESULT |"
+            echo "| frontend | $FRONTEND_RESULT |"
+            echo "| backend-quality-baseline | $BACKEND_QUALITY_RESULT |"
+            echo "| harness | $HARNESS_RESULT |"
+            echo "| benchmark | $BENCHMARK_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for result in "$SOFTWARE_RESULT" "$FRONTEND_RESULT" "$BACKEND_QUALITY_RESULT" "$HARNESS_RESULT" "$BENCHMARK_RESULT"; do
+            if [[ "$result" != success ]]; then
+              echo "A required gate did not succeed: $result" >&2
+              exit 1
+            fi
+          done

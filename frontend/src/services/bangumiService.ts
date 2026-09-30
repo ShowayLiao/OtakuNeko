@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- upstream metadata is extensible JSON. */
 import { request } from './client';
 
 // 观看类型枚举

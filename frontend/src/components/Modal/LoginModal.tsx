@@ -1,9 +1,11 @@
-import { Modal, Button, Input, Flexbox, Icon, Tooltip, toast, Avatar } from '@lobehub/ui';
+import { Button, Input, Flexbox, Icon, Tooltip, toast, Avatar } from '@lobehub/ui';
+import { Modal } from 'antd';
 import { 
   User, Fingerprint, Link as LinkIcon, FileText, 
   ChevronDown, ChevronRight, CircleHelp,
   RefreshCw, Sparkles, XCircle, CheckCircle2, AlertCircle
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { authService } from '@/services/auth';
 
@@ -174,7 +176,7 @@ const LoginModal = ({ isOpen, onClose, onLoginSuccess }: LoginModalProps) => {
     required, 
     tooltip 
   }: { 
-    icon: any, 
+    icon: LucideIcon, 
     title: string, 
     required?: boolean, 
     tooltip?: string 

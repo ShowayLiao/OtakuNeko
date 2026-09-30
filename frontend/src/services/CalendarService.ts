@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- calendar provider payloads are external JSON. */
 import dayjs from 'dayjs';
 import isoWeek from 'dayjs/plugin/isoWeek';
 import { BangumiItem, WatchType } from './bangumiService';
@@ -93,8 +94,8 @@ export function generateCSVString(events: any[]): string {
     const startDate = event.StartDate;
     const allDay = event.AllDay ? 'True' : 'False';
     
-    let endDate = event.EndDate || event.StartDate; // 没有传 EndDate 就默认和 StartDate 同一天
-    let startTime = event.StartTime || '';
+    const endDate = event.EndDate || event.StartDate; // 没有传 EndDate 就默认和 StartDate 同一天
+    const startTime = event.StartTime || '';
     let endTime = '';
 
     // 如果不是全天事件，默认加上 30 分钟的结束时间

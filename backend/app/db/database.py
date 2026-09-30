@@ -19,7 +19,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,  # 设置为False，避免SQL语句输出泛滥
     future=True,
-    connect_args=connect_args  # <--- 将参数传入引擎
+    connect_args=connect_args,  # <--- 将参数传入引擎
 )
 
 # --- 修改结束 ---
@@ -30,7 +30,7 @@ AsyncSessionLocal = sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,
-    autoflush=False
+    autoflush=False,
 )  # type: ignore[call-overload]
 
 

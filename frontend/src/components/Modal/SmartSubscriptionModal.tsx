@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable @typescript-eslint/no-explicit-any -- provider-specific form fields are extensible. */
+import React, { useState, useEffect, useCallback } from 'react';
 import { Modal, Form, Input, Collapse, Switch, Button, Select, Space, Card, AutoComplete, Tag, Alert } from 'antd';
 import { Wand2, FolderOpen, Rss, Link, Save, CheckCircle2, AlertCircle } from 'lucide-react';
 import { toast } from '@lobehub/ui';
@@ -53,20 +54,6 @@ const SmartSubscriptionModal = ({
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   const [messageModalValue, setMessageModalValue] = useState('');
 
-  useEffect(() => {
-    if (open) {
-      form.resetFields();
-      form.setFieldsValue({
-        useRegex: true,
-        smartFilter: true,
-        priority: 0,
-        feedName: initialValues?.name,
-        ...initialValues,
-      });
-      fetchRules();
-    }
-  }, [open, initialValues, form]);
-
   // 新增：监听规则名称变化，实现自动回填逻辑
   useEffect(() => {
     // 如果当前输入的名称在现有规则库中
@@ -89,7 +76,7 @@ const SmartSubscriptionModal = ({
     }
   }, [currentRuleName, existingRulesData, form]);
 
-  const fetchRules = async () => {
+  const fetchRules = useCallback(async () => {
     try {
       const response = await getRssRules();
       setExistingRulesData(response.rules);
@@ -109,7 +96,21 @@ const SmartSubscriptionModal = ({
       setExistingRulesData({});
       setRuleOptions([]);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      form.resetFields();
+      form.setFieldsValue({
+        useRegex: true,
+        smartFilter: true,
+        priority: 0,
+        feedName: initialValues?.name,
+        ...initialValues,
+      });
+      void Promise.resolve().then(fetchRules);
+    }
+  }, [open, initialValues, form, fetchRules]);
 
   const handleSmartFillStart = () => {
     const url = form.getFieldValue('rssUrl');

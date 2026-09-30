@@ -1,23 +1,31 @@
 "use client";
 
 import {Header} from './Header';
+import dynamic from 'next/dynamic';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import SearchBar, { createDebouncedSearch } from './SearchBar';
 import { Button, Popover, Flexbox, Tag, Alert, toast } from '@lobehub/ui';
 import { Calendar, CloudSync, ChevronDown, CloudDownload, HardDriveDownload, Share, Save, CalendarArrowUp, ListTodo } from 'lucide-react';
 import { useState, useRef } from 'react';
 import { bulkUpsertSchedules, ScheduleBase, convertBangumiItemsToSchedules, getSchedules } from '@/services/scheduleService';
-import { ExportCalendarModal } from '../Modal/ExportCalendarModal';
-import { ExportTickTickModal } from '../Modal/ExportTickTickModal';
 import { generateCalendarEvents, generateCSVString, generateVoiceCommand } from '@/services/CalendarService';
 import { BangumiItem } from '@/services/bangumiService';
+
+const ExportCalendarModal = dynamic(
+  () => import('../Modal/ExportCalendarModal').then((module) => module.ExportCalendarModal),
+  { ssr: false },
+);
+const ExportTickTickModal = dynamic(
+  () => import('../Modal/ExportTickTickModal').then((module) => module.ExportTickTickModal),
+  { ssr: false },
+);
 
 interface TimetableHeaderProps {
   onSearch?: (value: string) => void;
   onViewModeChange?: (mode: 'grid' | 'list') => void;
-  schedules?: any[];
+  schedules?: BangumiItem[];
   onSaveSuccess?: () => void;
-  onSyncData?: (data: any[]) => void;
+  onSyncData?: (data: BangumiItem[]) => void;
   onExportTickTick?: () => void;
 }
 
@@ -42,7 +50,7 @@ export default function TimetableHeader({
   });
   
   // 添加 ref 用于控制 Popover
-  const syncPopoverRef = useRef<any>(null);
+  const syncPopoverRef = useRef<HTMLDivElement>(null);
 
   const handleSaveSchedules = async () => {
     // 关闭 Popover
@@ -294,19 +302,23 @@ export default function TimetableHeader({
         }
       />
       
-      <ExportCalendarModal
-        open={isExportModalOpen}
-        onCancel={() => setIsExportModalOpen(false)}
-        subjectName={exportData.subjectName}
-        csvString={exportData.csvString}
-        voiceCommand={exportData.voiceCommand}
-      />
-      
-      <ExportTickTickModal
-        open={isTickTickModalOpen}
-        onCancel={() => setIsTickTickModalOpen(false)}
-        items={schedules as BangumiItem[]}
-      />
+      {isExportModalOpen && (
+        <ExportCalendarModal
+          open
+          onCancel={() => setIsExportModalOpen(false)}
+          subjectName={exportData.subjectName}
+          csvString={exportData.csvString}
+          voiceCommand={exportData.voiceCommand}
+        />
+      )}
+
+      {isTickTickModalOpen && (
+        <ExportTickTickModal
+          open
+          onCancel={() => setIsTickTickModalOpen(false)}
+          items={schedules as BangumiItem[]}
+        />
+      )}
     </div>
   );
 }

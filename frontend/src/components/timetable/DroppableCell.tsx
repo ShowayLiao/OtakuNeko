@@ -6,13 +6,15 @@ interface DroppableCellProps {
   children: React.ReactNode;
   className?: string; // 新增
   style?: React.CSSProperties; // 新增
+  data?: Record<string, unknown>;
 }
 
-const DroppableCell: React.FC<DroppableCellProps> = ({ id, children, className, style }) => {
+const DroppableCell: React.FC<DroppableCellProps> = ({ id, children, className, style, data }) => {
   const {
     setNodeRef,
   } = useDroppable({
     id,
+    data,
   });
 
   return (

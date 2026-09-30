@@ -17,4 +17,4 @@ COPY . .
 EXPOSE 8000
 
 # 使用 uv run 确保在正确的同步环境下运行
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]

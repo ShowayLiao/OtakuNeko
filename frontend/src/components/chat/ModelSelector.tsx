@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { Select, Icon } from '@lobehub/ui';
 import { useApiStore } from '@/store/useApiStore';
 import { MODEL_LIST } from '@/store/models';
-import { Settings2 } from 'lucide-react';
+import { Settings2, Bot } from 'lucide-react';
 
 interface ModelSelectorProps {
   value: string; // 当前选中的模型ID
@@ -26,7 +26,7 @@ export const ModelSelector = ({ value, onChange, onOpenSettings }: ModelSelector
   }).map((model) => ({
     label: (
       <div className="flex items-center gap-2 min-w-0">
-        <Icon icon={model.icon} size={16} />
+        <Bot size={16} aria-hidden="true" />
         <span className="flex-1 min-w-0 truncate">{model.name}</span>
         <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">{model.provider}</span>
       </div>

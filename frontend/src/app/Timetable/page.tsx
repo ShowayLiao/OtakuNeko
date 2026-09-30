@@ -1,11 +1,11 @@
 'use client';
+/* eslint-disable @typescript-eslint/no-explicit-any -- timetable API responses contain legacy fields. */
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { DndContext, PointerSensor, useSensor, useSensors, DragOverlay, pointerWithin } from '@dnd-kit/core';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import {
   ActionIcon,
-  Avatar,
   Button,
   Flexbox,
   Header,
@@ -14,42 +14,35 @@ import {
   Tag,
   toast,
 } from '@lobehub/ui';
-import { LobeHub } from '@lobehub/ui/brand';
 import {
   ChevronDown,
   ChevronUp,
   CloudDownload,
   HardDriveDownload,
-  Save,
-  CalendarArrowUp,
-  ListTodo,
   CalendarPlus,
-  User,
-  Settings,
-  LogOut,
-  CloudSync,
-  Share,
   Utensils,
   Archive,
   BookOpen,
   Sparkles,
-  Calendar,
   Trash2
 } from 'lucide-react';
 import { LucideIcon } from 'lucide-react';
-import { getBangumiCalendar, syncBangumiCalendar, BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
-import { ScheduleBase, deleteAllSchedules, getSchedules } from '@/services/scheduleService';
+import { syncBangumiCalendar, BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
+import { deleteAllSchedules, getSchedules } from '@/services/scheduleService';
+import { getTimelineSlotFromRect } from '@/lib/timetableSlots';
 import TimetableHeader from '@/components/header/TimetableHeader';
 import TimelineBoard from '@/components/timetable/TimelineBoard';
 import StandardLanes from '@/components/timetable/StandardLanes';
 import TimelineMediaCard from '@/components/timetable/TimelineMediaCard';
-import { ExportTickTickModal } from '@/components/Modal/ExportTickTickModal';
-import { SpotlightCard } from '@lobehub/ui/awesome';
 import dynamic from 'next/dynamic';
 
 const CollectionPanel = dynamic(() => import('@/components/timetable/DraggablePanel'), {
   ssr: false,
 });
+const ExportTickTickModal = dynamic(
+  () => import('@/components/Modal/ExportTickTickModal').then((module) => module.ExportTickTickModal),
+  { ssr: false },
+);
 
 
 
@@ -284,13 +277,29 @@ export default function WeeklyBoardPage() {
   };
   
   // 拖拽过程处理器
-  const handleDragOver = (event: any) => {
-    const { over } = event;
-    if (over) {
-      setOverSlotId(over.id);
-    } else {
-      setOverSlotId(null);
+  const resolveTimelineOverId = (event: any): string | null => {
+    const over = event?.over;
+    if (!over) return null;
+    const rawId = String(over.id);
+    if (!rawId.startsWith('timeline-')) return rawId;
+
+    const day = Number(rawId.slice('timeline-'.length));
+    const slotHeight = Number(over.data?.current?.slotHeight);
+    const totalSlots = Number(over.data?.current?.totalSlots);
+    const overTop = Number(over.rect?.top);
+    const activeRect = event.active?.rect?.current?.translated || event.active?.rect?.current?.initial;
+    const pointerY = activeRect ? activeRect.top + activeRect.height / 2 : NaN;
+
+    if (!Number.isFinite(day) || !Number.isFinite(slotHeight) || slotHeight <= 0 || !Number.isFinite(totalSlots) || !Number.isFinite(overTop) || !Number.isFinite(pointerY)) {
+      return null;
     }
+
+    const slot = getTimelineSlotFromRect(pointerY, overTop, slotHeight, totalSlots);
+    return `${day}-${slot}`;
+  };
+
+  const handleDragOver = (event: any) => {
+    setOverSlotId(resolveTimelineOverId(event));
   };
   
   const handleDragEnd = (event: any) => {
@@ -304,7 +313,7 @@ export default function WeeklyBoardPage() {
     // 强制转换为字符串，防止因 Number 和 String 不一致导致匹配失败
     const activeIdWithPrefix = String(active.id);
     const realActiveId = getRealId(activeIdWithPrefix);
-    const overId = String(over.id);
+    const overId = resolveTimelineOverId(event) || String(over.id);
 
     // 在调用 setScheduleItems 之前，先将当前的 activeDragItem 状态提取到一个局部变量中
     const currentActiveItem = activeDragItem;
@@ -350,7 +359,7 @@ export default function WeeklyBoardPage() {
         // 情况 B: 拖入时间网格，排除拖到其他卡片上的情况
         const parts = overId.split('-');
         if (parts.length === 2) {
-          let visualDay = parseInt(parts[0], 10);
+          const visualDay = parseInt(parts[0], 10);
           const slotIndex = parseInt(parts[1], 10);
           
           const START_HOUR = 18;
@@ -666,11 +675,13 @@ export default function WeeklyBoardPage() {
       </DragOverlay>
       
       {/* 批量导出到滴答清单 Modal */}
-      <ExportTickTickModal
-        open={isTickTickModalOpen}
-        onCancel={closeTickTickModal}
-        items={scheduleItems}
-      />
+      {isTickTickModalOpen && (
+        <ExportTickTickModal
+          open
+          onCancel={closeTickTickModal}
+          items={scheduleItems}
+        />
+      )}
     </DndContext>
   );
 }

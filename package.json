@@ -1,4 +1,12 @@
 {
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --dir frontend dev",
+    "build": "pnpm --dir frontend build",
+    "start": "pnpm --dir frontend start",
+    "typecheck": "pnpm --dir frontend typecheck",
+    "test": "pnpm --dir frontend test"
+  },
   "dependencies": {
     "emoji-picker-react": "^4.18.0",
     "zustand": "^5.0.11"

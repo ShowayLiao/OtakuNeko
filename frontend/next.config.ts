@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
+  // The repository has a second lockfile at its parent level. Without an
+  // explicit root, Turbopack can select the repository root and fail to
+  // resolve frontend-only packages such as tailwindcss.
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
+
   // ---------------------------------------------------------
   // 1. 核心修改：开启 Standalone 模式
   // 这会让 Next.js 构建时自动分析依赖，只打包必要文件，大幅减小 Docker 体积

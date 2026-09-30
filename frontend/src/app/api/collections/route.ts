@@ -21,8 +21,13 @@ export async function GET(request: Request) {
     
     console.log(`Proxying to Backend: ${backendUrl.toString()}`);
     
-    // 调用后端 API
-    const response = await fetch(backendUrl.toString());
+    // Forward the browser's bearer token. This route runs on the Next.js
+    // server, so the browser Authorization header is not forwarded by
+    // fetch() automatically.
+    const authorization = request.headers.get('authorization');
+    const response = await fetch(backendUrl.toString(), {
+      headers: authorization ? { Authorization: authorization } : undefined,
+    });
     
     // 检查响应状态
     if (!response.ok) {

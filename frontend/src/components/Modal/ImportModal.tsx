@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Modal, Button, Input, Icon, Tooltip, toast, Tag } from '@lobehub/ui';
-import { Search, FileJson, BookOpen, XCircle, CheckCircle2, Star } from 'lucide-react';
+import { FileJson, BookOpen, XCircle, CheckCircle2, Star } from 'lucide-react';
 import { searchService, SearchResult } from '../../services/search';
 import { collectionService } from '../../services/collections';
 import { useAppTheme } from '@/components/providers/LobeProvider';
@@ -8,23 +8,24 @@ import SubjectForm from './form/SubjectForm';
 import { FormData } from './types';
 
 // 添加加载动画样式
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-`;
-document.head.appendChild(style);
-
-
-
 interface ImportModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
 const ImportModal = ({ isOpen, onClose }: ImportModalProps) => {
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => style.remove();
+  }, []);
+
   // --- 状态管理 ---
   const { isDarkMode } = useAppTheme();
   

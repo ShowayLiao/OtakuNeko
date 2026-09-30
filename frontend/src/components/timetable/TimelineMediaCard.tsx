@@ -1,5 +1,6 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- normalized and legacy schedule records are supported. */
 import React from 'react';
-import { Tag, ActionIcon, Tooltip } from '@lobehub/ui';
+import { ActionIcon, Tooltip } from '@lobehub/ui';
 import { X, Tv, Film, Book, Clock } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 
@@ -44,8 +45,6 @@ interface TimelineMediaCardProps {
 
 const TimelineMediaCardInner = ({ data, category, currentHeight, onOpenDetail, onDelete, noBorder, transparent, width, isPanel }: TimelineMediaCardProps) => {
   const { isDarkMode } = useAppTheme();
-  const cardRef = React.useRef<HTMLDivElement>(null);
-  const [cardWidth, setCardWidth] = React.useState<number | null>(null);
   
   // --- 数据清洗 (逻辑封装在内部) ---
   const subject = data.subject || data;
@@ -55,9 +54,7 @@ const TimelineMediaCardInner = ({ data, category, currentHeight, onOpenDetail, o
   const cover = rawCover?.includes('doubanio.com')
     ? `/api/proxy-image?url=${encodeURIComponent(rawCover)}`
     : rawCover;
-  const score = subject?.rating?.score || data.score;
   const eps = subject?.eps || 'N/A';
-  const tags = (subject?.tags || []).slice(0, 3).map((t: any) => t.name);
   
   // 计算分类样式
   const categoryKey = category || data.category || 'default';
@@ -88,40 +85,11 @@ const TimelineMediaCardInner = ({ data, category, currentHeight, onOpenDetail, o
   };
   
   // 宽度检测逻辑
-  React.useEffect(() => {
-    const updateCardWidth = () => {
-      if (cardRef.current) {
-        setCardWidth(cardRef.current.offsetWidth);
-      }
-    };
-    
-    // 初始更新
-    updateCardWidth();
-    
-    // 监听窗口大小变化
-    window.addEventListener('resize', updateCardWidth);
-    
-    // 添加 ResizeObserver 监听卡片宽度变化
-    let resizeObserver: ResizeObserver | null = null;
-    if (cardRef.current && typeof ResizeObserver === 'function') {
-      resizeObserver = new ResizeObserver(updateCardWidth);
-      resizeObserver.observe(cardRef.current);
-    }
-    
-    // 清理函数
-    return () => {
-      window.removeEventListener('resize', updateCardWidth);
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-      }
-    };
-  }, []);
-  
   // ==========================================
   // 1. 响应式特征计算 (Feature Flags)
   // ==========================================
   // 优先使用传入的 width，然后使用测量的宽度，最后使用默认值
-  const w = width || cardWidth || 200; // 默认宽
+  const w = width || 200; // 默认宽
   const h = currentHeight || 60; // 默认高
 
   // 尺寸边界判定
@@ -138,10 +106,8 @@ const TimelineMediaCardInner = ({ data, category, currentHeight, onOpenDetail, o
   // 标题显示策略：
   // 1. 如果使用了大封面，但宽度不足 90px（比如 1/4 宽），文字会被挤没，此时纯享大图（隐藏标题）
   // 2. 如果没用大封面，宽度不足 70px 时不显示标题（1/3 或 1/4 宽度），宽度大于 70px 时显示并截断标题（1/2 宽度）
-  const showTitle = useRectCover ? w > 90 : w > 70;
   
   // 副标题（集数）策略：空间真正充裕时才显示
-  const showSubtitle = useRectCover && !isCompactWidth;
 
   // 动态尺寸计算
   const iconSize = isTinyHeight ? 12 : 16;
@@ -283,7 +249,6 @@ const TimelineMediaCardInner = ({ data, category, currentHeight, onOpenDetail, o
   return (
     <Tooltip title={tooltipContent}>
       <div 
-        ref={cardRef}
         className={`group flex flex-row overflow-hidden cursor-pointer
                     transition-all duration-300 group-hover:shadow-md z-10 rounded-lg
                     ${themeClass}`}

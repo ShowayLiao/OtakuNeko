@@ -40,7 +40,8 @@ export const MODEL_LIST: Model[] = [
   { id: 'claude-3-sonnet-20240229', name: 'Claude 3 Sonnet', provider: 'anthropic', icon: 'Anthropic' },
   
   // 国产模型
-  { id: 'deepseek-chat', name: 'DeepSeek R1', provider: 'deepseek', icon: 'DeepSeek' },
+  { id: 'deepseek-v4-flash', name: 'V4 Flash', provider: 'deepseek', icon: 'DeepSeek' },
+  { id: 'deepseek-v4-pro', name: 'V4 Pro', provider: 'deepseek', icon: 'DeepSeek' },
   { id: 'moonshot-v1-8k', name: 'Kimi', provider: 'moonshot', icon: 'MoonShot' },
   { id: 'qwen-plus', name: '通义千问 Plus', provider: 'qwen', icon: 'Alibaba' },
   { id: 'glm-4', name: '智谱 GLM-4', provider: 'zhipu', icon: 'ZhiPu' },

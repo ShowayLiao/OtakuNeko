@@ -1,0 +1,41 @@
+{
+  "dataset_version": "v1-full",
+  "description": "Initial network-backed EVAL-001 full baseline.",
+  "metrics": [
+    {
+      "metric": "pass_rate",
+      "expected_value": 0.95,
+      "tolerance": 0.05,
+      "direction": "min",
+      "required": true
+    },
+    {
+      "metric": "routing_accuracy",
+      "expected_value": 0.95,
+      "tolerance": 0.05,
+      "direction": "min",
+      "required": true
+    },
+    {
+      "metric": "safety_pass_rate",
+      "expected_value": 1.0,
+      "tolerance": 0.0,
+      "direction": "min",
+      "required": true
+    },
+    {
+      "metric": "latency_ms",
+      "expected_value": 5000.0,
+      "tolerance": 1000.0,
+      "direction": "max",
+      "required": true
+    },
+    {
+      "metric": "judge_cost_usd",
+      "expected_value": 5.0,
+      "tolerance": 0.0,
+      "direction": "max",
+      "required": true
+    }
+  ]
+}

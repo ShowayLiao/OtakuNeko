@@ -1,9 +1,12 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- board accepts legacy schedule records. */
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import DraggableItemWrapper from './DraggableItemWrapper';
-import DroppableCell from './DroppableCell';
+import dynamic from 'next/dynamic';
 import TimelineCell from './TimelineCell';
-import { SpotlightCard } from '@lobehub/ui/awesome';
+import DroppableCell from './DroppableCell';
 import { BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
+import { getTimelineSlotFromPointer } from '@/lib/timetableSlots';
+
+const SubjectModal = dynamic(() => import('../Modal/SubjectModal'), { ssr: false });
 
 // 空数组常量，用于保证没有番剧的空网格每次接收到的都是同一个数组内存引用
 const EMPTY_ARRAY: ScheduleItem[] = [];
@@ -14,8 +17,6 @@ interface TimelineBoardProps {
 }
 
 // 星期标题
-const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
 // 新番时间网格配置
 const START_HOUR = 18;
 const END_HOUR = 26;
@@ -26,15 +27,13 @@ const MIN_SLOT_HEIGHT = 20; // 最小每格高度20px
 const MAX_SLOT_HEIGHT = 120; // 最大每格高度120px
 
 // Today高亮颜色常量
-const TODAY_HIGHLIGHT_CLASS = "bg-green-50/50 dark:bg-green-900/10";
-
 // 计算卡片在网格中的起始行
 const getStartSlot = (time: string): number => {
   const [hourStr, minuteStr] = time.split(':');
   const hour = parseInt(hourStr, 10);
   const minute = parseInt(minuteStr, 10);
   const minutesFromStart = (hour - START_HOUR) * 60 + minute;
-  return Math.round(minutesFromStart / 20) + 1; // Grid行号从1开始，使用round增加磁吸感
+  return getTimelineSlotFromPointer(minutesFromStart + 10, 20, TOTAL_SLOTS);
 };
 
 // 获取当前时间在网格中的位置比例（用于绘制当前时间红线）
@@ -74,7 +73,16 @@ interface TimelineBoardProps {
 
 const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode, currentDay, overSlotId, activeDragItem, onDelete, isLoading, error }) => {
   const [slotHeight, setSlotHeight] = useState(DEFAULT_SLOT_HEIGHT);
+  const [selectedSubject, setSelectedSubject] = useState<any>(null);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
+
+  const handleOpenDetail = useCallback((item: ScheduleItem) => {
+    setSelectedSubject({
+      ...item,
+      subject: item.subject || item,
+      collection: item.collection || {},
+    });
+  }, []);
   
 
   
@@ -106,7 +114,7 @@ const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode
         baseDay = (item.subject.air_weekday - 1) % 7;
       }
       
-      let timeStr = item.watch_time || '';
+      const timeStr = item.watch_time || '';
       let effectiveDay = baseDay;
       let effectiveTimeStr = timeStr;
       let originalTotalMins = 0; // 用于后续排序的绝对分钟数
@@ -180,7 +188,7 @@ const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode
         if (!ni.effectiveTimeStr) return;
         
         const startSlot = getStartSlot(ni.effectiveTimeStr);
-        const slotIndex = startSlot - 1; // 转换为从0开始的索引
+        const slotIndex = startSlot;
         const key = `${day}-${slotIndex}`;
         
         if (!map.has(key)) {
@@ -307,12 +315,14 @@ const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode
                 const isToday = day === currentDay;
                 
                 return (
-                  <div 
-                    key={day} 
+                  <DroppableCell
+                    key={day}
+                    id={`timeline-${day}`}
+                    data={{ day, slotHeight, totalSlots: TOTAL_SLOTS }}
                     className={`relative ${isToday ? 'bg-blue-50/30' : ''} p-3`}
-                    style={{ 
+                    style={{
                       minHeight: `${TOTAL_SLOTS * slotHeight}px`,
-                      zIndex: 0
+                      zIndex: 0,
                     }}
                   >
                     {/* 生成所有时间槽的 TimelineCell */}
@@ -330,6 +340,7 @@ const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode
                           isOver={isOver}
                           activeDragItem={activeDragItem}
                           onDelete={onDelete}
+                          onOpenDetail={handleOpenDetail}
                           slotHeight={slotHeight}
                         />
                       );
@@ -342,13 +353,21 @@ const TimelineBoard: React.FC<TimelineBoardProps> = ({ scheduleItems, isDarkMode
                         top: `${getCurrentTimePosition() * 100}%` 
                       }}
                     ></div>
-                  </div>
+                  </DroppableCell>
                 );
               })} 
             </div>
           </div>
         </div>
       </div>
+
+      {selectedSubject && (
+        <SubjectModal
+          isOpen
+          onClose={() => setSelectedSubject(null)}
+          initialValues={selectedSubject}
+        />
+      )}
     </div>
   );
 };

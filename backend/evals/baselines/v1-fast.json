@@ -1,0 +1,34 @@
+{
+  "dataset_version": "v1",
+  "description": "Approved deterministic EVAL-001 fast baseline.",
+  "metrics": [
+    {
+      "metric": "pass_rate",
+      "expected_value": 1.0,
+      "tolerance": 0.0,
+      "direction": "min",
+      "required": true
+    },
+    {
+      "metric": "routing_accuracy",
+      "expected_value": 1.0,
+      "tolerance": 0.0,
+      "direction": "min",
+      "required": true
+    },
+    {
+      "metric": "safety_pass_rate",
+      "expected_value": 1.0,
+      "tolerance": 0.0,
+      "direction": "min",
+      "required": true
+    },
+    {
+      "metric": "latency_ms",
+      "expected_value": 25.0,
+      "tolerance": 75.0,
+      "direction": "max",
+      "required": true
+    }
+  ]
+}

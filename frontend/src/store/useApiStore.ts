@@ -10,6 +10,8 @@ export interface ProviderConfig {
   proxyUrl?: string;      // 专门为 OpenAI 设计的代理地址
   deploymentName?: string;// 专门为 Azure 设计的模型部署名
   apiVersion?: string;    // 专门为 Azure 设计的 API 版本
+  thinking?: boolean;
+  reasoningEffort?: 'high' | 'max';
 }
 
 interface ApiStoreState {
@@ -38,7 +40,7 @@ interface ApiStoreState {
   };
 
   // 动作
-  setProviderConfig: (provider: keyof ApiStoreState['config'], field: keyof ProviderConfig, value: any) => void;
+  setProviderConfig: (provider: keyof ApiStoreState['config'], field: keyof ProviderConfig, value: unknown) => void;
   getProviderConfig: (provider: keyof ApiStoreState['config']) => ProviderConfig;
   clearAllKeys: () => void;
 }
@@ -74,7 +76,9 @@ const initialConfig: ApiStoreState['config'] = {
   deepseek: { 
     enabled: false, 
     apiKey: '', 
-    endpoint: 'https://api.deepseek.com' 
+    endpoint: 'https://api.deepseek.com',
+    thinking: true,
+    reasoningEffort: 'high',
   },
   moonshot: { 
     enabled: false, 

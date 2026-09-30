@@ -22,7 +22,7 @@ const ResizableCardWrapper: React.FC<ResizableCardWrapperProps> = ({
 }) => {
   const [isResizing, setIsResizing] = useState<null | 'left' | 'right'>(null);
   const [hoveredHandle, setHoveredHandle] = useState<null | 'left' | 'right'>(null);
-  const [tempDayOffset, setTempDayOffset] = useState(0);
+  const [tempOffsetPx, setTempOffsetPx] = useState(0);
   const [tempDuration, setTempDuration] = useState(duration);
   const cardRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef<null | 'left' | 'right'>(null);
@@ -32,10 +32,6 @@ const ResizableCardWrapper: React.FC<ResizableCardWrapperProps> = ({
   const columnWidthRef = useRef<number>(columnWidth || 100);
 
   // 计算当前卡片宽度
-  const getCurrentWidth = (currentDuration: number = duration) => {
-    return currentDuration * columnWidthRef.current + (currentDuration - 1) * gap;
-  };
-
   // 处理指针按下事件
   const handlePointerDown = (e: React.PointerEvent, handle: 'left' | 'right') => {
     e.stopPropagation();
@@ -45,7 +41,7 @@ const ResizableCardWrapper: React.FC<ResizableCardWrapperProps> = ({
     startXRef.current = e.clientX;
     startDayRef.current = day;
     startDurationRef.current = duration;
-    setTempDayOffset(0);
+    setTempOffsetPx(0);
     setTempDuration(duration);
     
     // 添加全局事件监听器
@@ -75,7 +71,7 @@ const ResizableCardWrapper: React.FC<ResizableCardWrapperProps> = ({
     }
     
     // 更新临时状态用于视觉反馈
-    setTempDayOffset(newDay - startDayRef.current);
+    setTempOffsetPx((newDay - startDayRef.current) * gridSize);
     setTempDuration(newDuration);
   };
 
@@ -103,7 +99,7 @@ const ResizableCardWrapper: React.FC<ResizableCardWrapperProps> = ({
     // 重置状态
     setIsResizing(null);
     isResizingRef.current = null;
-    setTempDayOffset(0);
+    setTempOffsetPx(0);
     setTempDuration(duration);
     
     // 移除全局事件监听器
@@ -126,7 +122,7 @@ const ResizableCardWrapper: React.FC<ResizableCardWrapperProps> = ({
   // 计算当前渲染使用的 duration
   const renderDuration = isResizing ? tempDuration : duration;
   // 计算当前渲染使用的偏移量
-  const renderOffset = tempDayOffset * (columnWidthRef.current + gap);
+  const renderOffset = tempOffsetPx;
 
   return (
     <div

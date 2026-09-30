@@ -1,23 +1,24 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from typing import Optional, List
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_session
 from app.services.subject_service import (
-    search_mixed, search_subject_by_name, search_subject_cloud,
-    create_subject, delete_subject, update_subject as update_subject_service,
-    get_subject_by_source, sync_subject_air_time
+    search_mixed,
+    create_subject,
+    delete_subject,
+    update_subject as update_subject_service,
+    get_subject_by_source,
+    sync_subject_air_time,
 )
-from app.services.bangumi_service import sync_subject_detail
-from app.schemas.adaptersV2 import bangumi_subject_to_subjectlist,UnifiedCollectionSubject
-from app.models import Subject, Collection
+from app.schemas.adaptersV2 import UnifiedCollectionSubject, UnifiedList
 from app.schemas.subject import (
-    SubjectRead, SubjectUpdate, SubjectCreate, 
-    SubjectSearchByName, SubjectSearchCloud, SubjectSearchBase,
-    SubjectSearchByID
+    SubjectUpdate,
+    SubjectCreate,
+    SubjectSearchByName,
+    SubjectSearchByID,
 )
-from app.schemas.collection import CollectionList, CollectionRead
 from app.api.deps import get_current_user
-import httpx
+from app.models.enums import SubjectType
 
 from fastapi_cache.decorator import cache
 
@@ -25,21 +26,22 @@ router = APIRouter(prefix="/subjects", tags=["Subjects"])
 
 BANGUMI_API_BASE = "https://api.bgm.tv"
 
-from app.schemas.adaptersV2 import UnifiedList
 
 @router.get("/", response_model=UnifiedList)
 @cache(expire=60)
 async def search_subjects_endpoint(
     q: Optional[str] = Query(None, description="搜索关键词"),
-    type: Optional[int] = Query(None, description="条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)"),
-    current_user = Depends(get_current_user),
+    type: Optional[int] = Query(
+        None, description="条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元)"
+    ),
+    current_user=Depends(get_current_user),
     limit: int = Query(20, ge=1, le=100, description="返回结果数量"),
     offset: int = Query(0, ge=0, description="结果偏移量"),
-    db: AsyncSession = Depends(get_session)
+    db: AsyncSession = Depends(get_session),
 ):
     """
     统一搜索接口，使用混合搜索策略：本地优先，远程回退
-    
+
     Args:
         q: 搜索关键词 (可选)
         type: 条目类型 (1=书籍/2=动画/3=音乐/4=游戏/6=三次元) (可选)
@@ -47,21 +49,21 @@ async def search_subjects_endpoint(
         limit: 返回结果数量限制
         offset: 结果偏移量
         db: 数据库会话
-    
+
     Returns:
         统一视图模型列表
     """
     user_id = current_user.id if current_user else None
-    
+
     # 使用search_mixed函数进行混合搜索
     search_data = SubjectSearchByName(
         keyword=q or "",
-        type=type,
+        type=SubjectType(type) if type is not None else None,
         skip=offset,
         limit=limit,
-        user_id=user_id
+        user_id=user_id,
     )
-    
+
     return await search_mixed(db, search_data)
 
 
@@ -69,31 +71,29 @@ async def search_subjects_endpoint(
 async def get_subject(
     subject_id: int,
     source: str = Query("bangumi", description="数据来源: bangumi/douban"),
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     """
     根据数据源和ID获取单个条目的详细信息
-    
+
     Args:
         subject_id: 条目ID
         source: 数据来源，默认为 "bangumi"
         current_user: 当前认证用户，用于查询收藏状态
         db: 数据库会话
-        
+
     Returns:
         统一视图模型对象，包含条目信息和收藏状态
-        
+
     Raises:
         HTTPException: 当条目不存在时返回404错误
     """
     user_id = current_user.id if current_user else None
-    
+
     # 使用get_subject_by_source函数获取条目
     search_data = SubjectSearchByID(
-        source=source,
-        source_id=str(subject_id),
-        user_id=user_id
+        source=source, source_id=str(subject_id), user_id=user_id
     )
     collection_read = await get_subject_by_source(db, search_data)
     if not collection_read:
@@ -104,87 +104,86 @@ async def get_subject(
 @router.put("/{subject_id}", response_model=UnifiedCollectionSubject)
 async def update_subject(
     subject_id: int,
-    data: SubjectUpdate,
+    data: SubjectUpdate = Body(...),
     source: str = Query("bangumi", description="数据来源: bangumi/douban"),
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     """
     修改条目信息
-    
+
     此接口用于手动修正条目数据。
-    
+
     Args:
         subject_id: 条目ID
         data: 要更新的字段，使用SubjectUpdate schema
         source: 数据来源，默认为 "bangumi"
         current_user: 当前认证用户
         db: 数据库会话
-        
+
     Returns:
         更新后的统一视图模型对象，包含条目信息和收藏状态
-        
+
     Raises:
         HTTPException: 当条目不存在时返回404
     """
     # 设置source和source_id
     data.source = source
     data.source_id = str(subject_id)
-    
+
     # 调用服务层的update_subject函数
     updated_subject = await update_subject_service(db, data)
-    
+
     if not updated_subject:
         raise HTTPException(status_code=404, detail="Subject not found")
-    
+
     # 使用get_subject_by_source获取完整的UnifiedCollectionSubject对象
     user_id = current_user.id if current_user else None
     search_data = SubjectSearchByID(
-        source=source,
-        source_id=str(subject_id),
-        user_id=user_id
+        source=source, source_id=str(subject_id), user_id=user_id
     )
     collection_read = await get_subject_by_source(db, search_data)
     if not collection_read:
         raise HTTPException(status_code=404, detail="Subject not found after update")
-    
+
     return collection_read
 
 
 @router.post("/", response_model=UnifiedCollectionSubject)
 async def create_subject_endpoint(
     data: SubjectCreate,
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     """
     创建新条目
-    
+
     Args:
         data: 条目数据，使用SubjectCreate schema
         current_user: 当前认证用户
         db: 数据库会话
-        
+
     Returns:
         创建后的统一视图模型对象，包含条目信息和收藏状态
-        
+
     Raises:
         HTTPException: 当创建失败时返回错误
     """
     try:
         # 调用服务层的create_subject函数
-        created_subject = await create_subject(db, data)
-        
+        await create_subject(db, data)
+
         # 使用get_subject_by_source获取完整的UnifiedCollectionSubject对象
         from app.schemas.subject import SubjectSearchByID
+
         search_data = SubjectSearchByID(
-            source=data.source,
-            source_id=data.source_id,
-            user_id=current_user.id
+            source=data.source, source_id=data.source_id, user_id=current_user.id
         )
         collection_read = await get_subject_by_source(db, search_data)
         if not collection_read:
-            raise HTTPException(status_code=404, detail="Subject not found after creation")
+            raise HTTPException(
+                status_code=404, detail="Subject not found after creation"
+            )
         return collection_read
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"创建条目失败: {str(e)}")
@@ -194,33 +193,34 @@ async def create_subject_endpoint(
 async def delete_subject_endpoint(
     subject_id: int,
     source: str = Query("bangumi", description="数据来源: bangumi/douban"),
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     """
     删除条目
-    
+
     Args:
         subject_id: 条目ID
         source: 数据来源，默认为 "bangumi"
         current_user: 当前认证用户
         db: 数据库会话
-        
+
     Returns:
         删除结果，包含成功状态和消息
-        
+
     Raises:
         HTTPException: 当删除失败时返回错误
     """
     # 创建SubjectSearchByID对象
     search_data = SubjectSearchByID(
         source=source,
-        source_id=str(subject_id)
+        source_id=str(subject_id),
+        user_id=current_user.id,
     )
-    
+
     # 调用服务层的delete_subject函数
     deleted = await delete_subject(db, search_data)
-    
+
     if deleted:
         return {"status": "success", "message": f"条目 {subject_id} 删除成功"}
     else:
@@ -230,30 +230,31 @@ async def delete_subject_endpoint(
 @router.post("/{id}/sync", response_model=dict)
 async def sync_subject_air_time_endpoint(
     id: str,
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_session)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_session),
 ):
     """
     手动触发番剧时间同步
-    
+
     Args:
         id: Bangumi 番剧ID
         current_user: 当前认证用户
         db: 数据库会话
-        
+
     Returns:
         同步结果，包含成功状态和消息
-        
+
     Raises:
         HTTPException: 当同步失败时返回错误
     """
     try:
         # 调用服务层的 sync_subject_air_time 函数
         success = await sync_subject_air_time(db, id)
-        
-        if success:
-            return {"status": "success", "message": f"番剧 {id} 时间同步成功"}
-        else:
-            raise HTTPException(status_code=404, detail=f"番剧 {id} 不存在或同步失败")
     except Exception as e:
+        # 抓取或写库失败是内部故障，不能伪装成"条目不存在"
         raise HTTPException(status_code=500, detail=f"同步番剧时间失败: {str(e)}")
+
+    if not success:
+        raise HTTPException(status_code=404, detail=f"番剧 {id} 不存在或同步失败")
+
+    return {"status": "success", "message": f"番剧 {id} 时间同步成功"}

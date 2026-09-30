@@ -1,11 +1,14 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- lane data supports legacy schedule records. */
 import React, { useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { LucideIcon } from 'lucide-react';
 import DraggableItemWrapper from './DraggableItemWrapper';
 import DroppableCell from './DroppableCell';
 import TimelineMediaCard from './TimelineMediaCard';
 import ResizableCardWrapper from './ResizableCardWrapper';
-import SubjectModal from '../Modal/SubjectModal';
 import { BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
+
+const SubjectModal = dynamic(() => import('../Modal/SubjectModal'), { ssr: false });
 
 // 卡片内容高度 (不含 gap)
 // 如果 MediaCard 是 variant="timeline"，通常比较矮
@@ -118,7 +121,6 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
   };
 
   // Today高亮颜色常量
-  const TODAY_HIGHLIGHT_CLASS = "bg-green-50/50 dark:bg-green-900/10";
 
   // 缓存按分类分组的项目
   const itemsByCategory = useMemo(() => {
@@ -209,15 +211,8 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                   className="invisible pointer-events-none w-full shrink-0"
                                   style={{ height: `${CARD_HEIGHT}px` }}
                                 >
-                                  {/* 渲染一个不可见的 Card 撑开真实高度 */}
-                                  <div style={{ height: `${CARD_HEIGHT}px`, minHeight: 0 }}>
-                                    <TimelineMediaCard
-                                      data={slot.item}
-                                      currentHeight={CARD_HEIGHT}
-                                      onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                                      onOpenDetail={handleOpenDetail}
-                                    />
-                                  </div>
+                                  {/* 幽灵项只负责占位，不需要创建完整媒体卡和观察器。 */}
+                                  <div style={{ height: `${CARD_HEIGHT}px`, minHeight: 0 }} />
                                 </div>
                               );
                             }
@@ -280,14 +275,16 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
       </div>
 
       {/* 条目详情模态框 */}
-      <SubjectModal
-        isOpen={isSubjectModalOpen}
-        onClose={() => {
-          setIsSubjectModalOpen(false);
-          setSelectedSubject(null);
-        }}
-        initialValues={selectedSubject}
-      />
+      {isSubjectModalOpen && (
+        <SubjectModal
+          isOpen
+          onClose={() => {
+            setIsSubjectModalOpen(false);
+            setSelectedSubject(null);
+          }}
+          initialValues={selectedSubject}
+        />
+      )}
     </>
   );
 };

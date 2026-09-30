@@ -2,11 +2,12 @@ import React, { useState, useRef } from 'react';
 import { Modal, Button, Alert } from 'antd';
 import { Upload, CloudUpload, FileText } from 'lucide-react';
 import { Flexbox } from '@lobehub/ui';
+import type { Role } from '@/store/models';
 
 interface RoleImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (roles: any) => void;
+  onImport: (roles: Role[]) => void;
 }
 
 export default function RoleImportModal({ isOpen, onClose, onImport }: RoleImportModalProps) {
@@ -95,7 +96,7 @@ export default function RoleImportModal({ isOpen, onClose, onImport }: RoleImpor
         onDrop={handleDrop}
         onClick={handleClick}
       >
-        <Flexbox direction="column" align="center" gap={4}>
+        <Flexbox direction="vertical" align="center" gap={4}>
           <CloudUpload size={48} className="text-gray-400" />
           <div>
             <p className="text-lg font-medium">点击或拖拽文件到此处</p>
