@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
+from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.authority import RUNTIME_OWNED_FIELDS, contains_runtime_owned_field
@@ -10,18 +13,24 @@ from app.harness.dispatcher import Dispatcher
 from app.harness.normalizer import ResultNormalizer
 
 
-class NormalizerCapability:
-    name = "normalizer"
-
+class NormalizerCapability(BaseCapability):
     def __init__(self, descriptor: ActionDescriptor, result):
         self.descriptor = descriptor
         self.result = result
         self.calls = 0
 
-    def actions(self):
+    @property
+    def name(self) -> str:
+        return "normalizer"
+
+    @property
+    def description(self) -> str:
+        return "normalizer test capability"
+
+    def actions(self) -> list[ActionDescriptor]:
         return [self.descriptor]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls += 1
         if callable(self.result):
             return self.result()

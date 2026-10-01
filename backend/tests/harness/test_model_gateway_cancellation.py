@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 
 import pytest
 
@@ -26,6 +27,9 @@ class BlockingAdapter:
             self.finished.set()
         raise AssertionError("the provider operation should be cancelled")
 
+    def stream(self, **kwargs: object) -> AsyncIterator[ModelDelta]:
+        raise AssertionError("the test must use complete")
+
 
 class BlockingStreamingAdapter:
     def __init__(self) -> None:
@@ -50,6 +54,9 @@ class BlockingStreamingAdapter:
 class CancelledAdapter:
     async def complete(self, **kwargs) -> ModelCallResult:
         raise asyncio.CancelledError()
+
+    def stream(self, **kwargs: object) -> AsyncIterator[ModelDelta]:
+        raise AssertionError("the test must use complete")
 
 
 class FakeCompletions:
@@ -201,6 +208,9 @@ async def test_gateway_preserves_provider_cancelled_result() -> None:
     class ResultAdapter:
         async def complete(self, **kwargs) -> ModelCallResult:
             return result
+
+        def stream(self, **kwargs: object) -> AsyncIterator[ModelDelta]:
+            raise AssertionError("the test must use complete")
 
     gateway = OpenAIModelGateway(
         api_key="test-key",

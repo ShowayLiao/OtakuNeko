@@ -4,11 +4,20 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ConfigDict
 
+from app.models.enums import CollectionStatus, SubjectType
+from app.schemas.collection import CollectionSubject
+from app.schemas.subject import SubjectRead
 from app.services.user_profile_service import generate_user_profile
 
 
 AS_OF = datetime(2026, 7, 31, tzinfo=timezone.utc)
+
+
+class NestedCollectionSubject(CollectionSubject):
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+    collection: SimpleNamespace
 
 
 def rated_item(
@@ -17,21 +26,29 @@ def rated_item(
     tags: list[str] | None = None,
     days_ago: int = 0,
     subject_id: int = 1,
-) -> SimpleNamespace:
-    subject = SimpleNamespace(
+) -> CollectionSubject:
+    subject = SubjectRead(
         id=subject_id,
+        name=f"Anime {subject_id}",
+        type=SubjectType.ANIME,
         source_id=str(subject_id),
+        summary=None,
         tags=[{"name": tag} for tag in (tags or [])],
     )
-    return SimpleNamespace(
+    return CollectionSubject(
+        type=CollectionStatus.COLLECT,
+        source_id=str(subject_id),
+        user_id=1,
         subject=subject,
         rate=score,
+        comment=None,
+        tags=None,
         updated_at=AS_OF - timedelta(days=days_ago),
     )
 
 
-def preference_items() -> list[SimpleNamespace]:
-    items: list[SimpleNamespace] = []
+def preference_items() -> list[CollectionSubject]:
+    items: list[CollectionSubject] = []
     subject_id = 1
     for score in (9, 9):
         items.append(rated_item(score, tags=["喜欢"], subject_id=subject_id))
@@ -87,17 +104,28 @@ def test_legacy_profile_fields_remain_available():
 
 
 def test_profile_reads_rate_from_nested_collection_object():
-    def nested_item(subject_id: int) -> SimpleNamespace:
-        return SimpleNamespace(
+    def nested_item(subject_id: int) -> CollectionSubject:
+        subject = SubjectRead(
+            id=subject_id,
+            name=f"Anime {subject_id}",
+            type=SubjectType.ANIME,
+            source_id=str(subject_id),
+            summary=None,
+            tags=[{"name": "favorite"}],
+        )
+        return NestedCollectionSubject(
+            type=CollectionStatus.COLLECT,
+            source_id=str(subject_id),
+            user_id=1,
+            rate=None,
+            comment=None,
+            tags=None,
+            updated_at=None,
             collection=SimpleNamespace(
                 rate=9,
                 updated_at=AS_OF,
             ),
-            subject=SimpleNamespace(
-                id=subject_id,
-                source_id=str(subject_id),
-                tags=[{"name": "favorite"}],
-            ),
+            subject=subject,
         )
 
     profile = generate_user_profile(

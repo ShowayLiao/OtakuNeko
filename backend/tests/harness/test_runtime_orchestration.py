@@ -1,3 +1,7 @@
+import json
+from collections.abc import AsyncIterator, Sequence
+from typing import Any
+
 import pytest
 
 from app.agents.agent_registry import AgentRegistry
@@ -7,12 +11,16 @@ from app.capabilities.base import BaseCapability
 from app.capabilities.anime import AnimeCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
-from app.harness.contracts import ExecutionContext
+from app.harness.contracts import ExecutionContext, RunEvent
 from app.harness.dispatcher import Dispatcher
-from app.harness.model_types import ModelCallResult
+from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelCallResult, ModelStreamEvent
+from app.harness.persistence.event_store import EventStore
+from app.harness.persistence.run_store import RunStore
 from app.harness.result import AgentResult
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
+from app.models.agent_run import AgentInvocation, AgentRun, AgentRunEvent
 
 
 class RuntimeRecommendationCapability(BaseCapability):
@@ -100,7 +108,32 @@ class RuntimeAnimeCapability(BaseCapability):
         }
 
 
-class NoModelGateway:
+class DecisionGatewayBase(ModelGateway):
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
+
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("decision test must not synthesize")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("decision test must not synthesize")
+
+
+class NoModelGateway(DecisionGatewayBase):
     async def infer(self, **kwargs):
         raise AssertionError(
             "recommendation specialist must not call the primary model"
@@ -134,7 +167,7 @@ class CatalogCapability(BaseCapability):
         return {"success": True, "item": kwargs}
 
 
-class DecisionModelGateway:
+class DecisionModelGateway(DecisionGatewayBase):
     def __init__(self):
         self.calls = []
 
@@ -149,7 +182,7 @@ class DecisionModelGateway:
         )
 
 
-class RetryDecisionModelGateway:
+class RetryDecisionModelGateway(DecisionGatewayBase):
     def __init__(self):
         self.calls = []
 
@@ -172,7 +205,7 @@ class RetryDecisionModelGateway:
         )
 
 
-class ToolFeedbackModelGateway:
+class ToolFeedbackModelGateway(DecisionGatewayBase):
     def __init__(self):
         self.calls = []
 
@@ -238,7 +271,7 @@ class SpecialistResultAdapter:
         }
 
 
-class FakeModelGateway:
+class FakeModelGateway(ModelGateway):
     def __init__(self):
         self.calls = []
 
@@ -247,6 +280,22 @@ class FakeModelGateway:
             {"goal": goal, "messages": messages, "results": results, **kwargs}
         )
         return "LLM 整合后的推荐报告"
+
+    async def infer(self, **kwargs: Any) -> ModelCallResult:
+        raise AssertionError("synthesis test must not infer a decision")
+
+    def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        raise AssertionError("synthesis test must not stream a decision")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("synthesis test must not call synthesize_result")
 
 
 class FailingModelGateway(FakeModelGateway):
@@ -262,7 +311,7 @@ async def test_runtime_returns_agent_result_to_model_gateway_before_final_messag
     task = AgentTask(
         user_id=1,
         goal="推荐几部动画",
-        metadata={"messages": [{"role": "user", "content": "推荐几部动画"}]},
+        task_metadata={"messages": [{"role": "user", "content": "推荐几部动画"}]},
     )
 
     chunks = [
@@ -323,14 +372,14 @@ async def test_primary_decision_loop_passes_public_capability_catalog_to_model()
     registry.register(CatalogCapability())
     gateway = DecisionModelGateway()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
     task = AgentTask(
         user_id=1,
         goal="lookup",
-        metadata={
+        task_metadata={
             "run_id": "run-catalog",
             "messages": [{"role": "user", "content": "lookup"}],
         },
@@ -366,7 +415,7 @@ async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(
         "app.capabilities.anime.get_bangumi_subject_details", fake_details
     )
 
-    class CalendarWorkflowGateway:
+    class CalendarWorkflowGateway(DecisionGatewayBase):
         def __init__(self):
             self.calls = []
 
@@ -417,14 +466,14 @@ async def test_bangumi_calendar_workflow_exposes_followup_detail_capability(
     registry.register(AnimeCapability())
     gateway = CalendarWorkflowGateway()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
     task = AgentTask(
         user_id=1,
         goal="整理本周值得关注的新番",
-        metadata={
+        task_metadata={
             "run_id": "run-bangumi-workflow",
             "messages": [{"role": "user", "content": "整理本周值得关注的新番"}],
         },
@@ -446,14 +495,14 @@ async def test_primary_decision_loop_retries_once_after_invalid_model_decision()
     registry = CapabilityRegistry()
     gateway = RetryDecisionModelGateway()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
     task = AgentTask(
         user_id=1,
         goal="finish",
-        metadata={
+        task_metadata={
             "run_id": "run-retry",
             "messages": [{"role": "user", "content": "finish"}],
         },
@@ -484,14 +533,14 @@ async def test_primary_decision_loop_uses_provider_compatible_tool_feedback():
     registry.register(CatalogCapability())
     gateway = ToolFeedbackModelGateway()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
     task = AgentTask(
         user_id=1,
         goal="lookup",
-        metadata={
+        task_metadata={
             "run_id": "run-tool-feedback",
             "messages": [{"role": "user", "content": "lookup"}],
         },
@@ -539,7 +588,7 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
     gateway = NoModelGateway()
     dispatcher = Dispatcher(capability_registry)
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=dispatcher,
         specialist_router=AgentRouter(agent_registry),
@@ -547,7 +596,7 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
     task = AgentTask(
         user_id=7,
         goal="推荐动漫",
-        metadata={
+        task_metadata={
             "run_id": "run-recommendation-specialist",
             "messages": [{"role": "user", "content": "推荐动漫"}],
             "collections": [{"id": 1}],
@@ -597,56 +646,99 @@ async def test_primary_runtime_executes_recommendation_specialist_through_dispat
 
 @pytest.mark.asyncio
 async def test_primary_runtime_uses_unique_specialist_invocation_ids_across_runs():
-    class StrictRunStore:
-        def __init__(self):
-            self.runs = {}
-            self.invocations = {}
+    class StrictRunStore(RunStore):
+        def __init__(self) -> None:
+            self.runs: dict[str, AgentRun] = {}
+            self.invocations: dict[str, AgentInvocation] = {}
 
-        async def create(self, run):
+        async def create(self, run: AgentRun | None = None, **fields: Any) -> AgentRun:
+            if run is None:
+                run = AgentRun(**fields)
             self.runs[run.run_id] = run
             return run
 
-        async def get(self, run_id, *, user_id=None):
+        async def get(
+            self, run_id: str, *, user_id: int | None = None
+        ) -> AgentRun | None:
             run = self.runs.get(run_id)
             if run is not None and user_id is not None and run.user_id != user_id:
                 return None
             return run
 
-        async def transition(self, run_id, status, *, error_code=None):
+        async def transition(
+            self, run_id: str, status: str, *, error_code: str | None = None
+        ) -> AgentRun:
             run = self.runs[run_id]
             run.status = status
             run.error_code = error_code
             return run
 
-        async def create_invocation(self, **fields):
-            invocation_id = fields["invocation_id"]
+        async def create_invocation(
+            self,
+            *,
+            run_id: str,
+            invocation_id: str,
+            sequence: int,
+            capability: str,
+            capability_version: str = "v1",
+            input_payload: dict[str, Any] | None = None,
+            idempotency_key: str | None = None,
+        ) -> AgentInvocation:
             existing = self.invocations.get(invocation_id)
-            if existing is not None and existing["run_id"] != fields["run_id"]:
+            if existing is not None and existing.run_id != run_id:
                 raise RuntimeError("invocation identity conflict")
-            self.invocations[invocation_id] = fields
-            return fields
-
-        async def finish_invocation(self, invocation_id, status, *, error_code=None):
-            self.invocations[invocation_id].update(
-                status=status,
-                error_code=error_code,
+            if existing is not None:
+                return existing
+            invocation = AgentInvocation(
+                invocation_id=invocation_id,
+                run_id=run_id,
+                sequence=sequence,
+                capability=capability,
+                capability_version=capability_version,
+                status="running",
+                idempotency_key=idempotency_key,
             )
-            return self.invocations[invocation_id]
+            self.invocations[invocation_id] = invocation
+            return invocation
 
-    class EventStore:
-        def __init__(self):
-            self.events = []
+        async def finish_invocation(
+            self, invocation_id: str, status: str, *, error_code: str | None = None
+        ) -> AgentInvocation:
+            invocation = self.invocations[invocation_id]
+            invocation.status = status
+            invocation.error_code = error_code
+            return invocation
 
-        async def append(self, event, **kwargs):
-            self.events.append(event)
-            return event
+    class MemoryEventStore(EventStore):
+        def __init__(self) -> None:
+            self.events: list[AgentRunEvent] = []
 
-        async def list_after(self, run_id, after_sequence=0, **kwargs):
+        async def append(
+            self, event: RunEvent | AgentRunEvent, *, event_id: str | None = None
+        ) -> AgentRunEvent:
+            stored = (
+                event
+                if isinstance(event, AgentRunEvent)
+                else AgentRunEvent(
+                    event_id=event_id or f"evt-{event.run_id}-{event.sequence}",
+                    run_id=event.run_id,
+                    sequence=event.sequence,
+                    event_type=event.event_type,
+                    invocation_id=event.invocation_id,
+                    payload_json=json.dumps(event.payload),
+                )
+            )
+            self.events.append(stored)
+            return stored
+
+        async def list_after(
+            self, run_id: str, after_sequence: int = 0, *, limit: int = 500
+        ) -> list[AgentRunEvent]:
             return [
                 event
                 for event in self.events
                 if event.run_id == run_id and event.sequence > after_sequence
-            ]
+            ][:limit]
 
     profile_capability = RuntimeRecommendationCapability()
     anime_capability = RuntimeAnimeCapability()
@@ -663,19 +755,19 @@ async def test_primary_runtime_uses_unique_specialist_invocation_ids_across_runs
     )
     run_store = StrictRunStore()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=NoModelGateway(),
         dispatcher=Dispatcher(capability_registry),
         specialist_router=AgentRouter(agent_registry),
         run_store=run_store,
-        event_store=EventStore(),
+        event_store=MemoryEventStore(),
     )
 
     async def execute(run_id):
         task = AgentTask(
             user_id=7,
             goal="推荐动漫",
-            metadata={
+            task_metadata={
                 "run_id": run_id,
                 "messages": [{"role": "user", "content": "推荐动漫"}],
             },
@@ -696,7 +788,7 @@ async def test_primary_runtime_uses_unique_specialist_invocation_ids_across_runs
     assert first[-1]["type"] == "run_completed"
     assert second[-1]["type"] == "run_completed"
     assert len(run_store.invocations) == 4
-    assert {invocation["run_id"] for invocation in run_store.invocations.values()} == {
+    assert {invocation.run_id for invocation in run_store.invocations.values()} == {
         "run-specialist-1",
         "run-specialist-2",
     }

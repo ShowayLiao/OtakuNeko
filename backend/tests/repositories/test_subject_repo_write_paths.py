@@ -60,6 +60,7 @@ async def _count(db_session) -> int:
 @pytest.mark.asyncio
 async def test_create_overwrites_the_existing_row_instead_of_failing(db_session):
     existing = await _seed_subject(db_session, name="旧名称", source_id="100")
+    assert existing.id is not None
 
     created = await SubjectRepo.create(
         db_session,
@@ -68,6 +69,7 @@ async def test_create_overwrites_the_existing_row_instead_of_failing(db_session)
             source_id="100",
             type=SubjectType.ANIME,
             name="新名称",
+            summary=None,
         ),
     )
 
@@ -89,6 +91,7 @@ async def test_create_does_not_null_a_not_null_last_sync(db_session):
     payload 里为 None 的 last_sync 必须被剔除。
     """
     existing = await _seed_subject(db_session, source_id="100")
+    assert existing.id is not None
 
     await SubjectRepo.create(
         db_session,
@@ -97,6 +100,7 @@ async def test_create_does_not_null_a_not_null_last_sync(db_session):
             source_id="100",
             type=SubjectType.ANIME,
             name="新名称",
+            summary=None,
         ),
     )
 
@@ -114,6 +118,7 @@ async def test_create_inserts_a_brand_new_subject(db_session):
             source_id="777",
             type=SubjectType.BOOK,
             name="新条目",
+            summary=None,
         ),
     )
 
@@ -127,10 +132,13 @@ async def test_create_inserts_a_brand_new_subject(db_session):
 @pytest.mark.asyncio
 async def test_update_persists_only_the_provided_fields(db_session):
     existing = await _seed_subject(db_session, name="原名", source_id="100")
+    assert existing.id is not None
 
     updated = await SubjectRepo.update(
         db_session,
-        SubjectUpdate(source="bangumi", source_id="100", name="改名"),
+        SubjectUpdate.model_validate(
+            {"source": "bangumi", "source_id": "100", "name": "改名"}
+        ),
     )
 
     assert updated is not None
@@ -146,7 +154,9 @@ async def test_update_persists_only_the_provided_fields(db_session):
 async def test_update_returns_none_for_a_missing_subject(db_session):
     result = await SubjectRepo.update(
         db_session,
-        SubjectUpdate(source="bangumi", source_id="does-not-exist", name="改名"),
+        SubjectUpdate.model_validate(
+            {"source": "bangumi", "source_id": "does-not-exist", "name": "改名"}
+        ),
     )
 
     assert result is None
@@ -155,9 +165,11 @@ async def test_update_returns_none_for_a_missing_subject(db_session):
 @pytest.mark.asyncio
 async def test_delete_removes_the_row(db_session):
     existing = await _seed_subject(db_session, source_id="100")
+    assert existing.id is not None
 
     deleted = await SubjectRepo.delete(
-        db_session, SubjectSearchByID(source="bangumi", source_id="100")
+        db_session,
+        SubjectSearchByID(source="bangumi", source_id="100", user_id=None),
     )
 
     assert deleted is True
@@ -168,7 +180,8 @@ async def test_delete_removes_the_row(db_session):
 @pytest.mark.asyncio
 async def test_delete_returns_false_for_a_missing_subject(db_session):
     deleted = await SubjectRepo.delete(
-        db_session, SubjectSearchByID(source="bangumi", source_id="missing")
+        db_session,
+        SubjectSearchByID(source="bangumi", source_id="missing", user_id=None),
     )
 
     assert deleted is False
@@ -187,18 +200,22 @@ async def test_batch_upsert_tolerates_items_with_different_key_sets(db_session):
         SubjectUpsertList(
             total=2,
             items=[
-                SubjectUpsert(
-                    source="bangumi",
-                    source_id="900",
-                    type=SubjectType.ANIME,
-                    name="第一条",
-                    series=True,
+                SubjectUpsert.model_validate(
+                    {
+                        "source": "bangumi",
+                        "source_id": "900",
+                        "type": SubjectType.ANIME,
+                        "name": "第一条",
+                        "series": True,
+                    }
                 ),
-                SubjectUpsert(
-                    source="bangumi",
-                    source_id="901",
-                    type=SubjectType.ANIME,
-                    name="第二条",
+                SubjectUpsert.model_validate(
+                    {
+                        "source": "bangumi",
+                        "source_id": "901",
+                        "type": SubjectType.ANIME,
+                        "name": "第二条",
+                    }
                 ),
             ],
         ),
@@ -224,16 +241,20 @@ async def test_batch_upsert_rejects_an_item_missing_a_required_field(db_session)
             SubjectUpsertList(
                 total=2,
                 items=[
-                    SubjectUpsert(
-                        source="bangumi",
-                        source_id="902",
-                        type=SubjectType.ANIME,
-                        name="有名字",
+                    SubjectUpsert.model_validate(
+                        {
+                            "source": "bangumi",
+                            "source_id": "902",
+                            "type": SubjectType.ANIME,
+                            "name": "有名字",
+                        }
                     ),
-                    SubjectUpsert(
-                        source="bangumi",
-                        source_id="903",
-                        type=SubjectType.ANIME,
+                    SubjectUpsert.model_validate(
+                        {
+                            "source": "bangumi",
+                            "source_id": "903",
+                            "type": SubjectType.ANIME,
+                        }
                     ),
                 ],
             ),

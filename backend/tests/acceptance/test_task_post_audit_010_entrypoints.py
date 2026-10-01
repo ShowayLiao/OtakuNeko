@@ -8,15 +8,22 @@ from types import SimpleNamespace
 import pytest
 
 from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.base import BaseCapability
 from app.capabilities.types import ActionDescriptor, CapabilityResult
-from app.harness.contracts import InvocationResult
+from app.harness.contracts import AgentDecision, ExecutionContext, InvocationResult
 from app.harness.scheduler.execution import handle_task_def
 from app.mcp_server import ExposureMap, MCPServer
 from app.mcp_server.context import MCPContext
 
 
-class _ReadCapability:
-    name = "catalog"
+class _ReadCapability(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "catalog"
+
+    @property
+    def description(self) -> str:
+        return "Read catalog data"
 
     def actions(self):
         return [
@@ -28,7 +35,7 @@ class _ReadCapability:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: object) -> dict[str, object]:
         return CapabilityResult.ok(items=["anime-a"]).to_dict()
 
 
@@ -37,13 +44,18 @@ async def test_mcp_tool_dispatches_through_dispatcher(monkeypatch) -> None:
     registry = CapabilityRegistry()
     registry.register(_ReadCapability())
     server = MCPServer(registry, ExposureMap({"catalog": ["search"]}))
-    calls: list[tuple[object, object]] = []
+    calls: list[tuple[AgentDecision, ExecutionContext]] = []
 
     class _Dispatcher:
         def __init__(self, *args, **kwargs):
             pass
 
-        async def dispatch(self, decision, context, **kwargs):
+        async def dispatch(
+            self,
+            decision: AgentDecision,
+            context: ExecutionContext,
+            **kwargs: object,
+        ) -> InvocationResult:
             calls.append((decision, context))
             return InvocationResult(
                 invocation_id=decision.decision_id,

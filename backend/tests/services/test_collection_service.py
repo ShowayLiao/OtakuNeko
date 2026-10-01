@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.enums import CollectionStatus
 from app.repositories.collection_repo import CollectionRepo
 from app.repositories.subject_repo import SubjectRepo
 from app.schemas.adaptersV2 import UnifiedCollectionSubject
@@ -20,6 +22,7 @@ from app.services import collection_service
 @pytest.mark.asyncio
 async def test_upsert_ignores_body_user_id_and_injects_trusted_principal(
     monkeypatch,
+    db_session: AsyncSession,
 ) -> None:
     captured: list[Any] = []
 
@@ -38,9 +41,7 @@ async def test_upsert_ignores_body_user_id_and_injects_trusted_principal(
     monkeypatch.setattr(
         collection_service,
         "collection_with_subject_to_unified",
-        lambda _result: UnifiedCollectionSubject(
-            source="bangumi", source_id="100", type=2, user_id=7
-        ),
+        lambda _result: UnifiedCollectionSubject(collection=None, subject=None),
     )
     monkeypatch.setattr(
         collection_service,
@@ -49,15 +50,18 @@ async def test_upsert_ignores_body_user_id_and_injects_trusted_principal(
     )
 
     request = CollectionUpsertRequest(
-        collection=CollectionUpdate(
-            source="bangumi",
-            source_id="100",
-            type=2,
-            user_id=999,
-        )
+        collection=CollectionUpdate.model_validate(
+            {
+                "source": "bangumi",
+                "source_id": "100",
+                "type": CollectionStatus.COLLECT,
+                "user_id": 999,
+            }
+        ),
+        subject=None,
     )
 
-    await collection_service.upsert_collection(object(), 7, data=request)
+    await collection_service.upsert_collection(db_session, 7, data=request)
 
     assert len(captured) == 1
     item = captured[0].collections[0]
@@ -78,8 +82,9 @@ async def test_cache_clear_failure_returns_structured_warning(monkeypatch) -> No
 
 @pytest.mark.asyncio
 async def test_batch_upsert_rolls_back_when_repository_fails(monkeypatch) -> None:
-    class FakeSession:
-        rollback_calls = 0
+    class FakeSession(AsyncSession):
+        def __init__(self) -> None:
+            self.rollback_calls = 0
 
         async def rollback(self) -> None:
             self.rollback_calls += 1
@@ -91,7 +96,15 @@ async def test_batch_upsert_rolls_back_when_repository_fails(monkeypatch) -> Non
     session = FakeSession()
     collections = CollectionList(
         total=1,
-        items=[CollectionBase(type=2, source="bangumi", source_id="100")],
+        items=[
+            CollectionBase.model_validate(
+                {
+                    "type": CollectionStatus.COLLECT,
+                    "source": "bangumi",
+                    "source_id": "100",
+                }
+            )
+        ],
     )
 
     with pytest.raises(RuntimeError, match="database write failed"):

@@ -8,6 +8,7 @@ from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
 from app.agents.mcp.connection_pool import MCPConnectionPool
+from app.agents.mcp.transport import MCPTransport
 from app.mcp_server import ExposureMap, MCPServer
 from app.trace import AgentTrace
 from app.trace.recorder import bind_trace
@@ -112,7 +113,7 @@ async def test_failed_capability_result_marks_step_failed():
 
 @pytest.mark.asyncio
 async def test_mcp_connection_retry_emits_safe_retry_event():
-    class Transport:
+    class Transport(MCPTransport):
         server_name = "local"
 
         def __init__(self):
@@ -124,6 +125,12 @@ async def test_mcp_connection_retry_emits_safe_retry_event():
                 raise ConnectionError("credential must not be traced")
 
         async def close(self):
+            return None
+
+        async def list_tools(self):
+            return []
+
+        async def call_tool(self, name, arguments):
             return None
 
     trace = AgentTrace(user_id=1)

@@ -14,6 +14,7 @@ async def test_collection_statistics_aggregates_statuses_and_distinct_subject_ta
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
+    assert user.id is not None
 
     subjects = [
         Subject(
@@ -95,6 +96,7 @@ async def test_collection_statistics_does_not_include_other_users_or_subject_typ
     await db_session.commit()
     await db_session.refresh(user)
     await db_session.refresh(other_user)
+    assert user.id is not None
 
     db_session.add_all(
         [

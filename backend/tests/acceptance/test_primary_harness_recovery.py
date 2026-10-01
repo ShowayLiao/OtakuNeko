@@ -61,7 +61,7 @@ async def test_runtime_cancellation_and_resume_preserve_one_terminal_owner() -> 
         task_id=4,
         user_id=7,
         goal="resume",
-        metadata={"run_id": "run-recovery", "thread_id": "thread-recovery"},
+        task_metadata={"run_id": "run-recovery", "thread_id": "thread-recovery"},
     )
     await checkpoints.save(
         "run-recovery",

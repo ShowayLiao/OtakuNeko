@@ -26,7 +26,7 @@ class TestRecommendationCapability:
     async def test_trusted_collection_source_overrides_public_collection_argument(
         self, capability, monkeypatch
     ):
-        captured = {}
+        captured: dict[str, object] = {}
 
         async def fake_collections(db, request):
             captured.update(

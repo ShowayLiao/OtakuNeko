@@ -62,11 +62,13 @@ def test_model_contract_rejects_unknown_status_and_preserves_unknown_usage():
     assert usage.estimated_cost_usd is None
 
     with pytest.raises(ValidationError):
-        ModelCallResult(
-            provider="openai",
-            model="test-model",
-            operation="complete",
-            status="unknown",
+        ModelCallResult.model_validate(
+            {
+                "provider": "openai",
+                "model": "test-model",
+                "operation": "complete",
+                "status": "unknown",
+            }
         )
 
 
@@ -156,7 +158,9 @@ class AsyncChunkStream:
 
 
 @pytest.mark.asyncio
-async def test_provider_stream_normalizes_reasoning_tool_and_final_chunks():
+async def test_provider_stream_normalizes_reasoning_tool_and_final_chunks(
+    monkeypatch: pytest.MonkeyPatch,
+):
     chunks = [
         SimpleNamespace(
             choices=[
@@ -213,7 +217,7 @@ async def test_provider_stream_normalizes_reasoning_tool_and_final_chunks():
         completions.calls.append(kwargs)
         return AsyncChunkStream(chunks)
 
-    completions.create = create
+    monkeypatch.setattr(completions, "create", create)
     adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="deepseek")
 
     deltas = [
@@ -235,7 +239,9 @@ async def test_provider_stream_normalizes_reasoning_tool_and_final_chunks():
 
 
 @pytest.mark.asyncio
-async def test_provider_stream_accumulates_reasoning_and_final_decision():
+async def test_provider_stream_accumulates_reasoning_and_final_decision(
+    monkeypatch: pytest.MonkeyPatch,
+):
     decision_text = (
         '{"schema_version":"v1","decision_id":"d-stream",'
         '"action":"respond","content":"answer"}'
@@ -274,7 +280,7 @@ async def test_provider_stream_accumulates_reasoning_and_final_decision():
         completions.calls.append(kwargs)
         return AsyncChunkStream(chunks)
 
-    completions.create = create
+    monkeypatch.setattr(completions, "create", create)
     adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="deepseek")
 
     deltas = [
@@ -340,7 +346,9 @@ async def test_gateway_stream_infer_emits_deltas_then_final_result():
 
 
 @pytest.mark.asyncio
-async def test_provider_stream_keeps_normalized_error_after_partial_deltas():
+async def test_provider_stream_keeps_normalized_error_after_partial_deltas(
+    monkeypatch: pytest.MonkeyPatch,
+):
     class RateLimitError(Exception):
         pass
 
@@ -357,7 +365,7 @@ async def test_provider_stream_keeps_normalized_error_after_partial_deltas():
         completions.calls.append(kwargs)
         return FailingStream()
 
-    completions.create = create
+    monkeypatch.setattr(completions, "create", create)
     adapter = OpenAICompatibleModelAdapter(FakeClient(completions), provider="openai")
 
     deltas = [

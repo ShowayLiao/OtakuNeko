@@ -84,6 +84,30 @@ class TestToolRegistry:
         schemas = await registry.get_all_schemas()
         assert len(schemas) == 2
 
+    @pytest.mark.asyncio
+    async def test_get_all_schemas_accepts_json_schema_dict(self):
+        registry = ToolRegistry()
+        dict_schema = {
+            "type": "object",
+            "title": "Should be removed",
+            "properties": {"value": {"type": "integer"}},
+        }
+        registry._local_tools["dict_schema_tool"] = type(
+            "DictSchemaTool",
+            (),
+            {
+                "name": "dict_schema_tool",
+                "description": "A tool with a prebuilt schema",
+                "args_schema": dict_schema,
+            },
+        )()
+
+        schemas = await registry.get_all_schemas()
+
+        assert schemas[0]["function"]["parameters"]["type"] == "object"
+        assert "title" not in schemas[0]["function"]["parameters"]
+        assert dict_schema["title"] == "Should be removed"
+
     def test_register_capability_registry_uses_canonical_derivation(self):
         from app.capabilities.factory import build_capability_registry
 

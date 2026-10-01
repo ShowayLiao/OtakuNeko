@@ -28,7 +28,9 @@ async def test_run_store_create_get_and_transition(db_session) -> None:
 
     assert created.run_id == "run-1"
     assert created.status == "queued"
-    assert (await store.get("run-1", user_id=7)).model == "test-model"
+    loaded = await store.get("run-1", user_id=7)
+    assert loaded is not None
+    assert loaded.model == "test-model"
     assert await store.get("run-1", user_id=8) is None
 
     running = await store.transition("run-1", "running")

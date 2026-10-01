@@ -29,7 +29,7 @@ class MCPHeartbeat:
         self._timeout = timeout
         self._max_misses = max_misses
         self._status: Dict[str, HeartbeatStatus] = {}
-        self._task: asyncio.Task = None
+        self._task: asyncio.Task | None = None
         self._running = False
         self._on_dead_callback = None
 

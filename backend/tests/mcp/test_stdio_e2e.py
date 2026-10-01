@@ -18,6 +18,17 @@ import pytest
 from app.mcp_server import MAX_REQUEST_SIZE
 
 
+def _require_stdio(
+    proc: asyncio.subprocess.Process,
+) -> tuple[asyncio.StreamWriter, asyncio.StreamReader]:
+    """Return the subprocess stdio streams after validating their presence."""
+    stdin = proc.stdin
+    stdout = proc.stdout
+    assert stdin is not None
+    assert stdout is not None
+    return stdin, stdout
+
+
 def _build_initialize() -> bytes:
     return (
         json.dumps(
@@ -48,22 +59,23 @@ async def test_initialize_and_tools_list():
     )
 
     try:
+        stdin, stdout = _require_stdio(proc)
         # initialize
-        proc.stdin.write(_build_initialize())
-        await proc.stdin.drain()
+        stdin.write(_build_initialize())
+        await stdin.drain()
 
-        line = await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        line = await asyncio.wait_for(stdout.readline(), timeout=15)
         resp = json.loads(line.decode())
         assert resp["result"]["protocolVersion"] == "2024-11-05"
 
         # tools/list
-        proc.stdin.write(
+        stdin.write(
             json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}).encode()
             + b"\n"
         )
-        await proc.stdin.drain()
+        await stdin.drain()
 
-        line = await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        line = await asyncio.wait_for(stdout.readline(), timeout=15)
         resp = json.loads(line.decode())
         tools = resp["result"]["tools"]
         names = {t["name"] for t in tools}
@@ -102,9 +114,10 @@ async def test_tools_call_anime_search():
     )
 
     try:
-        proc.stdin.write(_build_initialize())
-        await proc.stdin.drain()
-        await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(_build_initialize())
+        await stdin.drain()
+        await asyncio.wait_for(stdout.readline(), timeout=15)
 
         # tools/call anime_search
         payload = (
@@ -121,10 +134,10 @@ async def test_tools_call_anime_search():
             )
             + "\n"
         )
-        proc.stdin.write(payload.encode())
-        await proc.stdin.drain()
+        stdin.write(payload.encode())
+        await stdin.drain()
 
-        line = await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        line = await asyncio.wait_for(stdout.readline(), timeout=15)
         resp = json.loads(line.decode())
         content = json.loads(resp["result"]["content"][0]["text"])
         assert resp["id"] == 3
@@ -152,9 +165,10 @@ async def test_unknown_method_returns_error():
     )
 
     try:
-        proc.stdin.write(_build_initialize())
-        await proc.stdin.drain()
-        await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(_build_initialize())
+        await stdin.drain()
+        await asyncio.wait_for(stdout.readline(), timeout=15)
 
         payload = (
             json.dumps(
@@ -166,10 +180,10 @@ async def test_unknown_method_returns_error():
             )
             + "\n"
         )
-        proc.stdin.write(payload.encode())
-        await proc.stdin.drain()
+        stdin.write(payload.encode())
+        await stdin.drain()
 
-        line = await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        line = await asyncio.wait_for(stdout.readline(), timeout=15)
         resp = json.loads(line.decode())
         assert resp["error"]["code"] == -32601
 
@@ -190,9 +204,10 @@ async def test_unknown_tool_returns_failure():
     )
 
     try:
-        proc.stdin.write(_build_initialize())
-        await proc.stdin.drain()
-        await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(_build_initialize())
+        await stdin.drain()
+        await asyncio.wait_for(stdout.readline(), timeout=15)
 
         payload = (
             json.dumps(
@@ -205,10 +220,10 @@ async def test_unknown_tool_returns_failure():
             )
             + "\n"
         )
-        proc.stdin.write(payload.encode())
-        await proc.stdin.drain()
+        stdin.write(payload.encode())
+        await stdin.drain()
 
-        line = await asyncio.wait_for(proc.stdout.readline(), timeout=15)
+        line = await asyncio.wait_for(stdout.readline(), timeout=15)
         resp = json.loads(line.decode())
         assert resp["error"]["code"] == -32602
 
@@ -228,21 +243,22 @@ async def test_malformed_json_returns_parse_error_and_server_continues():
     )
 
     try:
-        proc.stdin.write(b"{not-json}\n")
-        await proc.stdin.drain()
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(b"{not-json}\n")
+        await stdin.drain()
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         assert response["id"] is None
         assert response["error"]["code"] == -32700
 
-        proc.stdin.write(
+        stdin.write(
             json.dumps({"jsonrpc": "2.0", "id": 8, "method": "tools/list"}).encode()
             + b"\n"
         )
-        await proc.stdin.drain()
+        await stdin.drain()
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         assert response["id"] == 8
     finally:
@@ -261,12 +277,13 @@ async def test_nonstandard_json_constant_returns_parse_error():
     )
 
     try:
-        proc.stdin.write(
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(
             b'{"jsonrpc":"2.0","id":12,"method":"tools/list","params":{"value":NaN}}\n'
         )
-        await proc.stdin.drain()
+        await stdin.drain()
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         assert response["id"] is None
         assert response["error"]["code"] == -32700
@@ -286,7 +303,8 @@ async def test_initialized_notification_emits_no_protocol_frame():
     )
 
     try:
-        proc.stdin.write(
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(
             json.dumps(
                 {
                     "jsonrpc": "2.0",
@@ -295,14 +313,14 @@ async def test_initialized_notification_emits_no_protocol_frame():
             ).encode()
             + b"\n"
         )
-        proc.stdin.write(
+        stdin.write(
             json.dumps({"jsonrpc": "2.0", "id": 9, "method": "tools/list"}).encode()
             + b"\n"
         )
-        await proc.stdin.drain()
+        await stdin.drain()
 
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         assert response["id"] == 9
     finally:
@@ -326,10 +344,11 @@ async def test_authenticated_media_call_uses_trusted_environment():
     )
 
     try:
-        proc.stdin.write(_build_initialize())
-        await proc.stdin.drain()
-        await asyncio.wait_for(proc.stdout.readline(), timeout=15)
-        proc.stdin.write(
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(_build_initialize())
+        await stdin.drain()
+        await asyncio.wait_for(stdout.readline(), timeout=15)
+        stdin.write(
             json.dumps(
                 {
                     "jsonrpc": "2.0",
@@ -340,10 +359,10 @@ async def test_authenticated_media_call_uses_trusted_environment():
             ).encode()
             + b"\n"
         )
-        await proc.stdin.drain()
+        await stdin.drain()
 
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         content = json.loads(response["result"]["content"][0]["text"])
         assert content["success"] is False
@@ -365,20 +384,21 @@ async def test_oversized_request_returns_error_and_server_continues():
     )
 
     try:
-        proc.stdin.write(b"x" * (MAX_REQUEST_SIZE + 1) + b"\n")
-        await proc.stdin.drain()
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(b"x" * (MAX_REQUEST_SIZE + 1) + b"\n")
+        await stdin.drain()
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         assert response["error"]["code"] == -32600
 
-        proc.stdin.write(
+        stdin.write(
             json.dumps({"jsonrpc": "2.0", "id": 11, "method": "tools/list"}).encode()
             + b"\n"
         )
-        await proc.stdin.drain()
+        await stdin.drain()
         response = json.loads(
-            (await asyncio.wait_for(proc.stdout.readline(), timeout=15)).decode()
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
         )
         assert response["id"] == 11
     finally:
@@ -396,7 +416,8 @@ async def test_clean_eof_exits_zero():
         stderr=asyncio.subprocess.PIPE,
     )
 
-    proc.stdin.close()
+    stdin, _ = _require_stdio(proc)
+    stdin.close()
     await asyncio.wait_for(proc.wait(), timeout=15)
     assert proc.returncode == 0
 
@@ -404,8 +425,9 @@ async def test_clean_eof_exits_zero():
 async def _cleanup_proc(proc: asyncio.subprocess.Process) -> None:
     """Close stdin and verify graceful stdio shutdown before forcing exit."""
     try:
-        if proc.returncode is None:
-            proc.stdin.close()
+        stdin = proc.stdin
+        if proc.returncode is None and stdin is not None:
+            stdin.close()
     except Exception:
         pass
     try:

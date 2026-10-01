@@ -2,19 +2,31 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Sequence
+from typing import Any
+
 import pytest
 
+from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.contracts import ErrorCode
 from app.harness.dispatcher import Dispatcher
-from app.harness.model_types import ModelCallResult
+from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelCallResult, ModelStreamEvent
+from app.harness.result import AgentResult
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 
 
-class _SecureCapability:
-    name = "secure"
+class _SecureCapability(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "secure"
+
+    @property
+    def description(self) -> str:
+        return "Secure read"
 
     def __init__(self) -> None:
         self.calls = 0
@@ -29,16 +41,16 @@ class _SecureCapability:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls += 1
         return CapabilityResult.ok(value="should not be reached").to_dict()
 
 
-class _OneDecisionGateway:
+class _OneDecisionGateway(ModelGateway):
     def __init__(self, decision: dict) -> None:
         self.decision = decision
 
-    async def infer(self, **kwargs) -> ModelCallResult:
+    async def infer(self, **kwargs: Any) -> ModelCallResult:
         return ModelCallResult(
             provider="fake",
             model="fake-model",
@@ -47,6 +59,29 @@ class _OneDecisionGateway:
             decision=self.decision,
         )
 
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
+
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("synthesis is outside this acceptance path")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("synthesis is outside this acceptance path")
+
 
 @pytest.mark.asyncio
 async def test_forged_identity_is_rejected_before_capability_execution() -> None:
@@ -54,7 +89,7 @@ async def test_forged_identity_is_rejected_before_capability_execution() -> None
     registry = CapabilityRegistry()
     registry.register(capability)
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=_OneDecisionGateway(
             {
                 "schema_version": "v1",
@@ -71,7 +106,10 @@ async def test_forged_identity_is_rejected_before_capability_execution() -> None
 
     result = await runtime.execute_decision(
         AgentTask(
-            task_id=2, user_id=7, goal="read", metadata={"run_id": "run-security"}
+            task_id=2,
+            user_id=7,
+            goal="read",
+            task_metadata={"run_id": "run-security"},
         ),
         capability_allowlist={"secure.read"},
     )

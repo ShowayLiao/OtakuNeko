@@ -44,6 +44,7 @@ async def _seed_user(db_session) -> User:
     )
     db_session.add(user)
     await db_session.commit()
+    assert user.id is not None
     return user
 
 
@@ -95,17 +96,21 @@ async def _reload(db_session, collection_id: int) -> Collection | None:
 @pytest.mark.asyncio
 async def test_update_persists_changes_and_bumps_updated_at(db_session):
     user = await _seed_user(db_session)
+    assert user.id is not None
     await _seed_subject(db_session)
     seeded = await _seed_collection(db_session, user.id)
+    assert seeded.id is not None
 
     updated = await CollectionRepo.update(
         db_session,
-        CollectionUpdate(
-            user_id=user.id,
-            source="bangumi",
-            source_id=SUBJECT_ID,
-            type=CollectionStatus.COLLECT,
-            rate=9,
+        CollectionUpdate.model_validate(
+            {
+                "user_id": user.id,
+                "source": "bangumi",
+                "source_id": SUBJECT_ID,
+                "type": CollectionStatus.COLLECT,
+                "rate": 9,
+            }
         ),
     )
 
@@ -123,14 +128,17 @@ async def test_update_persists_changes_and_bumps_updated_at(db_session):
 @pytest.mark.asyncio
 async def test_update_returns_none_when_the_collection_is_missing(db_session):
     user = await _seed_user(db_session)
+    assert user.id is not None
 
     result = await CollectionRepo.update(
         db_session,
-        CollectionUpdate(
-            user_id=user.id,
-            source="bangumi",
-            source_id="does-not-exist",
-            type=CollectionStatus.COLLECT,
+        CollectionUpdate.model_validate(
+            {
+                "user_id": user.id,
+                "source": "bangumi",
+                "source_id": "does-not-exist",
+                "type": CollectionStatus.COLLECT,
+            }
         ),
     )
 
@@ -145,15 +153,20 @@ async def test_update_rejects_a_missing_identity_field(db_session):
     """
     with pytest.raises(ValueError):
         await CollectionRepo.update(
-            db_session, CollectionUpdate(source="bangumi", source_id=SUBJECT_ID)
+            db_session,
+            CollectionUpdate.model_validate(
+                {"source": "bangumi", "source_id": SUBJECT_ID}
+            ),
         )
 
 
 @pytest.mark.asyncio
 async def test_delete_removes_the_row(db_session):
     user = await _seed_user(db_session)
+    assert user.id is not None
     await _seed_subject(db_session)
     seeded = await _seed_collection(db_session, user.id)
+    assert seeded.id is not None
 
     deleted = await CollectionRepo.delete(
         db_session,
@@ -167,6 +180,7 @@ async def test_delete_removes_the_row(db_session):
 @pytest.mark.asyncio
 async def test_delete_returns_false_for_a_missing_collection(db_session):
     user = await _seed_user(db_session)
+    assert user.id is not None
 
     deleted = await CollectionRepo.delete(
         db_session,
@@ -180,17 +194,20 @@ async def test_delete_returns_false_for_a_missing_collection(db_session):
 async def test_batch_upsert_fills_not_null_columns_for_a_new_row(db_session):
     """回归：NOT NULL constraint failed: collection.updated_at / collection.type。"""
     user = await _seed_user(db_session)
+    assert user.id is not None
 
     await CollectionRepo.batch_upsert(
         db_session,
         CollectionUpsertList(
             total=1,
             collections=[
-                CollectionUpsert(
-                    user_id=user.id,
-                    source="bangumi",
-                    source_id=SUBJECT_ID,
-                    type=CollectionStatus.WISH,
+                CollectionUpsert.model_validate(
+                    {
+                        "user_id": user.id,
+                        "source": "bangumi",
+                        "source_id": SUBJECT_ID,
+                        "type": CollectionStatus.WISH,
+                    }
                 )
             ],
         ),
@@ -208,6 +225,7 @@ async def test_batch_upsert_fills_not_null_columns_for_a_new_row(db_session):
 @pytest.mark.asyncio
 async def test_batch_upsert_conflict_updates_only_provided_fields(db_session):
     user = await _seed_user(db_session)
+    assert user.id is not None
     seeded = await _seed_collection(
         db_session,
         user.id,
@@ -216,16 +234,20 @@ async def test_batch_upsert_conflict_updates_only_provided_fields(db_session):
         comment="保留我",
     )
 
+    assert seeded.id is not None
+
     await CollectionRepo.batch_upsert(
         db_session,
         CollectionUpsertList(
             total=1,
             collections=[
-                CollectionUpsert(
-                    user_id=user.id,
-                    source="bangumi",
-                    source_id=SUBJECT_ID,
-                    type=CollectionStatus.DO,
+                CollectionUpsert.model_validate(
+                    {
+                        "user_id": user.id,
+                        "source": "bangumi",
+                        "source_id": SUBJECT_ID,
+                        "type": CollectionStatus.DO,
+                    }
                 )
             ],
         ),
@@ -244,7 +266,10 @@ async def test_batch_upsert_conflict_updates_only_provided_fields(db_session):
 async def test_batch_upsert_rejects_a_missing_type(db_session):
     """type 是 NOT NULL，数据库在冲突解析之前就会校验，必须明确拒绝。"""
     user = await _seed_user(db_session)
-    upsert = CollectionUpsert(user_id=user.id, source="bangumi", source_id=SUBJECT_ID)
+    assert user.id is not None
+    upsert = CollectionUpsert.model_validate(
+        {"user_id": user.id, "source": "bangumi", "source_id": SUBJECT_ID}
+    )
     assert upsert.type is None
 
     with pytest.raises(ValueError, match="type"):

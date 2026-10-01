@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from time import perf_counter
 
-from app.trace import AgentTrace, TraceStep, TraceEvent
+from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
 import pytest
 
 from app.trace.redaction import UnsafeTraceDataError, redact, sanitize_trace
@@ -15,7 +15,7 @@ from app.trace.recorder import TraceRecorder
 class TestEventContract:
     def test_event_creation(self):
         evt = TraceEvent(
-            event_type="node_start",
+            event_type=TraceEventType.NODE_START,
             data={"node": "think"},
             correlation_id="corr-1",
         )
@@ -24,9 +24,9 @@ class TestEventContract:
         assert evt.parent_event_id is None
 
     def test_event_with_parent(self):
-        parent = TraceEvent(event_type="model_call", data={})
+        parent = TraceEvent(event_type=TraceEventType.MODEL_CALL, data={})
         child = TraceEvent(
-            event_type="tool_call",
+            event_type=TraceEventType.TOOL_CALL,
             data={"name": "search"},
             correlation_id=parent.correlation_id,
             parent_event_id=parent.event_id,
@@ -39,7 +39,10 @@ class TestEventContract:
         trace = AgentTrace(task_id=1, goal="test")
         step = TraceStep(step_index=0, step_label="search", agent_name="AnimeAgent")
         step.events.append(
-            TraceEvent(event_type="capability_call", data={"action": "search"})
+            TraceEvent(
+                event_type=TraceEventType.CAPABILITY_CALL,
+                data={"action": "search"},
+            )
         )
         trace.add_step(step)
         trace.mark_completed()
@@ -150,7 +153,7 @@ class TestRedaction:
         step = TraceStep(step_index=0, step_label="model", agent_name="agent")
         step.events.append(
             TraceEvent(
-                event_type="model_call",
+                event_type=TraceEventType.MODEL_CALL,
                 data={"chain_of_thought": "do not persist"},
             )
         )

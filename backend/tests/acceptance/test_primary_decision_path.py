@@ -1,17 +1,30 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Sequence
+from typing import Any
+
 import pytest
 
+from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.dispatcher import Dispatcher
-from app.harness.model_types import ModelCallResult
+from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelCallResult, ModelStreamEvent
+from app.harness.result import AgentResult
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 
 
-class FakeReadCapability:
-    name = "catalog"
+class FakeReadCapability(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "catalog"
+
+    @property
+    def description(self) -> str:
+        return "fake read"
+
     calls = 0
 
     def actions(self):
@@ -24,16 +37,16 @@ class FakeReadCapability:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         type(self).calls += 1
         return CapabilityResult.ok(items=["anime-a"]).to_dict()
 
 
-class FakeModelGateway:
+class FakeModelGateway(ModelGateway):
     def __init__(self, decisions: list[dict]):
         self.decisions = iter(decisions)
 
-    async def infer(self, **kwargs) -> ModelCallResult:
+    async def infer(self, **kwargs: Any) -> ModelCallResult:
         return ModelCallResult(
             provider="fake",
             model="fake-model",
@@ -41,6 +54,29 @@ class FakeModelGateway:
             status="completed",
             decision=next(self.decisions),
         )
+
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
+
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("synthesis is outside this acceptance path")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("synthesis is outside this acceptance path")
 
 
 @pytest.mark.asyncio
@@ -72,10 +108,10 @@ async def test_primary_task_path_is_model_decision_policy_dispatch_and_response(
         ]
     )
 
-    runtime = AgentRuntime(object(), model_gateway=gateway, dispatcher=dispatcher)
+    runtime = AgentRuntime(None, model_gateway=gateway, dispatcher=dispatcher)
     result = await runtime.execute_decision(
         AgentTask(
-            task_id=1, user_id=7, goal="find anime", metadata={"run_id": "run-1"}
+            task_id=1, user_id=7, goal="find anime", task_metadata={"run_id": "run-1"}
         ),
         capability_allowlist={"catalog.search"},
     )

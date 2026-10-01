@@ -178,7 +178,7 @@ class TestRecommendationAgent:
         task = AgentTask(
             user_id=7,
             goal="推荐动漫",
-            metadata={"thread_id": "thread-7", "collections": [{"id": 1}]},
+            task_metadata={"thread_id": "thread-7", "collections": [{"id": 1}]},
         )
 
         result = await agent.execute(task)
@@ -232,6 +232,7 @@ class TestRecommendationAgent:
         result = await agent.execute(AgentTask(user_id=1, goal="推荐动漫"))
 
         assert [item["id"] for item in result["candidates"]] == [3]
+        assert anime.last_kwargs is not None
         assert anime.last_kwargs["tags"] == ["科幻"]
 
     @pytest.mark.asyncio

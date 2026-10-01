@@ -5,16 +5,18 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from datetime import datetime, timezone
-from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from app.api.v1 import agent as agent_api
+from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
-from app.harness.model_types import ModelCallResult
+from app.harness.contracts import RunEvent
+from app.harness.model_types import ModelCallResult, ProviderErrorCode
 from app.harness.checkpoint import SqliteCheckpointStore
 from app.harness.persistence.run_store import RunStore
 from app.harness.state import AgentState
@@ -23,8 +25,14 @@ from app.schemas.user import UserRead
 from app.schemas.agent import ChatRequest, Message
 
 
-class _CatalogCapability:
-    name = "catalog"
+class _CatalogCapability(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "catalog"
+
+    @property
+    def description(self) -> str:
+        return "Catalog action for API cutover tests"
 
     def __init__(
         self,
@@ -38,7 +46,7 @@ class _CatalogCapability:
         self.approval_required = approval_required
         self.timeout_seconds = timeout_seconds
 
-    def actions(self):
+    def actions(self) -> list[ActionDescriptor]:
         return [
             ActionDescriptor(
                 name="search",
@@ -56,20 +64,20 @@ class _CatalogCapability:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls.append({"action": action, **kwargs})
         return CapabilityResult.ok(items=["anime-a"]).to_dict()
 
 
 class _SlowCatalogCapability(_CatalogCapability):
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls.append({"action": action, **kwargs})
         await asyncio.sleep(1)
         return CapabilityResult.ok(items=["too-late"]).to_dict()
 
 
 class _UnknownCatalogCapability(_CatalogCapability):
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls.append({"action": action, **kwargs})
         return CapabilityResult.fail(
             "downstream state is unknown",
@@ -102,7 +110,7 @@ class _FakeModelGateway:
 
 
 class _FailedModelGateway(_FakeModelGateway):
-    error_code = "permanent"
+    error_code: ProviderErrorCode = "permanent"
 
     async def infer(self, **kwargs) -> ModelCallResult:
         self.calls.append(kwargs)
@@ -122,6 +130,14 @@ def _request() -> ChatRequest:
     )
 
 
+def _user() -> UserRead:
+    return UserRead(
+        id=7,
+        username="user-7",
+        created_at=datetime.now(timezone.utc),
+    )
+
+
 async def _body(response) -> str:
     return "".join([chunk async for chunk in response.body_iterator])
 
@@ -129,6 +145,7 @@ async def _body(response) -> str:
 @pytest.mark.asyncio
 async def test_default_chat_does_not_construct_legacy_langgraph_loop(
     monkeypatch,
+    db_session,
 ) -> None:
     _FakeModelGateway.instances.clear()
     _FakeModelGateway.decisions = [
@@ -150,7 +167,7 @@ async def test_default_chat_does_not_construct_legacy_langgraph_loop(
         x_api_key="fake-key",
         x_base_url="https://api.openai.com/v1",
         user=None,
-        db=object(),
+        db=db_session,
     )
     body = await _body(response)
 
@@ -162,6 +179,7 @@ async def test_default_chat_does_not_construct_legacy_langgraph_loop(
 @pytest.mark.asyncio
 async def test_default_chat_routes_tool_execution_through_dispatcher(
     monkeypatch,
+    db_session,
 ) -> None:
     capability = _CatalogCapability()
     registry = CapabilityRegistry()
@@ -195,7 +213,7 @@ async def test_default_chat_routes_tool_execution_through_dispatcher(
         x_api_key="fake-key",
         x_base_url="https://api.openai.com/v1",
         user=None,
-        db=object(),
+        db=db_session,
     )
     body = await _body(response)
 
@@ -209,6 +227,7 @@ async def test_default_chat_routes_tool_execution_through_dispatcher(
 @pytest.mark.asyncio
 async def test_main_api_eval_denied_capability_never_calls_domain_service(
     monkeypatch,
+    db_session,
 ) -> None:
     capability = _CatalogCapability(requires_auth=True)
     registry = CapabilityRegistry()
@@ -237,7 +256,7 @@ async def test_main_api_eval_denied_capability_never_calls_domain_service(
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -247,7 +266,7 @@ async def test_main_api_eval_denied_capability_never_calls_domain_service(
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_requires_trusted_approval(monkeypatch) -> None:
+async def test_main_api_eval_requires_trusted_approval(monkeypatch, db_session) -> None:
     capability = _CatalogCapability(approval_required=True)
     registry = CapabilityRegistry()
     registry.register(capability)
@@ -275,7 +294,7 @@ async def test_main_api_eval_requires_trusted_approval(monkeypatch) -> None:
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -326,7 +345,7 @@ async def test_main_api_resume_approval_rehydrates_runtime(
             task=AgentTask(
                 user_id=7,
                 goal="find anime",
-                metadata={
+                task_metadata={
                     "run_id": run_id,
                     "thread_id": internal_thread_id,
                     "model": "fake-model",
@@ -368,11 +387,7 @@ async def test_main_api_resume_approval_rehydrates_runtime(
         decision="approve",
         x_api_key="fake-key",
         x_base_url="https://api.openai.com/v1",
-        user=UserRead(
-            id=7,
-            username="user-7",
-            created_at=datetime.now(timezone.utc),
-        ),
+        user=_user(),
         db=db_session,
     )
     body = await _body(response)
@@ -386,6 +401,7 @@ async def test_main_api_resume_approval_rehydrates_runtime(
 @pytest.mark.asyncio
 async def test_main_api_eval_maps_provider_failure_to_terminal_event(
     monkeypatch,
+    db_session,
 ) -> None:
     monkeypatch.setattr(agent_api, "OpenAIModelGateway", _FailedModelGateway)
     monkeypatch.setattr(
@@ -399,7 +415,7 @@ async def test_main_api_eval_maps_provider_failure_to_terminal_event(
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -410,6 +426,7 @@ async def test_main_api_eval_maps_provider_failure_to_terminal_event(
 @pytest.mark.asyncio
 async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(
     monkeypatch,
+    db_session,
 ) -> None:
     capability = _SlowCatalogCapability(timeout_seconds=0.001)
     registry = CapabilityRegistry()
@@ -438,7 +455,7 @@ async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -449,6 +466,7 @@ async def test_main_api_eval_maps_tool_timeout_without_returning_domain_output(
 @pytest.mark.asyncio
 async def test_main_api_eval_preserves_unknown_outcome_as_safe_terminal_failure(
     monkeypatch,
+    db_session,
 ) -> None:
     capability = _UnknownCatalogCapability()
     registry = CapabilityRegistry()
@@ -477,7 +495,7 @@ async def test_main_api_eval_preserves_unknown_outcome_as_safe_terminal_failure(
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -488,7 +506,9 @@ async def test_main_api_eval_preserves_unknown_outcome_as_safe_terminal_failure(
 
 
 @pytest.mark.asyncio
-async def test_main_api_eval_cancellation_stops_before_model_call(monkeypatch) -> None:
+async def test_main_api_eval_cancellation_stops_before_model_call(
+    monkeypatch, db_session
+) -> None:
     _FakeModelGateway.instances.clear()
     _FakeModelGateway.decisions = []
     original_register = agent_api.cancellation_store.register
@@ -510,7 +530,7 @@ async def test_main_api_eval_cancellation_stops_before_model_call(monkeypatch) -
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -521,6 +541,7 @@ async def test_main_api_eval_cancellation_stops_before_model_call(monkeypatch) -
 @pytest.mark.asyncio
 async def test_main_api_eval_rejects_prompt_injection_authority_fields(
     monkeypatch,
+    db_session,
 ) -> None:
     _FakeModelGateway.instances.clear()
     _FakeModelGateway.decisions = [
@@ -545,7 +566,7 @@ async def test_main_api_eval_rejects_prompt_injection_authority_fields(
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -555,13 +576,13 @@ async def test_main_api_eval_rejects_prompt_injection_authority_fields(
 
 
 @pytest.mark.asyncio
-async def test_resume_requires_a_canonical_run_id() -> None:
+async def test_resume_requires_a_canonical_run_id(db_session) -> None:
     with pytest.raises(HTTPException) as exc_info:
         await agent_api.resume_chat(
             thread_id="thread-1",
             decision="approve",
-            user=SimpleNamespace(id=7),
-            db=object(),
+            user=_user(),
+            db=db_session,
         )
 
     assert exc_info.value.status_code == 400
@@ -574,7 +595,9 @@ def test_chat_request_rejects_empty_messages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_stream_does_not_expose_raw_exception_details(monkeypatch) -> None:
+async def test_chat_stream_does_not_expose_raw_exception_details(
+    monkeypatch, db_session
+) -> None:
     class _ExplodingGateway:
         def __init__(self, **kwargs) -> None:
             raise RuntimeError("provider secret endpoint detail")
@@ -592,7 +615,7 @@ async def test_chat_stream_does_not_expose_raw_exception_details(monkeypatch) ->
             x_api_key="fake-key",
             x_base_url="https://api.openai.com/v1",
             user=None,
-            db=object(),
+            db=db_session,
         )
     )
 
@@ -601,8 +624,10 @@ async def test_chat_stream_does_not_expose_raw_exception_details(monkeypatch) ->
 
 
 @pytest.mark.asyncio
-async def test_cancel_endpoint_only_records_request_for_runtime(monkeypatch) -> None:
-    events = []
+async def test_cancel_endpoint_only_records_request_for_runtime(
+    monkeypatch, db_session
+) -> None:
+    events: list[RunEvent] = []
 
     class _Run:
         run_id = "run-cancel-request"
@@ -636,8 +661,8 @@ async def test_cancel_endpoint_only_records_request_for_runtime(monkeypatch) -> 
 
     result = await agent_api.cancel_run(
         "run-cancel-request",
-        user=SimpleNamespace(id=7),
-        db=object(),
+        user=_user(),
+        db=db_session,
     )
 
     assert result["status"] == "running"

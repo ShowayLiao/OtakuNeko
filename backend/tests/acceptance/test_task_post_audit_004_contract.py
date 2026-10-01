@@ -7,17 +7,24 @@ namespace, and provider endpoint validation checks resolved addresses.
 
 from __future__ import annotations
 
-from types import SimpleNamespace
+from collections.abc import AsyncIterator
 from decimal import Decimal
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 from app.agents import provider_endpoint
 from app.harness.model_types import ModelCallResult, ModelUsage
 from app.harness.budget import BudgetExceededError, RunBudget
-from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
+from app.harness.model_gateway import (
+    ModelStreamEvent,
+    OpenAICompatibleModelAdapter,
+    OpenAIModelGateway,
+)
 from app.memory.manager import MemoryManager
 from app.memory.extractor import LLMFactExtractor
+from app.memory.interfaces import MemoryExtractor, MemoryRepository
 from app.memory.service import MemoryServiceImpl
 
 
@@ -118,6 +125,15 @@ class _ExtractionGateway:
             trace_id=kwargs.get("trace_id"),
         )
 
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
+
+    async def synthesize(self, **kwargs: Any) -> str:
+        raise AssertionError("fact extraction must not synthesize")
+
+    async def synthesize_result(self, **kwargs: Any) -> ModelCallResult:
+        raise AssertionError("fact extraction must not synthesize")
+
 
 @pytest.mark.asyncio
 async def test_memory_extraction_uses_the_run_budget_and_provider_contract() -> None:
@@ -168,8 +184,8 @@ async def test_legacy_memory_manager_reads_the_current_run_namespace() -> None:
     manager = MemoryManager(
         api_key="test-key",
         base_url="https://provider.example/v1",
-        checkpointer=checkpointer,
     )
+    setattr(manager, "checkpointer", checkpointer)
 
     await manager.load_context("thread-1", "query", run_id="run-a")
 
@@ -178,13 +194,50 @@ async def test_legacy_memory_manager_reads_the_current_run_namespace() -> None:
     ]
 
 
-class _EmptyRepository:
-    async def get_facts(self, *args, **kwargs):
+class _EmptyRepository(MemoryRepository):
+    async def put_fact(
+        self,
+        thread_id: str,
+        fact_id: str,
+        content: str,
+        importance: float,
+        source: str,
+        user_id: int | None = None,
+        kind: str = "episodic",
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        return None
+
+    async def get_facts(
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
         return []
 
+    async def delete_fact(
+        self,
+        thread_id: str,
+        fact_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
+    ) -> bool:
+        return False
 
-class _EmptyExtractor:
-    async def extract(self, messages):
+    async def count_facts(
+        self,
+        thread_id: str,
+        user_id: int | None = None,
+        kind: str | None = None,
+    ) -> int:
+        return 0
+
+
+class _EmptyExtractor(MemoryExtractor):
+    async def extract(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return []
 
 
@@ -227,8 +280,8 @@ async def test_memory_run_a_cannot_read_run_b_short_term_context() -> None:
     manager = MemoryManager(
         api_key="test-key",
         base_url="https://provider.example/v1",
-        checkpointer=checkpointer,
     )
+    setattr(manager, "checkpointer", checkpointer)
 
     run_a = await manager.load_context("thread-1", "query", run_id="run-a")
     run_b = await manager.load_context("thread-1", "query", run_id="run-b")

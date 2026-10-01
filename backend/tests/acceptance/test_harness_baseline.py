@@ -196,6 +196,7 @@ async def test_provider_timeout_baseline_is_saved_as_failed() -> None:
     with pytest.raises(asyncio.TimeoutError, match="fake provider timeout"):
         _ = [chunk async for chunk in runtime.stream(task)]
 
+    assert task.task_id is not None
     saved = await checkpoints.load_state(task.task_id)
     assert saved is not None
     assert saved.status == "failed"
@@ -213,6 +214,7 @@ async def test_cancel_baseline_is_saved_as_cancelled() -> None:
     with pytest.raises(asyncio.CancelledError):
         _ = [chunk async for chunk in runtime.stream(task)]
 
+    assert task.task_id is not None
     saved = await checkpoints.load_state(task.task_id)
     assert saved is not None
     assert saved.status == "cancelled"

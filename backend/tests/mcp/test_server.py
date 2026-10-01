@@ -101,6 +101,7 @@ class TestMCPServer:
                 "params": {"protocolVersion": "2024-11-05", "capabilities": {}},
             }
         )
+        assert resp is not None
         assert resp["result"]["protocolVersion"] == "2024-11-05"
         assert "tools" in resp["result"]["capabilities"]
 
@@ -114,6 +115,7 @@ class TestMCPServer:
                 "method": "tools/list",
             }
         )
+        assert resp is not None
         assert len(resp["result"]["tools"]) == 5
 
     @pytest.mark.asyncio
@@ -126,6 +128,7 @@ class TestMCPServer:
                 "method": "bogus/method",
             }
         )
+        assert resp is not None
         assert "error" in resp
         assert resp["error"]["code"] == -32601
 
@@ -146,6 +149,7 @@ class TestMCPServer:
                 "params": {"name": "bogus", "arguments": {}},
             }
         )
+        assert resp is not None
         assert resp["error"]["code"] == -32602
 
     @pytest.mark.asyncio
@@ -174,6 +178,7 @@ class TestMCPServer:
             }
         )
 
+        assert resp is not None
         content = resp["result"]["content"][0]["text"]
         assert json.loads(content) == {
             "success": True,

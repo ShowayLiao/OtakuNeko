@@ -20,7 +20,7 @@ class TestAgentTaskInstantiation:
             task_id=42,
             user_id=7,
             goal="Recommend a psychological thriller",
-            metadata={"source": "chat", "priority": "high"},
+            task_metadata={"source": "chat", "priority": "high"},
             created_at=created,
         )
         assert task.task_id == 42
@@ -41,7 +41,7 @@ class TestAgentTaskInstantiation:
         assert before <= task.created_at <= after
 
     def test_model_dump_includes_all_fields(self) -> None:
-        task = AgentTask(user_id=1, goal="test", metadata={"key": "val"})
+        task = AgentTask(user_id=1, goal="test", task_metadata={"key": "val"})
         data = task.model_dump()
         assert set(data.keys()) == {
             "task_id",

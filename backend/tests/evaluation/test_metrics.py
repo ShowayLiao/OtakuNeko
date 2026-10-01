@@ -12,6 +12,7 @@ from app.evaluation.types import (
     ExecutionFixture,
     ExecutionResult,
     ExpectedRoute,
+    ScriptEvent,
     UserFixture,
 )
 
@@ -35,14 +36,16 @@ def _case(**overrides):
         ),
         "fixtures": ExecutionFixture(
             events=[
-                {"type": "route", "route": "chat"},
-                {"type": "message_chunk", "content": "safe"},
+                ScriptEvent.model_validate({"type": "route", "route": "chat"}),
+                ScriptEvent.model_validate(
+                    {"type": "message_chunk", "content": "safe"}
+                ),
             ],
         ),
         "tags": ["fast"],
     }
     values.update(overrides)
-    return EvalCase(**values)
+    return EvalCase.model_validate(values)
 
 
 def _result(**overrides):
@@ -57,7 +60,7 @@ def _result(**overrides):
         "call_count": 2,
     }
     values.update(overrides)
-    return ExecutionResult(**values)
+    return ExecutionResult.model_validate(values)
 
 
 def test_all_deterministic_metrics_pass_at_budget_boundaries():

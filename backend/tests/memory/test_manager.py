@@ -12,7 +12,7 @@ class MockMessage:
 
 def _make_checkpoint(messages):
     class FakeCheckpoint:
-        pass
+        checkpoint: dict[str, object]
 
     cp = FakeCheckpoint()
     cp.checkpoint = {"channel_values": {"messages": messages}}

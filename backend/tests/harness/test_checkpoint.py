@@ -79,7 +79,9 @@ class TestInMemoryCheckpointStore:
 
         second = SqliteCheckpointStore(path)
         assert await second.is_cancellation_requested("run-cancel") is True
-        assert (await second.get_cancellation("run-cancel")).requester == "user:7"
+        persisted_request = await second.get_cancellation("run-cancel")
+        assert persisted_request is not None
+        assert persisted_request.requester == "user:7"
         await second.close()
 
     async def test_save_and_load_state(self) -> None:
@@ -119,8 +121,12 @@ class TestInMemoryCheckpointStore:
         await store.save_state(AgentState(task=t1, status="completed"))
         await store.save_state(AgentState(task=t2, status="running"))
 
-        assert (await store.load_state(1)).status == "completed"
-        assert (await store.load_state(2)).status == "running"
+        first = await store.load_state(1)
+        second = await store.load_state(2)
+        assert first is not None
+        assert second is not None
+        assert first.status == "completed"
+        assert second.status == "running"
 
     async def test_run_scoped_save_and_load_does_not_cross_threads(self) -> None:
         store = InMemoryCheckpointStore()
@@ -131,7 +137,9 @@ class TestInMemoryCheckpointStore:
 
         await store.save("run-1", "thread-1", state)
 
-        assert (await store.load("run-1", "thread-1")).status == "running"
+        loaded = await store.load("run-1", "thread-1")
+        assert loaded is not None
+        assert loaded.status == "running"
         assert await store.load("run-1", "thread-2") is None
         assert await store.load("run-2", "thread-1") is None
 
@@ -195,7 +203,7 @@ class TestSqliteCheckpointStore:
             task=AgentTask(
                 user_id=9,
                 goal="metadata scope",
-                metadata={"run_id": "run-meta", "thread_id": "thread-meta"},
+                task_metadata={"run_id": "run-meta", "thread_id": "thread-meta"},
             ),
             status="running",
         )

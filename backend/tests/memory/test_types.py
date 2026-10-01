@@ -54,12 +54,20 @@ class TestMemoryRecord:
             MemoryRecord(user_id=1, thread_id="th-1", content="fact", importance=1.1)
 
     def test_kind_as_string_is_validated(self):
-        rec = MemoryRecord(user_id=1, content="fact", kind="semantic")
+        import json
+
+        rec = MemoryRecord(
+            **json.loads('{"user_id": 1, "content": "fact", "kind": "semantic"}')
+        )
         assert rec.kind == MemoryKind.SEMANTIC
 
     def test_invalid_kind_string_raises(self):
+        import json
+
         with pytest.raises(ValueError, match="invalid MemoryKind"):
-            MemoryRecord(user_id=1, content="fact", kind="unknown")
+            MemoryRecord(
+                **json.loads('{"user_id": 1, "content": "fact", "kind": "unknown"}')
+            )
 
     def test_to_dict_is_json_compatible(self):
         import json
@@ -94,7 +102,7 @@ class TestMemoryRecord:
             id=d["id"],
             user_id=d["user_id"],
             thread_id=d["thread_id"],
-            kind=d["kind"],
+            kind=MemoryKind(d["kind"]),
             content=d["content"],
             importance=d["importance"],
             created_at=datetime.fromisoformat(d["created_at"]),

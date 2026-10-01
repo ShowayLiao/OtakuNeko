@@ -102,8 +102,11 @@ async def lifespan(app: FastAPI):
         # === 分支 B: 生产模式 (Postgres + Redis) ===
         logger.info("🚀 Production mode detected. Attempting to connect to Redis...")
         try:
+            redis_url = settings.REDIS_URL
+            if not redis_url:
+                raise ValueError("Redis URL is not configured")
             # Pickle需要二进制数据，所以decode_responses设置为False
-            redis = Redis.from_url(settings.REDIS_URL, decode_responses=False)
+            redis = Redis.from_url(redis_url, decode_responses=False)
             # 测试连接
             await redis.ping()
 

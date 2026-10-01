@@ -1,18 +1,24 @@
 import pytest
-from unittest.mock import AsyncMock
 
 from app.agents.mcp.adapter import MCPToolAdapter
 from app.agents.mcp.connection_pool import MCPConnectionPool
+from app.agents.mcp.transport import MCPTransport
 
 
-class FakeTransport:
+class FakeTransport(MCPTransport):
     def __init__(self, name, tools=None):
         self.server_name = name
         self._tools = tools or []
-        self.connect = AsyncMock()
-        self.close = AsyncMock()
+        self.connect_calls = 0
+        self.close_calls = 0
 
-    def list_tools(self):
+    async def connect(self):
+        self.connect_calls += 1
+
+    async def close(self):
+        self.close_calls += 1
+
+    async def list_tools(self):
         return self._tools
 
     async def call_tool(self, name, arguments):
@@ -40,7 +46,7 @@ class TestMCPIntegration:
         )
 
         tool = MCPToolAdapter.to_langchain_tool(
-            transport.list_tools()[0],
+            (await transport.list_tools())[0],
             transport,
         )
 

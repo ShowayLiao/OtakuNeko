@@ -1,5 +1,6 @@
 from typing import List, Dict, Any
 from langchain_core.tools import BaseTool
+from pydantic import BaseModel
 
 
 class ToolRegistry:
@@ -52,7 +53,15 @@ class ToolRegistry:
         schemas = []
         for tool in self._local_tools.values():
             if hasattr(tool, "args_schema") and tool.args_schema:
-                parameters = tool.args_schema.model_json_schema()
+                args_schema = tool.args_schema
+                if isinstance(args_schema, dict):
+                    parameters = dict(args_schema)
+                elif isinstance(args_schema, type) and issubclass(
+                    args_schema, BaseModel
+                ):
+                    parameters = args_schema.model_json_schema()
+                else:
+                    raise TypeError("Unsupported tool args_schema type")
                 parameters.pop("title", None)
                 schemas.append(
                     {

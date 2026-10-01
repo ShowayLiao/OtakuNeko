@@ -1,5 +1,6 @@
 import asyncio
 from decimal import Decimal
+from typing import Any, AsyncIterator, Sequence
 
 import pytest
 
@@ -10,14 +11,16 @@ from app.harness.budget import (
 )
 from app.harness.contracts import ErrorCode, RunResult
 from app.harness.coordinator import RunCoordinator
-from app.harness.model_types import ModelCallResult, ModelUsage
+from app.harness.model_types import ModelCallResult, ModelStreamEvent, ModelUsage
+from app.harness.model_gateway import ModelGateway
+from app.harness.result import AgentResult
 from app.harness.checkpoint import InMemoryCheckpointStore
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 from app.trace.store import InMemoryTraceStore
 
 
-def _terminal(items: list[object]) -> RunResult:
+def _terminal(items: Sequence[object]) -> RunResult:
     results = [item for item in items if isinstance(item, RunResult)]
     assert len(results) == 1
     return results[0]
@@ -53,7 +56,7 @@ class ResultAdapter:
         }
 
 
-class FakeGateway:
+class FakeGateway(ModelGateway):
     def __init__(self) -> None:
         self.calls = 0
         self.last_result = ModelCallResult(
@@ -73,6 +76,25 @@ class FakeGateway:
     async def synthesize(self, **kwargs):
         self.calls += 1
         return "synthesized"
+
+    async def infer(self, **_kwargs: Any) -> ModelCallResult:
+        raise AssertionError("unused gateway operation")
+
+    def stream_infer(self, **_kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        raise AssertionError("unused gateway operation")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("unused gateway operation")
 
 
 def test_run_budget_has_finite_limits_and_tracks_unknown_usage() -> None:

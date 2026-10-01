@@ -15,7 +15,7 @@ class MockAdapter:
     def __init__(self, result: object = None, should_fail: bool = False):
         self.result = result or {"answer": "Hello from mock"}
         self.should_fail = should_fail
-        self.last_state = None
+        self.last_state: AgentState | None = None
 
     async def run(self, state: AgentState) -> object:
         self.last_state = state.model_copy()

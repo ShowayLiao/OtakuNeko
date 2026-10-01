@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncGenerator
+
 import pytest
 
+from app.harness.checkpoint import InMemoryCheckpointStore
 from app.trace.store import InMemoryTraceStore
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
+
+
+class FailingStore(InMemoryTraceStore):
+    async def record(self, trace) -> None:
+        raise RuntimeError("database unavailable")
 
 
 class TestRuntimeInstrumentation:
@@ -97,10 +105,6 @@ class TestRuntimeInstrumentation:
             async def run(self, state):
                 return {"text": "ok"}
 
-        class FailingStore:
-            async def record(self, trace):
-                raise RuntimeError("database unavailable")
-
         runtime = AgentRuntime(FakeAdapter(), trace_store=FailingStore())
         state = await runtime.execute(AgentTask(user_id=1, goal="test"))
         assert state.status == "completed"
@@ -111,10 +115,6 @@ class TestRuntimeInstrumentation:
         class FailingAdapter:
             async def run(self, state):
                 raise ValueError("original agent error")
-
-        class FailingStore:
-            async def record(self, trace):
-                raise RuntimeError("database unavailable")
 
         runtime = AgentRuntime(FailingAdapter(), trace_store=FailingStore())
         with pytest.raises(ValueError, match="original agent error"):
@@ -182,15 +182,14 @@ class TestRuntimeInstrumentation:
                 yield {"type": "message_chunk", "content": "private"}
                 await asyncio.sleep(60)
 
-        class RecordingCheckpointStore:
+        class RecordingCheckpointStore(InMemoryCheckpointStore):
             def __init__(self):
-                self.statuses = []
+                super().__init__()
+                self.statuses: list[str] = []
 
             async def save_state(self, state):
                 self.statuses.append(state.status)
-
-            async def load_state(self, task_id):
-                return None
+                await super().save_state(state)
 
         store = InMemoryTraceStore()
         checkpoints = RecordingCheckpointStore()
@@ -201,6 +200,7 @@ class TestRuntimeInstrumentation:
         )
         stream = runtime.stream(AgentTask(task_id=99, user_id=1, goal="private"))
 
+        assert isinstance(stream, AsyncGenerator)
         await anext(stream)
         await stream.aclose()
 
@@ -242,6 +242,7 @@ class TestRuntimeInstrumentation:
         assert events
         assert all(event.run_id == trace.run_id for event in events)
         assert all(event.sequence is not None for event in events)
-        assert [event.sequence for event in events] == sorted(
-            event.sequence for event in events
+        sequences = [event.sequence for event in events]
+        assert sequences == sorted(
+            sequence for sequence in sequences if sequence is not None
         )

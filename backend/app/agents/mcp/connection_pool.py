@@ -34,7 +34,7 @@ class MCPConnectionPool:
         self._max_retries = max_retries
         self._retry_delay = retry_delay
         self._health_check_interval = health_check_interval
-        self._health_task: asyncio.Task = None
+        self._health_task: asyncio.Task | None = None
         self._running = False
 
     async def start(self):

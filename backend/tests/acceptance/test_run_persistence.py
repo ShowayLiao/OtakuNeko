@@ -9,12 +9,12 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
 
-from app.harness.contracts import RunResult
+from app.harness.contracts import RunEvent, RunResult
 from app.harness.coordinator import RunCoordinator
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import RunStore
 from app.harness.task import AgentTask
-from app.models.agent_run import AgentInvocation
+from app.models.agent_run import AgentInvocation, AgentRunEvent
 
 
 class ReadOnlyAdapter:
@@ -43,8 +43,16 @@ class ToolAdapter:
         }
 
 
-class FailingEventStore:
-    async def append(self, event):
+class FailingEventStore(EventStore):
+    def __init__(self) -> None:
+        pass
+
+    async def append(
+        self,
+        event: RunEvent | AgentRunEvent,
+        *,
+        event_id: str | None = None,
+    ) -> AgentRunEvent:
         raise RuntimeError("database unavailable")
 
 

@@ -1,4 +1,5 @@
 from app.agents.mcp.adapter import MCPToolAdapter
+from pydantic import BaseModel
 
 
 class TestMCPToolAdapter:
@@ -44,8 +45,10 @@ class TestMCPToolAdapter:
         tool = MCPToolAdapter.to_langchain_tool(mcp_def, transport)
         assert isinstance(tool, BaseTool)
         assert tool.name == "remote_search"
-        assert "query" in tool.args_schema.model_fields
-        assert tool.args_schema.model_fields["query"].is_required()
+        args_schema = tool.args_schema
+        assert isinstance(args_schema, type) and issubclass(args_schema, BaseModel)
+        assert "query" in args_schema.model_fields
+        assert args_schema.model_fields["query"].is_required()
 
     def test_to_openai_function_empty_schema(self):
         mcp_def = {"name": "noop", "description": "", "inputSchema": {"type": "object"}}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.bangumi import SubjectDetail
 from app.services import bangumi_service
@@ -27,7 +28,7 @@ async def test_get_bangumi_calendar_refreshes_incomplete_cached_data(monkeypatch
     async def uncached_calendar(_client):
         return [{"weekday": {"id": day_id}, "items": []} for day_id in range(1, 8)]
 
-    cached_calendar.__wrapped__ = uncached_calendar
+    setattr(cached_calendar, "__wrapped__", uncached_calendar)
     monkeypatch.setattr(bangumi_service, "fetch_calendar", cached_calendar)
 
     result = await bangumi_service.get_bangumi_calendar()
@@ -46,7 +47,12 @@ async def test_get_bangumi_subject_details_deduplicates_ids_and_keeps_failures(
         if subject_id == 2:
             raise RuntimeError("provider failure")
         return SubjectDetail(
-            id=subject_id, name=f"Anime {subject_id}", summary="summary"
+            id=subject_id,
+            name=f"Anime {subject_id}",
+            name_cn=None,
+            summary="summary",
+            score=None,
+            rank=None,
         )
 
     monkeypatch.setattr(bangumi_service, "fetch_subject_by_id", fake_fetch)
@@ -70,7 +76,9 @@ async def test_get_bangumi_subject_details_propagates_cancellation(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_sync_subject_detail_does_not_clear_schedule_fields(monkeypatch):
+async def test_sync_subject_detail_does_not_clear_schedule_fields(
+    monkeypatch, db_session: AsyncSession
+):
     captured_updates = []
 
     async def fake_fetch_subject_detail(_subject_id: int):
@@ -95,7 +103,7 @@ async def test_sync_subject_detail_does_not_clear_schedule_fields(monkeypatch):
         fake_get_by_source,
     )
 
-    await bangumi_service.sync_subject_detail(123, db=None)
+    await bangumi_service.sync_subject_detail(123, db=db_session)
 
     update_data = captured_updates[0].items[0].model_dump(exclude_unset=True)
     assert "air_time" not in update_data

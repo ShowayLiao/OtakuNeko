@@ -2,27 +2,46 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from collections.abc import Sequence
+from typing import Any
+
 import pytest
 
+from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.budget import CancellationToken, RunBudget
-from app.harness.contracts import ErrorCode, ExecutionContext, InvocationResult
+from app.harness.contracts import (
+    AgentDecision,
+    ErrorCode,
+    ExecutionContext,
+    InvocationResult,
+)
 from app.harness.dispatcher import Dispatcher
 from app.harness.model_types import ModelCallResult
+from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelStreamEvent
+from app.harness.result import AgentResult
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 from app.memory.interfaces import MemoryContext
 from app.memory.types import MemoryFact, MemorySourceType
 
 
-class _CatalogCapability:
-    name = "catalog"
+class _CatalogCapability(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "catalog"
+
+    @property
+    def description(self) -> str:
+        return "Catalog actions for decision loop tests"
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
 
-    def actions(self):
+    def actions(self) -> list[ActionDescriptor]:
         return [
             ActionDescriptor(
                 name="search",
@@ -32,12 +51,43 @@ class _CatalogCapability:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls.append({"action": action, **kwargs})
         return CapabilityResult.ok(items=["anime-a"]).to_dict()
 
 
-class _DecisionGateway:
+class _TestGateway(ModelGateway):
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
+
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("unexpected synthesis call in decision-loop test")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("unexpected synthesis result call in decision-loop test")
+
+
+class _DecisionGateway(_TestGateway):
     def __init__(self, decisions: list[dict]) -> None:
         self.decisions = iter(decisions)
         self.calls: list[dict] = []
@@ -53,7 +103,7 @@ class _DecisionGateway:
         )
 
 
-class _RepeatingDecisionGateway:
+class _RepeatingDecisionGateway(_TestGateway):
     def __init__(self, decision: dict) -> None:
         self.decision = decision
         self.calls: list[dict] = []
@@ -72,17 +122,26 @@ class _RepeatingDecisionGateway:
         )
 
 
-class _TerminalDispatcher:
+class _TerminalDispatcher(Dispatcher):
     def __init__(self, result: InvocationResult) -> None:
         self.result = result
         self.calls = 0
 
-    async def dispatch(self, decision, context, **kwargs) -> InvocationResult:
+    async def dispatch(
+        self,
+        decision: AgentDecision,
+        context: ExecutionContext,
+        *,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+        approval: Any | None = None,
+        idempotency_key: str | None = None,
+    ) -> InvocationResult:
         self.calls += 1
         return self.result
 
 
-class _ModelResultGateway:
+class _ModelResultGateway(_TestGateway):
     def __init__(self, result: ModelCallResult) -> None:
         self.result = result
         self.calls = 0
@@ -92,7 +151,7 @@ class _ModelResultGateway:
         return self.result
 
 
-class _ControlObservingGateway:
+class _ControlObservingGateway(_TestGateway):
     def __init__(self, result: ModelCallResult) -> None:
         self.result = result
         self.calls: list[dict] = []
@@ -153,7 +212,7 @@ async def test_primary_runtime_loop_owns_decision_dispatch_and_terminal_result()
         ]
     )
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
@@ -165,7 +224,7 @@ async def test_primary_runtime_loop_owns_decision_dispatch_and_terminal_result()
                 task_id=101,
                 user_id=7,
                 goal="find anime",
-                metadata={"run_id": "run-primary-loop", "messages": []},
+                task_metadata={"run_id": "run-primary-loop", "messages": []},
             ),
             context=ExecutionContext(
                 principal_id=7,
@@ -198,7 +257,7 @@ async def test_primary_runtime_passes_memory_only_through_context_snapshot() -> 
         ]
     )
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(CapabilityRegistry()),
         memory_context=MemoryContext(
@@ -222,7 +281,7 @@ async def test_primary_runtime_passes_memory_only_through_context_snapshot() -> 
                 task_id=102,
                 user_id=7,
                 goal="say hello",
-                metadata={"run_id": "run-memory", "messages": []},
+                task_metadata={"run_id": "run-memory", "messages": []},
             ),
             context=ExecutionContext(
                 principal_id=7,
@@ -255,7 +314,7 @@ async def test_primary_runtime_runs_memory_extraction_as_a_child_model_call() ->
     )
     memory = _MemoryChildService()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(CapabilityRegistry()),
         memory_service=memory,
@@ -268,7 +327,7 @@ async def test_primary_runtime_runs_memory_extraction_as_a_child_model_call() ->
                 task_id=108,
                 user_id=7,
                 goal="remember this",
-                metadata={
+                task_metadata={
                     "run_id": "run-memory-child",
                     "thread_id": "thread-memory-child",
                     "messages": [{"role": "user", "content": "I like sci-fi"}],
@@ -300,7 +359,7 @@ async def test_primary_runtime_runs_memory_extraction_as_a_child_model_call() ->
 async def test_primary_runtime_loop_stops_before_model_on_cancellation() -> None:
     gateway = _DecisionGateway([])
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(CapabilityRegistry()),
     )
@@ -314,7 +373,7 @@ async def test_primary_runtime_loop_stops_before_model_on_cancellation() -> None
                 task_id=102,
                 user_id=7,
                 goal="cancel",
-                metadata={"run_id": "run-cancel-before-model", "messages": []},
+                task_metadata={"run_id": "run-cancel-before-model", "messages": []},
             ),
             cancellation=cancellation,
         )
@@ -341,7 +400,7 @@ async def test_primary_runtime_loop_preserves_dispatcher_timeout_code() -> None:
         ]
     )
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=_TerminalDispatcher(
             InvocationResult(
@@ -359,7 +418,7 @@ async def test_primary_runtime_loop_preserves_dispatcher_timeout_code() -> None:
                 task_id=103,
                 user_id=7,
                 goal="timeout",
-                metadata={"run_id": "run-timeout", "messages": []},
+                task_metadata={"run_id": "run-timeout", "messages": []},
             )
         )
     ]
@@ -384,7 +443,7 @@ async def test_primary_runtime_maps_cancelled_model_result_without_parsing_or_di
     dispatcher = _TerminalDispatcher(
         InvocationResult(invocation_id="unused", status="succeeded")
     )
-    runtime = AgentRuntime(object(), model_gateway=gateway, dispatcher=dispatcher)
+    runtime = AgentRuntime(None, model_gateway=gateway, dispatcher=dispatcher)
 
     events = [
         event
@@ -393,7 +452,7 @@ async def test_primary_runtime_maps_cancelled_model_result_without_parsing_or_di
                 task_id=105,
                 user_id=7,
                 goal="cancel in provider",
-                metadata={"run_id": "run-model-cancel", "messages": []},
+                task_metadata={"run_id": "run-model-cancel", "messages": []},
             )
         )
     ]
@@ -419,7 +478,7 @@ async def test_primary_runtime_maps_provider_timeout_without_next_decision() -> 
     dispatcher = _TerminalDispatcher(
         InvocationResult(invocation_id="unused", status="succeeded")
     )
-    runtime = AgentRuntime(object(), model_gateway=gateway, dispatcher=dispatcher)
+    runtime = AgentRuntime(None, model_gateway=gateway, dispatcher=dispatcher)
 
     events = [
         event
@@ -428,7 +487,7 @@ async def test_primary_runtime_maps_provider_timeout_without_next_decision() -> 
                 task_id=106,
                 user_id=7,
                 goal="provider timeout",
-                metadata={"run_id": "run-model-timeout", "messages": []},
+                task_metadata={"run_id": "run-model-timeout", "messages": []},
             )
         )
     ]
@@ -453,7 +512,7 @@ async def test_primary_runtime_passes_controls_without_double_budget_deduction()
         )
     )
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=_TerminalDispatcher(
             InvocationResult(invocation_id="unused", status="succeeded")
@@ -469,7 +528,7 @@ async def test_primary_runtime_passes_controls_without_double_budget_deduction()
                 task_id=107,
                 user_id=7,
                 goal="controlled cancellation",
-                metadata={"run_id": "run-budget-controls", "messages": []},
+                task_metadata={"run_id": "run-budget-controls", "messages": []},
             ),
             budget=budget,
             cancellation=cancellation,
@@ -512,7 +571,7 @@ async def test_primary_runtime_loop_rejects_untrusted_model_decisions(
 ) -> None:
     gateway = _DecisionGateway([decision])
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(CapabilityRegistry()),
     )
@@ -524,7 +583,7 @@ async def test_primary_runtime_loop_rejects_untrusted_model_decisions(
                 task_id=104,
                 user_id=7,
                 goal="reject forged decision",
-                metadata={"run_id": "run-invalid-decision", "messages": []},
+                task_metadata={"run_id": "run-invalid-decision", "messages": []},
             )
         )
     ]
@@ -552,7 +611,7 @@ async def test_primary_runtime_stops_repeating_decisions_at_step_budget() -> Non
         }
     )
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
@@ -565,7 +624,7 @@ async def test_primary_runtime_stops_repeating_decisions_at_step_budget() -> Non
                 task_id=109,
                 user_id=7,
                 goal="repeat tool calls",
-                metadata={
+                task_metadata={
                     "run_id": "run-step-budget",
                     "messages": [],
                 },

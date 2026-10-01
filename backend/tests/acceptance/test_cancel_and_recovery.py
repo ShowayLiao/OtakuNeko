@@ -48,7 +48,7 @@ async def test_runtime_observes_durable_cancellation_before_adapter_execution() 
         AgentTask(
             user_id=7,
             goal="must not run",
-            metadata={
+            task_metadata={
                 "run_id": "run-durable-cancel",
                 "thread_id": "thread-durable-cancel",
             },
@@ -103,7 +103,7 @@ async def test_resume_loads_nonterminal_checkpoint_and_does_not_rerun_terminal_s
         task_id=12,
         user_id=2,
         goal="resume",
-        metadata={"run_id": "run-12", "thread_id": "thread-12"},
+        task_metadata={"run_id": "run-12", "thread_id": "thread-12"},
     )
     await checkpoints.save(
         "run-12",

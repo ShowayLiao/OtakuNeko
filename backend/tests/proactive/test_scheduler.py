@@ -110,6 +110,7 @@ class TestScheduler:
         recovered = await repository.claim_due(expired, lease_seconds=10)
         assert len(recovered) == 1
         await repository.finish(recovered[0].run, success=True)
+        assert task_def.next_run is not None
         assert task_def.next_run > now
 
     @pytest.mark.asyncio

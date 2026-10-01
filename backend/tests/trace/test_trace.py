@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import pytest
 
-from app.trace import AgentTrace, TraceStep, TraceEvent
+from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
 from app.trace.store import InMemoryTraceStore
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
@@ -77,7 +77,7 @@ class TestTraceModels:
 
     def test_trace_event(self):
         evt = TraceEvent(
-            event_type="tool_call_start",
+            event_type=TraceEventType.TOOL_CALL_START,
             data={"name": "search", "args": {}},
         )
         assert evt.event_type == "tool_call_start"

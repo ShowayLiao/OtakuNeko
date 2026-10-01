@@ -17,17 +17,17 @@ class StdioTransport(MCPTransport):
         self,
         server_name: str,
         command: str,
-        args: List[str] = None,
-        env: Dict[str, str] = None,
+        args: List[str] | None = None,
+        env: Dict[str, str] | None = None,
     ):
         self.server_name = server_name
         self.command = command
         self.args = args or []
         self.env = env or {}
-        self._process: asyncio.subprocess.Process = None
+        self._process: asyncio.subprocess.Process | None = None
         self._request_id = 0
         self._pending: Dict[int, asyncio.Future] = {}
-        self._reader_task: asyncio.Task = None
+        self._reader_task: asyncio.Task[None] | None = None
         self._connected = False
 
     async def connect(self) -> None:
@@ -54,20 +54,22 @@ class StdioTransport(MCPTransport):
         self._reader_task = asyncio.create_task(self._read_loop())
         self._connected = True
 
-        init_response = await self._send_request(
-            "initialize",
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
-            },
-        )
-
-        if "error" in init_response:
+        try:
+            init_response = await self._send_request(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
+                },
+            )
+            if "error" in init_response:
+                raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
+            await self._send_notification("notifications/initialized", {})
+        except BaseException:
             await self.close()
-            raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
+            raise
 
-        await self._send_notification("notifications/initialized", {})
         logger.info(
             "stdio_connected",
             extra={
@@ -78,13 +80,14 @@ class StdioTransport(MCPTransport):
 
     async def close(self) -> None:
         self._connected = False
-        if self._reader_task:
-            self._reader_task.cancel()
-            self._reader_task = None
+        reader_task = self._reader_task
+        self._reader_task = None
+        if reader_task is not None:
+            reader_task.cancel()
         if self._process:
             try:
-                self._process.stdin.close()
-                self._process.stdout.close() if self._process.stdout else None
+                if self._process.stdin is not None:
+                    self._process.stdin.close()
             except Exception:
                 pass
             try:
@@ -116,6 +119,9 @@ class StdioTransport(MCPTransport):
         return result.get("content", result)
 
     async def _send_request(self, method: str, params: dict) -> dict:
+        process = self._process
+        if not self._connected or process is None or process.stdin is None:
+            raise RuntimeError("MCP transport is not connected")
         self._request_id += 1
         msg_id = self._request_id
 
@@ -129,11 +135,10 @@ class StdioTransport(MCPTransport):
         fut: asyncio.Future = asyncio.get_event_loop().create_future()
         self._pending[msg_id] = fut
 
-        data = json.dumps(request) + "\n"
-        self._process.stdin.write(data.encode("utf-8"))
-        await self._process.stdin.drain()
-
         try:
+            data = json.dumps(request) + "\n"
+            process.stdin.write(data.encode("utf-8"))
+            await process.stdin.drain()
             return await asyncio.wait_for(fut, timeout=CALL_TIMEOUT)
         except asyncio.TimeoutError:
             self._pending.pop(msg_id, None)
@@ -142,18 +147,24 @@ class StdioTransport(MCPTransport):
             self._pending.pop(msg_id, None)
 
     async def _send_notification(self, method: str, params: dict) -> None:
+        process = self._process
+        if not self._connected or process is None or process.stdin is None:
+            raise RuntimeError("MCP transport is not connected")
         request = {
             "jsonrpc": RPC_VERSION,
             "method": method,
             "params": params,
         }
-        self._process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
-        await self._process.stdin.drain()
+        process.stdin.write((json.dumps(request) + "\n").encode("utf-8"))
+        await process.stdin.drain()
 
-    async def _read_loop(self):
+    async def _read_loop(self) -> None:
         try:
             while self._connected:
-                line = await self._process.stdout.readline()
+                process = self._process
+                if process is None or process.stdout is None:
+                    break
+                line = await process.stdout.readline()
                 if not line:
                     break
                 try:
@@ -163,6 +174,21 @@ class StdioTransport(MCPTransport):
 
                 msg_id = msg.get("id")
                 if msg_id is not None and msg_id in self._pending:
-                    self._pending[msg_id].set_result(msg)
-        except (asyncio.CancelledError, Exception):
+                    pending = self._pending[msg_id]
+                    if not pending.done():
+                        pending.set_result(msg)
+        except asyncio.CancelledError:
             pass
+        except Exception as exc:
+            logger.warning(
+                "stdio_read_failed",
+                extra={
+                    "server_name": self.server_name,
+                    "error_category": type(exc).__name__,
+                },
+            )
+        finally:
+            self._connected = False
+            for pending in self._pending.values():
+                if not pending.done():
+                    pending.set_exception(RuntimeError("MCP transport closed"))

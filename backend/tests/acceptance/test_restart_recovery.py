@@ -44,7 +44,9 @@ async def test_restart_reopens_checkpoint_and_marks_stale_run_abandoned(
     await checkpoint.close()
 
     reopened = SqliteCheckpointStore(checkpoint_path)
-    assert (await reopened.load("run-stale", "thread-stale")).status == "running"
+    reopened_state = await reopened.load("run-stale", "thread-stale")
+    assert reopened_state is not None
+    assert reopened_state.status == "running"
 
     run_store = RunStore(db_session)
     await run_store.create(
@@ -66,6 +68,7 @@ async def test_restart_reopens_checkpoint_and_marks_stale_run_abandoned(
 
     assert recovered.status == "abandoned"
     assert recovered.error_code == "checkpoint_lease_expired"
+    assert abandoned is not None
     assert abandoned.status == "abandoned"
     assert abandoned.context["abandon_reason"]
 

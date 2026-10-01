@@ -537,6 +537,16 @@ class MCPServer:
         context: MCPContext,
         policy: Policy,
     ) -> dict[str, Any]:
+        if context.user_id is None:
+            return self._denied(
+                tool_name, "Authentication context is required", "unauthorized"
+            )
+        if not policy.idempotency_key:
+            return self._denied(
+                tool_name,
+                "An idempotency key is required for side effects",
+                "idempotency_required",
+            )
         key = (context.user_id, tool_name, policy.idempotency_key)
         fingerprint = json.dumps(
             arguments,

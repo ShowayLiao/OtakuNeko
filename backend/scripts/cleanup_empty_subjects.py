@@ -3,7 +3,7 @@ import sys
 
 sys.path.insert(0, ".")
 
-from sqlmodel import select, delete
+from sqlmodel import col, delete, select
 from app.db.database import engine, AsyncSessionLocal
 from app.models import Subject
 
@@ -11,7 +11,9 @@ from app.models import Subject
 async def inspect():
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            select(Subject).where((Subject.name == "") | (Subject.name.is_(None)))
+            select(Subject).where(
+                (col(Subject.name) == "") | (col(Subject.name).is_(None))
+            )
         )
         dirty = result.scalars().all()
         print(f"\n脏数据数量: {len(dirty)}")
@@ -25,7 +27,9 @@ async def inspect():
 async def cleanup():
     async with AsyncSessionLocal() as session:
         result = await session.execute(
-            delete(Subject).where((Subject.name == "") | (Subject.name.is_(None)))
+            delete(Subject).where(
+                (col(Subject.name) == "") | (col(Subject.name).is_(None))
+            )
         )
         await session.commit()
         print(f"\n已删除 {result.rowcount} 条脏数据。")

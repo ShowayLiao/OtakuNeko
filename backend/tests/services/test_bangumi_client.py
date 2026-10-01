@@ -102,7 +102,9 @@ async def test_get_calendar_falls_back_to_web_calendar_and_merges_api_details(
         "app.services.bangumi_client.httpx.AsyncClient", FakeAsyncClient
     )
 
-    result = await BangumiClient.get_calendar.__wrapped__(BangumiClient())
+    uncached = getattr(BangumiClient.get_calendar, "__wrapped__", None)
+    assert callable(uncached)
+    result = await uncached(BangumiClient())
 
     assert [day["weekday"]["id"] for day in result] == [7, 1, 2, 3, 4, 5, 6]
     monday = next(day for day in result if day["weekday"]["id"] == 1)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import pytest
 
@@ -30,17 +31,22 @@ class _Judge:
         return self.result
 
 
-def _request(**overrides):
-    values = {
-        "input_text": "question",
-        "response_text": "answer",
-        "rubric": {"relevance": "0..1"},
-        "model": "model-a",
-        "provider": "provider-a",
-        "config": {"temperature": 0},
-    }
-    values.update(overrides)
-    return JudgeRequest(**values)
+def _request(
+    *,
+    response_text: str = "answer",
+    rubric: dict[str, str] | None = None,
+    model: str = "model-a",
+    provider: str = "provider-a",
+    config: dict[str, Any] | None = None,
+) -> JudgeRequest:
+    return JudgeRequest(
+        input_text="question",
+        response_text=response_text,
+        rubric=rubric if rubric is not None else {"relevance": "0..1"},
+        model=model,
+        provider=provider,
+        config=config if config is not None else {"temperature": 0},
+    )
 
 
 def test_cache_key_includes_model_provider_rubric_and_config():

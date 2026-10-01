@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any, Awaitable, Callable
 
 import pytest
 
 from app.capabilities.registry import CapabilityRegistry
+from app.capabilities.base import BaseCapability
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.budget import CancellationToken
 from app.harness.contracts import AgentDecision, ExecutionContext
@@ -12,12 +14,11 @@ from app.harness.dispatcher import Dispatcher
 from app.harness.policy import Approval, PolicyEngine
 
 
-class FakeCapability:
-    name = "catalog"
-
+class FakeCapability(BaseCapability):
     def __init__(self, *, side_effect: bool = False, fail: bool = False) -> None:
         self.calls: list[dict] = []
         self.fail = fail
+        self.execute_impl: Callable[..., Awaitable[dict[str, Any]]] | None = None
         self._descriptor = ActionDescriptor(
             name="search" if not side_effect else "write",
             public_name="catalog.search" if not side_effect else "catalog.write",
@@ -28,10 +29,20 @@ class FakeCapability:
             idempotency_mode="required" if side_effect else "none",
         )
 
-    def actions(self):
+    @property
+    def name(self) -> str:
+        return "catalog"
+
+    @property
+    def description(self) -> str:
+        return "fake capability"
+
+    def actions(self) -> list[ActionDescriptor]:
         return [self._descriptor]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
+        if self.execute_impl is not None:
+            return await self.execute_impl(action, **kwargs)
         self.calls.append({"action": action, **kwargs})
         if self.fail:
             raise RuntimeError("secret provider failure")
@@ -156,7 +167,7 @@ async def test_timeout_and_cancellation_reach_dispatch_boundary() -> None:
         await asyncio.sleep(1)
         return {"success": True}
 
-    capability.execute = slow_execute
+    capability.execute_impl = slow_execute
     registry = CapabilityRegistry()
     registry.register(capability)
     dispatcher = Dispatcher(registry)

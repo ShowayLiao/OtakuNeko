@@ -36,10 +36,13 @@ def test_full_config_explicitly_uses_production_target_and_judge():
     config = load_config("evals/config/full.yaml")
 
     assert config.dataset.endswith("v1-full.jsonl")
+    assert config.target_factory is not None
     assert config.target_factory.endswith(":create_production_target")
+    assert config.judge_factory is not None
     assert config.judge_factory.endswith(":create_openai_judge")
     assert config.judge.required is True
     assert config.agent.model == "gpt-4o-mini"
+    assert config.baseline is not None
     assert config.baseline.endswith("v1-full.json")
 
 
@@ -391,5 +394,7 @@ async def test_execution_errors_are_sanitized_in_report():
         SecretFailingTarget(),
     )
 
-    assert "sk-secret" not in report.cases[0].error
-    assert report.cases[0].error == "RuntimeError: execution_failed"
+    error = report.cases[0].error
+    assert error is not None
+    assert "sk-secret" not in error
+    assert error == "RuntimeError: execution_failed"

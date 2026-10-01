@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 from langgraph.store.memory import InMemoryStore
 
-from app.memory.interfaces import MemoryContext, MemoryRepository, MemoryService
+from app.memory.interfaces import (
+    MemoryContext,
+    MemoryExtractor,
+    MemoryRepository,
+    MemoryService,
+)
 from app.memory.repository import StoreMemoryRepository
 from app.memory.service import MemoryServiceImpl
 
@@ -93,13 +98,15 @@ class FakeRepository(MemoryRepository):
         return len(await self.get_facts(thread_id, user_id=user_id, kind=kind))
 
 
-class FakeExtractor:
+class FakeExtractor(MemoryExtractor):
     """Always returns a fixed set of facts."""
 
     def __init__(self, facts: list[dict] | None = None) -> None:
         self._facts = facts or []
 
-    async def extract(self, messages: list[dict]) -> list[dict]:
+    async def extract(
+        self, messages: list[dict[str, object]]
+    ) -> list[dict[str, object]]:
         return self._facts
 
     @property

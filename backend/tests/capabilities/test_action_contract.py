@@ -68,7 +68,7 @@ class TestActionDescriptor:
     def test_descriptor_is_immutable(self):
         desc = ActionDescriptor("a", "desc", input_schema={})
         with pytest.raises(FrozenInstanceError):
-            desc.name = "changed"
+            setattr(desc, "name", "changed")
 
 
 class TestCapabilityResult:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.subject import SubjectSearchBase
 from app.services import subject_service
@@ -30,8 +32,8 @@ async def test_search_mixed_propagates_cancellation(monkeypatch, cancelled_side)
 
     with pytest.raises(asyncio.CancelledError):
         await subject_service.search_mixed(
-            db=None,
-            search_data=SubjectSearchBase(keyword="anime"),
+            db=AsyncMock(spec=AsyncSession),
+            search_data=SubjectSearchBase(keyword="anime", type=None, user_id=None),
         )
 
 

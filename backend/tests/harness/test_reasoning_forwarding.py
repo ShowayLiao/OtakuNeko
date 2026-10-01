@@ -1,5 +1,6 @@
 import json
 from types import SimpleNamespace
+from typing import Any, AsyncIterator, Sequence
 
 import pytest
 
@@ -8,7 +9,13 @@ from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.contracts import ExecutionContext
 from app.harness.dispatcher import Dispatcher
-from app.harness.model_gateway import OpenAICompatibleModelAdapter, OpenAIModelGateway
+from app.harness.model_gateway import (
+    ModelGateway,
+    OpenAICompatibleModelAdapter,
+    OpenAIModelGateway,
+)
+from app.harness.result import AgentResult
+from app.harness.budget import CancellationToken
 from app.harness.model_types import ModelCallResult, ModelDelta, ModelStreamEvent
 from app.harness.runtime import AgentRuntime, _checkpoint_messages
 from app.harness.task import AgentTask
@@ -154,9 +161,51 @@ class ContinuationCapability(BaseCapability):
         return CapabilityResult.ok(item="result").to_dict()
 
 
-class ThinkingContinuationGateway:
+class _FailFastGateway(ModelGateway):
+    async def infer(self, **_kwargs: Any) -> ModelCallResult:
+        raise AssertionError("unused gateway operation")
+
+    def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        async def stream() -> AsyncIterator[ModelStreamEvent]:
+            result = await self.infer(**kwargs)
+            if result.reasoning:
+                yield ModelStreamEvent(
+                    delta=ModelDelta(kind="reasoning", text=result.reasoning)
+                )
+            yield ModelStreamEvent(result=result)
+
+        return stream()
+
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("unused gateway operation")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        cancellation: CancellationToken | None = None,
+        deadline: float | None = None,
+        budget: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("unused gateway operation")
+
+
+class ThinkingContinuationGateway(_FailFastGateway):
     def __init__(self):
-        self.calls: list[dict] = []
+        self.calls: list[dict[str, Any]] = []
 
     async def infer(self, **kwargs):
         self.calls.append(kwargs)
@@ -201,7 +250,7 @@ async def test_runtime_preserves_deepseek_assistant_turn_before_tool_feedback():
     registry = CapabilityRegistry()
     registry.register(ContinuationCapability())
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry),
     )
@@ -213,7 +262,7 @@ async def test_runtime_preserves_deepseek_assistant_turn_before_tool_feedback():
                 task_id=1,
                 user_id=1,
                 goal="lookup",
-                metadata={
+                task_metadata={
                     "run_id": "run-thinking-continuation",
                     "messages": [{"role": "user", "content": "lookup"}],
                 },
@@ -253,7 +302,7 @@ def test_checkpoint_projection_removes_runtime_reasoning_field():
     ]
 
 
-class ReasoningGateway:
+class ReasoningGateway(_FailFastGateway):
     async def infer(self, **_kwargs):
         from app.harness.model_types import ModelCallResult
 
@@ -275,7 +324,7 @@ class ReasoningGateway:
 @pytest.mark.asyncio
 async def test_runtime_emits_reasoning_events_for_primary_decision():
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=ReasoningGateway(),
         dispatcher=Dispatcher(CapabilityRegistry()),
     )
@@ -287,7 +336,7 @@ async def test_runtime_emits_reasoning_events_for_primary_decision():
                 task_id=1,
                 user_id=1,
                 goal="hello",
-                metadata={
+                task_metadata={
                     "run_id": "run-reasoning",
                     "messages": [{"role": "user", "content": "hello"}],
                 },
@@ -310,7 +359,7 @@ async def test_runtime_emits_reasoning_events_for_primary_decision():
     )
 
 
-class StreamingReasoningGateway:
+class StreamingReasoningGateway(_FailFastGateway):
     async def stream_infer(self, **_kwargs):
         yield ModelStreamEvent(delta=ModelDelta(kind="reasoning", text="先分析"))
         yield ModelStreamEvent(delta=ModelDelta(kind="reasoning", text="再决策"))
@@ -336,7 +385,7 @@ class StreamingReasoningGateway:
 @pytest.mark.asyncio
 async def test_runtime_forwards_each_reasoning_delta_before_parsing_final_decision():
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=StreamingReasoningGateway(),
         dispatcher=Dispatcher(CapabilityRegistry()),
     )
@@ -348,7 +397,7 @@ async def test_runtime_forwards_each_reasoning_delta_before_parsing_final_decisi
                 task_id=1,
                 user_id=1,
                 goal="hello",
-                metadata={
+                task_metadata={
                     "run_id": "run-streaming-reasoning",
                     "messages": [{"role": "user", "content": "hello"}],
                 },

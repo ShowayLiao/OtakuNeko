@@ -21,7 +21,7 @@ class ConcreteAgent(BaseAgent):
 class TestBaseAgent:
     def test_cannot_instantiate_base_agent(self):
         with pytest.raises(TypeError):
-            BaseAgent()
+            type.__call__(BaseAgent)
 
     def test_can_instantiate_concrete_agent(self):
         agent = ConcreteAgent()

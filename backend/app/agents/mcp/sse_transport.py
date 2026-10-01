@@ -13,11 +13,13 @@ CALL_TIMEOUT = 30.0
 
 
 class SSETransport(MCPTransport):
-    def __init__(self, server_name: str, url: str, headers: Dict[str, str] = None):
+    def __init__(
+        self, server_name: str, url: str, headers: Dict[str, str] | None = None
+    ):
         self.server_name = server_name
         self.url = url
         self.headers = headers or {}
-        self._client: httpx.AsyncClient = None
+        self._client: httpx.AsyncClient | None = None
         self._request_id = 0
         self._connected = False
         self._session_id: str | None = None
@@ -42,20 +44,22 @@ class SSETransport(MCPTransport):
             },
         )
 
-        init_response = await self._send_request(
-            "initialize",
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
-            },
-        )
-
-        if "error" in init_response:
+        try:
+            init_response = await self._send_request(
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "OtakuNeko", "version": "0.1.0"},
+                },
+            )
+            if "error" in init_response:
+                raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
+            await self._send_notification("notifications/initialized", {})
+        except BaseException:
             await self.close()
-            raise RuntimeError(f"MCP initialize failed: {init_response['error']}")
+            raise
 
-        await self._send_notification("notifications/initialized", {})
         self._connected = True
         logger.info(
             "sse_connected",
@@ -98,11 +102,13 @@ class SSETransport(MCPTransport):
             "params": params,
         }
 
+        client = self._client
+        if client is None:
+            raise RuntimeError("SSE transport is not connected")
+
         try:
             headers = {"Mcp-Session-Id": self._session_id} if self._session_id else {}
-            resp = await self._client.post(
-                self.url, json=request_payload, headers=headers
-            )
+            resp = await client.post(self.url, json=request_payload, headers=headers)
             resp.raise_for_status()
             session_id = resp.headers.get("Mcp-Session-Id")
             if session_id:
@@ -114,9 +120,13 @@ class SSETransport(MCPTransport):
             raise RuntimeError(f"MCP call '{method}' HTTP error: {e}")
 
     async def _send_notification(self, method: str, params: dict) -> None:
+        client = self._client
+        if client is None:
+            raise RuntimeError("SSE transport is not connected")
+
         headers = {"Mcp-Session-Id": self._session_id} if self._session_id else {}
         try:
-            resp = await self._client.post(
+            resp = await client.post(
                 self.url,
                 json={"jsonrpc": RPC_VERSION, "method": method, "params": params},
                 headers=headers,

@@ -1,4 +1,5 @@
 import asyncio
+import httpx
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -9,15 +10,19 @@ from app.agents.mcp.heartbeat import MCPHeartbeat
 
 
 class FakeReadlineStream:
-    def __init__(self, responses):
+    def __init__(self, responses, hold_open=False):
         self._responses = list(responses)
         self._idx = 0
+        self._hold_open = hold_open
+        self._closed = asyncio.Event()
 
     async def readline(self):
         if self._idx < len(self._responses):
             data = self._responses[self._idx]
             self._idx += 1
             return data.encode("utf-8") if isinstance(data, str) else data
+        if self._hold_open:
+            await self._closed.wait()
         return b""
 
 
@@ -29,7 +34,7 @@ class TestStdioTransport:
         init_result = '{"jsonrpc":"2.0","id":1,"result":{"serverInfo":{"name":"test-server","version":"1.0.0"}}}\n'
         tool_result = '{"jsonrpc":"2.0","id":2,"result":{"tools":[]}}\n'
 
-        fake_stream = FakeReadlineStream([init_result, tool_result])
+        fake_stream = FakeReadlineStream([init_result, tool_result], hold_open=True)
         mock_proc = MagicMock()
         mock_proc.stdin = MagicMock()
         mock_proc.stdin.write = MagicMock()
@@ -43,6 +48,7 @@ class TestStdioTransport:
             transport = StdioTransport("test", "echo", ["hello"])
             await transport.connect()
             assert transport._connected
+            await transport.close()
 
     def test_serialize_request_jsonrpc_format(self):
         msg = {"jsonrpc": "2.0", "id": 42, "method": "test", "params": {}}
@@ -54,6 +60,30 @@ class TestStdioTransport:
         t = StdioTransport("my-mcp", "cmd")
         assert t.server_name == "my-mcp"
         assert t.command == "cmd"
+
+    @pytest.mark.asyncio
+    async def test_connect_fails_when_server_closes_stdout(self):
+        mock_proc = MagicMock()
+        mock_proc.stdin = MagicMock()
+        mock_proc.stdin.drain = AsyncMock()
+        mock_proc.stdout = FakeReadlineStream([])
+        mock_proc.wait = AsyncMock(return_value=0)
+
+        with patch(
+            "asyncio.create_subprocess_exec", new=AsyncMock(return_value=mock_proc)
+        ):
+            transport = StdioTransport("closed", "echo")
+            with pytest.raises(RuntimeError, match="closed"):
+                await asyncio.wait_for(transport.connect(), timeout=0.2)
+            assert not transport._pending
+            assert not transport._connected
+
+    @pytest.mark.asyncio
+    async def test_request_after_close_raises_connection_error(self):
+        transport = StdioTransport("closed", "echo")
+        with pytest.raises(RuntimeError, match="connected"):
+            await transport._send_request("tools/list", {})
+        assert not transport._pending
 
 
 class TestSSETransport:
@@ -88,6 +118,20 @@ class TestSSETransport:
         t = SSETransport("sse", "http://host:9000")
         assert t.server_name == "sse"
         assert t.url == "http://host:9000"
+
+    @pytest.mark.asyncio
+    async def test_failed_initialize_closes_http_client(self):
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            transport = SSETransport("sse", "http://localhost:8080/mcp")
+            with pytest.raises(RuntimeError, match="timed out"):
+                await transport.connect()
+
+        mock_client.aclose.assert_awaited_once()
+        assert transport._client is None
+        assert not transport._connected
 
 
 class TestMCPConnectionPool:

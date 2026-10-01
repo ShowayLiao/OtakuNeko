@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import DateTime
 from sqlalchemy.ext.asyncio import (
     AsyncSession as SQLAlchemyAsyncSession,
     async_sessionmaker,
@@ -12,7 +13,7 @@ from sqlalchemy.ext.asyncio import (
 from sqlmodel import SQLModel, select
 
 from app.models.agent_trace import AgentTraceModel, TraceEventModel
-from app.trace import AgentTrace, TraceEvent, TraceStep
+from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
 from app.trace.sql_store import SqlTraceStore
 
 
@@ -21,7 +22,7 @@ def _trace(*, user_id: int, task_id: int, goal: str = "private") -> AgentTrace:
     step = TraceStep(step_index=0, step_label="capability", agent_name="agent")
     step.events.append(
         TraceEvent(
-            event_type="capability_call",
+            event_type=TraceEventType.CAPABILITY_CALL,
             data={"operation": "anime.search", "api_key": "sk-secret"},
         )
     )
@@ -32,9 +33,15 @@ def _trace(*, user_id: int, task_id: int, goal: str = "private") -> AgentTrace:
 
 
 def test_trace_timestamp_columns_are_timezone_aware():
-    assert AgentTraceModel.__table__.c.started_at.type.timezone is True
-    assert AgentTraceModel.__table__.c.created_at.type.timezone is True
-    assert TraceEventModel.__table__.c.created_at.type.timezone is True
+    started_at = SQLModel.metadata.tables["agent_trace"].c.started_at.type
+    created_at = SQLModel.metadata.tables["agent_trace"].c.created_at.type
+    event_created_at = SQLModel.metadata.tables["trace_event"].c.created_at.type
+    assert isinstance(started_at, DateTime)
+    assert isinstance(created_at, DateTime)
+    assert isinstance(event_created_at, DateTime)
+    assert started_at.timezone is True
+    assert created_at.timezone is True
+    assert event_created_at.timezone is True
 
 
 @pytest.mark.asyncio
@@ -71,7 +78,7 @@ async def test_sql_store_drops_unsafe_payload_but_keeps_event_error_code(db_sess
     step = TraceStep(step_index=0, step_label="policy", agent_name="agent")
     step.events.append(
         TraceEvent(
-            event_type="failure",
+            event_type=TraceEventType.FAILURE,
             data={
                 "chain_of_thought": "must not persist",
                 "error_code": "policy_denied",

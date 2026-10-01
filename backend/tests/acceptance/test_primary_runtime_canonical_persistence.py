@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+from typing import Any, AsyncIterator, Sequence
+
 import pytest
 
+from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.contracts import ExecutionContext, RunEvent
 from app.harness.dispatcher import Dispatcher
 from app.harness.checkpoint import InMemoryCheckpointStore
-from app.harness.model_types import ModelCallResult
+from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelCallResult, ModelStreamEvent
+from app.harness.result import AgentResult
 from app.harness.policy import Approval
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import RunStore
@@ -77,10 +82,16 @@ class _MemoryEventStore:
         ]
 
 
-class _Catalog:
-    name = "catalog"
+class _Catalog(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "catalog"
 
-    def actions(self):
+    @property
+    def description(self) -> str:
+        return "Catalog actions for persistence tests"
+
+    def actions(self) -> list[ActionDescriptor]:
         return [
             ActionDescriptor(
                 name="search",
@@ -90,17 +101,23 @@ class _Catalog:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         return CapabilityResult.ok(items=["anime-a"]).to_dict()
 
 
-class _ApprovalCatalog:
-    name = "approval-catalog"
+class _ApprovalCatalog(BaseCapability):
+    @property
+    def name(self) -> str:
+        return "approval-catalog"
+
+    @property
+    def description(self) -> str:
+        return "Approval actions for persistence tests"
 
     def __init__(self) -> None:
         self.calls = 0
 
-    def actions(self):
+    def actions(self) -> list[ActionDescriptor]:
         return [
             ActionDescriptor(
                 name="write",
@@ -111,17 +128,17 @@ class _ApprovalCatalog:
             )
         ]
 
-    async def execute(self, action: str, **kwargs):
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         self.calls += 1
         return CapabilityResult.ok(written=True).to_dict()
 
 
-class _Gateway:
+class _Gateway(ModelGateway):
     def __init__(self, run_id: str = "run-canonical") -> None:
         self.calls = 0
         self.run_id = run_id
 
-    async def infer(self, **kwargs):
+    async def infer(self, **kwargs: Any) -> ModelCallResult:
         self.calls += 1
         decision = (
             {
@@ -150,13 +167,36 @@ class _Gateway:
             decision=decision,
         )
 
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
 
-class _ResumeGateway:
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("canonical persistence must use structured decisions")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("canonical persistence must use structured decisions")
+
+
+class _ResumeGateway(_Gateway):
     def __init__(self, decisions: list[dict]) -> None:
         self.decisions = list(decisions)
         self.calls = 0
 
-    async def infer(self, **kwargs):
+    async def infer(self, **kwargs: Any) -> ModelCallResult:
         self.calls += 1
         return ModelCallResult(
             provider="fake",
@@ -171,7 +211,7 @@ def _runtime(run_store=None, event_store=None, gateway=None):
     registry = CapabilityRegistry()
     registry.register(_Catalog())
     return AgentRuntime(
-        object(),
+        None,
         model_gateway=gateway or _Gateway(),
         dispatcher=Dispatcher(registry),
         run_store=run_store,
@@ -191,7 +231,7 @@ def _approval_runtime(
     registry = CapabilityRegistry()
     registry.register(capability)
     return AgentRuntime(
-        object(),
+        None,
         checkpoint_store=checkpoint_store,
         model_gateway=gateway,
         dispatcher=Dispatcher(registry, approval=approval),
@@ -213,7 +253,7 @@ async def test_primary_runtime_persists_one_replayable_canonical_sequence() -> N
             AgentTask(
                 user_id=7,
                 goal="search",
-                metadata={
+                task_metadata={
                     "run_id": "run-canonical",
                     "thread_id": "thread-1",
                     "messages": [],
@@ -260,7 +300,7 @@ async def test_primary_runtime_does_not_report_success_when_event_persistence_fa
             AgentTask(
                 user_id=7,
                 goal="persist",
-                metadata={"run_id": "run-fail", "messages": []},
+                task_metadata={"run_id": "run-fail", "messages": []},
             ),
             context=ExecutionContext(
                 principal_id=7,
@@ -286,7 +326,7 @@ async def test_primary_runtime_replay_of_terminal_run_does_not_invoke_gateway_ag
     task = AgentTask(
         user_id=7,
         goal="search",
-        metadata={"run_id": "run-canonical", "messages": []},
+        task_metadata={"run_id": "run-canonical", "messages": []},
     )
     context = ExecutionContext(
         principal_id=7,
@@ -332,7 +372,7 @@ async def test_primary_runtime_replay_preserves_persisted_terminal_error_code() 
             AgentTask(
                 user_id=7,
                 goal="search",
-                metadata={"run_id": "run-failed", "messages": []},
+                task_metadata={"run_id": "run-failed", "messages": []},
             ),
             context=ExecutionContext(
                 principal_id=7,
@@ -357,7 +397,11 @@ async def test_primary_runtime_writes_sql_canonical_facts(db_session) -> None:
     task = AgentTask(
         user_id=7,
         goal="search",
-        metadata={"run_id": "run-sql-primary", "thread_id": "thread-1", "messages": []},
+        task_metadata={
+            "run_id": "run-sql-primary",
+            "thread_id": "thread-1",
+            "messages": [],
+        },
     )
     context = ExecutionContext(
         principal_id=7,
@@ -388,7 +432,7 @@ async def test_primary_runtime_rehydrates_pending_approval_after_restart() -> No
     task = AgentTask(
         user_id=7,
         goal="write",
-        metadata={
+        task_metadata={
             "run_id": "run-approval-recovery",
             "thread_id": "thread-approval-recovery",
             "messages": [],
@@ -489,7 +533,7 @@ async def test_primary_runtime_persists_terminal_state_when_checkpoint_lease_is_
     task = AgentTask(
         user_id=7,
         goal="lease loss",
-        metadata={
+        task_metadata={
             "run_id": "run-lease-loss",
             "thread_id": "thread-lease-loss",
             "messages": [],

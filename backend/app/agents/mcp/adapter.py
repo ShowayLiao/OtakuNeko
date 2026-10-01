@@ -72,10 +72,13 @@ class MCPToolAdapter:
         """Preserve MCP field names, requiredness and primitive types."""
         properties = input_schema.get("properties", {}) or {}
         required = set(input_schema.get("required", []) or [])
-        fields: Dict[str, tuple[Any, Any]] = {}
+        fields: Dict[str, Any] = {}
         for field_name, definition in properties.items():
             definition = definition or {}
-            annotation = _JSON_TYPES.get(definition.get("type"), Any)
+            type_name = definition.get("type")
+            annotation = (
+                _JSON_TYPES.get(type_name, Any) if isinstance(type_name, str) else Any
+            )
             default = ... if field_name in required else None
             if default is ...:
                 fields[field_name] = (annotation, default)

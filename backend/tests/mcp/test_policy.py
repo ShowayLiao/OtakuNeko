@@ -196,6 +196,42 @@ class TestAuthAndPolicyIntegration:
         assert result["error_type"] == "idempotency_required"
 
     @pytest.mark.asyncio
+    async def test_idempotent_call_rejects_missing_identity_before_cache_access(self):
+        capability = self.server._registry.get("schedule")
+        completed_before = dict(self.server._completed_writes)
+        inflight_before = dict(self.server._inflight_writes)
+        result = await self.server._call_idempotent(
+            capability,
+            "create_schedule",
+            "schedule_create_schedule",
+            {},
+            MCPContext(),
+            Policy(allow_side_effects=True, idempotency_key="key"),
+        )
+
+        assert result["error_type"] == "unauthorized"
+        assert self.server._completed_writes == completed_before
+        assert self.server._inflight_writes == inflight_before
+
+    @pytest.mark.asyncio
+    async def test_idempotent_call_rejects_missing_key_before_cache_access(self):
+        capability = self.server._registry.get("schedule")
+        completed_before = dict(self.server._completed_writes)
+        inflight_before = dict(self.server._inflight_writes)
+        result = await self.server._call_idempotent(
+            capability,
+            "create_schedule",
+            "schedule_create_schedule",
+            {},
+            MCPContext(user_id=1),
+            Policy(allow_side_effects=True),
+        )
+
+        assert result["error_type"] == "idempotency_required"
+        assert self.server._completed_writes == completed_before
+        assert self.server._inflight_writes == inflight_before
+
+    @pytest.mark.asyncio
     async def test_replayed_write_returns_cached_result(self, monkeypatch):
         calls = 0
 

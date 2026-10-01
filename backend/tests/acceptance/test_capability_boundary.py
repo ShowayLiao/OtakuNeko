@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Sequence
+from typing import Any
+
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor
 from app.harness.contracts import ErrorCode, ExecutionContext
 from app.harness.dispatcher import Dispatcher
-from app.harness.model_types import ModelCallResult
+from app.harness.model_gateway import ModelGateway
+from app.harness.model_types import ModelCallResult, ModelStreamEvent
+from app.harness.result import AgentResult
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 
@@ -48,11 +53,11 @@ class BoundaryCapability(BaseCapability):
         return {"success": True, "action": action}
 
 
-class DecisionGateway:
+class DecisionGateway(ModelGateway):
     def __init__(self, decision: dict):
         self.decision = decision
 
-    async def infer(self, **kwargs):
+    async def infer(self, **kwargs: Any) -> ModelCallResult:
         return ModelCallResult(
             provider="fake",
             model="fake",
@@ -61,13 +66,36 @@ class DecisionGateway:
             decision=self.decision,
         )
 
+    async def stream_infer(self, **kwargs: Any) -> AsyncIterator[ModelStreamEvent]:
+        yield ModelStreamEvent(result=await self.infer(**kwargs))
+
+    async def synthesize(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> str:
+        raise AssertionError("boundary test must use structured decisions")
+
+    async def synthesize_result(
+        self,
+        *,
+        goal: str,
+        messages: list[dict[str, Any]],
+        results: Sequence[AgentResult | dict[str, Any]],
+        **kwargs: Any,
+    ) -> ModelCallResult:
+        raise AssertionError("boundary test must use structured decisions")
+
 
 def _task() -> AgentTask:
     return AgentTask(
         task_id=101,
         user_id=7,
         goal="boundary",
-        metadata={"run_id": "boundary-run"},
+        task_metadata={"run_id": "boundary-run"},
     )
 
 
@@ -81,7 +109,7 @@ def _registry() -> tuple[CapabilityRegistry, BoundaryCapability]:
 async def test_runtime_rejects_model_owned_identity_before_domain_service() -> None:
     registry, capability = _registry()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=DecisionGateway(
             {
                 "schema_version": "v1",
@@ -113,7 +141,7 @@ async def test_runtime_rejects_model_owned_identity_before_domain_service() -> N
 async def test_runtime_fails_closed_for_unapproved_side_effect() -> None:
     registry, capability = _registry()
     runtime = AgentRuntime(
-        object(),
+        None,
         model_gateway=DecisionGateway(
             {
                 "schema_version": "v1",

@@ -62,23 +62,14 @@ class TestRouterIntegration:
         assert "根据你的偏好" in result.get("content", "")
 
     @pytest.mark.asyncio
-    async def test_feature_flag_adapter_rejects_direct_specialist_execution(self):
+    async def test_feature_flag_adapter_rejects_direct_specialist_execution(
+        self, registry
+    ):
         class Fallback:
             async def stream(self, state, **kwargs):
                 yield {"type": "message_chunk", "content": "legacy"}
 
-        class Specialist:
-            async def execute(self, task):
-                return {"content": "specialist", "candidates": [{"name": "X"}]}
-
-        class Registry:
-            def list_agents(self):
-                return ["recommendation"]
-
-            def get(self, name):
-                return Specialist()
-
-        router = AgentRouter(Registry())
+        router = AgentRouter(registry)
         task = AgentTask(user_id=1, goal="推荐动漫")
         state = AgentState(task=task)
         adapter = FeatureFlagRoutingAdapter(Fallback(), router, enabled=True)
@@ -91,26 +82,17 @@ class TestRouterIntegration:
         ]
 
     @pytest.mark.asyncio
-    async def test_feature_flag_adapter_requires_dispatcher_for_specialist(self):
+    async def test_feature_flag_adapter_requires_dispatcher_for_specialist(
+        self, registry
+    ):
         class Fallback:
             async def stream(self, state, **kwargs):
                 yield {"type": "message_chunk", "content": "legacy"}
 
-        class Specialist:
-            async def execute(self, task):
-                return {"candidates": [{"name": "X"}], "evidence": {"source": "test"}}
-
-        class Registry:
-            def list_agents(self):
-                return ["recommendation"]
-
-            def get(self, name):
-                return Specialist()
-
         task = AgentTask(user_id=1, goal="\u63a8\u8350\u52a8\u6f2b")
         state = AgentState(task=task, context={"orchestrate_results": True})
         adapter = FeatureFlagRoutingAdapter(
-            Fallback(), AgentRouter(Registry()), enabled=True
+            Fallback(), AgentRouter(registry), enabled=True
         )
 
         with pytest.raises(RuntimeError, match="Dispatcher"):

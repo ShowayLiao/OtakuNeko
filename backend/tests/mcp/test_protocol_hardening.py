@@ -34,6 +34,7 @@ async def test_initialized_notification_has_no_response():
 async def test_invalid_request_returns_json_rpc_error():
     response = await _server().handle_request({"jsonrpc": "2.0", "id": 1})
 
+    assert response is not None
     assert response["error"]["code"] == -32600
 
 
@@ -48,6 +49,7 @@ async def test_invalid_tool_arguments_return_protocol_error():
         }
     )
 
+    assert response is not None
     assert response["error"]["code"] == -32602
 
 
@@ -72,6 +74,7 @@ async def test_unknown_tool_returns_protocol_error():
         }
     )
 
+    assert response is not None
     assert response["error"]["code"] == -32602
 
 
@@ -92,6 +95,7 @@ async def test_failed_capability_result_sets_is_error(monkeypatch):
         }
     )
 
+    assert response is not None
     assert response["result"]["isError"] is True
 
 
@@ -115,6 +119,7 @@ async def test_oversized_tool_result_remains_valid_json(monkeypatch):
         }
     )
 
+    assert response is not None
     content = json.loads(response["result"]["content"][0]["text"])
     assert response["result"]["isError"] is True
     assert content["error_type"] == "response_too_large"

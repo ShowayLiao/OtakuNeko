@@ -110,6 +110,7 @@ async def _reload(db_session, collection_id: int) -> Collection | None:
 async def test_put_updates_the_collection_and_persists(db_session, wired_app) -> None:
     seeded = await _seed(db_session)
     collection_id = seeded.id
+    assert collection_id is not None
 
     response = await _request(
         wired_app,
@@ -166,6 +167,7 @@ async def test_put_returns_404_for_a_missing_collection(db_session, wired_app) -
 async def test_delete_removes_the_collection(db_session, wired_app) -> None:
     seeded = await _seed(db_session)
     collection_id = seeded.id
+    assert collection_id is not None
 
     response = await _request(
         wired_app,

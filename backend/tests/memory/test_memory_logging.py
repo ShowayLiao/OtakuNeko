@@ -11,7 +11,7 @@ class MockMessage:
 
 def _make_checkpoint(messages, completed_steps=None, last_terminal_output=""):
     class FakeCheckpoint:
-        pass
+        checkpoint: dict[str, object]
 
     cp = FakeCheckpoint()
     cp.checkpoint = {
