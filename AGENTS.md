@@ -610,3 +610,38 @@ independently verifiable implementation slices to `luna_worker`.
 
 Do not recursively delegate from Luna. If Luna encounters a missing consequential decision
 or repeated failure, escalate the task back to the primary model.
+
+## Frontend Browser Validation
+
+前端 UI、样式、布局、组件外观、响应式和交互任务必须对运行中的应用进行浏览器验证，不能仅凭源码判断视觉任务已完成。此仓库的浏览器验证统一使用 `agent-browser`；优先调用当前会话的 `agent-browser` MCP 工具，若工具调用不可用，可用已安装的 `agent-browser` CLI 在独立命名会话中完成同样的检查。不要为此改用 Playwright MCP。浏览器工具不可用时如实报告。
+
+### 默认迭代流程
+
+1. 从 `frontend/package.json` 确认启动命令；当前为仓库根目录执行 `pnpm --dir frontend dev`，Next.js 默认地址为 `http://localhost:3000`，实际端口以启动输出为准。
+2. 打开本地页面，检查 DOM / accessibility snapshot、相关 Console 错误，并在重大视觉修改前按需截图。
+3. 修改前端实现，等待 HMR 或重新加载页面。
+4. 再次检查实际渲染结果并截图；发现明显视觉问题时继续迭代。
+5. 涉及响应式时至少检查 Desktop `1440x900`、Tablet `768x1024`、Mobile `390x844`。
+
+只检查与改动相关的布局、间距、对齐、字体、视觉层次、颜色、边框与阴影、组件一致性、溢出、响应式，以及 hover、focus、disabled、empty、loading、error 状态。优先使用现有设计 token、组件、CSS 变量与设计约定；不为视觉润色做无关重构，也不破坏既有行为。
+
+完成前须确认修改页面已在浏览器中查看、最终渲染已目视检查、无明显布局或溢出回归、相关视口已检查，且无本次改动引入的 Console 错误。浏览器验证无法执行时，明确报告原因，不得声称已验证。
+
+<!-- ai-task-log:begin -->
+## AI task logging
+
+This repository uses lifecycle hooks to create one engineering task record per Codex turn under `.ai/runs/YYYY-MM/`.
+
+Do not manually create or rewrite task-log files unless explicitly asked. The hook is the source of truth.
+
+For implementation-oriented final responses, keep the result concise and observable. Prefer these headings when applicable:
+
+- Summary
+- Validation
+- Decisions
+- Remaining
+
+Validation claims must match commands actually run. Never say a test/lint/typecheck passed unless it was executed successfully.
+If a command exit code is unavailable, mark its validation status UNKNOWN; never infer PASS from output text.
+Do not include chain-of-thought, full transcripts, file contents, Git diff contents, or full shell output in task-log notes or final responses intended for logging.
+<!-- ai-task-log:end -->

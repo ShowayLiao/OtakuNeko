@@ -59,7 +59,7 @@ export const ModelSelector = ({ value, onChange, onOpenSettings }: ModelSelector
     return (
       <div 
         onClick={onOpenSettings}
-        className="flex items-center gap-2 text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded cursor-pointer hover:bg-amber-100 transition-colors"
+        className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm text-amber-600 bg-amber-50 px-3 py-1.5 rounded cursor-pointer hover:bg-amber-100 transition-colors"
       >
         <Icon icon={Settings2} size={14} />
         <span>未配置模型，点击设置</span>

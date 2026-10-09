@@ -1,6 +1,7 @@
 "use client";
 
-import { Plus, Trash2, MessageSquare, Search } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Trash2, MessageSquare, Search, X } from 'lucide-react';
 import { ActionIcon, DraggablePanel } from '@lobehub/ui';
 import type { Session } from '@/stores/useChatStore';
 
@@ -13,6 +14,8 @@ interface SessionPanelProps {
   onCreateSession: () => void;
   onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
+  mobileOpen?: boolean;
+  onCloseMobile?: () => void;
 }
 
 export default function SessionPanel({
@@ -24,15 +27,24 @@ export default function SessionPanel({
   onCreateSession,
   onSwitchSession,
   onDeleteSession,
+  mobileOpen = false,
+  onCloseMobile,
 }: SessionPanelProps) {
+  const [panelExpanded, setPanelExpanded] = useState(true);
   const filteredSessions = sessionSearch
     ? sessions.filter((session) => session.title.toLowerCase().includes(sessionSearch.toLowerCase()))
     : sessions;
 
   return (
     <DraggablePanel
+      className="h-full"
       defaultExpand
       expandable
+      expand={mobileOpen || panelExpanded}
+      onExpandChange={(expanded) => {
+        setPanelExpanded(expanded);
+        if (mobileOpen && !expanded) onCloseMobile?.();
+      }}
       minWidth={200}
       mode="fixed"
       pin
@@ -43,7 +55,14 @@ export default function SessionPanel({
       <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 16 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold' }}>会话</h3>
-          <ActionIcon icon={Plus} title="新建会话" onClick={() => onCreateSession()} style={{ cursor: 'pointer' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <ActionIcon icon={Plus} title="新建会话" onClick={() => onCreateSession()} style={{ cursor: 'pointer' }} />
+            {onCloseMobile && (
+              <button type="button" aria-label="收起会话列表" className="md:hidden" onClick={onCloseMobile}>
+                <X size={18} aria-hidden="true" />
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{ marginBottom: 8, position: 'relative' }}>

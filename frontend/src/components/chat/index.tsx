@@ -4,6 +4,7 @@
 import { useMemo, useState, useRef } from 'react';
 import { useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import { PanelLeft } from 'lucide-react';
 import { useAppTheme } from '@/components/providers/LobeProvider';
 import { ChatInput } from './ChatInput';
 import ApiKeyModal from '../Modal/ApiKeyModal';
@@ -34,6 +35,7 @@ export default function ChatPage() {
   const [editText, setEditText] = useState<string | null>(null);
   const [authState, setAuthState] = useState<AuthState>('loading');
   const [authRefresh, setAuthRefresh] = useState(0);
+  const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
 
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -350,18 +352,46 @@ export default function ChatPage() {
         className="flex-1 flex min-h-0 w-full relative overflow-hidden"
         style={{ background: 'transparent' }}
       >
-        <SessionPanel
-          sessions={sessions}
-          activeSessionId={activeSessionId}
-          sessionSearch={sessionSearch}
-          isDarkMode={isDarkMode}
-          onSearchChange={setSessionSearch}
-          onCreateSession={createSession}
-          onSwitchSession={switchSession}
-          onDeleteSession={handleDeleteSession}
-        />
+        {mobileSessionsOpen && (
+          <button
+            type="button"
+            aria-label="关闭会话列表"
+            className="absolute inset-0 z-20 bg-black/30 md:hidden"
+            onClick={() => setMobileSessionsOpen(false)}
+          />
+        )}
+        <div className={`${mobileSessionsOpen ? 'absolute inset-y-0 left-0 z-30 block' : 'hidden'} w-[280px] max-w-full md:contents`}>
+          <SessionPanel
+            sessions={sessions}
+            activeSessionId={activeSessionId}
+            sessionSearch={sessionSearch}
+            isDarkMode={isDarkMode}
+            onSearchChange={setSessionSearch}
+            onCreateSession={() => {
+              createSession();
+              setMobileSessionsOpen(false);
+            }}
+            onSwitchSession={(id) => {
+              switchSession(id);
+              setMobileSessionsOpen(false);
+            }}
+            onDeleteSession={handleDeleteSession}
+            mobileOpen={mobileSessionsOpen}
+            onCloseMobile={() => setMobileSessionsOpen(false)}
+          />
+        </div>
 
-        <div className="flex-1 flex flex-col min-h-0 relative overflow-hidden">
+        <div className="flex-1 flex flex-col min-h-0 min-w-0 relative overflow-hidden">
+          <button
+            type="button"
+            aria-label="打开会话列表"
+            aria-expanded={mobileSessionsOpen}
+            className="flex h-11 flex-none items-center gap-2 border-b border-gray-200 px-4 text-sm md:hidden"
+            onClick={() => setMobileSessionsOpen(true)}
+          >
+            <PanelLeft size={18} aria-hidden="true" />
+            会话
+          </button>
           <div
             ref={messageContainerRef}
             onScroll={handleMessageScroll}

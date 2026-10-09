@@ -21,6 +21,7 @@ env/
 # 注意：uv.lock 必须提交，所以不要写在这里
 .uv/
 .uv-cache/
+.uv-cache*/
 
 # ==========================
 # 2. Node.js & Frontend
@@ -170,3 +171,8 @@ backend/spec/
 /check_*.py
 /test_*.py
 /backend/test_*.py
+
+# ai-task-log:begin
+# Keep all local AI task logs and hook state out of Git.
+/.ai/
+# ai-task-log:end
