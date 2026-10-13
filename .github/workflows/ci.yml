@@ -42,6 +42,12 @@ jobs:
       - name: Enforce business-layer import boundaries
         run: uv run --locked ruff check --select TID251 app/services app/models app/repositories app/schemas
 
+      # Fresh test-only key; never use a production credential in PR tests.
+      - name: Set up isolated test environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+
       - name: Run backend tests
         run: uv run --locked pytest
 
@@ -136,6 +142,12 @@ jobs:
 
       - name: Install backend dependencies
         run: uv sync --locked --dev
+
+      # API imports require JWT configuration even during test collection.
+      - name: Set up isolated test environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
 
       - name: Run deterministic Harness regression
         run: uv run --locked pytest tests/harness tests/acceptance tests/capabilities tests/trace -q

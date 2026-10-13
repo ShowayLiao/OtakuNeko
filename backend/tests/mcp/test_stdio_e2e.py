@@ -13,9 +13,91 @@ import asyncio
 import json
 import os
 import sys
+import textwrap
 import pytest
 
 from app.mcp_server import MAX_REQUEST_SIZE
+
+
+_OFFLINE_BOOTSTRAP = textwrap.dedent(
+    """
+    import os
+    import runpy
+    import httpx
+
+    async def handler(request):
+        expected_params = {"limit": "10", "offset": "0"}
+        expected_body = {
+            "keyword": "Frieren",
+            "sort": "rank",
+            "filter": {"type": [2]},
+        }
+        if (
+            request.method != "POST"
+            or request.url.scheme != "https"
+            or request.url.host != "api.bgm.tv"
+            or request.url.path != "/v0/search/subjects"
+            or dict(request.url.params) != expected_params
+            or not request.content
+        ):
+            return httpx.Response(400, json={"detail": "unexpected fake request"})
+        if request.content:
+            import json
+            if json.loads(request.content) != expected_body:
+                return httpx.Response(400, json={"detail": "unexpected fake body"})
+        if os.environ.get("MCP_TEST_UPSTREAM_MODE") == "error":
+            marker_path = os.environ.get("MCP_TEST_MARKER")
+            if marker_path:
+                with open(marker_path, "w", encoding="utf-8") as marker:
+                    marker.write("fake upstream failure marker")
+            raise httpx.ReadTimeout("fake upstream failure marker", request=request)
+        return httpx.Response(
+            200,
+            json={
+                "total": 1,
+                "data": [
+                    {
+                        "id": 12345,
+                        "name": "Sousou no Frieren",
+                        "name_cn": "葬送的芙莉莲",
+                        "summary": "A fixed offline fixture.",
+                        "rating": {"score": 9.1, "rank": 1},
+                        "type": 2,
+                        "air_date": "2023-09-29",
+                        "images": {"large": "https://example.invalid/frieren.jpg"},
+                        "tags": [{"name": "Fantasy"}],
+                    }
+                ],
+            },
+        )
+
+    class OfflineAsyncClient(httpx.AsyncClient):
+        def __init__(self, *args, **kwargs):
+            kwargs["transport"] = httpx.MockTransport(handler)
+            super().__init__(*args, **kwargs)
+
+    httpx.AsyncClient = OfflineAsyncClient
+    runpy.run_module("app.mcp_server.entry", run_name="__main__")
+    """
+)
+
+
+async def _offline_process(
+    mode: str = "success", marker_path: str | None = None
+) -> asyncio.subprocess.Process:
+    return await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        _OFFLINE_BOOTSTRAP,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={
+            **os.environ,
+            "MCP_TEST_UPSTREAM_MODE": mode,
+            "MCP_TEST_MARKER": marker_path or "",
+        },
+    )
 
 
 def _require_stdio(
@@ -102,16 +184,9 @@ async def test_initialize_and_tools_list():
 
 
 @pytest.mark.asyncio
-async def test_tools_call_anime_search():
-    """Subprocess returns a well-formed result for a real capability call."""
-    proc = await asyncio.create_subprocess_exec(
-        sys.executable,
-        "-m",
-        "app.mcp_server.entry",
-        stdin=asyncio.subprocess.PIPE,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
+async def test_offline_tools_call_anime_search():
+    """Subprocess exercises the real MCP and capability path without network I/O."""
+    proc = await _offline_process()
 
     try:
         stdin, stdout = _require_stdio(proc)
@@ -141,13 +216,112 @@ async def test_tools_call_anime_search():
         resp = json.loads(line.decode())
         content = json.loads(resp["result"]["content"][0]["text"])
         assert resp["id"] == 3
-        assert isinstance(content["success"], bool)
-        assert resp["result"]["isError"] is (content["success"] is False)
-        if content["success"]:
-            assert "results" in content["data"]
-        else:
-            assert "error_type" in content
+        assert resp["result"]["isError"] is False
+        assert content["success"] is True
+        assert content["data"]["total"] == 1
+        result = content["data"]["results"][0]
+        assert result["id"] == 12345
+        assert result["name"] == "Sousou no Frieren"
+        assert result["name_cn"] == "葬送的芙莉莲"
+        assert result["summary"] == "A fixed offline fixture...."
+        assert result["score"] == 9.1
+        assert result["rank"] == 1
+        assert result["type"] == 2
+        assert result["air_date"] == "2023-09-29"
+        assert result["images"]["large"].endswith("frieren.jpg")
+        assert result["tags"] == ["Fantasy"]
 
+    finally:
+        await _cleanup_proc(proc)
+
+
+@pytest.mark.asyncio
+async def test_offline_tools_call_anime_search_upstream_failure(tmp_path):
+    """A real upstream failure remains an MCP internal error."""
+    marker_path = str(tmp_path / "marker")
+    proc = await _offline_process("error", marker_path)
+
+    try:
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(_build_initialize())
+        await stdin.drain()
+        await asyncio.wait_for(stdout.readline(), timeout=15)
+        stdin.write(
+            (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 4,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "anime_search",
+                            "arguments": {"keyword": "Frieren"},
+                        },
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
+        await stdin.drain()
+
+        response = json.loads(
+            (await asyncio.wait_for(stdout.readline(), timeout=15)).decode()
+        )
+        content = json.loads(response["result"]["content"][0]["text"])
+        assert response["result"]["isError"] is True
+        assert content["success"] is False
+        assert content["error_type"] == "internal"
+        with open(marker_path, encoding="utf-8") as marker:
+            assert marker.read() == "fake upstream failure marker"
+    finally:
+        await _cleanup_proc(proc)
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_BANGUMI_TESTS") != "1",
+    reason="set RUN_LIVE_BANGUMI_TESTS=1 to enable the live Bangumi check",
+)
+async def test_live_tools_call_anime_search():
+    """Opt-in integration check against the public Bangumi endpoint."""
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "app.mcp_server.entry",
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    try:
+        stdin, stdout = _require_stdio(proc)
+        stdin.write(_build_initialize())
+        await stdin.drain()
+        await asyncio.wait_for(stdout.readline(), timeout=60)
+        stdin.write(
+            (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 13,
+                        "method": "tools/call",
+                        "params": {
+                            "name": "anime_search",
+                            "arguments": {"keyword": "Frieren"},
+                        },
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
+        await stdin.drain()
+        response = json.loads(
+            (await asyncio.wait_for(stdout.readline(), timeout=60)).decode()
+        )
+        content = json.loads(response["result"]["content"][0]["text"])
+        assert content["success"] is True
+        assert isinstance(content["data"]["results"], list)
+        assert response["result"]["isError"] is False
     finally:
         await _cleanup_proc(proc)
 
