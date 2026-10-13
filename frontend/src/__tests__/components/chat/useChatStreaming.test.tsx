@@ -1,41 +1,51 @@
-import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { RunView } from '@/stores/useChatStore';
-import useChatStore from '@/stores/useChatStore';
+import type { RunView } from "@/stores/useChatStore";
+import useChatStore from "@/stores/useChatStore";
 
 const { chatWithBackendMock, cancelRunMock } = vi.hoisted(() => ({
   chatWithBackendMock: vi.fn(),
   cancelRunMock: vi.fn(),
 }));
 
-vi.mock('@/lib/fetcher', () => ({
+vi.mock("@/lib/fetcher", () => ({
   chatWithBackend: chatWithBackendMock,
   cancelRun: cancelRunMock,
 }));
 
-import { useChatStreaming } from '@/hooks/useChatStreaming';
+import { useChatStreaming } from "@/hooks/useChatStreaming";
 
 const runningView: RunView = {
-  runId: 'run-hook',
+  runId: "run-hook",
   lastSequence: 1,
   durable: true,
-  phase: 'executing',
+  phase: "executing",
   terminalStatus: null,
-  connectionStatus: 'connected',
+  connectionStatus: "connected",
   cancelling: false,
 };
 
 interface StreamingCallbacks {
   onRunView?: (view: RunView) => void;
-  onToolCallEnd?: (id: string, name: string, output: unknown, duration?: number, status?: string, errorCode?: string | null) => void;
+  onToolCallEnd?: (
+    id: string,
+    name: string,
+    output: unknown,
+    duration?: number,
+    status?: string,
+    errorCode?: string | null,
+  ) => void;
   onToolCallStart?: (id: string, name: string, inputs: unknown) => void;
   onMessageChunk?: (chunk: string) => void;
   onError?: (error: string) => void;
-  onComplete?: (metadata: { hasDurableRun: boolean; terminalStatus: string | null }) => void;
+  onComplete?: (metadata: {
+    hasDurableRun: boolean;
+    terminalStatus: string | null;
+  }) => void;
 }
 
-describe('useChatStreaming RunView projection', () => {
+describe("useChatStreaming RunView projection", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -44,7 +54,12 @@ describe('useChatStreaming RunView projection', () => {
     vi.useRealTimers();
     chatWithBackendMock.mockReset();
     cancelRunMock.mockReset();
-    useChatStore.setState({ sessions: [], chatMessages: {}, sessionConfigs: {}, activeSessionId: null });
+    useChatStore.setState({
+      sessions: [],
+      chatMessages: {},
+      sessionConfigs: {},
+      activeSessionId: null,
+    });
   });
 
   async function flushRevealFrames() {
@@ -53,31 +68,66 @@ describe('useChatStreaming RunView projection', () => {
     });
   }
 
-  it('associates tool terminal events by invocation id and ignores late duplicate end events', async () => {
-    chatWithBackendMock.mockImplementation(async (options: StreamingCallbacks) => {
-      options.onRunView?.(runningView);
-      options.onToolCallEnd?.('inv-1', 'same.capability', { denied: true }, undefined, 'denied', 'permission_denied');
-      options.onToolCallStart?.('inv-1', 'same.capability', ['query']);
-      options.onToolCallEnd?.('inv-1', 'same.capability', { should: 'not replace' }, 99, 'succeeded', null);
-      options.onToolCallStart?.('inv-2', 'same.capability', ['query']);
-      options.onToolCallEnd?.('inv-2', 'same.capability', { ok: true }, undefined, 'succeeded', null);
-      options.onRunView?.({ ...runningView, lastSequence: 7, phase: 'completed', terminalStatus: 'succeeded' });
-      options.onComplete?.({ hasDurableRun: true, terminalStatus: 'succeeded' });
-    });
-    const sessionId = 'session-hook';
-    const messageId = 'message-hook';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date(),
-    }]);
+  it("associates tool terminal events by invocation id and ignores late duplicate end events", async () => {
+    chatWithBackendMock.mockImplementation(
+      async (options: StreamingCallbacks) => {
+        options.onRunView?.(runningView);
+        options.onToolCallEnd?.(
+          "inv-1",
+          "same.capability",
+          { denied: true },
+          undefined,
+          "denied",
+          "permission_denied",
+        );
+        options.onToolCallStart?.("inv-1", "same.capability", ["query"]);
+        options.onToolCallEnd?.(
+          "inv-1",
+          "same.capability",
+          { should: "not replace" },
+          99,
+          "succeeded",
+          null,
+        );
+        options.onToolCallStart?.("inv-2", "same.capability", ["query"]);
+        options.onToolCallEnd?.(
+          "inv-2",
+          "same.capability",
+          { ok: true },
+          undefined,
+          "succeeded",
+          null,
+        );
+        options.onRunView?.({
+          ...runningView,
+          lastSequence: 7,
+          phase: "completed",
+          terminalStatus: "succeeded",
+        });
+        options.onComplete?.({
+          hasDurableRun: true,
+          terminalStatus: "succeeded",
+        });
+      },
+    );
+    const sessionId = "session-hook";
+    const messageId = "message-hook";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'deepseek',
-      selectedModel: 'model',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     await act(async () => {
       await result.current.startStreaming({
@@ -88,39 +138,52 @@ describe('useChatStreaming RunView projection', () => {
       });
     });
 
-    const processes = useChatStore.getState().chatMessages[sessionId]?.[0]?.processes || [];
+    const processes =
+      useChatStore.getState().chatMessages[sessionId]?.[0]?.processes || [];
     expect(processes).toHaveLength(2);
-    expect(processes.map((process) => [process.sourceId, process.status, process.output])).toEqual([
-      ['inv-1', 'denied', '{\n  "denied": true\n}'],
-      ['inv-2', 'success', '{\n  "ok": true\n}'],
+    expect(
+      processes.map((process) => [
+        process.sourceId,
+        process.status,
+        process.output,
+      ]),
+    ).toEqual([
+      ["inv-1", "denied", '{\n  "denied": true\n}'],
+      ["inv-2", "success", '{\n  "ok": true\n}'],
     ]);
   });
 
-  it('requests cancellation for a durable run and waits for run_cancelled', async () => {
+  it("requests cancellation for a durable run and waits for run_cancelled", async () => {
     let callbacks: StreamingCallbacks;
     let resolveStream!: () => void;
     chatWithBackendMock.mockImplementation((options: StreamingCallbacks) => {
       callbacks = options;
       options.onRunView?.(runningView);
-      options.onMessageChunk?.('partial');
-      options.onToolCallStart?.('inv-cancel', 'same.capability', ['query']);
-      return new Promise<void>((resolve) => { resolveStream = resolve; });
+      options.onMessageChunk?.("partial");
+      options.onToolCallStart?.("inv-cancel", "same.capability", ["query"]);
+      return new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
     });
     cancelRunMock.mockResolvedValue({ cancellation_requested: true });
-    const sessionId = 'session-cancel';
-    const messageId = 'message-cancel';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: 'partial',
-      createdAt: new Date(),
-    }]);
+    const sessionId = "session-cancel";
+    const messageId = "message-cancel";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "partial",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'deepseek',
-      selectedModel: 'model',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     act(() => {
       void result.current.startStreaming({
@@ -136,48 +199,57 @@ describe('useChatStreaming RunView projection', () => {
       await Promise.resolve();
     });
 
-    expect(cancelRunMock).toHaveBeenCalledWith('run-hook');
+    expect(cancelRunMock).toHaveBeenCalledWith("run-hook");
     expect(result.current.cancelling).toBe(true);
 
     await act(async () => {
       callbacks.onRunView?.({
         ...runningView,
         lastSequence: 3,
-        phase: 'cancelled',
-        terminalStatus: 'cancelled',
+        phase: "cancelled",
+        terminalStatus: "cancelled",
       });
-      callbacks.onComplete?.({ hasDurableRun: true, terminalStatus: 'cancelled' });
+      callbacks.onComplete?.({
+        hasDurableRun: true,
+        terminalStatus: "cancelled",
+      });
       resolveStream();
       await Promise.resolve();
     });
     await flushRevealFrames();
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
-    expect(message?.status).toBe('cancelled');
-    expect(message?.content).toBe('partial');
-    expect(message?.processes?.[0]?.status).toBe('cancelled');
+    expect(message?.status).toBe("cancelled");
+    expect(message?.content).toBe("partial");
+    expect(message?.processes?.[0]?.status).toBe("cancelled");
   });
 
-  it('preserves a durable partial answer as recovering after stream interruption', async () => {
-    chatWithBackendMock.mockImplementation(async (options: StreamingCallbacks) => {
-      options.onRunView?.(runningView);
-      options.onMessageChunk?.('partial');
-      options.onError?.('provider details must not be appended');
-    });
-    const sessionId = 'session-recovering';
-    const messageId = 'message-recovering';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date(),
-    }]);
+  it("preserves a durable partial answer as recovering after stream interruption", async () => {
+    chatWithBackendMock.mockImplementation(
+      async (options: StreamingCallbacks) => {
+        options.onRunView?.(runningView);
+        options.onMessageChunk?.("partial");
+        options.onError?.("provider details must not be appended");
+      },
+    );
+    const sessionId = "session-recovering";
+    const messageId = "message-recovering";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'deepseek',
-      selectedModel: 'model',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     await act(async () => {
       await result.current.startStreaming({
@@ -190,37 +262,43 @@ describe('useChatStreaming RunView projection', () => {
     await flushRevealFrames();
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
-    expect(message?.status).toBe('recovering');
-    expect(message?.content).toBe('partial');
-    expect(message?.content).not.toContain('provider details');
+    expect(message?.status).toBe("recovering");
+    expect(message?.content).toBe("partial");
+    expect(message?.content).not.toContain("provider details");
     expect(message?.run).toMatchObject({
-      phase: 'recovering',
+      phase: "recovering",
       terminalStatus: null,
-      connectionStatus: 'disconnected',
-      errorCode: 'stream_interrupted',
+      connectionStatus: "disconnected",
+      errorCode: "stream_interrupted",
     });
   });
 
-  it('keeps a durable run recoverable when completion lacks a terminal status', async () => {
-    chatWithBackendMock.mockImplementation(async (options: StreamingCallbacks) => {
-      options.onRunView?.(runningView);
-      options.onMessageChunk?.('partial');
-      options.onComplete?.({ hasDurableRun: true, terminalStatus: null });
-    });
-    const sessionId = 'session-missing-terminal';
-    const messageId = 'message-missing-terminal';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date(),
-    }]);
+  it("keeps a durable run recoverable when completion lacks a terminal status", async () => {
+    chatWithBackendMock.mockImplementation(
+      async (options: StreamingCallbacks) => {
+        options.onRunView?.(runningView);
+        options.onMessageChunk?.("partial");
+        options.onComplete?.({ hasDurableRun: true, terminalStatus: null });
+      },
+    );
+    const sessionId = "session-missing-terminal";
+    const messageId = "message-missing-terminal";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'deepseek',
-      selectedModel: 'model',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     await act(async () => {
       await result.current.startStreaming({
@@ -233,38 +311,44 @@ describe('useChatStreaming RunView projection', () => {
     await flushRevealFrames();
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
-    expect(message?.status).toBe('recovering');
-    expect(message?.content).toBe('partial');
+    expect(message?.status).toBe("recovering");
+    expect(message?.content).toBe("partial");
     expect(message?.run).toMatchObject({
-      phase: 'recovering',
+      phase: "recovering",
       terminalStatus: null,
-      errorCode: 'missing_terminal_event',
+      errorCode: "missing_terminal_event",
     });
   });
 
-  it('reveals streamed content over animation frames before finalizing the message', async () => {
+  it("reveals streamed content over animation frames before finalizing the message", async () => {
     let callbacks!: StreamingCallbacks;
     let releaseStream!: () => void;
     chatWithBackendMock.mockImplementation((options: StreamingCallbacks) => {
       callbacks = options;
       options.onRunView?.(runningView);
-      options.onMessageChunk?.('abc');
-      return new Promise<void>((resolve) => { releaseStream = resolve; });
+      options.onMessageChunk?.("abc");
+      return new Promise<void>((resolve) => {
+        releaseStream = resolve;
+      });
     });
-    const sessionId = 'session-reveal';
-    const messageId = 'message-reveal';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date(),
-    }]);
+    const sessionId = "session-reveal";
+    const messageId = "message-reveal";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'deepseek',
-      selectedModel: 'model',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     act(() => {
       void result.current.startStreaming({
@@ -278,53 +362,70 @@ describe('useChatStreaming RunView projection', () => {
       await Promise.resolve();
     });
 
-    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.content).toBe('');
+    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.content).toBe(
+      "",
+    );
     expect(result.current.streamingPreview).toBeNull();
 
     await act(async () => {
       vi.advanceTimersByTime(16);
       await Promise.resolve();
     });
-    expect(result.current.streamingPreview?.content).toBe('a');
-    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.content).toBe('');
+    expect(result.current.streamingPreview?.content).toBe("a");
+    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.content).toBe(
+      "",
+    );
 
     await act(async () => {
       await vi.runAllTimersAsync();
     });
-    expect(result.current.streamingPreview?.content).toBe('abc');
+    expect(result.current.streamingPreview?.content).toBe("abc");
 
     await act(async () => {
-      callbacks.onRunView?.({ ...runningView, phase: 'completed', terminalStatus: 'succeeded' });
-      callbacks.onComplete?.({ hasDurableRun: true, terminalStatus: 'succeeded' });
+      callbacks.onRunView?.({
+        ...runningView,
+        phase: "completed",
+        terminalStatus: "succeeded",
+      });
+      callbacks.onComplete?.({
+        hasDurableRun: true,
+        terminalStatus: "succeeded",
+      });
       releaseStream();
       await Promise.resolve();
     });
 
     const message = useChatStore.getState().chatMessages[sessionId]?.[0];
-    expect(message?.content).toBe('abc');
-    expect(message?.status).toBe('completed');
+    expect(message?.content).toBe("abc");
+    expect(message?.status).toBe("completed");
   });
 
-  it('does not call the durable cancel endpoint for a non-durable run', async () => {
+  it("does not call the durable cancel endpoint for a non-durable run", async () => {
     let resolveStream!: () => void;
     chatWithBackendMock.mockImplementation((options: StreamingCallbacks) => {
       options.onRunView?.({ ...runningView, durable: false });
-      return new Promise<void>((resolve) => { resolveStream = resolve; });
+      return new Promise<void>((resolve) => {
+        resolveStream = resolve;
+      });
     });
-    const sessionId = 'session-ephemeral';
-    const messageId = 'message-ephemeral';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date(),
-    }]);
+    const sessionId = "session-ephemeral";
+    const messageId = "message-ephemeral";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'deepseek',
-      selectedModel: 'model',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     act(() => {
       void result.current.startStreaming({
@@ -342,25 +443,33 @@ describe('useChatStreaming RunView projection', () => {
     });
 
     expect(cancelRunMock).not.toHaveBeenCalled();
-    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.status).toBe('failed');
+    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.status).toBe(
+      "failed",
+    );
   });
 
-  it('marks client configuration failures explicitly instead of as stream errors', async () => {
-    chatWithBackendMock.mockRejectedValue(new Error('请先在设置中填写 openai 的 API Key'));
-    const sessionId = 'session-config-error';
-    const messageId = 'message-config-error';
-    useChatStore.getState().setSessionMessages(sessionId, [{
-      id: messageId,
-      role: 'assistant',
-      content: '',
-      createdAt: new Date(),
-    }]);
+  it("marks client configuration failures explicitly instead of as stream errors", async () => {
+    chatWithBackendMock.mockRejectedValue(
+      new Error("请先在设置中填写 openai 的 API Key"),
+    );
+    const sessionId = "session-config-error";
+    const messageId = "message-config-error";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: messageId,
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
 
-    const { result } = renderHook(() => useChatStreaming({
-      selectedProvider: 'openai',
-      selectedModel: 'gpt-3.5-turbo',
-      onConnectionStatusChange: vi.fn(),
-    }));
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "openai",
+        selectedModel: "gpt-3.5-turbo",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
 
     await act(async () => {
       await result.current.startStreaming({
@@ -371,9 +480,11 @@ describe('useChatStreaming RunView projection', () => {
       });
     });
 
-    expect(useChatStore.getState().chatMessages[sessionId]?.[0]?.run).toMatchObject({
-      phase: 'failed',
-      errorCode: 'configuration_error',
+    expect(
+      useChatStore.getState().chatMessages[sessionId]?.[0]?.run,
+    ).toMatchObject({
+      phase: "failed",
+      errorCode: "configuration_error",
     });
   });
 });

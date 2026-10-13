@@ -3,7 +3,12 @@ export function getTimelineSlotFromPointer(
   slotHeight: number,
   totalSlots: number,
 ): number {
-  if (!Number.isFinite(pointerOffset) || !Number.isFinite(slotHeight) || slotHeight <= 0 || totalSlots <= 0) {
+  if (
+    !Number.isFinite(pointerOffset) ||
+    !Number.isFinite(slotHeight) ||
+    slotHeight <= 0 ||
+    totalSlots <= 0
+  ) {
     return 0;
   }
 
@@ -18,5 +23,9 @@ export function getTimelineSlotFromRect(
   totalSlots: number,
 ): number {
   if (!Number.isFinite(pointerY) || !Number.isFinite(containerTop)) return 0;
-  return getTimelineSlotFromPointer(pointerY - containerTop, slotHeight, totalSlots);
+  return getTimelineSlotFromPointer(
+    pointerY - containerTop,
+    slotHeight,
+    totalSlots,
+  );
 }

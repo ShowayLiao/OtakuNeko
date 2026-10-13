@@ -1,6 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- SSE payloads are provider-defined JSON. */
-import { useApiStore } from '@/store/useApiStore';
-import type { RunPhase, RunTerminalStatus, RunView } from '@/stores/useChatStore';
+import { useApiStore } from "@/store/useApiStore";
+import type {
+  RunPhase,
+  RunTerminalStatus,
+  RunView,
+} from "@/stores/useChatStore";
 
 interface PromptConfig {
   persona: string;
@@ -10,7 +14,7 @@ interface PromptConfig {
 
 interface DeepSeekOptions {
   thinking: boolean;
-  reasoning_effort: 'high' | 'max';
+  reasoning_effort: "high" | "max";
 }
 
 type SSEData = Record<string, unknown>;
@@ -21,9 +25,9 @@ interface ParsedSSEEvent {
   id?: string;
 }
 
-type TerminalStatus = 'succeeded' | 'failed' | 'cancelled' | 'timeout';
+type TerminalStatus = "succeeded" | "failed" | "cancelled" | "timeout";
 
-export const AUTH_STATE_CHANGED_EVENT = 'otakuneko-auth-state-changed';
+export const AUTH_STATE_CHANGED_EVENT = "otakuneko-auth-state-changed";
 
 export interface CurrentUser {
   id: number;
@@ -36,7 +40,7 @@ export interface CurrentUser {
 }
 
 const invalidateAuth = () => {
-  localStorage.removeItem('token');
+  localStorage.removeItem("token");
   window.dispatchEvent(new Event(AUTH_STATE_CHANGED_EVENT));
 };
 
@@ -46,7 +50,7 @@ export class ChatRequestError extends Error {
 
   constructor(message: string, code: string, status: number) {
     super(message);
-    this.name = 'ChatRequestError';
+    this.name = "ChatRequestError";
     this.code = code;
     this.status = status;
   }
@@ -57,25 +61,28 @@ const httpErrorCode = (
   providerCode: unknown,
   authenticationFailure = false,
 ): string => {
-  if (authenticationFailure) return 'authentication_error';
-  if (typeof providerCode === 'string' && providerCode.trim() !== '') {
+  if (authenticationFailure) return "authentication_error";
+  if (typeof providerCode === "string" && providerCode.trim() !== "") {
     return providerCode;
   }
-  if (status === 401) return 'configuration_error';
-  if (status === 408 || status === 504) return 'timeout';
-  if (status >= 500) return 'backend_error';
-  return 'request_error';
+  if (status === 401) return "configuration_error";
+  if (status === 408 || status === 504) return "timeout";
+  if (status >= 500) return "backend_error";
+  return "request_error";
 };
 
-const chatRequestError = async (response: Response): Promise<ChatRequestError> => {
+const chatRequestError = async (
+  response: Response,
+): Promise<ChatRequestError> => {
   let detail: string | null = null;
   let providerCode: unknown = null;
-  const authenticationFailure = response.status === 401
-    && /\bbearer\b/i.test(response.headers.get('WWW-Authenticate') || '');
+  const authenticationFailure =
+    response.status === 401 &&
+    /\bbearer\b/i.test(response.headers.get("WWW-Authenticate") || "");
 
   try {
-    const payload = await response.clone().json() as Record<string, unknown>;
-    if (typeof payload.detail === 'string' && payload.detail.trim() !== '') {
+    const payload = (await response.clone().json()) as Record<string, unknown>;
+    if (typeof payload.detail === "string" && payload.detail.trim() !== "") {
       detail = payload.detail;
     }
     providerCode = payload.error_code;
@@ -119,8 +126,14 @@ interface ChatWithBackendOptions {
   ) => void;
   onToolCallDelta?: (id: string, name: string, delta: string) => void;
   onPlanUpdate?: (plan: string) => void;
-  onProgress?: (data: { tool_name: string; tool_count: number; duration_ms: number }) => void;
-  onConnectionStatus?: (status: 'connected' | 'connecting' | 'disconnected') => void;
+  onProgress?: (data: {
+    tool_name: string;
+    tool_count: number;
+    duration_ms: number;
+  }) => void;
+  onConnectionStatus?: (
+    status: "connected" | "connecting" | "disconnected",
+  ) => void;
   onThinkingStart?: () => void;
   onThinkingChunk?: (chunk: string) => void;
   onThinkingEnd?: () => void;
@@ -145,11 +158,12 @@ interface ChatWithBackendOptions {
 }
 
 const toSequence = (value: unknown): number | null => {
-  const numericValue = typeof value === 'number'
-    ? value
-    : typeof value === 'string' && value.trim() !== ''
-      ? Number(value)
-      : Number.NaN;
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value)
+        : Number.NaN;
   return Number.isSafeInteger(numericValue) && numericValue >= 0
     ? numericValue
     : null;
@@ -162,29 +176,28 @@ const maxSequence = (...values: unknown[]): number | null => {
   return sequences.length > 0 ? Math.max(...sequences) : null;
 };
 
-const normalizedString = (value: unknown): string | null => (
-  typeof value === 'string' && value.trim() !== ''
+const normalizedString = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() !== ""
     ? value.trim().toLowerCase()
-    : null
-);
+    : null;
 
 const terminalStatusFromValue = (value: unknown): TerminalStatus | null => {
   switch (normalizedString(value)) {
-    case 'succeeded':
-    case 'success':
-    case 'completed':
-      return 'succeeded';
-    case 'cancelled':
-    case 'canceled':
-      return 'cancelled';
-    case 'timeout':
-    case 'timed_out':
-    case 'timed-out':
-      return 'timeout';
-    case 'failed':
-    case 'failure':
-    case 'error':
-      return 'failed';
+    case "succeeded":
+    case "success":
+    case "completed":
+      return "succeeded";
+    case "cancelled":
+    case "canceled":
+      return "cancelled";
+    case "timeout":
+    case "timed_out":
+    case "timed-out":
+      return "timeout";
+    case "failed":
+    case "failure":
+    case "error":
+      return "failed";
     default:
       return null;
   }
@@ -194,30 +207,32 @@ const normalizeTerminalStatus = (
   eventType: string,
   data: SSEData,
 ): NormalizedTerminalStatus | null => {
-  const errorCode = typeof data.error_code === 'string' ? data.error_code : null;
+  const errorCode =
+    typeof data.error_code === "string" ? data.error_code : null;
   const statusMarker = terminalStatusFromValue(data.status);
   const errorMarker = terminalStatusFromValue(data.error_code);
   let status: TerminalStatus | null = null;
 
   switch (eventType) {
-    case 'run_completed':
-    case 'run.succeeded':
-      status = 'succeeded';
+    case "run_completed":
+    case "run.succeeded":
+      status = "succeeded";
       break;
-    case 'run_cancelled':
-    case 'run.cancelled':
-      status = 'cancelled';
+    case "run_cancelled":
+    case "run.cancelled":
+      status = "cancelled";
       break;
-    case 'run_timeout':
-      status = 'timeout';
+    case "run_timeout":
+      status = "timeout";
       break;
-    case 'run_failed':
-    case 'run.failed':
-      status = statusMarker === 'timeout' || errorMarker === 'timeout'
-        ? 'timeout'
-        : 'failed';
+    case "run_failed":
+    case "run.failed":
+      status =
+        statusMarker === "timeout" || errorMarker === "timeout"
+          ? "timeout"
+          : "failed";
       break;
-    case 'run_status':
+    case "run_status":
       status = statusMarker;
       break;
     default:
@@ -227,17 +242,16 @@ const normalizeTerminalStatus = (
   if (!status) return null;
   return {
     status,
-    error_code: errorCode || (status === 'timeout' ? 'timeout' : null),
+    error_code: errorCode || (status === "timeout" ? "timeout" : null),
   };
 };
 
-const stringValue = (value: unknown): string | null => (
-  typeof value === 'string' && value.trim() !== '' ? value : null
-);
+const stringValue = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() !== "" ? value : null;
 
 const numberValue = (value: unknown, fallback = 0): number => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -245,8 +259,8 @@ const numberValue = (value: unknown, fallback = 0): number => {
 };
 
 const optionalNumberValue = (value: unknown): number | undefined => {
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  if (typeof value === 'string' && value.trim() !== '') {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
     const parsed = Number(value);
     if (Number.isFinite(parsed)) return parsed;
   }
@@ -255,48 +269,61 @@ const optionalNumberValue = (value: unknown): number | undefined => {
 
 const normalizeArgumentKeys = (value: unknown): string[] => {
   const keys = Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === 'string')
-    : value && typeof value === 'object'
+    ? value.filter((item): item is string => typeof item === "string")
+    : value && typeof value === "object"
       ? Object.keys(value)
       : [];
   return keys
-    .map(key => key.trim())
+    .map((key) => key.trim())
     .filter(Boolean)
     .slice(0, 32);
 };
 
-const normalizeInvocationStatus = (status: unknown, errorCode: unknown): string => {
+const normalizeInvocationStatus = (
+  status: unknown,
+  errorCode: unknown,
+): string => {
   const statusMarker = normalizedString(status);
   const errorMarker = normalizedString(errorCode);
-  if (statusMarker === 'timeout' || statusMarker === 'timed_out' || errorMarker === 'timeout') {
-    return 'timeout';
+  if (
+    statusMarker === "timeout" ||
+    statusMarker === "timed_out" ||
+    errorMarker === "timeout"
+  ) {
+    return "timeout";
   }
-  if (statusMarker === 'denied' || statusMarker === 'forbidden') return 'denied';
-  if (statusMarker === 'cancelled' || statusMarker === 'canceled') return 'cancelled';
-  if (statusMarker === 'succeeded' || statusMarker === 'success' || statusMarker === 'completed') {
-    return 'succeeded';
+  if (statusMarker === "denied" || statusMarker === "forbidden")
+    return "denied";
+  if (statusMarker === "cancelled" || statusMarker === "canceled")
+    return "cancelled";
+  if (
+    statusMarker === "succeeded" ||
+    statusMarker === "success" ||
+    statusMarker === "completed"
+  ) {
+    return "succeeded";
   }
-  return 'failed';
+  return "failed";
 };
 
 const phaseForEvent = (eventType: string): RunPhase | null => {
   switch (eventType) {
-    case 'model_decision':
-    case 'thinking_start':
-    case 'thinking_chunk':
-    case 'thinking_end':
-    case 'reasoning_chunk':
-      return 'thinking';
-    case 'tool_call_delta':
-    case 'tool_call_start':
-    case 'tool_call_end':
-    case 'tool_start':
-    case 'tool_end':
-      return 'executing';
-    case 'message_start':
-    case 'message_chunk':
-    case 'message_end':
-      return 'responding';
+    case "model_decision":
+    case "thinking_start":
+    case "thinking_chunk":
+    case "thinking_end":
+    case "reasoning_chunk":
+      return "thinking";
+    case "tool_call_delta":
+    case "tool_call_start":
+    case "tool_call_end":
+    case "tool_start":
+    case "tool_end":
+      return "executing";
+    case "message_start":
+    case "message_chunk":
+    case "message_end":
+      return "responding";
     default:
       return null;
   }
@@ -304,48 +331,59 @@ const phaseForEvent = (eventType: string): RunPhase | null => {
 
 const phaseForTerminalStatus = (status: RunTerminalStatus): RunPhase => {
   switch (status) {
-    case 'succeeded': return 'completed';
-    case 'cancelled': return 'cancelled';
-    case 'timeout': return 'timeout';
-    case 'failed': return 'failed';
+    case "succeeded":
+      return "completed";
+    case "cancelled":
+      return "cancelled";
+    case "timeout":
+      return "timeout";
+    case "failed":
+      return "failed";
   }
 };
 
 // 解析 SSE 事件流
 const parseSSE = (text: string): ParsedSSEEvent[] => {
   const events: ParsedSSEEvent[] = [];
-  const lines = text.split('\n');
-  let event: { type: string; data: string; id?: string } = { type: 'message', data: '' };
-  
+  const lines = text.split("\n");
+  let event: { type: string; data: string; id?: string } = {
+    type: "message",
+    data: "",
+  };
+
   for (const line of lines) {
-    if (line.startsWith('id:')) {
+    if (line.startsWith("id:")) {
       event.id = line.substring(3).trim();
-    } else if (line.startsWith('event:')) {
+    } else if (line.startsWith("event:")) {
       event.type = line.substring(6).trim();
-    } else if (line.startsWith('data:')) {
-      event.data += line.substring(5).trim() + '\n';
-    } else if (line === '') {
+    } else if (line.startsWith("data:")) {
+      event.data += line.substring(5).trim() + "\n";
+    } else if (line === "") {
       if (event.data) {
         try {
           const data = JSON.parse(event.data.trim());
-          if (typeof data === 'object' && data !== null) {
-            events.push({ type: event.type, data: data as SSEData, id: event.id });
+          if (typeof data === "object" && data !== null) {
+            events.push({
+              type: event.type,
+              data: data as SSEData,
+              id: event.id,
+            });
           }
         } catch {
           // 忽略解析错误
         }
-        event = { type: 'message', data: '' };
+        event = { type: "message", data: "" };
       }
     }
   }
-  
+
   return events;
 };
 
 export const chatWithBackend = async ({
   messages,
   provider,
-  model = 'gpt-3.5-turbo',
+  model = "gpt-3.5-turbo",
   temperature = 0.7,
   prompt_config,
   thread_id,
@@ -366,7 +404,7 @@ export const chatWithBackend = async ({
   onRunStatus,
   onRunView,
   resumeRun,
-  onComplete
+  onComplete,
 }: ChatWithBackendOptions) => {
   const config = (useApiStore.getState().config as any)[provider];
 
@@ -379,7 +417,7 @@ export const chatWithBackend = async ({
   const timeoutMs = 120_000;
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
-  if (onConnectionStatus) onConnectionStatus('connecting');
+  if (onConnectionStatus) onConnectionStatus("connecting");
 
   let currentRunId: string | null = resumeRun?.runId || null;
   let lastSequence = resumeRun?.after || 0;
@@ -397,9 +435,9 @@ export const chatWithBackend = async ({
     runId: currentRunId,
     lastSequence,
     durable: durableRun,
-    phase: 'thinking',
+    phase: "thinking",
     terminalStatus: null,
-    connectionStatus: 'connecting',
+    connectionStatus: "connecting",
     cancelling: false,
   };
   const emitRunView = (updates: Partial<RunView> = {}) => {
@@ -412,40 +450,46 @@ export const chatWithBackend = async ({
     };
     if (onRunView) onRunView(runView);
   };
-  const getTerminalStatus = (): TerminalStatus | null => terminalStatus?.status || null;
+  const getTerminalStatus = (): TerminalStatus | null =>
+    terminalStatus?.status || null;
 
   try {
-    const userToken = localStorage.getItem('token');
+    const userToken = localStorage.getItem("token");
     const response = await fetch(
       resumeRun
         ? `/api/v1/runs/${encodeURIComponent(resumeRun.runId)}/events?after=${resumeRun.after || 0}`
-        : '/api/v1/chat',
+        : "/api/v1/chat",
       {
-        method: resumeRun ? 'GET' : 'POST',
+        method: resumeRun ? "GET" : "POST",
         signal: signalSource,
         headers: resumeRun
-          ? (userToken ? { Authorization: `Bearer ${userToken}` } : {})
+          ? userToken
+            ? { Authorization: `Bearer ${userToken}` }
+            : {}
           : {
-              'Content-Type': 'application/json',
-              'X-Api-Key': config.apiKey,
-              'X-Provider-Endpoint': config.endpoint || '',
+              "Content-Type": "application/json",
+              "X-Api-Key": config.apiKey,
+              "X-Provider-Endpoint": config.endpoint || "",
               ...(userToken ? { Authorization: `Bearer ${userToken}` } : {}),
             },
-        ...(resumeRun ? {} : {
-          body: JSON.stringify({
-            messages,
-            model,
-            temperature,
-            prompt_config,
-            thread_id,
-            deepseek_options: provider === 'deepseek'
-              ? {
-                  thinking: config.thinking ?? true,
-                  reasoning_effort: config.reasoningEffort ?? 'high',
-                } satisfies DeepSeekOptions
-              : undefined,
-          }),
-        }),
+        ...(resumeRun
+          ? {}
+          : {
+              body: JSON.stringify({
+                messages,
+                model,
+                temperature,
+                prompt_config,
+                thread_id,
+                deepseek_options:
+                  provider === "deepseek"
+                    ? ({
+                        thinking: config.thinking ?? true,
+                        reasoning_effort: config.reasoningEffort ?? "high",
+                      } satisfies DeepSeekOptions)
+                    : undefined,
+              }),
+            }),
       },
     );
 
@@ -454,18 +498,18 @@ export const chatWithBackend = async ({
     }
 
     if (!resumeRun && !response.body) {
-      throw new Error('No response body');
+      throw new Error("No response body");
     }
 
-    if (onConnectionStatus) onConnectionStatus('connected');
-    emitRunView({ connectionStatus: 'connected' });
+    if (onConnectionStatus) onConnectionStatus("connected");
+    emitRunView({ connectionStatus: "connected" });
     // Per-event logging is intentionally opt-in; console I/O can dominate
     // the main thread while a model emits many small SSE frames.
-    const streamDebug = process.env.NEXT_PUBLIC_CHAT_STREAM_DEBUG === '1';
+    const streamDebug = process.env.NEXT_PUBLIC_CHAT_STREAM_DEBUG === "1";
     const handleFrame = (frame: ParsedSSEEvent) => {
       const data = frame.data;
-      if (typeof data.run_id === 'string') currentRunId = data.run_id;
-      if (durableRun === null && typeof data.durable === 'boolean') {
+      if (typeof data.run_id === "string") currentRunId = data.run_id;
+      if (durableRun === null && typeof data.durable === "boolean") {
         durableRun = data.durable;
       }
       const frameSequence = maxSequence(
@@ -475,7 +519,8 @@ export const chatWithBackend = async ({
         data.last_sequence,
       );
       if (frameSequence !== null) {
-        if (frameSequence <= lastSequence || seenSequences.has(frameSequence)) return;
+        if (frameSequence <= lastSequence || seenSequences.has(frameSequence))
+          return;
         seenSequences.add(frameSequence);
         lastSequence = frameSequence;
       }
@@ -483,7 +528,7 @@ export const chatWithBackend = async ({
       const normalizedTerminal = normalizeTerminalStatus(frame.type, data);
       if (normalizedTerminal) {
         const status = {
-          run_id: currentRunId || String(data.run_id || ''),
+          run_id: currentRunId || String(data.run_id || ""),
           status: normalizedTerminal.status,
           error_code: normalizedTerminal.error_code,
           last_sequence: maxSequence(data.last_sequence, lastSequence) || 0,
@@ -504,47 +549,64 @@ export const chatWithBackend = async ({
       }
 
       const nextPhase = phaseForEvent(frame.type);
-      if (frame.type === 'run.cancel_requested') {
+      if (frame.type === "run.cancel_requested") {
         emitRunView({ cancelling: true });
       }
 
       switch (frame.type) {
-        case 'message_chunk':
-          if (typeof data.content === 'string' && data.content && onMessageChunk) {
+        case "message_chunk":
+          if (
+            typeof data.content === "string" &&
+            data.content &&
+            onMessageChunk
+          ) {
             onMessageChunk(data.content);
           }
           break;
-        case 'message_start':
+        case "message_start":
           if (onMessageStart) onMessageStart();
           break;
-        case 'message_end':
+        case "message_end":
           explicitNonDurableCompletion = true;
           if (onMessageEnd) onMessageEnd();
           break;
-        case 'thinking_start':
+        case "thinking_start":
           if (onThinkingStart) onThinkingStart();
           break;
-        case 'thinking_chunk':
-          if (typeof data.content === 'string' && data.content && onThinkingChunk) {
+        case "thinking_chunk":
+          if (
+            typeof data.content === "string" &&
+            data.content &&
+            onThinkingChunk
+          ) {
             onThinkingChunk(data.content);
           }
           break;
-        case 'thinking_end':
+        case "thinking_end":
           if (onThinkingEnd) onThinkingEnd();
           break;
-        case 'tool_call_delta':
+        case "tool_call_delta":
           {
-            const invocationId = stringValue(data.invocation_id) || stringValue(data.id);
-            const capability = stringValue(data.capability) || stringValue(data.name);
-            if (onToolCallDelta && invocationId && capability && typeof data.delta === 'string') {
+            const invocationId =
+              stringValue(data.invocation_id) || stringValue(data.id);
+            const capability =
+              stringValue(data.capability) || stringValue(data.name);
+            if (
+              onToolCallDelta &&
+              invocationId &&
+              capability &&
+              typeof data.delta === "string"
+            ) {
               onToolCallDelta(invocationId, capability, data.delta);
             }
           }
           break;
-        case 'tool_call_start':
+        case "tool_call_start":
           {
-            const invocationId = stringValue(data.invocation_id) || stringValue(data.id);
-            const capability = stringValue(data.capability) || stringValue(data.name);
+            const invocationId =
+              stringValue(data.invocation_id) || stringValue(data.id);
+            const capability =
+              stringValue(data.capability) || stringValue(data.name);
             if (onToolCallStart && invocationId && capability) {
               onToolCallStart(
                 invocationId,
@@ -554,10 +616,12 @@ export const chatWithBackend = async ({
             }
           }
           break;
-        case 'tool_call_end':
+        case "tool_call_end":
           {
-            const invocationId = stringValue(data.invocation_id) || stringValue(data.id);
-            const capability = stringValue(data.capability) || stringValue(data.name);
+            const invocationId =
+              stringValue(data.invocation_id) || stringValue(data.id);
+            const capability =
+              stringValue(data.capability) || stringValue(data.name);
             if (onToolCallEnd && invocationId && capability) {
               onToolCallEnd(
                 invocationId,
@@ -565,18 +629,26 @@ export const chatWithBackend = async ({
                 data.output,
                 optionalNumberValue(data.duration_ms),
                 normalizeInvocationStatus(data.status, data.error_code),
-                typeof data.error_code === 'string' ? data.error_code : null,
+                typeof data.error_code === "string" ? data.error_code : null,
               );
             }
           }
           break;
-        case 'plan_update':
-          if (typeof data.content === 'string' && data.content && onPlanUpdate) {
+        case "plan_update":
+          if (
+            typeof data.content === "string" &&
+            data.content &&
+            onPlanUpdate
+          ) {
             onPlanUpdate(data.content);
           }
           break;
-        case 'progress':
-          if (onProgress && typeof data.tool_name === 'string' && data.tool_name) {
+        case "progress":
+          if (
+            onProgress &&
+            typeof data.tool_name === "string" &&
+            data.tool_name
+          ) {
             onProgress({
               tool_name: data.tool_name,
               tool_count: numberValue(data.tool_count, 1),
@@ -584,12 +656,16 @@ export const chatWithBackend = async ({
             });
           }
           break;
-        case 'reasoning_chunk':
-          if (typeof data.content === 'string' && data.content && onThinkingChunk) {
+        case "reasoning_chunk":
+          if (
+            typeof data.content === "string" &&
+            data.content &&
+            onThinkingChunk
+          ) {
             onThinkingChunk(data.content);
           }
           break;
-        case 'tool_start':
+        case "tool_start":
           {
             const name = stringValue(data.name);
             if (name && onToolCallStart) {
@@ -597,7 +673,7 @@ export const chatWithBackend = async ({
             }
           }
           break;
-        case 'tool_end':
+        case "tool_end":
           {
             const name = stringValue(data.name);
             if (name && onToolCallEnd) {
@@ -606,16 +682,16 @@ export const chatWithBackend = async ({
                 name,
                 data.output,
                 optionalNumberValue(data.duration_ms),
-                stringValue(data.status) || 'success',
+                stringValue(data.status) || "success",
               );
             }
           }
           break;
-        case 'error':
-          if (typeof data.detail === 'string' && data.detail && onError) {
+        case "error":
+          if (typeof data.detail === "string" && data.detail && onError) {
             onError(
               data.detail,
-              typeof data.error_code === 'string' ? data.error_code : null,
+              typeof data.error_code === "string" ? data.error_code : null,
             );
           }
           break;
@@ -625,15 +701,17 @@ export const chatWithBackend = async ({
 
     replayAfterDisconnect = async (): Promise<boolean> => {
       if (!currentRunId) return false;
-      const replayToken = localStorage.getItem('token');
+      const replayToken = localStorage.getItem("token");
       while (!terminalStatus) {
         const cursorBeforeRequest = lastSequence;
         const replayResponse = await fetch(
           `/api/v1/runs/${encodeURIComponent(currentRunId)}/events?after=${lastSequence}`,
           {
-            method: 'GET',
+            method: "GET",
             signal: signalSource,
-            headers: replayToken ? { Authorization: `Bearer ${replayToken}` } : {},
+            headers: replayToken
+              ? { Authorization: `Bearer ${replayToken}` }
+              : {},
           },
         );
         if (!replayResponse.ok) {
@@ -644,9 +722,10 @@ export const chatWithBackend = async ({
           ? replayPayload.events
           : [];
         for (const persistedEvent of persistedEvents) {
-          const payload = persistedEvent.payload && typeof persistedEvent.payload === 'object'
-            ? persistedEvent.payload
-            : {};
+          const payload =
+            persistedEvent.payload && typeof persistedEvent.payload === "object"
+              ? persistedEvent.payload
+              : {};
           handleFrame({
             type: persistedEvent.event_type,
             id: String(persistedEvent.sequence),
@@ -683,9 +762,10 @@ export const chatWithBackend = async ({
         ? replayPayload.events
         : [];
       for (const persistedEvent of persistedEvents) {
-        const payload = persistedEvent.payload && typeof persistedEvent.payload === 'object'
-          ? persistedEvent.payload
-          : {};
+        const payload =
+          persistedEvent.payload && typeof persistedEvent.payload === "object"
+            ? persistedEvent.payload
+            : {};
         handleFrame({
           type: persistedEvent.event_type,
           id: String(persistedEvent.sequence),
@@ -699,7 +779,7 @@ export const chatWithBackend = async ({
       if (terminalStatus) {
         notifyComplete();
       } else if (onError) {
-        onError('Replay ended before a terminal run event');
+        onError("Replay ended before a terminal run event");
       }
       return;
     }
@@ -718,28 +798,27 @@ export const chatWithBackend = async ({
         }
       }
 
-      const hasLegacyEphemeralCompletion = (
-        durableRun === false || (durableRun === null && currentRunId === null)
-      );
+      const hasLegacyEphemeralCompletion =
+        durableRun === false || (durableRun === null && currentRunId === null);
       if (hasLegacyEphemeralCompletion && explicitNonDurableCompletion) {
         notifyComplete();
         return;
       }
 
-      if (onError) onError('运行流结束但未收到终态事件');
+      if (onError) onError("运行流结束但未收到终态事件");
     };
 
     const resetTimeout = () => {
       if (timeoutId) clearTimeout(timeoutId);
       timeoutId = setTimeout(() => {
         reader.cancel().catch(() => {});
-        if (onError) onError('请求超时');
+        if (onError) onError("请求超时");
       }, timeoutMs);
     };
 
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
-    let buffer = '';
+    let buffer = "";
     resetTimeout();
 
     while (true) {
@@ -750,20 +829,26 @@ export const chatWithBackend = async ({
       buffer += decoder.decode(value, { stream: true });
 
       let eventEndIndex;
-      while ((eventEndIndex = buffer.indexOf('\n\n')) !== -1) {
+      while ((eventEndIndex = buffer.indexOf("\n\n")) !== -1) {
         const chunkToParse = buffer.slice(0, eventEndIndex + 2);
         buffer = buffer.slice(eventEndIndex + 2);
         const events = parseSSE(chunkToParse);
 
         for (const event of events) {
           if (streamDebug) {
-            console.debug('[chat-stream] ' + JSON.stringify({
-              type: event.type,
-              sequence: event.data.stream_sequence,
-              serverElapsedMs: event.data.server_elapsed_ms,
-              receivedAtMs: Math.round(performance.now()),
-              contentLength: typeof event.data.content === 'string' ? event.data.content.length : 0,
-            }));
+            console.debug(
+              "[chat-stream] " +
+                JSON.stringify({
+                  type: event.type,
+                  sequence: event.data.stream_sequence,
+                  serverElapsedMs: event.data.server_elapsed_ms,
+                  receivedAtMs: Math.round(performance.now()),
+                  contentLength:
+                    typeof event.data.content === "string"
+                      ? event.data.content.length
+                      : 0,
+                }),
+            );
           }
           handleFrame(event);
         }
@@ -772,7 +857,7 @@ export const chatWithBackend = async ({
 
     await finishAfterStreamEnd();
   } catch (err: any) {
-    if (err?.name === 'AbortError') {
+    if (err?.name === "AbortError") {
       // A user-initiated stop is a normal terminal state. Keep any streamed
       // content instead of replacing it with an error message.
     } else {
@@ -804,14 +889,18 @@ export const chatWithBackend = async ({
     }
   } finally {
     if (timeoutId) clearTimeout(timeoutId);
-    if (onConnectionStatus) onConnectionStatus('disconnected');
+    if (onConnectionStatus) onConnectionStatus("disconnected");
   }
 };
 
-export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): Promise<any[]> => {
-  const normalizedThreadId = typeof threadId === 'string' ? threadId.trim() : '';
-  if (!normalizedThreadId || normalizedThreadId === '[object Object]') {
-    throw new Error('Invalid chat thread id');
+export const fetchChatHistory = async (
+  threadId: string,
+  signal?: AbortSignal,
+): Promise<any[]> => {
+  const normalizedThreadId =
+    typeof threadId === "string" ? threadId.trim() : "";
+  if (!normalizedThreadId || normalizedThreadId === "[object Object]") {
+    throw new Error("Invalid chat thread id");
   }
   const token = localStorage.getItem("token");
   const response = await fetch(
@@ -819,7 +908,7 @@ export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): 
     {
       signal,
       headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
+    },
   );
   if (!response.ok) {
     if (response.status === 401) invalidateAuth();
@@ -830,9 +919,9 @@ export const fetchChatHistory = async (threadId: string, signal?: AbortSignal): 
 };
 
 export const fetchCurrentUser = async (): Promise<CurrentUser | null> => {
-  const token = localStorage.getItem('token');
+  const token = localStorage.getItem("token");
   if (!token) return null;
-  const response = await fetch('/api/v1/users/me', {
+  const response = await fetch("/api/v1/users/me", {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (response.status === 401) {
@@ -845,13 +934,16 @@ export const fetchCurrentUser = async (): Promise<CurrentUser | null> => {
   return response.json();
 };
 
-export const cancelRun = async (runId: string, threadId?: string): Promise<Record<string, unknown>> => {
-  const token = localStorage.getItem('token');
-  const query = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : '';
+export const cancelRun = async (
+  runId: string,
+  threadId?: string,
+): Promise<Record<string, unknown>> => {
+  const token = localStorage.getItem("token");
+  const query = threadId ? `?thread_id=${encodeURIComponent(threadId)}` : "";
   const response = await fetch(
     `/api/v1/runs/${encodeURIComponent(runId)}/cancel${query}`,
     {
-      method: 'POST',
+      method: "POST",
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     },
   );
@@ -863,49 +955,59 @@ export const cancelRun = async (runId: string, threadId?: string): Promise<Recor
 
 export const deleteChatHistory = async (threadId: string): Promise<void> => {
   const token = localStorage.getItem("token");
-  await fetch(
-    `/api/v1/chat/history/${encodeURIComponent(threadId)}`,
-    {
-      method: 'DELETE',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
+  await fetch(`/api/v1/chat/history/${encodeURIComponent(threadId)}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
 };
 
-export const listThreads = async (xApiKey?: string, xBaseUrl?: string): Promise<string[]> => {
+export const listThreads = async (
+  xApiKey?: string,
+  xBaseUrl?: string,
+): Promise<string[]> => {
   const token = localStorage.getItem("token");
   const params = new URLSearchParams();
-  if (xApiKey) params.set('x_api_key', xApiKey);
-  if (xBaseUrl) params.set('x_base_url', xBaseUrl);
-  const response = await fetch(
-    `/api/v1/chat/threads?${params.toString()}`,
-    {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    }
-  );
+  if (xApiKey) params.set("x_api_key", xApiKey);
+  if (xBaseUrl) params.set("x_base_url", xBaseUrl);
+  const response = await fetch(`/api/v1/chat/threads?${params.toString()}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
   if (!response.ok) {
     if (response.status === 401) invalidateAuth();
     throw new Error(`Chat threads request failed: ${response.status}`);
   }
   const data = await response.json();
-  const rawThreads: unknown = data && typeof data === 'object' ? data.threads : undefined;
+  const rawThreads: unknown =
+    data && typeof data === "object" ? data.threads : undefined;
   if (!Array.isArray(rawThreads)) return [];
 
-  const threadIds = rawThreads.map((thread): string | null => {
-    if (typeof thread === 'string') {
-      const value = thread.trim();
-      return value && value !== '[object Object]' ? value : null;
-    }
-    if (!thread || typeof thread !== 'object') return null;
-    const record = thread as Record<string, unknown>;
-    for (const key of ['thread_id', 'public_id', 'threadId', 'publicThreadId', 'id']) {
-      const value = record[key];
-      if (typeof value === 'string' && value.trim() && value !== '[object Object]') {
-        return value.trim();
+  const threadIds = rawThreads
+    .map((thread): string | null => {
+      if (typeof thread === "string") {
+        const value = thread.trim();
+        return value && value !== "[object Object]" ? value : null;
       }
-    }
-    return null;
-  }).filter((threadId): threadId is string => threadId !== null);
+      if (!thread || typeof thread !== "object") return null;
+      const record = thread as Record<string, unknown>;
+      for (const key of [
+        "thread_id",
+        "public_id",
+        "threadId",
+        "publicThreadId",
+        "id",
+      ]) {
+        const value = record[key];
+        if (
+          typeof value === "string" &&
+          value.trim() &&
+          value !== "[object Object]"
+        ) {
+          return value.trim();
+        }
+      }
+      return null;
+    })
+    .filter((threadId): threadId is string => threadId !== null);
 
   return [...new Set(threadIds)];
 };

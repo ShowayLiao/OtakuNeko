@@ -1,12 +1,20 @@
 "use client";
 
-import { useState } from 'react';
+import { useState } from "react";
 import {
-  Loader2, CheckCircle2, XCircle, ChevronRight, Wrench,
-  BrainCircuit, RotateCcw, Clock, Ban, Timer,
-} from 'lucide-react';
-import type { ProcessNode } from '@/stores/useChatStore';
-import { resolveStepExpanded } from '@/lib/processDisplayState';
+  Loader2,
+  CheckCircle2,
+  XCircle,
+  ChevronRight,
+  Wrench,
+  BrainCircuit,
+  RotateCcw,
+  Clock,
+  Ban,
+  Timer,
+} from "lucide-react";
+import type { ProcessNode } from "@/stores/useChatStore";
+import { resolveStepExpanded } from "@/lib/processDisplayState";
 
 interface ProcessStepItemProps {
   node: ProcessNode;
@@ -28,26 +36,28 @@ export default function ProcessStepItem({
   autoExpanded,
   onRetry,
 }: ProcessStepItemProps) {
-  const isPending = node.status === 'pending';
-  const isError = node.status === 'error'
-    || node.status === 'denied'
-    || node.status === 'cancelled'
-    || node.status === 'timeout';
-  const isSuccess = node.status === 'success';
-  const isThought = node.type === 'thought';
-  const terminalLabel = node.status === 'pending'
-    ? undefined
-    : {
-        success: 'Succeeded',
-        error: 'Failed',
-        denied: 'Denied',
-        cancelled: 'Cancelled',
-        timeout: 'Timed out',
-      }[node.status];
+  const isPending = node.status === "pending";
+  const isError =
+    node.status === "error" ||
+    node.status === "denied" ||
+    node.status === "cancelled" ||
+    node.status === "timeout";
+  const isSuccess = node.status === "success";
+  const isThought = node.type === "thought";
+  const terminalLabel =
+    node.status === "pending"
+      ? undefined
+      : {
+          success: "Succeeded",
+          error: "Failed",
+          denied: "Denied",
+          cancelled: "Cancelled",
+          timeout: "Timed out",
+        }[node.status];
 
   const hasBody =
-    (node.details != null) ||
-    (node.output != null) ||
+    node.details != null ||
+    node.output != null ||
     (isThought && node.details != null);
 
   const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
@@ -63,37 +73,49 @@ export default function ProcessStepItem({
   };
 
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
-      <div style={{
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        background: isThought
-          ? (isDarkMode ? 'rgba(168,85,247,0.3)' : 'rgba(168,85,247,0.2)')
-          : (isDarkMode ? 'rgba(59,130,246,0.2)' : 'rgba(59,130,246,0.15)'),
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        marginTop: 2,
-        fontSize: 10,
-        fontWeight: 600,
-        color: isThought
-          ? (isDarkMode ? '#d8b4fe' : '#7c3aed')
-          : (isDarkMode ? '#93c5fd' : '#2563eb'),
-      }}>
+    <div style={{ display: "flex", gap: 8 }}>
+      <div
+        style={{
+          width: 20,
+          height: 20,
+          borderRadius: 10,
+          background: isThought
+            ? isDarkMode
+              ? "rgba(168,85,247,0.3)"
+              : "rgba(168,85,247,0.2)"
+            : isDarkMode
+              ? "rgba(59,130,246,0.2)"
+              : "rgba(59,130,246,0.15)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          marginTop: 2,
+          fontSize: 10,
+          fontWeight: 600,
+          color: isThought
+            ? isDarkMode
+              ? "#d8b4fe"
+              : "#7c3aed"
+            : isDarkMode
+              ? "#93c5fd"
+              : "#2563eb",
+        }}
+      >
         {stepNumber}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
         {node.reason && (
-          <div style={{
-            fontSize: 10,
-            color: isDarkMode ? '#9ca3af' : '#6b7280',
-            paddingLeft: 2,
-            marginBottom: 4,
-            fontStyle: 'italic',
-          }}>
+          <div
+            style={{
+              fontSize: 10,
+              color: isDarkMode ? "#9ca3af" : "#6b7280",
+              paddingLeft: 2,
+              marginBottom: 4,
+              fontStyle: "italic",
+            }}
+          >
             {node.reason}
           </div>
         )}
@@ -102,86 +124,130 @@ export default function ProcessStepItem({
           style={{
             borderRadius: 8,
             background: isError
-              ? (isDarkMode ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.04)')
-              : (isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)'),
+              ? isDarkMode
+                ? "rgba(239,68,68,0.06)"
+                : "rgba(239,68,68,0.04)"
+              : isDarkMode
+                ? "rgba(255,255,255,0.03)"
+                : "rgba(0,0,0,0.02)",
             border: `1px solid ${
               isError
-                ? (isDarkMode ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)')
-                : (isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)')
+                ? isDarkMode
+                  ? "rgba(239,68,68,0.2)"
+                  : "rgba(239,68,68,0.15)"
+                : isDarkMode
+                  ? "rgba(255,255,255,0.08)"
+                  : "rgba(0,0,0,0.08)"
             }`,
-            overflow: 'hidden',
+            overflow: "hidden",
           }}
         >
           <div
             onClick={toggleExpanded}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
+              if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
                 toggleExpanded();
               }
             }}
-            role={hasBody ? 'button' : undefined}
+            role={hasBody ? "button" : undefined}
             tabIndex={hasBody ? 0 : undefined}
             aria-expanded={hasBody ? expanded : undefined}
             aria-controls={hasBody ? `process-step-${node.id}` : undefined}
             aria-label={hasBody ? `${node.title}详情` : undefined}
             style={{
-              display: 'flex',
-              alignItems: 'center',
+              display: "flex",
+              alignItems: "center",
               gap: 8,
-              padding: '8px 10px',
-              cursor: hasBody ? 'pointer' : 'default',
-              userSelect: 'none',
+              padding: "8px 10px",
+              cursor: hasBody ? "pointer" : "default",
+              userSelect: "none",
             }}
           >
             {isPending ? (
-              <Loader2 size={14} className="animate-spin" style={{ color: isDarkMode ? '#fbbf24' : '#d97706' }} />
+              <Loader2
+                size={14}
+                className="animate-spin"
+                style={{ color: isDarkMode ? "#fbbf24" : "#d97706" }}
+              />
             ) : isSuccess ? (
-              <CheckCircle2 size={14} style={{ color: isDarkMode ? '#86efac' : '#15803d' }} />
+              <CheckCircle2
+                size={14}
+                style={{ color: isDarkMode ? "#86efac" : "#15803d" }}
+              />
             ) : isError ? (
-              node.status === 'denied'
-                ? <Ban size={14} style={{ color: isDarkMode ? '#fca5a5' : '#ef4444' }} />
-                : node.status === 'timeout'
-                  ? <Timer size={14} style={{ color: isDarkMode ? '#fbbf24' : '#d97706' }} />
-                  : <XCircle size={14} style={{ color: isDarkMode ? '#fca5a5' : '#ef4444' }} />
+              node.status === "denied" ? (
+                <Ban
+                  size={14}
+                  style={{ color: isDarkMode ? "#fca5a5" : "#ef4444" }}
+                />
+              ) : node.status === "timeout" ? (
+                <Timer
+                  size={14}
+                  style={{ color: isDarkMode ? "#fbbf24" : "#d97706" }}
+                />
+              ) : (
+                <XCircle
+                  size={14}
+                  style={{ color: isDarkMode ? "#fca5a5" : "#ef4444" }}
+                />
+              )
+            ) : isThought ? (
+              <BrainCircuit
+                size={14}
+                style={{ color: isDarkMode ? "#a78bfa" : "#7c3aed" }}
+              />
             ) : (
-              isThought
-                ? <BrainCircuit size={14} style={{ color: isDarkMode ? '#a78bfa' : '#7c3aed' }} />
-                : <Wrench size={14} style={{ color: isDarkMode ? '#9ca3af' : '#6b7280' }} />
+              <Wrench
+                size={14}
+                style={{ color: isDarkMode ? "#9ca3af" : "#6b7280" }}
+              />
             )}
 
-            <span style={{
-              flex: 1,
-              fontSize: 12,
-              fontWeight: 500,
-              color: isDarkMode ? '#d1d5db' : '#374151',
-            }}>
+            <span
+              style={{
+                flex: 1,
+                fontSize: 12,
+                fontWeight: 500,
+                color: isDarkMode ? "#d1d5db" : "#374151",
+              }}
+            >
               {isPending
-                ? (isThought ? '正在思考...' : `正在调用 ${node.title}...`)
+                ? isThought
+                  ? "正在思考..."
+                  : `正在调用 ${node.title}...`
                 : node.title}
             </span>
 
             {!isPending && terminalLabel && (
-              <span style={{
-                fontSize: 10,
-                color: isError
-                  ? (isDarkMode ? '#fca5a5' : '#dc2626')
-                  : (isDarkMode ? '#86efac' : '#15803d'),
-                flexShrink: 0,
-              }}>
+              <span
+                style={{
+                  fontSize: 10,
+                  color: isError
+                    ? isDarkMode
+                      ? "#fca5a5"
+                      : "#dc2626"
+                    : isDarkMode
+                      ? "#86efac"
+                      : "#15803d",
+                  flexShrink: 0,
+                }}
+              >
                 {terminalLabel}
               </span>
             )}
 
             {node.duration != null && node.duration > 0 && (
-              <span style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 3,
-                fontSize: 10,
-                color: isDarkMode ? '#9ca3af' : '#6b7280',
-                flexShrink: 0,
-              }}>
+              <span
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                  fontSize: 10,
+                  color: isDarkMode ? "#9ca3af" : "#6b7280",
+                  flexShrink: 0,
+                }}
+              >
                 <Clock size={10} />
                 {formatDuration(node.duration)}
               </span>
@@ -189,19 +255,24 @@ export default function ProcessStepItem({
 
             {isError && onRetry && (
               <button
-                onClick={(e) => { e.stopPropagation(); onRetry(node); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRetry(node);
+                }}
                 style={{
-                  display: 'flex',
-                  alignItems: 'center',
+                  display: "flex",
+                  alignItems: "center",
                   gap: 3,
                   fontSize: 11,
-                  color: isDarkMode ? '#93c5fd' : '#3b82f1',
-                  cursor: 'pointer',
+                  color: isDarkMode ? "#93c5fd" : "#3b82f1",
+                  cursor: "pointer",
                   flexShrink: 0,
-                  padding: '2px 6px',
+                  padding: "2px 6px",
                   borderRadius: 4,
-                  border: 'none',
-                  background: isDarkMode ? 'rgba(59,130,246,0.1)' : 'rgba(59,130,246,0.06)',
+                  border: "none",
+                  background: isDarkMode
+                    ? "rgba(59,130,246,0.1)"
+                    : "rgba(59,130,246,0.06)",
                 }}
               >
                 <RotateCcw size={10} />
@@ -213,27 +284,32 @@ export default function ProcessStepItem({
               <ChevronRight
                 size={14}
                 style={{
-                  color: isDarkMode ? '#9ca3af' : '#6b7280',
-                  transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
-                  transition: 'transform 0.15s',
+                  color: isDarkMode ? "#9ca3af" : "#6b7280",
+                  transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
+                  transition: "transform 0.15s",
                 }}
               />
             )}
           </div>
 
           {expanded && (
-            <div id={`process-step-${node.id}`} style={{
-              borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
-              padding: '8px 10px',
-            }}>
+            <div
+              id={`process-step-${node.id}`}
+              style={{
+                borderTop: `1px solid ${isDarkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"}`,
+                padding: "8px 10px",
+              }}
+            >
               {isThought && node.details != null && (
                 <div>
-                  <div style={{
-                    fontSize: 12,
-                    color: isDarkMode ? '#d1d5db' : '#374151',
-                    lineHeight: 1.6,
-                    whiteSpace: 'pre-wrap',
-                  }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: isDarkMode ? "#d1d5db" : "#374151",
+                      lineHeight: 1.6,
+                      whiteSpace: "pre-wrap",
+                    }}
+                  >
                     {formatDisplayValue(node.details)}
                   </div>
                 </div>
@@ -241,22 +317,33 @@ export default function ProcessStepItem({
 
               {!isThought && node.details != null && (
                 <div style={{ marginBottom: node.output != null ? 8 : 0 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: isDarkMode ? '#9ca3af' : '#6b7280', marginBottom: 4 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      marginBottom: 4,
+                    }}
+                  >
                     输入参数
                   </div>
-                  <pre style={{
-                    fontSize: 11,
-                    overflowX: 'auto',
-                    background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.03)',
-                    padding: 6,
-                    borderRadius: 4,
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                    color: isDarkMode ? '#d1d5db' : '#374151',
-                    margin: 0,
-                    maxHeight: 120,
-                    overflowY: 'auto',
-                  }}>
+                  <pre
+                    style={{
+                      fontSize: 11,
+                      overflowX: "auto",
+                      background: isDarkMode
+                        ? "rgba(0,0,0,0.3)"
+                        : "rgba(0,0,0,0.03)",
+                      padding: 6,
+                      borderRadius: 4,
+                      fontFamily: "monospace",
+                      whiteSpace: "pre-wrap",
+                      color: isDarkMode ? "#d1d5db" : "#374151",
+                      margin: 0,
+                      maxHeight: 120,
+                      overflowY: "auto",
+                    }}
+                  >
                     {formatDisplayValue(node.details)}
                   </pre>
                 </div>
@@ -264,25 +351,44 @@ export default function ProcessStepItem({
 
               {!isThought && node.output != null && (
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: isDarkMode ? '#9ca3af' : '#6b7280', marginBottom: 4 }}>
-                    External tool output · untrusted data / 外部工具输出，仅供参考
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      marginBottom: 4,
+                    }}
+                  >
+                    External tool output · untrusted data /
+                    外部工具输出，仅供参考
                   </div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: isDarkMode ? '#9ca3af' : '#6b7280', marginBottom: 4 }}>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      color: isDarkMode ? "#9ca3af" : "#6b7280",
+                      marginBottom: 4,
+                    }}
+                  >
                     返回结果
                   </div>
-                  <pre style={{
-                    fontSize: 11,
-                    overflowX: 'auto',
-                    background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.03)',
-                    padding: 6,
-                    borderRadius: 4,
-                    fontFamily: 'monospace',
-                    whiteSpace: 'pre-wrap',
-                    color: isDarkMode ? '#d1d5db' : '#374151',
-                    margin: 0,
-                    maxHeight: 200,
-                    overflowY: 'auto',
-                  }}>
+                  <pre
+                    style={{
+                      fontSize: 11,
+                      overflowX: "auto",
+                      background: isDarkMode
+                        ? "rgba(0,0,0,0.3)"
+                        : "rgba(0,0,0,0.03)",
+                      padding: 6,
+                      borderRadius: 4,
+                      fontFamily: "monospace",
+                      whiteSpace: "pre-wrap",
+                      color: isDarkMode ? "#d1d5db" : "#374151",
+                      margin: 0,
+                      maxHeight: 200,
+                      overflowY: "auto",
+                    }}
+                  >
                     {formatDisplayValue(node.output)}
                   </pre>
                 </div>
@@ -298,15 +404,16 @@ export default function ProcessStepItem({
 const DISPLAY_LIMIT = 4000;
 
 function formatDisplayValue(value: unknown): string {
-  const text = typeof value === 'string'
-    ? value
-    : (() => {
-        try {
-          return JSON.stringify(value, null, 2) ?? String(value);
-        } catch {
-          return '[unsafe tool data]';
-        }
-      })();
+  const text =
+    typeof value === "string"
+      ? value
+      : (() => {
+          try {
+            return JSON.stringify(value, null, 2) ?? String(value);
+          } catch {
+            return "[unsafe tool data]";
+          }
+        })();
   return text.length <= DISPLAY_LIMIT
     ? text
     : `${text.slice(0, DISPLAY_LIMIT)}\u2026`;

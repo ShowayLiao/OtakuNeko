@@ -17,20 +17,20 @@ const nextConfig: NextConfig = {
 
   /* config options here */
   reactCompiler: true,
-  
+
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'picsum.photos',
+        protocol: "https",
+        hostname: "picsum.photos",
       },
       {
-        protocol: 'https',
-        hostname: 'lain.bgm.tv',
+        protocol: "https",
+        hostname: "lain.bgm.tv",
       },
       {
-        protocol: 'https',
-        hostname: '**.doubanio.com',
+        protocol: "https",
+        hostname: "**.doubanio.com",
       },
     ],
   },
@@ -41,13 +41,13 @@ const nextConfig: NextConfig = {
   // Docker 部署时，可以通过环境变量 API_PROXY_URL=http://backend:8000 来指定内部地址
   // ---------------------------------------------------------
   async rewrites() {
-    const apiUrl = process.env.API_PROXY_URL || 'http://localhost:8000';
-    
+    const apiUrl = process.env.API_PROXY_URL || "http://localhost:8000";
+
     console.log(`[Next.js Rewrite] Proxying /api to: ${apiUrl}`);
-    
+
     return [
       {
-        source: '/api/:path*',
+        source: "/api/:path*",
         destination: `${apiUrl}/api/:path*`,
       },
     ];

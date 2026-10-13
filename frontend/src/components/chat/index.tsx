@@ -1,39 +1,41 @@
 "use client";
 /* eslint-disable @typescript-eslint/no-explicit-any -- persisted sessions contain legacy fields. */
 
-import { useMemo, useState, useRef } from 'react';
-import { useEffect } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { PanelLeft } from 'lucide-react';
-import { useAppTheme } from '@/components/providers/LobeProvider';
-import { ChatInput } from './ChatInput';
-import ApiKeyModal from '../Modal/ApiKeyModal';
+import { useMemo, useState, useRef } from "react";
+import { useEffect } from "react";
+import { v4 as uuidv4 } from "uuid";
+import { PanelLeft } from "lucide-react";
+import { useAppTheme } from "@/components/providers/LobeProvider";
+import { ChatInput } from "./ChatInput";
+import ApiKeyModal from "../Modal/ApiKeyModal";
 import {
   AUTH_STATE_CHANGED_EVENT,
   deleteChatHistory,
   fetchChatHistory,
   fetchCurrentUser,
   listThreads,
-} from '@/lib/fetcher';
-import useChatStore, { Message } from '../../stores/useChatStore';
-import { useRoleStore } from '@/store/useRoleStore';
-import presetRoles from '@/store/presetRoles';
-import { useChatStreaming } from '@/hooks/useChatStreaming';
-import SessionPanel from './SessionPanel';
-import MessageList from './MessageList';
-import { ChatErrorBoundary } from './ChatErrorBoundary';
-import { useApiStore } from '@/store/useApiStore';
-import { resolveChatSelection } from '@/lib/chatDefaults';
+} from "@/lib/fetcher";
+import useChatStore, { Message } from "../../stores/useChatStore";
+import { useRoleStore } from "@/store/useRoleStore";
+import presetRoles from "@/store/presetRoles";
+import { useChatStreaming } from "@/hooks/useChatStreaming";
+import SessionPanel from "./SessionPanel";
+import MessageList from "./MessageList";
+import { ChatErrorBoundary } from "./ChatErrorBoundary";
+import { useApiStore } from "@/store/useApiStore";
+import { resolveChatSelection } from "@/lib/chatDefaults";
 
 const EMPTY_MESSAGES: Message[] = [];
-type AuthState = 'loading' | 'authenticated' | 'anonymous';
+type AuthState = "loading" | "authenticated" | "anonymous";
 
 export default function ChatPage() {
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('connected');
-  const [sessionSearch, setSessionSearch] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<
+    "connected" | "connecting" | "disconnected"
+  >("connected");
+  const [sessionSearch, setSessionSearch] = useState("");
   const [editText, setEditText] = useState<string | null>(null);
-  const [authState, setAuthState] = useState<AuthState>('loading');
+  const [authState, setAuthState] = useState<AuthState>("loading");
   const [authRefresh, setAuthRefresh] = useState(0);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
 
@@ -44,16 +46,18 @@ export default function ChatPage() {
   const sessions = useChatStore((state) => state.sessions);
   const activeSessionId = useChatStore((state) => state.activeSessionId);
   const sessionConfigs = useChatStore((state) => state.sessionConfigs);
-  const activeSessionConfig = activeSessionId ? sessionConfigs[activeSessionId] : undefined;
+  const activeSessionConfig = activeSessionId
+    ? sessionConfigs[activeSessionId]
+    : undefined;
   const apiConfig = useApiStore((state) => state.config);
-  const { model: selectedModel, provider: selectedProvider } = resolveChatSelection(
-    activeSessionConfig,
-    apiConfig,
+  const { model: selectedModel, provider: selectedProvider } =
+    resolveChatSelection(activeSessionConfig, apiConfig);
+  const selectedRole = activeSessionConfig?.role ?? "preset-1";
+  const currentMessages = useChatStore((state) =>
+    activeSessionId
+      ? state.chatMessages[activeSessionId] || EMPTY_MESSAGES
+      : EMPTY_MESSAGES,
   );
-  const selectedRole = activeSessionConfig?.role ?? 'preset-1';
-  const currentMessages = useChatStore((state) => (
-    activeSessionId ? state.chatMessages[activeSessionId] || EMPTY_MESSAGES : EMPTY_MESSAGES
-  ));
   const createSession = useChatStore((state) => state.createSession);
   const sendMessage = useChatStore((state) => state.sendMessage);
   const switchSession = useChatStore((state) => state.switchSession);
@@ -67,35 +71,40 @@ export default function ChatPage() {
   useEffect(() => {
     const refreshAuth = () => setAuthRefresh((value) => value + 1);
     window.addEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
-    return () => window.removeEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
+    return () =>
+      window.removeEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     const resolveAuth = async () => {
-      if (!localStorage.getItem('token')) return null;
+      if (!localStorage.getItem("token")) return null;
       return fetchCurrentUser();
     };
 
     void resolveAuth()
       .then((user) => {
-        if (!cancelled) setAuthState(user ? 'authenticated' : 'anonymous');
+        if (!cancelled) setAuthState(user ? "authenticated" : "anonymous");
       })
       .catch(() => {
-        if (!cancelled) setAuthState('anonymous');
+        if (!cancelled) setAuthState("anonymous");
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [authRefresh]);
 
   useEffect(() => {
-    if (authState === 'loading') return;
+    if (authState === "loading") return;
     let cancelled = false;
     resetChat();
 
-    if (authState === 'anonymous') {
+    if (authState === "anonymous") {
       createSession();
-      return () => { cancelled = true; };
+      return () => {
+        cancelled = true;
+      };
     }
 
     listThreads()
@@ -110,21 +119,24 @@ export default function ChatPage() {
         createSession();
       });
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [authState, createSession, loadSessions, resetChat]);
 
   useEffect(() => {
-    if (authState !== 'authenticated' || !activeSessionId) return;
+    if (authState !== "authenticated" || !activeSessionId) return;
     const abortController = new AbortController();
     fetchChatHistory(activeSessionId, abortController.signal)
       .then((serverMsgs) => {
         if (abortController.signal.aborted) return;
-        const current = useChatStore.getState().chatMessages[activeSessionId] || [];
+        const current =
+          useChatStore.getState().chatMessages[activeSessionId] || [];
         if (current.length > 0 || serverMsgs.length === 0) return;
         const formatted = serverMsgs.map((m: any, index: number) => ({
           id: `${activeSessionId}-${index}`,
-          role: (m.role === 'human' ? 'user' : m.role) as Message['role'],
-          content: m.content || '',
+          role: (m.role === "human" ? "user" : m.role) as Message["role"],
+          content: m.content || "",
           createdAt: new Date(),
         }));
         setSessionMessages(activeSessionId, formatted);
@@ -149,7 +161,7 @@ export default function ChatPage() {
 
   const getSelectedRole = () => {
     const allRoles = [...presetRoles, ...customRoles];
-    return allRoles.find(role => role.id === selectedRole);
+    return allRoles.find((role) => role.id === selectedRole);
   };
 
   const handleOpenSettings = () => {
@@ -176,28 +188,29 @@ export default function ChatPage() {
 
   const displayMessages = useMemo(() => {
     if (!streamingPreview) return currentMessages;
-    return currentMessages.map((message) => (
+    return currentMessages.map((message) =>
       message.id === streamingPreview.messageId
         ? {
-          ...message,
-          content: streamingPreview.content,
-          processes: streamingPreview.processes,
-          plan: streamingPreview.plan,
-          status: streamingPreview.status,
-          run: streamingPreview.run,
-        }
-        : message
-    ));
+            ...message,
+            content: streamingPreview.content,
+            processes: streamingPreview.processes,
+            plan: streamingPreview.plan,
+            status: streamingPreview.status,
+            run: streamingPreview.run,
+          }
+        : message,
+    );
   }, [currentMessages, streamingPreview]);
 
   useEffect(() => {
     if (!activeSessionId || loading) return;
-    const resumable = currentMessages.find((message) => (
-      message.role === 'assistant'
-      && message.run?.durable === true
-      && Boolean(message.run.runId)
-      && !message.run.terminalStatus
-    ));
+    const resumable = currentMessages.find(
+      (message) =>
+        message.role === "assistant" &&
+        message.run?.durable === true &&
+        Boolean(message.run.runId) &&
+        !message.run.terminalStatus,
+    );
     const runId = resumable?.run?.runId;
     if (!resumable || !runId || resumedRunIdsRef.current.has(runId)) return;
     resumedRunIdsRef.current.add(runId);
@@ -218,7 +231,8 @@ export default function ChatPage() {
   const scrollFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!shouldStickToBottomRef.current || scrollFrameRef.current !== null) return;
+    if (!shouldStickToBottomRef.current || scrollFrameRef.current !== null)
+      return;
     scrollFrameRef.current = requestAnimationFrame(() => {
       scrollFrameRef.current = null;
       const container = messageContainerRef.current;
@@ -238,26 +252,35 @@ export default function ChatPage() {
     const container = messageContainerRef.current;
     if (!container) return;
     shouldStickToBottomRef.current =
-      container.scrollTop + container.clientHeight >= container.scrollHeight - 150;
+      container.scrollTop + container.clientHeight >=
+      container.scrollHeight - 150;
   };
 
   const getMessagesForBackend = () => {
     return currentMessages
-      .filter((m: Message) => m.role === 'user' || m.role === 'assistant')
+      .filter((m: Message) => m.role === "user" || m.role === "assistant")
       .map((m: Message) => ({ role: m.role, content: m.content }));
   };
 
   const sessionTitle = activeSessionId
-    ? sessions.find(s => s.id === activeSessionId)?.title
+    ? sessions.find((s) => s.id === activeSessionId)?.title
     : undefined;
 
   useEffect(() => {
-    if (!activeSessionId || sessionTitle !== '新会话') return;
-    const assistantMsgs = currentMessages.filter(m => m.role === 'assistant' && m.content);
+    if (!activeSessionId || sessionTitle !== "新会话") return;
+    const assistantMsgs = currentMessages.filter(
+      (m) => m.role === "assistant" && m.content,
+    );
     if (assistantMsgs.length === 0) return;
-    const raw = assistantMsgs[0].content.replace(/[#\*\n\r]/g, '').trim().slice(0, 16);
+    const raw = assistantMsgs[0].content
+      .replace(/[#\*\n\r]/g, "")
+      .trim()
+      .slice(0, 16);
     if (raw) {
-      updateSessionTitle(activeSessionId, raw + (assistantMsgs[0].content.length > 16 ? '…' : ''));
+      updateSessionTitle(
+        activeSessionId,
+        raw + (assistantMsgs[0].content.length > 16 ? "…" : ""),
+      );
     }
   }, [currentMessages, activeSessionId, sessionTitle]);
 
@@ -269,15 +292,15 @@ export default function ChatPage() {
     const aiMessageId = uuidv4();
     const aiMessage: Message = {
       id: aiMessageId,
-      role: 'assistant',
-      content: '',
+      role: "assistant",
+      content: "",
       createdAt: new Date(),
     };
     sendMessage(activeSessionId, aiMessage);
 
     await startStreaming({
       messages: prevMessages
-        .filter((m: Message) => m.role === 'user' || m.role === 'assistant')
+        .filter((m: Message) => m.role === "user" || m.role === "assistant")
         .map((m: Message) => ({ role: m.role, content: m.content })),
       temperature: 0.7,
       activeSessionId,
@@ -291,7 +314,7 @@ export default function ChatPage() {
 
     const userMessage: Message = {
       id: uuidv4(),
-      role: 'user',
+      role: "user",
       content: text,
       createdAt: new Date(),
       extra: { contextItems },
@@ -300,25 +323,30 @@ export default function ChatPage() {
 
     let userContent = text;
     if (contextItems.length > 0) {
-      const contextXml = contextItems.map((item: any) =>
-        `<Entity id="${item.id}" source="${item.source}" sourceId="${item.sourceId}">${item.title}</Entity>`
-      ).join('\n');
+      const contextXml = contextItems
+        .map(
+          (item: any) =>
+            `<Entity id="${item.id}" source="${item.source}" sourceId="${item.sourceId}">${item.title}</Entity>`,
+        )
+        .join("\n");
       userContent = `Context:\n${contextXml}\n\nUser Question:\n${text}`;
     }
 
     const formattedMessages = [
       ...getMessagesForBackend(),
-      { role: 'user', content: userContent },
+      { role: "user", content: userContent },
     ];
 
     const selectedRoleObj = getSelectedRole();
-    const prompt_config = selectedRoleObj ? selectedRoleObj.promptConfig : undefined;
+    const prompt_config = selectedRoleObj
+      ? selectedRoleObj.promptConfig
+      : undefined;
 
     const aiMessageId = uuidv4();
     const aiMessage: Message = {
       id: aiMessageId,
-      role: 'assistant',
-      content: '',
+      role: "assistant",
+      content: "",
       createdAt: new Date(),
     };
     sendMessage(activeSessionId, aiMessage);
@@ -342,7 +370,8 @@ export default function ChatPage() {
   };
 
   const handleDeleteSession = (sessionId: string) => {
-    if (authState === 'authenticated') deleteChatHistory(sessionId).catch(() => {});
+    if (authState === "authenticated")
+      deleteChatHistory(sessionId).catch(() => {});
     deleteSession(sessionId);
   };
 
@@ -350,7 +379,7 @@ export default function ChatPage() {
     <ChatErrorBoundary>
       <div
         className="flex-1 flex min-h-0 w-full relative overflow-hidden"
-        style={{ background: 'transparent' }}
+        style={{ background: "transparent" }}
       >
         {mobileSessionsOpen && (
           <button
@@ -360,7 +389,9 @@ export default function ChatPage() {
             onClick={() => setMobileSessionsOpen(false)}
           />
         )}
-        <div className={`${mobileSessionsOpen ? 'absolute inset-y-0 left-0 z-30 block' : 'hidden'} w-[280px] max-w-full md:contents`}>
+        <div
+          className={`${mobileSessionsOpen ? "absolute inset-y-0 left-0 z-30 block" : "hidden"} w-[280px] max-w-full md:contents`}
+        >
           <SessionPanel
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -408,7 +439,7 @@ export default function ChatPage() {
           </div>
 
           <ChatInput
-            key={editText ?? 'new-message'}
+            key={editText ?? "new-message"}
             onSend={editText ? handleEditResend : handleSend}
             onStop={stopGeneration}
             loading={loading}
@@ -425,7 +456,10 @@ export default function ChatPage() {
           />
         </div>
 
-        <ApiKeyModal open={isApiKeyModalOpen} onClose={() => setIsApiKeyModalOpen(false)} />
+        <ApiKeyModal
+          open={isApiKeyModalOpen}
+          onClose={() => setIsApiKeyModalOpen(false)}
+        />
       </div>
     </ChatErrorBoundary>
   );

@@ -1,10 +1,23 @@
 "use client";
 
-import type { MessageStatus, ProcessNode, RunView } from '@/stores/useChatStore';
-import ProcessContainer from './ProcessContainer';
-import FinalAnswerBlock from './FinalAnswerBlock';
+import type {
+  MessageStatus,
+  ProcessNode,
+  RunView,
+} from "@/stores/useChatStore";
+import ProcessContainer from "./ProcessContainer";
+import FinalAnswerBlock from "./FinalAnswerBlock";
 
-export type AgentStatus = 'idle' | 'thinking' | 'executing' | 'responding' | 'recovering' | 'done' | 'failed' | 'cancelled' | 'timeout';
+export type AgentStatus =
+  | "idle"
+  | "thinking"
+  | "executing"
+  | "responding"
+  | "recovering"
+  | "done"
+  | "failed"
+  | "cancelled"
+  | "timeout";
 
 interface AgentMessageRendererProps {
   plan: string;
@@ -26,24 +39,35 @@ export function deriveStatus(
   run?: RunView,
   messageStatus?: MessageStatus,
 ): AgentStatus {
-  if (run?.terminalStatus === 'cancelled' || messageStatus === 'cancelled') return 'cancelled';
-  if (run?.terminalStatus === 'timeout' || messageStatus === 'timeout') return 'timeout';
-  if (run?.terminalStatus === 'failed' || messageStatus === 'failed' || messageStatus === 'error') return 'failed';
-  if (run?.phase === 'recovering' || messageStatus === 'recovering') return 'recovering';
-  if (run?.terminalStatus === 'succeeded') return 'done';
-  if (!isStreaming) return 'done';
+  if (run?.terminalStatus === "cancelled" || messageStatus === "cancelled")
+    return "cancelled";
+  if (run?.terminalStatus === "timeout" || messageStatus === "timeout")
+    return "timeout";
+  if (
+    run?.terminalStatus === "failed" ||
+    messageStatus === "failed" ||
+    messageStatus === "error"
+  )
+    return "failed";
+  if (run?.phase === "recovering" || messageStatus === "recovering")
+    return "recovering";
+  if (run?.terminalStatus === "succeeded") return "done";
+  if (!isStreaming) return "done";
 
-  const hasRunning = processes.some(p => p.status === 'pending');
-  if (hasRunning && processes.some(p => p.type === 'tool_call' && p.status === 'pending')) {
-    return 'executing';
+  const hasRunning = processes.some((p) => p.status === "pending");
+  if (
+    hasRunning &&
+    processes.some((p) => p.type === "tool_call" && p.status === "pending")
+  ) {
+    return "executing";
   }
-  if (hasRunning) return 'thinking';
+  if (hasRunning) return "thinking";
 
-  if (hasContent) return 'responding';
+  if (hasContent) return "responding";
 
-  if (!hasContent && processes.length === 0) return 'thinking';
+  if (!hasContent && processes.length === 0) return "thinking";
 
-  return 'idle';
+  return "idle";
 }
 
 export default function AgentMessageRenderer({
@@ -58,7 +82,13 @@ export default function AgentMessageRenderer({
   run,
   messageStatus,
 }: AgentMessageRendererProps) {
-  const status = deriveStatus(hasContent, processes, isStreaming, run, messageStatus);
+  const status = deriveStatus(
+    hasContent,
+    processes,
+    isStreaming,
+    run,
+    messageStatus,
+  );
 
   return (
     <div className="flex flex-col gap-2">
@@ -75,9 +105,13 @@ export default function AgentMessageRenderer({
       <FinalAnswerBlock
         isStreaming={isStreaming}
         hasContent={hasContent}
-        terminalStatus={run?.terminalStatus ?? (run?.phase === 'failed' ? 'failed' : null)}
+        terminalStatus={
+          run?.terminalStatus ?? (run?.phase === "failed" ? "failed" : null)
+        }
         errorCode={run?.errorCode}
-        recovering={run?.phase === 'recovering' || messageStatus === 'recovering'}
+        recovering={
+          run?.phase === "recovering" || messageStatus === "recovering"
+        }
       >
         {children}
       </FinalAnswerBlock>

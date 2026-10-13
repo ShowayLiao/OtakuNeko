@@ -1,4 +1,4 @@
-import { request } from './client';
+import { request } from "./client";
 
 // 仪表板统计数据
 export interface DashboardStats {
@@ -14,6 +14,6 @@ export interface DashboardStats {
 export const dashboardService = {
   // 获取用户统计数据
   async getStats(): Promise<DashboardStats> {
-    return request<DashboardStats>('/dashboard/stats');
+    return request<DashboardStats>("/dashboard/stats");
   },
 };

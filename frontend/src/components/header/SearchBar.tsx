@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import React, { useState, useMemo, useEffect } from 'react';
-import { SearchBar as LobeSearchBar, SearchBarProps } from '@lobehub/ui';
-import { debounce } from 'lodash';
+import React, { useState, useMemo, useEffect } from "react";
+import { SearchBar as LobeSearchBar, SearchBarProps } from "@lobehub/ui";
+import { debounce } from "lodash";
 
-interface HeaderSearchBarProps extends Omit<SearchBarProps, 'onSearch'> {
+interface HeaderSearchBarProps extends Omit<SearchBarProps, "onSearch"> {
   onSearch?: (value: string) => void;
   className?: string;
   debounceDelay?: number;
@@ -16,14 +16,15 @@ const SearchBar: React.FC<HeaderSearchBarProps> = ({
   debounceDelay = 500,
   ...props
 }) => {
-  const [value, setValue] = useState<string>('');
+  const [value, setValue] = useState<string>("");
 
   // 防抖处理函数
   const debouncedSearch = useMemo(
-    () => debounce((searchValue: string) => {
-      onSearch?.(searchValue);
-    }, debounceDelay),
-    [onSearch, debounceDelay]
+    () =>
+      debounce((searchValue: string) => {
+        onSearch?.(searchValue);
+      }, debounceDelay),
+    [onSearch, debounceDelay],
   );
 
   // 组件卸载时清除防抖定时器

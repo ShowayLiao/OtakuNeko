@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from 'react';
-import { Plus, Trash2, MessageSquare, Search, X } from 'lucide-react';
-import { ActionIcon, DraggablePanel } from '@lobehub/ui';
-import type { Session } from '@/stores/useChatStore';
+import { useState } from "react";
+import { Plus, Trash2, MessageSquare, Search, X } from "lucide-react";
+import { ActionIcon, DraggablePanel } from "@lobehub/ui";
+import type { Session } from "@/stores/useChatStore";
 
 interface SessionPanelProps {
   sessions: Session[];
@@ -32,7 +32,9 @@ export default function SessionPanel({
 }: SessionPanelProps) {
   const [panelExpanded, setPanelExpanded] = useState(true);
   const filteredSessions = sessionSearch
-    ? sessions.filter((session) => session.title.toLowerCase().includes(sessionSearch.toLowerCase()))
+    ? sessions.filter((session) =>
+        session.title.toLowerCase().includes(sessionSearch.toLowerCase()),
+      )
     : sessions;
 
   return (
@@ -50,73 +52,136 @@ export default function SessionPanel({
       pin
       placement="left"
       showBorder
-      style={{ background: isDarkMode ? '#1e1e1e' : '#ffffff' }}
+      style={{ background: isDarkMode ? "#1e1e1e" : "#ffffff" }}
     >
-      <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 16 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 'bold' }}>会话</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <ActionIcon icon={Plus} title="新建会话" onClick={() => onCreateSession()} style={{ cursor: 'pointer' }} />
+      <div
+        style={{
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
+          padding: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 16,
+          }}
+        >
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: "bold" }}>会话</h3>
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <ActionIcon
+              icon={Plus}
+              title="新建会话"
+              onClick={() => onCreateSession()}
+              style={{ cursor: "pointer" }}
+            />
             {onCloseMobile && (
-              <button type="button" aria-label="收起会话列表" className="md:hidden" onClick={onCloseMobile}>
+              <button
+                type="button"
+                aria-label="收起会话列表"
+                className="md:hidden"
+                onClick={onCloseMobile}
+              >
                 <X size={18} aria-hidden="true" />
               </button>
             )}
           </div>
         </div>
 
-        <div style={{ marginBottom: 8, position: 'relative' }}>
+        <div style={{ marginBottom: 8, position: "relative" }}>
           <input
             type="text"
             value={sessionSearch}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="搜索会话..."
             style={{
-              width: '100%',
-              padding: '6px 10px 6px 30px',
+              width: "100%",
+              padding: "6px 10px 6px 30px",
               borderRadius: 8,
-              border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-              background: isDarkMode ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-              color: isDarkMode ? '#d1d5db' : '#374151',
+              border: `1px solid ${isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"}`,
+              background: isDarkMode
+                ? "rgba(255,255,255,0.05)"
+                : "rgba(0,0,0,0.03)",
+              color: isDarkMode ? "#d1d5db" : "#374151",
               fontSize: 13,
-              outline: 'none',
+              outline: "none",
             }}
           />
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.4 }} />
+          <Search
+            size={14}
+            style={{
+              position: "absolute",
+              left: 10,
+              top: "50%",
+              transform: "translateY(-50%)",
+              opacity: 0.4,
+            }}
+          />
         </div>
 
-        <div style={{ flex: 1, overflowY: 'auto', gap: 8, display: 'flex', flexDirection: 'column' }}>
+        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            gap: 8,
+            display: "flex",
+            flexDirection: "column",
+          }}
+        >
           {filteredSessions.map((session) => (
             <div
               key={session.id}
               style={{
                 padding: 12,
                 borderRadius: 8,
-                cursor: 'pointer',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                backgroundColor: activeSessionId === session.id
-                  ? (isDarkMode ? 'rgba(75, 85, 99, 0.5)' : 'rgba(229, 231, 235, 0.8)')
-                  : 'transparent',
-                border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                transition: 'all 0.2s ease',
+                cursor: "pointer",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+                backgroundColor:
+                  activeSessionId === session.id
+                    ? isDarkMode
+                      ? "rgba(75, 85, 99, 0.5)"
+                      : "rgba(229, 231, 235, 0.8)"
+                    : "transparent",
+                border: `1px solid ${isDarkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"}`,
+                transition: "all 0.2s ease",
               }}
               onClick={() => onSwitchSession(session.id)}
             >
               <div style={{ flex: 1, minWidth: 0, marginRight: 8 }}>
-                <div style={{ fontWeight: 500, fontSize: 14, marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div
+                  style={{
+                    fontWeight: 500,
+                    fontSize: 14,
+                    marginBottom: 4,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
                   {session.title}
                 </div>
-                <div style={{ fontSize: 12, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: isDarkMode ? "#9ca3af" : "#6b7280",
+                  }}
+                >
                   {(() => {
                     try {
-                      const date = session.updatedAt instanceof Date
-                        ? session.updatedAt
-                        : new Date(session.updatedAt as unknown as string);
-                      return Number.isNaN(date.getTime()) ? '' : date.toLocaleString();
+                      const date =
+                        session.updatedAt instanceof Date
+                          ? session.updatedAt
+                          : new Date(session.updatedAt as unknown as string);
+                      return Number.isNaN(date.getTime())
+                        ? ""
+                        : date.toLocaleString();
                     } catch {
-                      return '';
+                      return "";
                     }
                   })()}
                 </div>
@@ -130,18 +195,18 @@ export default function SessionPanel({
                   onDeleteSession(session.id);
                 }}
                 style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
                   width: 28,
                   height: 28,
                   flexShrink: 0,
                   padding: 0,
                   border: 0,
                   borderRadius: 6,
-                  background: 'transparent',
-                  color: isDarkMode ? '#ef4444' : '#dc2626',
-                  cursor: 'pointer',
+                  background: "transparent",
+                  color: isDarkMode ? "#ef4444" : "#dc2626",
+                  cursor: "pointer",
                 }}
               >
                 <Trash2 size={16} aria-hidden="true" />
@@ -150,8 +215,14 @@ export default function SessionPanel({
           ))}
 
           {filteredSessions.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 24, color: isDarkMode ? '#9ca3af' : '#6b7280' }}>
-              <MessageSquare size={24} style={{ margin: '0 auto 8px' }} />
+            <div
+              style={{
+                textAlign: "center",
+                padding: 24,
+                color: isDarkMode ? "#9ca3af" : "#6b7280",
+              }}
+            >
+              <MessageSquare size={24} style={{ margin: "0 auto 8px" }} />
               <p>暂无会话</p>
               <p style={{ fontSize: 12 }}>点击上方按钮创建新会话</p>
             </div>

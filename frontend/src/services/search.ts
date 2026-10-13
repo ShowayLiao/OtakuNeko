@@ -58,7 +58,7 @@ interface SearchParams {
 // 搜索服务
 class SearchService {
   // 基础 API URL
-  private baseUrl = 'http://localhost:8000/api/v1';
+  private baseUrl = "http://localhost:8000/api/v1";
 
   /**
    * 搜索条目
@@ -66,23 +66,19 @@ class SearchService {
    * @returns 搜索结果
    */
   async searchSubjects(params: SearchParams): Promise<SearchResult[]> {
-    const {
-      keyword,
-      offset = 0,
-      limit = 10
-    } = params;
+    const { keyword, offset = 0, limit = 10 } = params;
 
     try {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem("token");
       const response = await fetch(
         `${this.baseUrl}/subjects/?q=${encodeURIComponent(keyword)}&limit=${limit}&offset=${offset}`,
         {
-          method: 'GET',
+          method: "GET",
           headers: {
-            'Authorization': token ? `Bearer ${token}` : '',
-            'Content-Type': 'application/json',
+            Authorization: token ? `Bearer ${token}` : "",
+            "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -92,7 +88,7 @@ class SearchService {
       const data: SearchResponse = await response.json();
       return data.items || [];
     } catch (error) {
-      console.error('Search error:', error);
+      console.error("Search error:", error);
       throw error;
     }
   }

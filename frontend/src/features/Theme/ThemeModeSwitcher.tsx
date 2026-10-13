@@ -1,9 +1,9 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
-import { Popover, Flexbox, ActionIcon } from '@lobehub/ui';
-import { Monitor, Moon, Sun, Check } from 'lucide-react';
-import { useAppTheme } from '@/components/providers/LobeProvider';
+import { useState } from "react";
+import { Popover, Flexbox, ActionIcon } from "@lobehub/ui";
+import { Monitor, Moon, Sun, Check } from "lucide-react";
+import { useAppTheme } from "@/components/providers/LobeProvider";
 
 export const ThemeModeSwitcher = () => {
   // 注意：这里我们解构的是 appearance 和 setAppearance
@@ -11,9 +11,9 @@ export const ThemeModeSwitcher = () => {
   const [open, setOpen] = useState(false);
 
   const items = [
-    { key: 'auto', label: '跟随系统', icon: Monitor },
-    { key: 'light', label: '亮色模式', icon: Sun },
-    { key: 'dark',  label: '暗色模式', icon: Moon },
+    { key: "auto", label: "跟随系统", icon: Monitor },
+    { key: "light", label: "亮色模式", icon: Sun },
+    { key: "dark", label: "暗色模式", icon: Moon },
   ];
 
   // 图标显示逻辑：如果是自动，显示显示器图标；否则显示月亮/太阳
@@ -32,7 +32,7 @@ export const ThemeModeSwitcher = () => {
           {items.map((item) => {
             // 核心修复：判断 isActive 使用的是 appearance 状态 (auto/light/dark)
             const isActive = appearance === item.key;
-            
+
             return (
               <Flexbox
                 key={item.key}
@@ -41,21 +41,23 @@ export const ThemeModeSwitcher = () => {
                 gap={8}
                 onClick={() => {
                   // 核心修复：直接设置偏好，不需要手动计算系统主题
-                  setAppearance(item.key as 'auto' | 'light' | 'dark');
+                  setAppearance(item.key as "auto" | "light" | "dark");
                   setOpen(false);
                 }}
                 style={{
-                  padding: '8px 12px',
-                  cursor: 'pointer',
+                  padding: "8px 12px",
+                  cursor: "pointer",
                   borderRadius: 6,
-                  color: isActive ? 'var(--lobe-color-primary)' : 'inherit',
-                  background: isActive ? 'var(--lobe-color-fill-secondary)' : 'transparent',
+                  color: isActive ? "var(--lobe-color-primary)" : "inherit",
+                  background: isActive
+                    ? "var(--lobe-color-fill-secondary)"
+                    : "transparent",
                 }}
                 className="hover:bg-neutral-100 dark:hover:bg-neutral-800"
               >
                 <item.icon size={16} />
                 <span style={{ fontSize: 14 }}>{item.label}</span>
-                {isActive && <Check size={14} style={{ marginLeft: 'auto' }} />}
+                {isActive && <Check size={14} style={{ marginLeft: "auto" }} />}
               </Flexbox>
             );
           })}

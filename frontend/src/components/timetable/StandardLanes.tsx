@@ -1,14 +1,19 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- lane data supports legacy schedule records. */
-import React, { useMemo, useState } from 'react';
-import dynamic from 'next/dynamic';
-import { LucideIcon } from 'lucide-react';
-import DraggableItemWrapper from './DraggableItemWrapper';
-import DroppableCell from './DroppableCell';
-import TimelineMediaCard from './TimelineMediaCard';
-import ResizableCardWrapper from './ResizableCardWrapper';
-import { BangumiItem as ScheduleItem, WatchType } from '@/services/bangumiService';
+import React, { useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { LucideIcon } from "lucide-react";
+import DraggableItemWrapper from "./DraggableItemWrapper";
+import DroppableCell from "./DroppableCell";
+import TimelineMediaCard from "./TimelineMediaCard";
+import ResizableCardWrapper from "./ResizableCardWrapper";
+import {
+  BangumiItem as ScheduleItem,
+  WatchType,
+} from "@/services/bangumiService";
 
-const SubjectModal = dynamic(() => import('../Modal/SubjectModal'), { ssr: false });
+const SubjectModal = dynamic(() => import("../Modal/SubjectModal"), {
+  ssr: false,
+});
 
 // 卡片内容高度 (不含 gap)
 // 如果 MediaCard 是 variant="timeline"，通常比较矮
@@ -46,7 +51,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
   activeDragItem,
   currentDay,
   onResize,
-  onDelete
+  onDelete,
 }) => {
   const [isSubjectModalOpen, setIsSubjectModalOpen] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState<any>(null);
@@ -58,7 +63,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
       // 确保 subject 字段存在
       subject: item.subject || item,
       // 确保 collection 字段存在
-      collection: item.collection || {}
+      collection: item.collection || {},
     };
     setSelectedSubject(formattedItem);
     setIsSubjectModalOpen(true);
@@ -67,8 +72,14 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
   const calculateLaneLayout = (laneItems: ScheduleItem[]) => {
     // 1. 初始化 7 天的网格，每一天是一个数组 (rows)
     // grid[dayIndex][rowIndex] = Item | 'ghost' | null
-    const grid: (ScheduleItem | { type: 'ghost'; item: ScheduleItem } | null)[][] = Array(7).fill(null).map(() => []);
-    
+    const grid: (
+      | ScheduleItem
+      | { type: "ghost"; item: ScheduleItem }
+      | null
+    )[][] = Array(7)
+      .fill(null)
+      .map(() => []);
+
     // 2. 预先排序：按开始时间(day) -> 持续时间(duration desc) -> source-source_id
     // 这样长条卡片会优先占据稳定位置
     const sortedItems = [...laneItems].sort((a, b) => {
@@ -84,7 +95,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
     });
 
     // 3. 贪心算法填坑 (Tetris)
-    sortedItems.forEach(item => {
+    sortedItems.forEach((item) => {
       // 使用 watch_day 作为唯一来源
       const startDay = item.watch_day ?? 0;
       const duration = item.duration ?? 1;
@@ -95,12 +106,13 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
       while (true) {
         let isRowAvailable = true;
         for (let d = startDay; d < endDay; d++) {
-          if (grid[d][rowIndex] !== undefined) { // 该位置已被占用
+          if (grid[d][rowIndex] !== undefined) {
+            // 该位置已被占用
             isRowAvailable = false;
             break;
           }
         }
-        
+
         if (isRowAvailable) break; // 找到了！
         rowIndex++; // 这一行不行，试下一行
       }
@@ -113,7 +125,7 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
         }
         // 标记位置
         // 如果是第一天，放入实体 Item；否则放入 'ghost' 标记
-        grid[d][rowIndex] = (d === startDay) ? item : { type: 'ghost', item };
+        grid[d][rowIndex] = d === startDay ? item : { type: "ghost", item };
       }
     });
 
@@ -125,21 +137,25 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
   // 缓存按分类分组的项目
   const itemsByCategory = useMemo(() => {
     const map = new Map<string, ScheduleItem[]>();
-    standardLanes.forEach(lane => {
+    standardLanes.forEach((lane) => {
       // 根据 watch_type 决定分类，而不是使用原始的 category 字段
       let filterFunction: (item: ScheduleItem) => boolean;
       switch (lane.id) {
-        case 'Meal':
-          filterFunction = (item: ScheduleItem) => item.watch_type === WatchType.MEAL;
+        case "Meal":
+          filterFunction = (item: ScheduleItem) =>
+            item.watch_type === WatchType.MEAL;
           break;
-        case 'Backlog':
-          filterFunction = (item: ScheduleItem) => item.watch_type === WatchType.LONG_GRASS;
+        case "Backlog":
+          filterFunction = (item: ScheduleItem) =>
+            item.watch_type === WatchType.LONG_GRASS;
           break;
-        case 'Reading':
-          filterFunction = (item: ScheduleItem) => item.watch_type === WatchType.LEISURE;
+        case "Reading":
+          filterFunction = (item: ScheduleItem) =>
+            item.watch_type === WatchType.LEISURE;
           break;
         default:
-          filterFunction = (item: ScheduleItem) => item.watch_type === WatchType.NEW;
+          filterFunction = (item: ScheduleItem) =>
+            item.watch_type === WatchType.NEW;
       }
       map.set(lane.id, scheduleItems.filter(filterFunction));
     });
@@ -148,8 +164,11 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
 
   // 缓存布局计算结果
   const laneLayouts = useMemo(() => {
-    const map = new Map<string, (ScheduleItem | { type: 'ghost'; item: ScheduleItem } | null)[][]>();
-    standardLanes.forEach(lane => {
+    const map = new Map<
+      string,
+      (ScheduleItem | { type: "ghost"; item: ScheduleItem } | null)[][]
+    >();
+    standardLanes.forEach((lane) => {
       const items = itemsByCategory.get(lane.id) || [];
       map.set(lane.id, calculateLaneLayout(items));
     });
@@ -161,16 +180,29 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
       <div className="w-full">
         {standardLanes.map((swimlane: Swimlane, index: number) => {
           // 获取缓存的布局
-          const laneGrid = laneLayouts.get(swimlane.id) || Array(7).fill(null).map(() => []);
-          
+          const laneGrid =
+            laneLayouts.get(swimlane.id) ||
+            Array(7)
+              .fill(null)
+              .map(() => []);
+
           return (
-            <div key={swimlane.id} className={`flex w-full ${index > 0 ? (isDarkMode ? 'border-t border-gray-600' : 'border-t border-gray-200') : ''}`}>
+            <div
+              key={swimlane.id}
+              className={`flex w-full ${index > 0 ? (isDarkMode ? "border-t border-gray-600" : "border-t border-gray-200") : ""}`}
+            >
               {/* 左侧标签 */}
-              <div className={`w-20 flex-none relative flex items-center justify-center ${isDarkMode ? 'bg-gray-900' : 'bg-white'}`}>
-                <div className={`absolute left-0 top-0 bottom-0 w-1 ${swimlane.color.replace('text-', 'bg-')}`}></div>
+              <div
+                className={`w-20 flex-none relative flex items-center justify-center ${isDarkMode ? "bg-gray-900" : "bg-white"}`}
+              >
+                <div
+                  className={`absolute left-0 top-0 bottom-0 w-1 ${swimlane.color.replace("text-", "bg-")}`}
+                ></div>
                 <div className="flex flex-col items-center p-2">
                   <swimlane.icon className={`${swimlane.color} h-5 w-5 mb-1`} />
-                  <span className={`text-xs font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
+                  <span
+                    className={`text-xs font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}
+                  >
                     {swimlane.title}
                   </span>
                 </div>
@@ -183,10 +215,17 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                   const columnData = laneGrid[day] || [];
 
                   return (
-                    <DroppableCell key={day} id={`lane-${swimlane.id}-${day}`} className="h-full">
-                      <div 
-                        className={`p-3 ${isToday ? 'bg-blue-50/30' : ''} h-full relative`}
-                        style={{ minHeight: `${columnData.length * CARD_HEIGHT}px`, overflow: 'visible' }}
+                    <DroppableCell
+                      key={day}
+                      id={`lane-${swimlane.id}-${day}`}
+                      className="h-full"
+                    >
+                      <div
+                        className={`p-3 ${isToday ? "bg-blue-50/30" : ""} h-full relative`}
+                        style={{
+                          minHeight: `${columnData.length * CARD_HEIGHT}px`,
+                          overflow: "visible",
+                        }}
                         data-column
                       >
                         <div className="flex flex-col gap-3 h-full min-h-[60px]">
@@ -195,8 +234,8 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                             // 必须渲染一个透明块来占位，防止下面的卡片上浮
                             if (slot === null || slot === undefined) {
                               return (
-                                <div 
-                                  key={`spacer-${rowIndex}`} 
+                                <div
+                                  key={`spacer-${rowIndex}`}
                                   className="w-full shrink-0"
                                   style={{ height: `${CARD_HEIGHT}px` }}
                                 />
@@ -204,29 +243,41 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                             }
 
                             // --- 情况 B: 幽灵卡片 (Ghost) ---
-                            if (typeof slot === 'object' && 'type' in slot && slot.type === 'ghost') {
+                            if (
+                              typeof slot === "object" &&
+                              "type" in slot &&
+                              slot.type === "ghost"
+                            ) {
                               return (
-                                <div 
-                                  key={`ghost-${slot.item.subject.source}-${slot.item.subject.source_id}-${day}`} 
+                                <div
+                                  key={`ghost-${slot.item.subject.source}-${slot.item.subject.source_id}-${day}`}
                                   className="invisible pointer-events-none w-full shrink-0"
                                   style={{ height: `${CARD_HEIGHT}px` }}
                                 >
                                   {/* 幽灵项只负责占位，不需要创建完整媒体卡和观察器。 */}
-                                  <div style={{ height: `${CARD_HEIGHT}px`, minHeight: 0 }} />
+                                  <div
+                                    style={{
+                                      height: `${CARD_HEIGHT}px`,
+                                      minHeight: 0,
+                                    }}
+                                  />
                                 </div>
                               );
                             }
 
                             // --- 情况 C: 实体卡片 (Real Item) ---
-                            const realItem = 'type' in slot ? slot.item : slot;
+                            const realItem = "type" in slot ? slot.item : slot;
                             const itemKey = `${realItem.subject.source}-${realItem.subject.source_id}`;
                             return (
-                              <div 
+                              <div
                                 key={itemKey}
                                 className="relative w-full shrink-0"
                                 style={{ height: `${CARD_HEIGHT}px` }}
                               >
-                                <DraggableItemWrapper id={`board-${itemKey}`} data={realItem}>
+                                <DraggableItemWrapper
+                                  id={`board-${itemKey}`}
+                                  data={realItem}
+                                >
                                   <ResizableCardWrapper
                                     id={itemKey}
                                     day={day}
@@ -234,11 +285,20 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                                     gap={VISUAL_GAP}
                                     onResize={onResize}
                                   >
-                                    <div style={{ height: `${CARD_HEIGHT}px`, minHeight: 0 }}>
+                                    <div
+                                      style={{
+                                        height: `${CARD_HEIGHT}px`,
+                                        minHeight: 0,
+                                      }}
+                                    >
                                       <TimelineMediaCard
                                         data={realItem}
                                         currentHeight={CARD_HEIGHT}
-                                        onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
+                                        onDelete={(data) =>
+                                          onDelete?.(
+                                            `${data.subject.source}-${data.subject.source_id}`,
+                                          )
+                                        }
                                         onOpenDetail={handleOpenDetail}
                                       />
                                     </div>
@@ -249,20 +309,25 @@ const StandardLanes: React.FC<StandardLanesProps> = ({
                           })}
 
                           {/* [修复] 将虚影移到这里 (flex-col 内部)，作为列表的最后一项 */}
-                          {overSlotId === `lane-${swimlane.id}-${day}` && activeDragItem && (
-                            <div 
-                              className="w-full opacity-30 z-10 shrink-0" // 修改样式：移除 absolute/center，添加 shrink-0
-                              style={{ height: `${CARD_HEIGHT}px` }} // 确保高度一致
-                            >
-                              <div style={{ height: '100%' }}>
-                                <TimelineMediaCard
-                                  data={activeDragItem}
-                                  currentHeight={CARD_HEIGHT}
-                                  onDelete={(data) => onDelete?.(`${data.subject.source}-${data.subject.source_id}`)}
-                                />
+                          {overSlotId === `lane-${swimlane.id}-${day}` &&
+                            activeDragItem && (
+                              <div
+                                className="w-full opacity-30 z-10 shrink-0" // 修改样式：移除 absolute/center，添加 shrink-0
+                                style={{ height: `${CARD_HEIGHT}px` }} // 确保高度一致
+                              >
+                                <div style={{ height: "100%" }}>
+                                  <TimelineMediaCard
+                                    data={activeDragItem}
+                                    currentHeight={CARD_HEIGHT}
+                                    onDelete={(data) =>
+                                      onDelete?.(
+                                        `${data.subject.source}-${data.subject.source_id}`,
+                                      )
+                                    }
+                                  />
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            )}
                         </div>
                       </div>
                     </DroppableCell>

@@ -1,12 +1,12 @@
 export class TextRevealBuffer {
-  private pending = '';
+  private pending = "";
 
   append(text: string) {
     this.pending += text;
   }
 
   take(maxCharacters: number) {
-    if (maxCharacters <= 0 || this.pending.length === 0) return '';
+    if (maxCharacters <= 0 || this.pending.length === 0) return "";
     let endIndex = 0;
     let characterCount = 0;
     for (const character of this.pending) {
@@ -28,11 +28,11 @@ export class TextRevealBuffer {
   }
 
   clear() {
-    this.pending = '';
+    this.pending = "";
   }
 }
 
-export type RevealField = 'details' | 'output';
+export type RevealField = "details" | "output";
 
 export interface TextRevealUpdate {
   nodeId: string;
@@ -49,11 +49,14 @@ export function revealCharactersPerFrame(backlog: number) {
 }
 
 export class KeyedTextRevealQueue {
-  private buffers = new Map<string, {
-    nodeId: string;
-    field: RevealField;
-    buffer: TextRevealBuffer;
-  }>();
+  private buffers = new Map<
+    string,
+    {
+      nodeId: string;
+      field: RevealField;
+      buffer: TextRevealBuffer;
+    }
+  >();
 
   append(nodeId: string, field: RevealField, text: string) {
     if (!text) return;
@@ -73,7 +76,8 @@ export class KeyedTextRevealQueue {
     const updates: TextRevealUpdate[] = [];
     for (const [key, entry] of this.buffers) {
       const text = entry.buffer.take(frameSize(entry.buffer.length));
-      if (text) updates.push({ nodeId: entry.nodeId, field: entry.field, text });
+      if (text)
+        updates.push({ nodeId: entry.nodeId, field: entry.field, text });
       if (!entry.buffer.hasPending()) this.buffers.delete(key);
     }
     return updates;

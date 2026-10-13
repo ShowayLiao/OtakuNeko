@@ -1,6 +1,7 @@
 # OtakuNeko 前端文档
 
 ## 目录
+
 - [概述](#概述)
 - [项目架构](#项目架构)
 - [目录结构](#目录结构)
@@ -20,6 +21,7 @@
 OtakuNeko 是一个基于 Next.js 16.1.0 (Turbopack)、React 和 TypeScript 构建的 AI 驱动动漫仪表板。该应用为用户提供了一个综合平台,用于管理动漫收藏、参与 AI 驱动的对话,以及与 Bangumi 和豆瓣等外部服务同步数据。
 
 ### 核心功能
+
 - **AI 驱动的聊天**: 具有打字效果和消息管理的交互式聊天界面
 - **收藏管理**: 基于网格的动画、游戏和书籍展示,支持筛选和搜索
 - **数据同步**: 与 Bangumi API 和豆瓣导入功能的集成
@@ -32,6 +34,7 @@ OtakuNeko 是一个基于 Next.js 16.1.0 (Turbopack)、React 和 TypeScript 构�
 ## 项目架构
 
 ### 技术栈
+
 - **框架**: Next.js 16.1.0 (App Router with Turbopack)
 - **UI 库**: React with TypeScript
 - **样式**: Tailwind CSS with custom theme variables
@@ -143,10 +146,12 @@ OtakuNeko 前端采用模块化、可重用的组件架构设计。所有组件�
 **用途**: 提供应用的整体结构和导航框架
 
 **关键组件**:
+
 - **Header**: 持久化头部，包含搜索、用户信息、主题切换
 - **Sidebar**: 侧边栏导航，提供主要功能入口
 
 **设计模式**:
+
 ```typescript
 // 布局组件应保持无状态或最小化状态
 // 使用 Context API 管理跨组件状态
@@ -169,6 +174,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, className }) => {
 ```
 
 **最佳实践**:
+
 - 布局组件应使用 `usePathname()` 进行活动路由检测
 - 避免在布局组件中直接调用 API，通过 hooks 封装
 - 使用 `useHeaderContext()` 管理跨页面的共享状态
@@ -181,6 +187,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, className }) => {
 **用途**: 定义应用的主要页面和路由
 
 **设计模式**:
+
 ```typescript
 // 页面组件应包含完整的业务逻辑
 export default function Page() {
@@ -203,6 +210,7 @@ export default function Page() {
 ```
 
 **最佳实践**:
+
 - 页面组件应该是客户端组件（使用 'use client' 指令）
 - 使用自定义 hooks 封装业务逻辑和 API 调用
 - 实现适当的加载和错误状态
@@ -216,6 +224,7 @@ export default function Page() {
 **用途**: 实现特定的业务功能和交互
 
 **设计模式**:
+
 ```typescript
 // 功能组件应接收明确的 props 接口
 interface FeatureComponentProps {
@@ -250,6 +259,7 @@ export const FeatureComponent: React.FC<FeatureComponentProps> = ({
 ```
 
 **最佳实践**:
+
 - 使用明确的 TypeScript 接口定义 props
 - 使用 `useCallback` 缓存事件处理函数
 - 使用 `useMemo` 缓存计算结果
@@ -263,6 +273,7 @@ export const FeatureComponent: React.FC<FeatureComponentProps> = ({
 **用途**: 提供可重用的基础 UI 元素
 
 **设计模式**:
+
 ```typescript
 // UI 组件应使用 Class Variance Authority (CVA) 管理变体
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -309,6 +320,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 ```
 
 **最佳实践**:
+
 - 使用 CVA 管理组件变体
 - 使用 `forwardRef` 支持引用传递
 - 扩展原生 HTML 元素的 props 接口
@@ -323,12 +335,14 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 **使用场景**: 组件内部的状态，不需要跨组件共享
 
 **实现方式**:
+
 ```typescript
 const [count, setCount] = useState(0);
 const [items, setItems] = useState<Item[]>([]);
 ```
 
 **最佳实践**:
+
 - 优先使用本地状态，避免过度使用全局状态
 - 使用 TypeScript 定义状态类型
 - 使用 `useReducer` 处理复杂状态逻辑
@@ -338,6 +352,7 @@ const [items, setItems] = useState<Item[]>([]);
 **使用场景**: 需要在多个组件之间共享的状态
 
 **实现方式**:
+
 ```typescript
 // 创建 Context
 const MyContext = createContext<MyContextType | undefined>(undefined);
@@ -369,6 +384,7 @@ export const useMyContext = () => {
 ```
 
 **最佳实践**:
+
 - 将 Context 拆分为多个小型的 Context，避免单个 Context 过大
 - 使用自定义 Hook 封装 Context 访问逻辑
 - 在 Provider 中使用 `useMemo` 优化 context 值
@@ -379,9 +395,10 @@ export const useMyContext = () => {
 **使用场景**: 需要持久化或复杂状态管理的场景
 
 **实现方式**:
+
 ```typescript
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface MyStore {
   items: Item[];
@@ -395,17 +412,19 @@ export const useMyStore = create<MyStore>()(
     (set) => ({
       items: [],
       addItem: (item) => set((state) => ({ items: [...state.items, item] })),
-      removeItem: (id) => set((state) => ({ items: state.items.filter(i => i.id !== id) })),
+      removeItem: (id) =>
+        set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
       clearItems: () => set({ items: [] }),
     }),
     {
-      name: 'my-store-storage',
-    }
-  )
+      name: "my-store-storage",
+    },
+  ),
 );
 ```
 
 **最佳实践**:
+
 - 使用 Zustand 管理需要持久化的状态
 - 使用中间件（如 persist）扩展 store 功能
 - 将状态更新逻辑封装在 actions 中
@@ -422,32 +441,32 @@ export const useMyStore = create<MyStore>()(
   /* 基础颜色 */
   --background: #ffffff;
   --foreground: #0a0a0a;
-  
+
   /* 主题颜色 */
   --primary: #ff6b35;
   --primary-foreground: #ffffff;
-  
+
   /* 状态颜色 */
   --success: #22c55e;
   --warning: #f59e0b;
   --error: #ef4444;
-  
+
   /* 边框和背景 */
   --border: #e5e7eb;
   --input: #e5e7eb;
   --ring: #ff6b35;
-  
+
   /* 聊天气泡 */
   --bg-bubble-user: #ff6b35;
   --bg-bubble-assistant: #f3f4f6;
 }
 
-[data-theme='ocean'] {
+[data-theme="ocean"] {
   --primary: #0ea5e9;
   --primary-foreground: #ffffff;
 }
 
-[data-theme='sakura'] {
+[data-theme="sakura"] {
   --primary: #ec4899;
   --primary-foreground: #ffffff;
 }
@@ -463,15 +482,15 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        background: 'var(--background)',
-        foreground: 'var(--foreground)',
+        background: "var(--background)",
+        foreground: "var(--foreground)",
         primary: {
-          DEFAULT: 'var(--primary)',
-          foreground: 'var(--primary-foreground)',
+          DEFAULT: "var(--primary)",
+          foreground: "var(--primary-foreground)",
         },
-        success: 'var(--success)',
-        warning: 'var(--warning)',
-        error: 'var(--error)',
+        success: "var(--success)",
+        warning: "var(--warning)",
+        error: "var(--error)",
       },
     },
   },
@@ -481,6 +500,7 @@ module.exports = {
 #### 样式最佳实践
 
 1. **使用主题变量**:
+
 ```typescript
 // ✅ 正确
 <div className="bg-background text-foreground border-border" />
@@ -490,6 +510,7 @@ module.exports = {
 ```
 
 2. **使用 cn() 工具函数**:
+
 ```typescript
 import { cn } from '@/lib/utils';
 
@@ -501,6 +522,7 @@ import { cn } from '@/lib/utils';
 ```
 
 3. **响应式设计**:
+
 ```typescript
 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
   {/* 响应式网格 */}
@@ -508,6 +530,7 @@ import { cn } from '@/lib/utils';
 ```
 
 4. **暗色模式支持**:
+
 ```typescript
 <div className="bg-background dark:bg-gray-900 text-foreground dark:text-gray-100">
   {/* 暗色模式适配 */}
@@ -602,16 +625,19 @@ export const MyComponent = React.memo<MyComponentProps>(({ data, onClick }) => {
 
 ```typescript
 const filteredItems = useMemo(() => {
-  return items.filter(item => item.status === 'active');
+  return items.filter((item) => item.status === "active");
 }, [items]);
 ```
 
 #### 3. 使用 useCallback
 
 ```typescript
-const handleClick = useCallback((id: string) => {
-  onItemClick(id);
-}, [onItemClick]);
+const handleClick = useCallback(
+  (id: string) => {
+    onItemClick(id);
+  },
+  [onItemClick],
+);
 ```
 
 #### 4. 代码分割
@@ -778,6 +804,7 @@ describe('Button', () => {
 3. **提供者层次结构**: 以正确的顺序用上下文提供者包装应用
 
 **提供者层次结构**:
+
 ```tsx
 <SettingsProvider>
   <ToastProvider>
@@ -798,11 +825,13 @@ describe('Button', () => {
 一个持久的导航组件,提供对不同应用部分的访问:
 
 **功能**:
+
 - 使用 `usePathname` hook 进行活动路由高亮
 - 带有图标的响应式导航菜单
 - 链接到: Chat、Collections、Tools、Role、Settings
 
 **导航项**:
+
 ```typescript
 [
   { icon: <MessageSquare />, label: 'Chat', href: '/' },
@@ -818,6 +847,7 @@ describe('Button', () => {
 一个综合头部组件,提供:
 
 **核心功能**:
+
 - 带实时下拉的搜索功能
 - 用户同步状态和收藏计数
 - 主题切换功能
@@ -826,6 +856,7 @@ describe('Button', () => {
 
 **状态管理**:
 使用 `HeaderContext` 在页面转换间保持持久状态:
+
 ```typescript
 const {
   searchQuery,
@@ -847,6 +878,7 @@ const {
 ```
 
 **依赖项**:
+
 - `useSync`: 用于收藏计数和同步功能
 - `useChatContext`: 用于设置参考项
 - `useSettings`: 用于用户信息和设置
@@ -859,19 +891,21 @@ const {
 主要的聊天界面页面,具有以下功能:
 
 **状态管理**:
+
 ```typescript
 const [messages, setMessages] = useState<Message[]>([]);
 const [isLoading, setIsLoading] = useState(true);
 ```
 
 **消息接口**:
+
 ```typescript
 interface Message {
   id: string;
-  role: 'user' | 'assistant';
-  content: string;              // 助手消息的完整内容
-  currentContent: string;        // 当前显示的内容(打字效果)
-  status: 'sending' | 'sent' | 'error';
+  role: "user" | "assistant";
+  content: string; // 助手消息的完整内容
+  currentContent: string; // 当前显示的内容(打字效果)
+  status: "sending" | "sent" | "error";
   timestamp: string;
 }
 ```
@@ -885,6 +919,7 @@ interface Message {
 5. **加载状态**: 在检查已同步主题时显示加载动画
 
 **条件渲染**:
+
 - 加载状态: 加载动画
 - 无已同步主题: `EmptyState` 组件
 - 有已同步主题: 带有消息和输入的聊天界面
@@ -894,6 +929,7 @@ interface Message {
 一个综合的基于网格的收藏管理页面:
 
 **Props 接口**:
+
 ```typescript
 interface CollectionGridPageProps {
   items?: CollectionItem[];
@@ -905,6 +941,7 @@ interface CollectionGridPageProps {
 ```
 
 **收藏项接口**:
+
 ```typescript
 export interface CollectionItem {
   id: number;
@@ -913,13 +950,14 @@ export interface CollectionItem {
   rating: number;
   status: string;
   updated_at: string;
-  type?: 'anime' | 'game' | 'book';
+  type?: "anime" | "game" | "book";
 }
 ```
 
 **加载状态**:
+
 ```typescript
-export type LoadingState = 'idle' | 'loading' | 'success' | 'error';
+export type LoadingState = "idle" | "loading" | "success" | "error";
 ```
 
 **核心功能**:
@@ -935,15 +973,19 @@ export type LoadingState = 'idle' | 'loading' | 'success' | 'error';
 7. **空状态**: 无结果与无收藏的不同消息
 
 **筛选逻辑**:
+
 ```typescript
 const filteredItems = useMemo(() => {
-  return items.filter(item => {
-    const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = activeFilter === '全部' ||
+  return items.filter((item) => {
+    const matchesSearch = item.title
+      .toLowerCase()
+      .includes(searchQuery.toLowerCase());
+    const matchesFilter =
+      activeFilter === "全部" ||
       item.status === activeFilter ||
-      (activeFilter === '动画' && item.type === 'anime') ||
-      (activeFilter === '游戏' && item.type === 'game') ||
-      (activeFilter === '书籍' && item.type === 'book');
+      (activeFilter === "动画" && item.type === "anime") ||
+      (activeFilter === "游戏" && item.type === "game") ||
+      (activeFilter === "书籍" && item.type === "book");
     return matchesSearch && matchesFilter;
   });
 }, [items, searchQuery, activeFilter]);
@@ -956,6 +998,7 @@ const filteredItems = useMemo(() => {
 显示聊天消息,支持:
 
 **功能**:
+
 - 用户和助手消息区分
 - 打字效果支持(通过 `currentContent` prop)
 - 带重试按钮的错误状态显示
@@ -963,19 +1006,22 @@ const filteredItems = useMemo(() => {
 - 时间戳显示
 
 **上下文解析**:
+
 ```typescript
-const parseContext = (text: string): { context: ContextData | null; cleanedContent: string } => {
-  if (text.startsWith('[Context: ')) {
+const parseContext = (
+  text: string,
+): { context: ContextData | null; cleanedContent: string } => {
+  if (text.startsWith("[Context: ")) {
     const contextRegex = /\[Context: (\{[^\]]+\})\]/;
     const match = text.match(contextRegex);
 
     if (match && match[1]) {
       try {
         const contextData = JSON.parse(match[1]) as ContextData;
-        const cleanedContent = text.replace(contextRegex, '').trim();
+        const cleanedContent = text.replace(contextRegex, "").trim();
         return { context: contextData, cleanedContent };
       } catch (error) {
-        console.error('Failed to parse context:', error);
+        console.error("Failed to parse context:", error);
         return { context: null, cleanedContent: text };
       }
     }
@@ -986,6 +1032,7 @@ const parseContext = (text: string): { context: ContextData | null; cleanedConte
 ```
 
 **样式**:
+
 - 用户消息: 橙色背景(`bg-bg-bubble-user`)
 - 助手消息: 浅灰色背景(`bg-bg-bubble-assistant`)
 - 错误消息: 带边框的红色背景
@@ -995,6 +1042,7 @@ const parseContext = (text: string): { context: ContextData | null; cleanedConte
 用于发送消息的输入组件,具有:
 
 **功能**:
+
 - 带自动调整大小的文本输入
 - 带加载状态的发送按钮
 - 键盘快捷键(Enter 发送,Shift+Enter 换行)
@@ -1006,6 +1054,7 @@ const parseContext = (text: string): { context: ContextData | null; cleanedConte
 当没有收藏同步时显示:
 
 **内容**:
+
 - 带应用图标的欢迎消息
 - 同步收藏的行动号召
 - 入门说明
@@ -1015,6 +1064,7 @@ const parseContext = (text: string): { context: ContextData | null; cleanedConte
 `components/ui/` 目录包含使用 Tailwind CSS 和主题变量构建的可重用 UI 组件:
 
 **可用组件**:
+
 - [`Button.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/components/ui/Button.tsx): 带变体的按钮(default、outline、ghost)
 - [`Input.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/components/ui/Input.tsx): 带图标支持的文本输入
 - [`Card.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/components/ui/Card.tsx): 带阴影的卡片容器
@@ -1033,6 +1083,7 @@ const parseContext = (text: string): { context: ContextData | null; cleanedConte
 - [`NavPillSkeleton.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/components/ui/NavPillSkeleton.tsx): 骨架屏加载状态
 
 **设计模式**: 所有 UI 组件使用主题变量而非硬编码颜色以保持一致性:
+
 ```css
 background: var(--background);
 color: var(--foreground);
@@ -1048,12 +1099,13 @@ background: var(--primary);
 API 层基于 Axios 构建,具有集中式配置:
 
 **基础配置**:
+
 ```typescript
 const api = axios.create({
-  baseURL: 'http://localhost:8000/api/v1',
+  baseURL: "http://localhost:8000/api/v1",
   timeout: 10000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 ```
@@ -1061,22 +1113,35 @@ const api = axios.create({
 ### 核心 API 函数
 
 #### 仪表板统计
+
 ```typescript
-export async function fetchDashboardStats(): Promise<DashboardStats>
+export async function fetchDashboardStats(): Promise<DashboardStats>;
 ```
+
 获取仪表板统计信息,包括总主题数、收藏数、系统状态和最近活动。
 
 #### 用户同步
+
 ```typescript
-export async function syncUser(username: string, subjectType?: number): Promise<void>
+export async function syncUser(
+  username: string,
+  subjectType?: number,
+): Promise<void>;
 ```
+
 与 Bangumi API 同步用户数据。对于大型同步操作具有 5 分钟超时。
 
 #### 收藏计数
+
 ```typescript
-export async function getUserCollectionCount(username: string, subjectType: number): Promise<number>
+export async function getUserCollectionCount(
+  username: string,
+  subjectType: number,
+): Promise<number>;
 ```
+
 获取特定主题类型的收藏计数:
+
 - 类型 1: 书籍
 - 类型 2: 动画
 - 类型 4: 游戏
@@ -1085,78 +1150,132 @@ export async function getUserCollectionCount(username: string, subjectType: numb
 #### 搜索函数
 
 **Bangumi 搜索**:
+
 ```typescript
-export async function searchBangumiSubjects(keyword?: string, type?: number): Promise<Subject[]>
+export async function searchBangumiSubjects(
+  keyword?: string,
+  type?: number,
+): Promise<Subject[]>;
 ```
+
 在 Bangumi 数据库中搜索主题。
 
 **本地搜索**:
+
 ```typescript
-export async function searchSubjects(keyword?: string, type?: number): Promise<Subject[]>
+export async function searchSubjects(
+  keyword?: string,
+  type?: number,
+): Promise<Subject[]>;
 ```
+
 在本地数据库中搜索主题。
 
 **混合搜索**:
+
 ```typescript
-export async function searchMixedSubjects(keyword?: string, type?: number, username?: string): Promise<Subject[]>
+export async function searchMixedSubjects(
+  keyword?: string,
+  type?: number,
+  username?: string,
+): Promise<Subject[]>;
 ```
+
 同时搜索 Bangumi 和本地数据库,合并结果。
 
 #### 用户收藏
+
 ```typescript
-export async function getUserCollections(username: string, keyword?: string, type?: number): Promise<CollectionWithSubject[]>
+export async function getUserCollections(
+  username: string,
+  keyword?: string,
+  type?: number,
+): Promise<CollectionWithSubject[]>;
 ```
+
 获取用户的收藏,可选按关键词和类型过滤。
 
 #### 数据导入
 
 **豆瓣导入**:
+
 ```typescript
-export async function uploadDoubanFile(file: File, username: string): Promise<{ message: string; username: string; import_count: number }>
+export async function uploadDoubanFile(
+  file: File,
+  username: string,
+): Promise<{ message: string; username: string; import_count: number }>;
 ```
+
 从豆瓣 CSV 文件导入收藏。使用 FormData 进行文件上传,具有 5 分钟超时。
 
 **批量导入**:
+
 ```typescript
-export async function batchImportCollections(items: ImportItem[], username: string): Promise<{ message: string; imported_count: number }>
+export async function batchImportCollections(
+  items: ImportItem[],
+  username: string,
+): Promise<{ message: string; imported_count: number }>;
 ```
+
 在单个请求中导入多个收藏。
 
 **手动添加**:
+
 ```typescript
-export async function createManualCollection(data: ManualCollectionData, username: string): Promise<{ message: string; subject_id: number; collection_id: number }>
+export async function createManualCollection(
+  data: ManualCollectionData,
+  username: string,
+): Promise<{ message: string; subject_id: number; collection_id: number }>;
 ```
+
 手动创建带有主题详细信息的收藏。
 
 #### 用户管理
 
 **获取 Bangumi 用户**:
+
 ```typescript
-export async function fetchBangumiUser(username: string): Promise<BangumiUser | null>
+export async function fetchBangumiUser(
+  username: string,
+): Promise<BangumiUser | null>;
 ```
+
 直接从 Bangumi API 获取用户信息。
 
 **注册本地用户**:
+
 ```typescript
-export async function registerLocalUser(data: LocalUserRegisterRequest): Promise<LocalUserRegisterResponse>
+export async function registerLocalUser(
+  data: LocalUserRegisterRequest,
+): Promise<LocalUserRegisterResponse>;
 ```
+
 在数据库中注册本地用户。
 
 **检查本地用户**:
+
 ```typescript
-export async function checkLocalUser(username: string): Promise<LocalUserCheckResponse>
+export async function checkLocalUser(
+  username: string,
+): Promise<LocalUserCheckResponse>;
 ```
+
 检查用户是否存在于本地数据库中。
 
 **获取用户信息**:
+
 ```typescript
-export async function getUserInfo(username: string): Promise<BangumiUser | null>
+export async function getUserInfo(
+  username: string,
+): Promise<BangumiUser | null>;
 ```
+
 从本地数据库获取用户信息。
 
 ### 类型定义
 
 **主题接口**:
+
 ```typescript
 export interface Subject {
   id: number;
@@ -1183,6 +1302,7 @@ export interface Subject {
 ```
 
 **收藏接口**:
+
 ```typescript
 export interface Collection {
   id: number;
@@ -1198,6 +1318,7 @@ export interface Collection {
 ```
 
 **BangumiUser 接口**:
+
 ```typescript
 export interface BangumiUser {
   id: number;
@@ -1220,6 +1341,7 @@ export interface BangumiUser {
 **目的**: 代理请求到后端 API 以避免 CORS 问题并添加额外的验证。
 
 **实现**:
+
 ```typescript
 export async function GET(request: Request) {
   try {
@@ -1232,8 +1354,11 @@ export async function GET(request: Request) {
     });
 
     // 验证用户名
-    if (!backendUrl.searchParams.has('username')) {
-      return NextResponse.json({ error: 'Username is required' }, { status: 400 });
+    if (!backendUrl.searchParams.has("username")) {
+      return NextResponse.json(
+        { error: "Username is required" },
+        { status: 400 },
+      );
     }
 
     const response = await fetch(backendUrl.toString());
@@ -1246,7 +1371,10 @@ export async function GET(request: Request) {
     const collections = await response.json();
     return NextResponse.json(collections);
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch collections' }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to fetch collections" },
+      { status: 500 },
+    );
   }
 }
 ```
@@ -1266,6 +1394,7 @@ export async function GET(request: Request) {
 管理用户设置和认证状态。
 
 **接口定义**:
+
 ```typescript
 interface SettingsContextType {
   settings: Settings;
@@ -1279,12 +1408,14 @@ interface SettingsContextType {
 ```
 
 **核心功能**:
+
 - 用户信息存储和检索
 - 设置持久化到 localStorage
 - 会话管理(记住我功能)
 - 用户信息刷新
 
 **实现细节**:
+
 ```typescript
 export const SettingsProvider = ({ children }: { children: ReactNode }) => {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
@@ -1379,6 +1510,7 @@ export const SettingsProvider = ({ children }: { children: ReactNode }) => {
 管理聊天相关的状态。
 
 **接口定义**:
+
 ```typescript
 interface ChatContextType {
   messages: Message[];
@@ -1393,6 +1525,7 @@ interface ChatContextType {
 ```
 
 **核心功能**:
+
 - 消息列表管理
 - 添加、更新、删除消息
 - 参考项存储(用于上下文)
@@ -1403,6 +1536,7 @@ interface ChatContextType {
 管理 Header 组件的状态,确保在页面转换间保持持久。
 
 **接口定义**:
+
 ```typescript
 interface HeaderContextType {
   searchQuery: string;
@@ -1424,6 +1558,7 @@ interface HeaderContextType {
 ```
 
 **核心功能**:
+
 - 搜索查询和结果管理
 - 搜索下拉状态
 - 各种模态框状态(设置、网格导入等)
@@ -1438,6 +1573,7 @@ interface HeaderContextType {
 使用 Zustand 管理同步状态和收藏计数。
 
 **状态接口**:
+
 ```typescript
 interface SyncState {
   isSyncing: boolean;
@@ -1463,6 +1599,7 @@ interface SyncState {
 ```
 
 **核心功能**:
+
 - 同步状态跟踪(同步中、加载中、错误)
 - 收藏计数管理
 - 最后同步时间跟踪
@@ -1470,6 +1607,7 @@ interface SyncState {
 - 同步执行
 
 **实现示例**:
+
 ```typescript
 export const useSyncStore = create<SyncState>((set, get) => ({
   isSyncing: false,
@@ -1478,7 +1616,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
     anime: 0,
     books: 0,
     games: 0,
-    films: 0
+    films: 0,
   },
   lastSyncTime: null,
   syncError: null,
@@ -1492,12 +1630,13 @@ export const useSyncStore = create<SyncState>((set, get) => ({
   fetchCollectionCounts: async (username: string) => {
     set({ isLoading: true, syncError: null });
     try {
-      const [animeCount, booksCount, gamesCount, filmsCount] = await Promise.all([
-        getUserCollectionCount(username, 2),
-        getUserCollectionCount(username, 1),
-        getUserCollectionCount(username, 4),
-        getUserCollectionCount(username, 6),
-      ]);
+      const [animeCount, booksCount, gamesCount, filmsCount] =
+        await Promise.all([
+          getUserCollectionCount(username, 2),
+          getUserCollectionCount(username, 1),
+          getUserCollectionCount(username, 4),
+          getUserCollectionCount(username, 6),
+        ]);
 
       set({
         collectionCounts: {
@@ -1510,7 +1649,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       });
     } catch (error) {
       set({
-        syncError: 'Failed to fetch collection counts',
+        syncError: "Failed to fetch collection counts",
         isLoading: false,
       });
     }
@@ -1527,7 +1666,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
       });
     } catch (error) {
       set({
-        syncError: 'Failed to sync data',
+        syncError: "Failed to sync data",
         isSyncing: false,
       });
     }
@@ -1544,6 +1683,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 应用使用 CSS 自定义属性实现主题系统,定义在 [`globals.css`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/app/globals.css) 中。
 
 **主题结构**:
+
 ```css
 :root {
   --background: 0 0% 100%;
@@ -1580,18 +1720,21 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 应用支持三种主题变体:
 
 #### Default Theme
+
 - 背景色: 白色
 - 前景色: 深灰
 - 主色调: 深蓝灰
 - 适合: 通用使用
 
 #### Ocean Theme
+
 - 背景色: 浅蓝
 - 前景色: 深蓝
 - 主色调: 海洋蓝
 - 适合: 冷色调偏好
 
 #### Sakura Theme
+
 - 背景色: 浅粉
 - 前景色: 深粉
 - 主色调: 樱花粉
@@ -1602,6 +1745,7 @@ export const useSyncStore = create<SyncState>((set, get) => ({
 应用使用 Tailwind CSS 进行样式设计,配置为使用主题变量:
 
 **主题映射**:
+
 ```javascript
 theme: {
   extend: {
@@ -1635,6 +1779,7 @@ theme: {
 应用采用移动优先的响应式设计方法:
 
 **断点**:
+
 - `sm`: 640px
 - `md`: 768px
 - `lg`: 1024px
@@ -1642,6 +1787,7 @@ theme: {
 - `2xl`: 1536px
 
 **响应式示例**:
+
 ```tsx
 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
   {/* 收藏项 */}
@@ -1653,6 +1799,7 @@ theme: {
 应用使用 CSS 过渡和动画增强用户体验:
 
 **常用过渡**:
+
 ```css
 transition-all duration-200 ease-in-out
 transition-colors duration-200
@@ -1660,15 +1807,25 @@ transition-transform duration-200
 ```
 
 **动画示例**:
+
 ```css
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 ```
 
@@ -1681,6 +1838,7 @@ transition-transform duration-200
 应用使用多个上下文提供者来管理全局状态。提供者的顺序至关重要,因为某些提供者依赖于其他提供者的状态。
 
 **提供者层次结构**:
+
 ```tsx
 <SettingsProvider>
   <ToastProvider>
@@ -1699,17 +1857,19 @@ transition-transform duration-200
 **位置**: [`contexts/SettingsContext.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/contexts/SettingsContext.tsx)
 
 **职责**:
+
 - 管理用户设置
 - 存储和检索用户信息
 - 处理会话持久化
 - 提供设置更新方法
 
 **使用示例**:
+
 ```tsx
 const { settings, userInfo, updateSettings, resetSession } = useSettings();
 
 // 更新设置
-updateSettings({ theme: 'ocean' }, true);
+updateSettings({ theme: "ocean" }, true);
 
 // 重置会话
 resetSession();
@@ -1720,26 +1880,28 @@ resetSession();
 **位置**: [`contexts/ToastContext.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/contexts/ToastContext.tsx)
 
 **职责**:
+
 - 管理 Toast 通知
 - 控制通知显示和隐藏
 - 管理通知队列
 
 **使用示例**:
+
 ```tsx
 const { toast } = useToast();
 
 // 显示成功通知
 toast({
-  title: 'Success',
-  description: 'Data saved successfully',
-  variant: 'default',
+  title: "Success",
+  description: "Data saved successfully",
+  variant: "default",
 });
 
 // 显示错误通知
 toast({
-  title: 'Error',
-  description: 'Failed to save data',
-  variant: 'destructive',
+  title: "Error",
+  description: "Failed to save data",
+  variant: "destructive",
 });
 ```
 
@@ -1748,21 +1910,23 @@ toast({
 **位置**: [`contexts/ChatContext.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/contexts/ChatContext.tsx)
 
 **职责**:
+
 - 管理聊天消息
 - 存储参考项
 - 提供消息操作方法
 
 **使用示例**:
+
 ```tsx
 const { messages, addMessage, setReferenceItems } = useChatContext();
 
 // 添加消息
 addMessage({
   id: generateId(),
-  role: 'user',
-  content: 'Hello',
-  currentContent: 'Hello',
-  status: 'sent',
+  role: "user",
+  content: "Hello",
+  currentContent: "Hello",
+  status: "sent",
   timestamp: new Date().toISOString(),
 });
 
@@ -1775,11 +1939,13 @@ setReferenceItems([subject1, subject2]);
 **位置**: [`contexts/HeaderContext.tsx`](file:///e:/HACCI/Documents/tools/OtakuNeko/frontend/src/contexts/HeaderContext.tsx)
 
 **职责**:
+
 - 管理 Header 状态
 - 控制搜索功能
 - 管理模态框状态
 
 **使用示例**:
+
 ```tsx
 const {
   searchQuery,
@@ -1790,7 +1956,7 @@ const {
 } = useHeaderContext();
 
 // 设置搜索查询
-setSearchQuery('anime');
+setSearchQuery("anime");
 
 // 打开搜索下拉
 setIsSearchDropdownOpen(true);
@@ -1810,13 +1976,15 @@ clearSearch();
 **用途**: 防抖函数调用,减少频繁更新。
 
 **签名**:
+
 ```typescript
-function useDebounce<T>(value: T, delay: number): T
+function useDebounce<T>(value: T, delay: number): T;
 ```
 
 **使用示例**:
+
 ```tsx
-const [searchQuery, setSearchQuery] = useState('');
+const [searchQuery, setSearchQuery] = useState("");
 const debouncedQuery = useDebounce(searchQuery, 300);
 
 // 使用防抖后的查询进行搜索
@@ -1828,8 +1996,9 @@ useEffect(() => {
 ```
 
 **实现**:
+
 ```typescript
-import { useState, useEffect } from 'react';
+import { useState, useEffect } from "react";
 
 export function useDebounce<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState<T>(value);
@@ -1855,6 +2024,7 @@ export function useDebounce<T>(value: T, delay: number): T {
 **用途**: 封装同步功能,提供简化的同步操作接口。
 
 **返回值**:
+
 ```typescript
 interface UseSyncReturn {
   isSyncing: boolean;
@@ -1867,28 +2037,29 @@ interface UseSyncReturn {
 ```
 
 **使用示例**:
+
 ```tsx
-const {
-  isSyncing,
-  isLoading,
-  collectionCounts,
-  lastSyncTime,
-  handleSync,
-} = useSync();
+const { isSyncing, isLoading, collectionCounts, lastSyncTime, handleSync } =
+  useSync();
 
 // 触发同步
 await handleSync();
 
 // 显示同步状态
-{isSyncing && <p>Syncing...</p>}
-{isLoading && <p>Loading...</p>}
+{
+  isSyncing && <p>Syncing...</p>;
+}
+{
+  isLoading && <p>Loading...</p>;
+}
 ```
 
 **实现**:
+
 ```typescript
-import { useEffect } from 'react';
-import { useSyncStore } from '@/lib/syncStore';
-import { useSettings } from '@/contexts/SettingsContext';
+import { useEffect } from "react";
+import { useSyncStore } from "@/lib/syncStore";
+import { useSettings } from "@/contexts/SettingsContext";
 
 export function useSync() {
   const { settings } = useSettings();
@@ -1935,6 +2106,7 @@ export function useSync() {
 应用使用组件组合模式来构建复杂的 UI:
 
 **示例**:
+
 ```tsx
 <Card>
   <CardHeader>
@@ -1960,13 +2132,14 @@ export function useSync() {
 应用将容器组件(业务逻辑)与展示组件(UI)分离:
 
 **容器组件**:
+
 ```tsx
 export function CollectionGridPage() {
   const [items, setItems] = useState<CollectionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetchItems().then(data => {
+    fetchItems().then((data) => {
       setItems(data);
       setIsLoading(false);
     });
@@ -1977,6 +2150,7 @@ export function CollectionGridPage() {
 ```
 
 **展示组件**:
+
 ```tsx
 export function CollectionGrid({ items, isLoading }: CollectionGridProps) {
   if (isLoading) {
@@ -1985,7 +2159,7 @@ export function CollectionGrid({ items, isLoading }: CollectionGridProps) {
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-      {items.map(item => (
+      {items.map((item) => (
         <PosterCard key={item.id} {...item} />
       ))}
     </div>
@@ -1998,26 +2172,42 @@ export function CollectionGrid({ items, isLoading }: CollectionGridProps) {
 应用使用自定义 hooks 来封装可重用的逻辑:
 
 **示例**:
+
 ```tsx
 // Hook 定义
 export function useCollectionFilters() {
-  const [activeFilter, setActiveFilter] = useState('全部');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilter, setActiveFilter] = useState("全部");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => {
-      const matchesSearch = item.title.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesFilter = activeFilter === '全部' || item.status === activeFilter;
+    return items.filter((item) => {
+      const matchesSearch = item.title
+        .toLowerCase()
+        .includes(searchQuery.toLowerCase());
+      const matchesFilter =
+        activeFilter === "全部" || item.status === activeFilter;
       return matchesSearch && matchesFilter;
     });
   }, [items, searchQuery, activeFilter]);
 
-  return { activeFilter, setActiveFilter, searchQuery, setSearchQuery, filteredItems };
+  return {
+    activeFilter,
+    setActiveFilter,
+    searchQuery,
+    setSearchQuery,
+    filteredItems,
+  };
 }
 
 // Hook 使用
 function CollectionPage() {
-  const { activeFilter, setActiveFilter, searchQuery, setSearchQuery, filteredItems } = useCollectionFilters();
+  const {
+    activeFilter,
+    setActiveFilter,
+    searchQuery,
+    setSearchQuery,
+    filteredItems,
+  } = useCollectionFilters();
 
   return (
     <>
@@ -2034,10 +2224,11 @@ function CollectionPage() {
 应用将状态提升到最近的共同祖先组件以共享状态:
 
 **示例**:
+
 ```tsx
 // 父组件
 export function ParentComponent() {
-  const [sharedState, setSharedState] = useState('initial');
+  const [sharedState, setSharedState] = useState("initial");
 
   return (
     <>
@@ -2048,8 +2239,14 @@ export function ParentComponent() {
 }
 
 // 子组件
-export function ChildA({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  return <input value={value} onChange={e => onChange(e.target.value)} />;
+export function ChildA({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return <input value={value} onChange={(e) => onChange(e.target.value)} />;
 }
 
 export function ChildB({ value }: { value: string }) {
@@ -2062,9 +2259,10 @@ export function ChildB({ value }: { value: string }) {
 应用使用受控组件模式来管理表单输入:
 
 **示例**:
+
 ```tsx
 export function ControlledInput() {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState("");
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setValue(e.target.value);
@@ -2072,7 +2270,7 @@ export function ControlledInput() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('Submitted:', value);
+    console.log("Submitted:", value);
   };
 
   return (
@@ -2102,36 +2300,35 @@ export function ControlledInput() {
 ### 性能优化
 
 1. **使用 useMemo 缓存计算结果**:
+
 ```tsx
 const filteredItems = useMemo(() => {
-  return items.filter(item => item.status === activeFilter);
+  return items.filter((item) => item.status === activeFilter);
 }, [items, activeFilter]);
 ```
 
 2. **使用 useCallback 缓存函数**:
+
 ```tsx
 const handleClick = useCallback(() => {
-  console.log('Clicked');
+  console.log("Clicked");
 }, []);
 ```
 
 3. **使用 React.lazy 进行代码分割**:
+
 ```tsx
-const LazyComponent = React.lazy(() => import('./LazyComponent'));
+const LazyComponent = React.lazy(() => import("./LazyComponent"));
 ```
 
 4. **使用 Next.js Image 进行图片优化**:
+
 ```tsx
-<Image
-  src="/poster.jpg"
-  alt="Poster"
-  width={200}
-  height={300}
-  loading="lazy"
-/>
+<Image src="/poster.jpg" alt="Poster" width={200} height={300} loading="lazy" />
 ```
 
 5. **避免不必要的重新渲染**:
+
 ```tsx
 const MemoizedComponent = React.memo(({ data }) => {
   return <div>{data}</div>;
@@ -2141,38 +2338,38 @@ const MemoizedComponent = React.memo(({ data }) => {
 ### 无障碍性
 
 1. **使用语义化 HTML**:
+
 ```tsx
 <nav aria-label="Main navigation">
   <ul>
-    <li><a href="/">Home</a></li>
-    <li><a href="/collections">Collections</a></li>
+    <li>
+      <a href="/">Home</a>
+    </li>
+    <li>
+      <a href="/collections">Collections</a>
+    </li>
   </ul>
 </nav>
 ```
 
 2. **添加 ARIA 属性**:
+
 ```tsx
-<button
-  aria-label="Close dialog"
-  onClick={onClose}
->
+<button aria-label="Close dialog" onClick={onClose}>
   <X />
 </button>
 ```
 
 3. **键盘导航支持**:
+
 ```tsx
-<div
-  role="button"
-  tabIndex={0}
-  onKeyDown={handleKeyDown}
-  onClick={handleClick}
->
+<div role="button" tabIndex={0} onKeyDown={handleKeyDown} onClick={handleClick}>
   Clickable element
 </div>
 ```
 
 4. **提供替代文本**:
+
 ```tsx
 <Image
   src="/poster.jpg"
@@ -2185,19 +2382,21 @@ const MemoizedComponent = React.memo(({ data }) => {
 ### 错误处理
 
 1. **使用 try-catch 处理异步错误**:
+
 ```tsx
 const fetchData = async () => {
   try {
-    const response = await api.get('/data');
+    const response = await api.get("/data");
     setData(response.data);
   } catch (error) {
-    console.error('Failed to fetch data:', error);
-    setError('Failed to load data');
+    console.error("Failed to fetch data:", error);
+    setError("Failed to load data");
   }
 };
 ```
 
 2. **使用错误边界捕获组件错误**:
+
 ```tsx
 class ErrorBoundary extends React.Component<
   { children: ReactNode },
@@ -2222,66 +2421,71 @@ class ErrorBoundary extends React.Component<
 ```
 
 3. **提供有意义的错误消息**:
+
 ```tsx
 toast({
-  title: 'Sync Failed',
-  description: 'Unable to sync with Bangumi. Please check your connection and try again.',
-  variant: 'destructive',
+  title: "Sync Failed",
+  description:
+    "Unable to sync with Bangumi. Please check your connection and try again.",
+  variant: "destructive",
 });
 ```
 
 ### 测试
 
 1. **编写单元测试**:
-```tsx
-import { render, screen } from '@testing-library/react';
-import { Button } from './Button';
 
-test('renders button with text', () => {
+```tsx
+import { render, screen } from "@testing-library/react";
+import { Button } from "./Button";
+
+test("renders button with text", () => {
   render(<Button>Click me</Button>);
-  expect(screen.getByText('Click me')).toBeInTheDocument();
+  expect(screen.getByText("Click me")).toBeInTheDocument();
 });
 ```
 
 2. **编写集成测试**:
-```tsx
-import { render, screen, fireEvent } from '@testing-library/react';
-import { ChatInput } from './ChatInput';
 
-test('submits message on enter', () => {
+```tsx
+import { render, screen, fireEvent } from "@testing-library/react";
+import { ChatInput } from "./ChatInput";
+
+test("submits message on enter", () => {
   const handleSubmit = jest.fn();
   render(<ChatInput onSubmit={handleSubmit} />);
 
-  const input = screen.getByPlaceholderText('Type a message...');
-  fireEvent.change(input, { target: { value: 'Hello' } });
-  fireEvent.keyDown(input, { key: 'Enter' });
+  const input = screen.getByPlaceholderText("Type a message...");
+  fireEvent.change(input, { target: { value: "Hello" } });
+  fireEvent.keyDown(input, { key: "Enter" });
 
-  expect(handleSubmit).toHaveBeenCalledWith('Hello');
+  expect(handleSubmit).toHaveBeenCalledWith("Hello");
 });
 ```
 
 3. **使用测试工具**:
-```tsx
-import { renderHook, act } from '@testing-library/react';
-import { useDebounce } from './useDebounce';
 
-test('debounces value changes', () => {
+```tsx
+import { renderHook, act } from "@testing-library/react";
+import { useDebounce } from "./useDebounce";
+
+test("debounces value changes", () => {
   jest.useFakeTimers();
   const { result, rerender } = renderHook(
     ({ value, delay }) => useDebounce(value, delay),
-    { initialProps: { value: 'initial', delay: 500 } }
+    { initialProps: { value: "initial", delay: 500 } },
   );
 
-  expect(result.current).toBe('initial');
+  expect(result.current).toBe("initial");
 
-  rerender({ value: 'updated', delay: 500 });
-  expect(result.current).toBe('initial');
+  rerender({ value: "updated", delay: 500 });
+  expect(result.current).toBe("initial");
 
   act(() => {
     jest.advanceTimersByTime(500);
   });
 
-  expect(result.current).toBe('updated');
+  expect(result.current).toBe("updated");
   jest.useRealTimers();
 });
 ```
@@ -2289,6 +2493,7 @@ test('debounces value changes', () => {
 ### 安全性
 
 1. **验证用户输入**:
+
 ```tsx
 const validateUsername = (username: string): boolean => {
   const usernameRegex = /^[a-zA-Z0-9_-]{3,20}$/;
@@ -2297,8 +2502,9 @@ const validateUsername = (username: string): boolean => {
 ```
 
 2. **清理用户输入**:
+
 ```tsx
-import DOMPurify from 'dompurify';
+import DOMPurify from "dompurify";
 
 const sanitizeInput = (input: string): string => {
   return DOMPurify.sanitize(input);
@@ -2306,25 +2512,28 @@ const sanitizeInput = (input: string): string => {
 ```
 
 3. **使用 HTTPS**:
+
 ```tsx
 const api = axios.create({
-  baseURL: 'https://api.example.com',
+  baseURL: "https://api.example.com",
   // ...
 });
 ```
 
 4. **避免暴露敏感信息**:
+
 ```tsx
 // 错误: 不要记录敏感信息
-console.error('Login failed:', { password: userPassword });
+console.error("Login failed:", { password: userPassword });
 
 // 正确: 只记录必要信息
-console.error('Login failed:', { username: userUsername });
+console.error("Login failed:", { username: userUsername });
 ```
 
 ### 文档
 
 1. **为组件编写 JSDoc 注释**:
+
 ```tsx
 /**
  * CollectionGrid component displays a grid of collection items
@@ -2342,6 +2551,7 @@ export function CollectionGrid({
 ```
 
 2. **为函数编写注释**:
+
 ```tsx
 /**
  * Filters items based on search query and active filter
@@ -2353,26 +2563,31 @@ export function CollectionGrid({
 export function filterItems(
   items: CollectionItem[],
   searchQuery: string,
-  activeFilter: string
+  activeFilter: string,
 ): CollectionItem[] {
   // ...
 }
 ```
 
 3. **维护 README 文件**:
+
 ```markdown
 # OtakuNeko Frontend
 
 ## Installation
+
 npm install
 
 ## Development
+
 npm run dev
 
 ## Build
+
 npm run build
 
 ## Testing
+
 npm test
 ```
 
@@ -2383,6 +2598,7 @@ npm test
 OtakuNeko 前端是一个功能丰富、架构良好的应用,展示了现代 React 和 Next.js 开发的最佳实践。通过使用 TypeScript、Context API、Zustand、Tailwind CSS 和其他工具,应用提供了类型安全、高性能和可维护的代码库。
 
 关键特性包括:
+
 - 响应式设计和移动优先方法
 - 全面的主题系统
 - 高效的状态管理

@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { createRafBatcher } from './rafBatcher';
+import { describe, expect, it } from "vitest";
+import { createRafBatcher } from "./rafBatcher";
 
-describe('createRafBatcher', () => {
-  it('coalesces multiple schedules into one frame', () => {
+describe("createRafBatcher", () => {
+  it("coalesces multiple schedules into one frame", () => {
     const frames: Array<() => void> = [];
     const run = createRafBatcher((callback) => {
       frames.push(callback);
@@ -10,16 +10,16 @@ describe('createRafBatcher', () => {
     });
     const calls: string[] = [];
 
-    run(() => calls.push('first'));
-    run(() => calls.push('latest'));
+    run(() => calls.push("first"));
+    run(() => calls.push("latest"));
 
     expect(frames).toHaveLength(1);
     expect(calls).toEqual([]);
     frames[0]();
-    expect(calls).toEqual(['latest']);
+    expect(calls).toEqual(["latest"]);
   });
 
-  it('can be cancelled before the frame runs', () => {
+  it("can be cancelled before the frame runs", () => {
     const frames: Array<() => void> = [];
     const run = createRafBatcher((callback) => {
       frames.push(callback);
@@ -27,7 +27,7 @@ describe('createRafBatcher', () => {
     });
     const calls: string[] = [];
 
-    run(() => calls.push('cancelled'));
+    run(() => calls.push("cancelled"));
     run.cancel();
     frames[0]();
 

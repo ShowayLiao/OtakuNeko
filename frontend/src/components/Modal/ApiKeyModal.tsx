@@ -1,9 +1,28 @@
-import React, { useState } from 'react';
-import { Modal, Input, Switch, Button, Badge, Space, Alert, Select } from 'antd';
-import { Lock, Check, AlertCircle, RefreshCw, Trash2, ChevronRight, Server, Cloud, Globe } from 'lucide-react';
-import { useApiStore, ProviderConfig } from '@/store/useApiStore';
-import type { CheckboxChangeEvent } from 'antd';
-import { useAppTheme } from '@/components/providers/LobeProvider';
+import React, { useState } from "react";
+import {
+  Modal,
+  Input,
+  Switch,
+  Button,
+  Badge,
+  Space,
+  Alert,
+  Select,
+} from "antd";
+import {
+  Lock,
+  Check,
+  AlertCircle,
+  RefreshCw,
+  Trash2,
+  ChevronRight,
+  Server,
+  Cloud,
+  Globe,
+} from "lucide-react";
+import { useApiStore, ProviderConfig } from "@/store/useApiStore";
+import type { CheckboxChangeEvent } from "antd";
+import { useAppTheme } from "@/components/providers/LobeProvider";
 
 interface ApiKeyModalProps {
   open: boolean;
@@ -13,108 +32,115 @@ interface ApiKeyModalProps {
 // 服务商配置信息
 const providerInfo = {
   openai: {
-    name: 'OpenAI',
-    description: 'OpenAI GPT 系列模型',
+    name: "OpenAI",
+    description: "OpenAI GPT 系列模型",
     icon: <Globe className="w-4 h-4" />,
-    fields: ['apiKey', 'proxyUrl']
+    fields: ["apiKey", "proxyUrl"],
   },
   azure: {
-    name: 'Azure OpenAI',
-    description: 'Azure 托管的 OpenAI 模型',
+    name: "Azure OpenAI",
+    description: "Azure 托管的 OpenAI 模型",
     icon: <Cloud className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint', 'deploymentName', 'apiVersion']
+    fields: ["apiKey", "endpoint", "deploymentName", "apiVersion"],
   },
   google: {
-    name: 'Google Gemini',
-    description: 'Google Gemini 系列模型',
+    name: "Google Gemini",
+    description: "Google Gemini 系列模型",
     icon: <Globe className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   anthropic: {
-    name: 'Anthropic Claude',
-    description: 'Anthropic Claude 系列模型',
+    name: "Anthropic Claude",
+    description: "Anthropic Claude 系列模型",
     icon: <Cloud className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   deepseek: {
-    name: 'DeepSeek',
-    description: '深度求索大模型',
+    name: "DeepSeek",
+    description: "深度求索大模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   moonshot: {
-    name: 'Moonshot',
-    description: '月之暗面 Kimi 模型',
+    name: "Moonshot",
+    description: "月之暗面 Kimi 模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   qwen: {
-    name: 'Qwen',
-    description: '通义千问 (阿里云 DashScope)',
+    name: "Qwen",
+    description: "通义千问 (阿里云 DashScope)",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   zhipu: {
-    name: 'Zhipu AI',
-    description: '智谱 GLM 大模型',
+    name: "Zhipu AI",
+    description: "智谱 GLM 大模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   minimax: {
-    name: 'MiniMax',
-    description: '海螺大模型',
+    name: "MiniMax",
+    description: "海螺大模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   yi: {
-    name: 'Yi',
-    description: '零一万物大模型',
+    name: "Yi",
+    description: "零一万物大模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   stepfun: {
-    name: 'StepFun',
-    description: '阶跃星辰大模型',
+    name: "StepFun",
+    description: "阶跃星辰大模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   ollama: {
-    name: 'Ollama',
-    description: '本地运行的大模型',
+    name: "Ollama",
+    description: "本地运行的大模型",
     icon: <Server className="w-4 h-4" />,
-    fields: ['endpoint']
+    fields: ["endpoint"],
   },
   groq: {
-    name: 'Groq',
-    description: '极速推理模型',
+    name: "Groq",
+    description: "极速推理模型",
     icon: <Cloud className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   perplexity: {
-    name: 'Perplexity',
-    description: '联网搜索模型',
+    name: "Perplexity",
+    description: "联网搜索模型",
     icon: <Globe className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
+    fields: ["apiKey", "endpoint"],
   },
   mistral: {
-    name: 'Mistral',
-    description: '法国开源模型',
+    name: "Mistral",
+    description: "法国开源模型",
     icon: <Cloud className="w-4 h-4" />,
-    fields: ['apiKey', 'endpoint']
-  }
+    fields: ["apiKey", "endpoint"],
+  },
 };
 
 const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
   const { isDarkMode } = useAppTheme();
   const { config, setProviderConfig, getProviderConfig } = useApiStore();
-  const [selectedProvider, setSelectedProvider] = useState<keyof typeof config>('openai');
+  const [selectedProvider, setSelectedProvider] =
+    useState<keyof typeof config>("openai");
   const [checking, setChecking] = useState(false);
-  const [checkResult, setCheckResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [checkResult, setCheckResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
 
   // 处理服务商选择
   const handleProviderSelect = (provider: keyof typeof config) => {
-    if (provider === 'deepseek' && getProviderConfig(provider).endpoint === 'https://api.deepseek.com/v1') {
-      setProviderConfig(provider, 'endpoint', 'https://api.deepseek.com');
+    if (
+      provider === "deepseek" &&
+      getProviderConfig(provider).endpoint === "https://api.deepseek.com/v1"
+    ) {
+      setProviderConfig(provider, "endpoint", "https://api.deepseek.com");
     }
     setSelectedProvider(provider);
     setCheckResult(null);
@@ -137,26 +163,32 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
 
       // 构建请求头
       const headers = {
-        'X-Api-Key': config.apiKey || '',
-        'X-Provider-Endpoint': config.endpoint || ''
+        "X-Api-Key": config.apiKey || "",
+        "X-Provider-Endpoint": config.endpoint || "",
       };
 
       // 发送请求到后端的 /api/v1/models/check 端点
-      const response = await fetch(`/api/v1/models/check?provider=${provider}`, {
-        method: 'GET',
-        headers
-      });
+      const response = await fetch(
+        `/api/v1/models/check?provider=${provider}`,
+        {
+          method: "GET",
+          headers,
+        },
+      );
 
       if (response.ok) {
         // 连接成功
-        setCheckResult({ success: true, message: '连接成功！' });
+        setCheckResult({ success: true, message: "连接成功！" });
       } else {
         // 连接失败，获取错误信息
         const errorData = await response.json();
-        setCheckResult({ success: false, message: errorData.detail || '连接失败，请检查配置' });
+        setCheckResult({
+          success: false,
+          message: errorData.detail || "连接失败，请检查配置",
+        });
       }
     } catch (error) {
-      setCheckResult({ success: false, message: '连接失败，请检查网络或配置' });
+      setCheckResult({ success: false, message: "连接失败，请检查网络或配置" });
     } finally {
       setChecking(false);
     }
@@ -167,17 +199,23 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
     const provider = selectedProvider;
     const defaultConfig = {
       enabled: false,
-      apiKey: '',
-      endpoint: providerInfo[provider].fields.includes('endpoint') ? (initialConfig[provider]?.endpoint || '') : '',
-      proxyUrl: '',
-      deploymentName: '',
-      apiVersion: '',
-      thinking: provider === 'deepseek',
-      reasoningEffort: 'high' as const,
+      apiKey: "",
+      endpoint: providerInfo[provider].fields.includes("endpoint")
+        ? initialConfig[provider]?.endpoint || ""
+        : "",
+      proxyUrl: "",
+      deploymentName: "",
+      apiVersion: "",
+      thinking: provider === "deepseek",
+      reasoningEffort: "high" as const,
     };
 
-    Object.keys(defaultConfig).forEach(field => {
-      setProviderConfig(provider, field as keyof ProviderConfig, defaultConfig[field as keyof typeof defaultConfig]);
+    Object.keys(defaultConfig).forEach((field) => {
+      setProviderConfig(
+        provider,
+        field as keyof ProviderConfig,
+        defaultConfig[field as keyof typeof defaultConfig],
+      );
     });
 
     setCheckResult(null);
@@ -185,27 +223,92 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
 
   // 获取初始配置
   const initialConfig = {
-    openai: { enabled: true, apiKey: '', proxyUrl: '', endpoint: 'https://api.openai.com/v1' },
-    azure: { enabled: false, apiKey: '', endpoint: '', deploymentName: '', apiVersion: '2024-02-15-preview' },
-    google: { enabled: false, apiKey: '', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
-    anthropic: { enabled: false, apiKey: '', endpoint: 'https://api.anthropic.com' },
-    deepseek: { enabled: false, apiKey: '', endpoint: 'https://api.deepseek.com', thinking: true, reasoningEffort: 'high' as const },
-    moonshot: { enabled: false, apiKey: '', endpoint: 'https://api.moonshot.cn/v1' },
-    qwen: { enabled: false, apiKey: '', endpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
-    zhipu: { enabled: false, apiKey: '', endpoint: 'https://open.bigmodel.cn/api/paas/v4' },
-    minimax: { enabled: false, apiKey: '', endpoint: 'https://api.minimax.chat/v1' },
-    yi: { enabled: false, apiKey: '', endpoint: 'https://api.lingyiwanwu.com/v1' },
-    stepfun: { enabled: false, apiKey: '', endpoint: 'https://api.stepfun.com/v1' },
-    ollama: { enabled: false, apiKey: 'ollama', endpoint: 'http://localhost:11434/v1' },
-    groq: { enabled: false, apiKey: '', endpoint: 'https://api.groq.com/openai/v1' },
-    perplexity: { enabled: false, apiKey: '', endpoint: 'https://api.perplexity.ai' },
-    mistral: { enabled: false, apiKey: '', endpoint: 'https://api.mistral.ai/v1' }
+    openai: {
+      enabled: true,
+      apiKey: "",
+      proxyUrl: "",
+      endpoint: "https://api.openai.com/v1",
+    },
+    azure: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "",
+      deploymentName: "",
+      apiVersion: "2024-02-15-preview",
+    },
+    google: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    },
+    anthropic: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.anthropic.com",
+    },
+    deepseek: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.deepseek.com",
+      thinking: true,
+      reasoningEffort: "high" as const,
+    },
+    moonshot: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.moonshot.cn/v1",
+    },
+    qwen: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    },
+    zhipu: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://open.bigmodel.cn/api/paas/v4",
+    },
+    minimax: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.minimax.chat/v1",
+    },
+    yi: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.lingyiwanwu.com/v1",
+    },
+    stepfun: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.stepfun.com/v1",
+    },
+    ollama: {
+      enabled: false,
+      apiKey: "ollama",
+      endpoint: "http://localhost:11434/v1",
+    },
+    groq: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.groq.com/openai/v1",
+    },
+    perplexity: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.perplexity.ai",
+    },
+    mistral: {
+      enabled: false,
+      apiKey: "",
+      endpoint: "https://api.mistral.ai/v1",
+    },
   };
 
   // 获取当前选中的配置
   const currentConfig = getProviderConfig(selectedProvider);
   const isEnabled = currentConfig.enabled;
-  const isDeepSeek = selectedProvider === 'deepseek';
+  const isDeepSeek = selectedProvider === "deepseek";
 
   return (
     <Modal
@@ -223,7 +326,9 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
     >
       <div className="flex h-full overflow-hidden">
         {/* 左侧服务商列表 */}
-        <div className={`w-1/4 ${isDarkMode ? 'dark:bg-gray-800 border-r border-gray-700' : 'bg-gray-50 border-r border-gray-200'} overflow-y-auto`}>
+        <div
+          className={`w-1/4 ${isDarkMode ? "dark:bg-gray-800 border-r border-gray-700" : "bg-gray-50 border-r border-gray-200"} overflow-y-auto`}
+        >
           {Object.keys(config).map((provider) => {
             const providerKey = provider as keyof typeof config;
             const isActive = providerKey === selectedProvider;
@@ -233,15 +338,29 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
               <div
                 key={provider}
                 className={`flex items-center justify-between px-4 py-3 cursor-pointer transition-colors ${
-                  isActive 
-                    ? (isDarkMode ? 'dark:bg-gray-700' : 'bg-gray-200') 
-                    : (isDarkMode ? 'hover:bg-gray-700' : 'hover:bg-gray-100')
+                  isActive
+                    ? isDarkMode
+                      ? "dark:bg-gray-700"
+                      : "bg-gray-200"
+                    : isDarkMode
+                      ? "hover:bg-gray-700"
+                      : "hover:bg-gray-100"
                 }`}
                 onClick={() => handleProviderSelect(providerKey)}
               >
                 <div className="flex items-center space-x-2">
-                  <span className={isDarkMode ? 'text-gray-400' : 'text-gray-500'}>{providerInfo[providerKey]?.icon || <Server className="w-4 h-4" />}</span>
-                  <span className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-900'}`}>{providerInfo[providerKey]?.name || provider}</span>
+                  <span
+                    className={isDarkMode ? "text-gray-400" : "text-gray-500"}
+                  >
+                    {providerInfo[providerKey]?.icon || (
+                      <Server className="w-4 h-4" />
+                    )}
+                  </span>
+                  <span
+                    className={`text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-900"}`}
+                  >
+                    {providerInfo[providerKey]?.name || provider}
+                  </span>
                 </div>
                 {isEnabled && (
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
@@ -252,25 +371,39 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
         </div>
 
         {/* 右侧详细配置表单 */}
-        <div className={`w-3/4 p-6 overflow-y-auto ${isDarkMode ? 'dark:bg-gray-900' : 'bg-white'}`}>
+        <div
+          className={`w-3/4 p-6 overflow-y-auto ${isDarkMode ? "dark:bg-gray-900" : "bg-white"}`}
+        >
           {selectedProvider && providerInfo[selectedProvider] && (
             <>
               {/* 顶部：服务商名称、描述、全局 Switch 开关 */}
               <div className="flex items-center justify-between mb-6">
                 <div>
-                  <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>{providerInfo[selectedProvider].name}</h3>
-                  <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>{providerInfo[selectedProvider].description}</p>
+                  <h3
+                    className={`text-lg font-semibold ${isDarkMode ? "text-gray-100" : "text-gray-900"}`}
+                  >
+                    {providerInfo[selectedProvider].name}
+                  </h3>
+                  <p
+                    className={`text-sm ${isDarkMode ? "text-gray-400" : "text-gray-500"} mt-1`}
+                  >
+                    {providerInfo[selectedProvider].description}
+                  </p>
                 </div>
                 <Switch
                   checked={isEnabled}
-                  onChange={(checked: boolean) => handleConfigUpdate('enabled', checked)}
+                  onChange={(checked: boolean) =>
+                    handleConfigUpdate("enabled", checked)
+                  }
                 />
               </div>
 
               {/* 中间：动态表单 */}
-              <div className={`space-y-4 transition-opacity duration-300 ${
-                isEnabled ? 'opacity-100' : 'opacity-50 pointer-events-none'
-              }`}>
+              <div
+                className={`space-y-4 transition-opacity duration-300 ${
+                  isEnabled ? "opacity-100" : "opacity-50 pointer-events-none"
+                }`}
+              >
                 {isDeepSeek && (
                   <Alert
                     showIcon
@@ -280,29 +413,40 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                   />
                 )}
                 {/* API Key */}
-                {providerInfo[selectedProvider].fields.includes('apiKey') && selectedProvider !== 'ollama' && (
-                  <div>
-                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>API Key</label>
-                    <Input
-                      type="password"
-                      value={currentConfig.apiKey}
-                      onChange={(e) => handleConfigUpdate('apiKey', e.target.value)}
-                      placeholder="请输入 API Key"
-                      prefix={<Lock className="w-4 h-4" />}
-                      className="w-full"
-                    />
-                  </div>
-                )}
+                {providerInfo[selectedProvider].fields.includes("apiKey") &&
+                  selectedProvider !== "ollama" && (
+                    <div>
+                      <label
+                        className={`block text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-1`}
+                      >
+                        API Key
+                      </label>
+                      <Input
+                        type="password"
+                        value={currentConfig.apiKey}
+                        onChange={(e) =>
+                          handleConfigUpdate("apiKey", e.target.value)
+                        }
+                        placeholder="请输入 API Key"
+                        prefix={<Lock className="w-4 h-4" />}
+                        className="w-full"
+                      />
+                    </div>
+                  )}
 
                 {/* Endpoint */}
-                {providerInfo[selectedProvider].fields.includes('endpoint') && (
+                {providerInfo[selectedProvider].fields.includes("endpoint") && (
                   <div>
-                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>
-                      {isDeepSeek ? 'Base URL (OpenAI-compatible)' : 'Endpoint'}
+                    <label
+                      className={`block text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-1`}
+                    >
+                      {isDeepSeek ? "Base URL (OpenAI-compatible)" : "Endpoint"}
                     </label>
                     <Input
-                      value={currentConfig.endpoint || ''}
-                      onChange={(e) => handleConfigUpdate('endpoint', e.target.value)}
+                      value={currentConfig.endpoint || ""}
+                      onChange={(e) =>
+                        handleConfigUpdate("endpoint", e.target.value)
+                      }
                       placeholder="请输入 Endpoint"
                       className="w-full"
                     />
@@ -311,30 +455,54 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
 
                 {/* Proxy URL (仅 OpenAI) */}
                 {isDeepSeek && (
-                  <div className={`rounded-lg border p-4 ${isDarkMode ? 'border-indigo-400/20 bg-indigo-400/5' : 'border-indigo-100 bg-indigo-50/40'}`}>
+                  <div
+                    className={`rounded-lg border p-4 ${isDarkMode ? "border-indigo-400/20 bg-indigo-400/5" : "border-indigo-100 bg-indigo-50/40"}`}
+                  >
                     <div className="flex items-center justify-between gap-4">
                       <div>
-                        <div className={`text-sm font-medium ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>Thinking mode</div>
-                        <div className={`mt-1 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Show a reasoning trace before the final answer.</div>
+                        <div
+                          className={`text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}
+                        >
+                          Thinking mode
+                        </div>
+                        <div
+                          className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
+                        >
+                          Show a reasoning trace before the final answer.
+                        </div>
                       </div>
                       <Switch
                         checked={currentConfig.thinking ?? true}
                         checkedChildren="On"
                         unCheckedChildren="Off"
-                        onChange={(checked: boolean) => handleConfigUpdate('thinking', checked)}
+                        onChange={(checked: boolean) =>
+                          handleConfigUpdate("thinking", checked)
+                        }
                       />
                     </div>
 
                     {(currentConfig.thinking ?? true) && (
                       <div className="mt-4">
-                        <label className={`mb-1 block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Reasoning effort</label>
+                        <label
+                          className={`mb-1 block text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"}`}
+                        >
+                          Reasoning effort
+                        </label>
                         <Select
                           className="w-full"
-                          value={currentConfig.reasoningEffort ?? 'high'}
-                          onChange={(value: 'high' | 'max') => handleConfigUpdate('reasoningEffort', value)}
+                          value={currentConfig.reasoningEffort ?? "high"}
+                          onChange={(value: "high" | "max") =>
+                            handleConfigUpdate("reasoningEffort", value)
+                          }
                           options={[
-                            { value: 'high', label: 'high - standard complex tasks' },
-                            { value: 'max', label: 'max - complex agent tasks' },
+                            {
+                              value: "high",
+                              label: "high - standard complex tasks",
+                            },
+                            {
+                              value: "max",
+                              label: "max - complex agent tasks",
+                            },
                           ]}
                         />
                       </div>
@@ -342,12 +510,18 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                   </div>
                 )}
 
-                {selectedProvider === 'openai' && (
+                {selectedProvider === "openai" && (
                   <div>
-                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Proxy URL (选填)</label>
+                    <label
+                      className={`block text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-1`}
+                    >
+                      Proxy URL (选填)
+                    </label>
                     <Input
-                      value={currentConfig.proxyUrl || ''}
-                      onChange={(e) => handleConfigUpdate('proxyUrl', e.target.value)}
+                      value={currentConfig.proxyUrl || ""}
+                      onChange={(e) =>
+                        handleConfigUpdate("proxyUrl", e.target.value)
+                      }
                       placeholder="请输入代理 URL"
                       className="w-full"
                     />
@@ -355,12 +529,18 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 )}
 
                 {/* Deployment Name (仅 Azure) */}
-                {selectedProvider === 'azure' && (
+                {selectedProvider === "azure" && (
                   <div>
-                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>Deployment Name</label>
+                    <label
+                      className={`block text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-1`}
+                    >
+                      Deployment Name
+                    </label>
                     <Input
-                      value={currentConfig.deploymentName || ''}
-                      onChange={(e) => handleConfigUpdate('deploymentName', e.target.value)}
+                      value={currentConfig.deploymentName || ""}
+                      onChange={(e) =>
+                        handleConfigUpdate("deploymentName", e.target.value)
+                      }
                       placeholder="请输入 Deployment Name"
                       className="w-full"
                     />
@@ -368,12 +548,18 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                 )}
 
                 {/* API Version (仅 Azure) */}
-                {selectedProvider === 'azure' && (
+                {selectedProvider === "azure" && (
                   <div>
-                    <label className={`block text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-700'} mb-1`}>API Version</label>
+                    <label
+                      className={`block text-sm font-medium ${isDarkMode ? "text-gray-300" : "text-gray-700"} mb-1`}
+                    >
+                      API Version
+                    </label>
                     <Input
-                      value={currentConfig.apiVersion || ''}
-                      onChange={(e) => handleConfigUpdate('apiVersion', e.target.value)}
+                      value={currentConfig.apiVersion || ""}
+                      onChange={(e) =>
+                        handleConfigUpdate("apiVersion", e.target.value)
+                      }
                       placeholder="请输入 API Version"
                       className="w-full"
                     />
@@ -384,7 +570,7 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
               {/* 连接检查结果 */}
               {checkResult && (
                 <Alert
-                  type={checkResult.success ? 'success' : 'error'}
+                  type={checkResult.success ? "success" : "error"}
                   title={checkResult.message}
                   className="mt-4"
                 />
@@ -403,7 +589,13 @@ const ApiKeyModal: React.FC<ApiKeyModalProps> = ({ open, onClose }) => {
                   type="primary"
                   onClick={handleCheckConnection}
                   loading={checking}
-                  icon={checking ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                  icon={
+                    checking ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Check className="w-4 h-4" />
+                    )
+                  }
                   disabled={!isEnabled}
                 >
                   检查连接

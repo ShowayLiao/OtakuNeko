@@ -33,7 +33,9 @@ export function selectPendingTool<T extends PendingToolCandidate>(
   name: string,
   sourceId?: string,
 ) {
-  const matches = tools.filter((tool) => tool.status === 'pending' && tool.name === name);
+  const matches = tools.filter(
+    (tool) => tool.status === "pending" && tool.name === name,
+  );
   if (sourceId) {
     return matches.findLast((tool) => tool.sourceId === sourceId);
   }

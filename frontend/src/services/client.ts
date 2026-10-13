@@ -1,12 +1,15 @@
-const BASE_URL = '/api/v1';
+const BASE_URL = "/api/v1";
 
 // 简单的 fetch 封装
-export const request = async <T>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+export const request = async <T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<T> => {
   // 1. 自动从 localStorage 拿 Token
-  const token = localStorage.getItem('token');
-  
+  const token = localStorage.getItem("token");
+
   const headers = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   };
