@@ -8,6 +8,11 @@ import sqlite3
 import subprocess
 import sys
 
+import pytest
+
+
+pytestmark = [pytest.mark.integration, pytest.mark.db]
+
 
 def _run_alembic(backend: Path, env: dict[str, str], *args: str) -> None:
     result = subprocess.run(

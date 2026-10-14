@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel, select
@@ -12,6 +10,7 @@ from app.harness.persistence.run_store import (
     RunStore,
 )
 from app.models.agent_run import AgentRun
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -108,6 +107,8 @@ async def test_run_store_invocation_idempotency_is_deterministic(db_session) -> 
         )
 
 
+@pytest.mark.integration
+@pytest.mark.db
 @pytest.mark.asyncio
 async def test_run_store_round_trip_survives_sqlite_restart(tmp_path) -> None:
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'runs.db').as_posix()}"
@@ -136,24 +137,25 @@ async def test_run_store_round_trip_survives_sqlite_restart(tmp_path) -> None:
     assert restored.status == "queued"
 
 
+@pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_postgres_store_is_optional_when_test_url_is_not_configured() -> None:
-    url = os.getenv("POSTGRES_TEST_URL")
-    if not url:
-        pytest.skip("POSTGRES_TEST_URL is not configured")
-    pytest.importorskip("asyncpg")
-    engine = create_async_engine(url)
-    async with engine.begin() as connection:
-        await connection.run_sync(SQLModel.metadata.create_all)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as session:
-        stored = await RunStore(session).create(
-            run_id="run-postgres",
-            user_id=None,
-            thread_id=None,
-            status="queued",
-            goal_hash="hash",
-            model="model",
-        )
-        assert stored.run_id == "run-postgres"
-    await engine.dispose()
+async def test_postgres_store_round_trip_is_user_scoped(postgres_session) -> None:
+    postgres_session.add(
+        User(id=7, username="run-store-owner", hashed_password="test-only")
+    )
+    await postgres_session.commit()
+    store = RunStore(postgres_session)
+    stored = await store.create(
+        run_id="run-postgres",
+        user_id=7,
+        thread_id=None,
+        status="queued",
+        goal_hash="hash",
+        model="model",
+    )
+    assert stored.run_id == "run-postgres"
+    await store.transition("run-postgres", "running")
+    restored = await store.get("run-postgres", user_id=7)
+    assert restored is not None
+    assert restored.status == "running"
+    assert await store.get("run-postgres", user_id=8) is None

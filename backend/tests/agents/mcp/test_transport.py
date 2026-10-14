@@ -149,12 +149,11 @@ class TestMCPConnectionPool:
         assert transport.connect.called
         await pool.stop()
 
-    def test_call_tool_raises_for_unknown_server(self):
+    @pytest.mark.asyncio
+    async def test_call_tool_raises_for_unknown_server(self):
         pool = MCPConnectionPool()
         with pytest.raises(RuntimeError, match="not found"):
-            asyncio.get_event_loop().run_until_complete(
-                pool.call_tool("ghost", "tool", {})
-            )
+            await pool.call_tool("ghost", "tool", {})
 
     @pytest.mark.asyncio
     async def test_retry_exhausted_raises(self):

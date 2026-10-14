@@ -359,6 +359,8 @@ def test_qb_allowed_user_id_parser_fails_closed(raw_value: str, expected) -> Non
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_qb_routes_fail_closed_for_anonymous_and_unauthorized_users(
     monkeypatch,
 ) -> None:
@@ -378,6 +380,8 @@ async def test_qb_routes_fail_closed_for_anonymous_and_unauthorized_users(
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_authorized_user_can_reach_all_qb_routes(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ENABLE_QB_PROXY", True)
     monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7, 7", raising=False)
@@ -406,6 +410,8 @@ async def test_authorized_user_can_reach_all_qb_routes(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_authorized_write_without_idempotency_key_is_rejected(
     monkeypatch,
 ) -> None:
@@ -440,6 +446,8 @@ async def test_authorized_write_without_idempotency_key_is_rejected(
         ("7,,8", 403),
     ],
 )
+@pytest.mark.integration
+@pytest.mark.api
 async def test_qb_allowlist_parsing_fails_closed(
     monkeypatch, allowlist: str, expected_status: int
 ) -> None:
@@ -456,6 +464,8 @@ async def test_qb_allowlist_parsing_fails_closed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_qb_proxy_disabled_stops_before_service(monkeypatch) -> None:
     monkeypatch.setattr(settings, "ENABLE_QB_PROXY", False)
     monkeypatch.setattr(settings, "QB_ALLOWED_USER_IDS", "7", raising=False)

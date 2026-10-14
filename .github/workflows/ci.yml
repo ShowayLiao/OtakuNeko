@@ -46,10 +46,76 @@ jobs:
       - name: Set up isolated test environment
         run: |
           echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEBUG=false" >> "$GITHUB_ENV"
           echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
 
       - name: Run backend tests
-        run: uv run --locked pytest
+        run: |
+          mkdir -p .runtime/junit
+          uv run --locked pytest --junitxml=.runtime/junit/software.xml
+
+      - name: Upload backend test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-software-junit
+          path: backend/.runtime/junit/software.xml
+          if-no-files-found: warn
+
+  postgres:
+    name: postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: otakuneko_test
+          POSTGRES_USER: otakuneko_test
+          POSTGRES_PASSWORD: otakuneko_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U otakuneko_test -d otakuneko_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Set up isolated test environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEBUG=false" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+
+      - name: Run PostgreSQL tests
+        env:
+          TEST_POSTGRES_URL: postgresql+asyncpg://otakuneko_test:otakuneko_test_only@localhost:5432/otakuneko_test
+        run: |
+          mkdir -p .runtime/junit
+          uv run --locked pytest --run-postgres -m postgres --junitxml=.runtime/junit/postgres.xml
+
+      - name: Upload PostgreSQL test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgres-junit
+          path: backend/.runtime/junit/postgres.xml
+          if-no-files-found: warn
 
   frontend:
     name: frontend
@@ -242,13 +308,14 @@ jobs:
 
   repository-quality:
     name: repository-quality
-    needs: [software, frontend, backend-quality-baseline, harness, benchmark, configuration]
+    needs: [software, postgres, frontend, backend-quality-baseline, harness, benchmark, configuration]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Summarize required gates
         env:
           SOFTWARE_RESULT: ${{ needs.software.result }}
+          POSTGRES_RESULT: ${{ needs.postgres.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           BACKEND_QUALITY_RESULT: ${{ needs.backend-quality-baseline.result }}
           HARNESS_RESULT: ${{ needs.harness.result }}
@@ -259,6 +326,7 @@ jobs:
             echo '| Gate | Result |'
             echo '| --- | --- |'
             echo "| software | $SOFTWARE_RESULT |"
+            echo "| postgres | $POSTGRES_RESULT |"
             echo "| frontend | $FRONTEND_RESULT |"
             echo "| backend-quality-baseline | $BACKEND_QUALITY_RESULT |"
             echo "| harness | $HARNESS_RESULT |"
@@ -266,7 +334,7 @@ jobs:
             echo "| configuration | $CONFIGURATION_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for result in "$SOFTWARE_RESULT" "$FRONTEND_RESULT" "$BACKEND_QUALITY_RESULT" "$HARNESS_RESULT" "$BENCHMARK_RESULT" "$CONFIGURATION_RESULT"; do
+          for result in "$SOFTWARE_RESULT" "$POSTGRES_RESULT" "$FRONTEND_RESULT" "$BACKEND_QUALITY_RESULT" "$HARNESS_RESULT" "$BENCHMARK_RESULT" "$CONFIGURATION_RESULT"; do
             if [[ "$result" != success ]]; then
               echo "A required gate did not succeed: $result" >&2
               exit 1

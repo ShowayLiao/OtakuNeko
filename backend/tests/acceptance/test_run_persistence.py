@@ -70,6 +70,8 @@ def _run_alembic(backend: Path, env: dict[str, str], *args: str) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.db
 async def test_coordinator_persists_read_only_run_and_graph_failure(tmp_path) -> None:
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'interactive.db').as_posix()}"
     engine = create_async_engine(database_url)
@@ -147,6 +149,8 @@ async def test_coordinator_persists_read_only_run_and_graph_failure(tmp_path) ->
     await engine.dispose()
 
 
+@pytest.mark.integration
+@pytest.mark.db
 def test_interactive_run_migration_creates_and_drops_only_new_tables(tmp_path) -> None:
     backend = Path(__file__).resolve().parents[2]
     database = tmp_path / "migration.db"

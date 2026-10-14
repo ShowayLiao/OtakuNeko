@@ -145,6 +145,8 @@ async def test_anonymous_chat_does_not_construct_durable_memory(
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_memory_delete_route_uses_authenticated_owner(db_session):
     repo = SqlMemoryRepository(db_session)
     await repo.put_fact("shared", "a", "alice", 0.5, "test", user_id=1)
@@ -176,6 +178,8 @@ async def test_memory_delete_route_uses_authenticated_owner(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_memory_delete_route_rejects_invalid_kind(db_session):
     async def override_user():
         return _user(1)

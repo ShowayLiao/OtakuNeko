@@ -279,6 +279,8 @@ class TestSqlMemoryRepository:
         assert remaining[0]["kind"] == "semantic"
 
     @pytest.mark.asyncio
+    @pytest.mark.integration
+    @pytest.mark.db
     async def test_memory_survives_fresh_repository_instance(self, tmp_path):
         database_path = tmp_path / "memory-restart.db"
         database_url = f"sqlite+aiosqlite:///{database_path.as_posix()}"

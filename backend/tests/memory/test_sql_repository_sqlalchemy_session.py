@@ -10,6 +10,8 @@ import app.models.user  # noqa: F401
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.db
 async def test_repository_supports_production_sqlalchemy_async_session():
     engine = create_async_engine("sqlite+aiosqlite://")
     try:

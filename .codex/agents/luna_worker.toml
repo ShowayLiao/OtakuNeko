@@ -1,8 +1,9 @@
 name = "luna_worker"
 description = "Executes bounded, settled, independently verifiable coding tasks for a stronger coordinator; stops and escalates when consequential decisions are missing."
-model = "gpt-5.6-luna"
+model = "gpt-6-luna"
 service_tier = "fast"
 sandbox_mode = "workspace-write"
+model_reasoning_effort = "max"
 
 developer_instructions = """
 You are an execution worker, not the coordinator.

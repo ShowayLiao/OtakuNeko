@@ -1,6 +1,6 @@
 # Frontend 格式检查接入决定与验证
 
-日期：2026-10-13。决定：**接入现有 frontend job 的阻塞式 `format:check`**。本地实施与验证完成；提交、推送及新 SHA 的远端 CI 验证尚待完成，不宣称整体任务已验收。
+日期：2026-10-13。决定：**接入现有 frontend job 的阻塞式 `format:check`**。本地回归、独立审查及新 SHA 的远端 CI 验证均已完成；本任务验收通过。
 
 ## 范围与债务
 
@@ -34,8 +34,8 @@ workflow 的逐字比较确认：移除新增 4 行 frontend 步骤后，与基�
 - [x] 核对 frozen-lockfile 安装、格式正反探针和四项前端回归。
 - [x] 核对工作流配置门禁与配置失败回归。
 - [x] 完成最终独立审查：1 轮，verdict 为 pass，findings 为空；六个变更文件均符合范围。
-- [ ] 按仓库 Git 授权规则提交并推送到现有 PR #8。
-- [ ] 对应新 SHA 核验 frontend 和 repository-quality 的远端 CI 结果。
+- [x] 变更已提交并推送到现有 PR #8，接入 commit 为 `31677268e0e684f90329fd2ee63ac2c4c3f69c31`。
+- [x] 核验同一新 SHA 的 frontend 和 repository-quality；两者及全部 7 个 CI jobs 均为 success。
 
 ## 本地验证
 
@@ -60,21 +60,34 @@ workflow 的逐字比较确认：移除新增 4 行 frontend 步骤后，与基�
 
 本机 actionlint 从官方 1.7.12 Windows release 下载到系统临时目录，校验官方 checksum 后运行。实际路径为 `C:/Users/HACCI/AppData/Local/Temp/otakuneko-actionlint-5c0606369350432fb27f845c0b419ba7/actionlint.exe`；上述配置覆盖命令的路径参数实际使用此值。
 
-本地 Node.js 为 24.12.0；四项前端回归使用宿主 pnpm 11.0.9，依赖与 frozen-lockfile 安装使用 CI 指定 pnpm 10.15.1。CI 固定 Node.js 20.19.0 的远端结果尚未取得。既有警告包括 94 个 lint 警告、安装时 `@emoji-mart/react` 的 React 19 peer 兼容警告及 Git LF/CRLF checkout 提示，均未纳入本次格式任务。
+本地 Node.js 为 24.12.0；四项前端回归使用宿主 pnpm 11.0.9，依赖与 frozen-lockfile 安装使用 CI 指定 pnpm 10.15.1。CI 固定 Node.js 20.19.0、pnpm 10.15.1 的远端结果已核验为 success。既有警告包括 94 个 lint 警告、安装时 `@emoji-mart/react` 的 React 19 peer 兼容警告及 Git LF/CRLF checkout 提示，均未纳入本次格式任务。
 
 未运行完整后端、Harness/Eval 或浏览器视觉检查：没有后端源码、运行行为、UI 外观或交互变更；仅针对 workflow 运行现有配置门禁与回归。
 
 ## CI 结果与提交边界
 
-只读 API 查询确认现有 [PR #8](https://github.com/ShowayLiao/OtakuNeko/pull/8) 的 head 为 `e124dc7866ba43deef7500054a5ecc6972637840`，head branch 为 `feature-harness`，base 为 `main`。本地清债 commit 尚未推送至该 PR。
+2026-10-13 只读查询 GitHub API，确认本地 HEAD 与 [PR #8](https://github.com/ShowayLiao/OtakuNeko/pull/8) 的 head 一致：`31677268e0e684f90329fd2ee63ac2c4c3f69c31`。接入 commit 为 `3167726`，清债 commit 为 `3a52d15`，两者均已在该 PR 中。
 
-旧 SHA 的 [CI run 38340876181](https://github.com/ShowayLiao/OtakuNeko/actions/runs/38340876181) 为 success，仅作为历史基线；不能视为本次门禁结果。本轮没有提交或推送，新门禁的远端 CI 状态为 **未运行**。
+对应新 SHA 的 [CI run 38378018557](https://github.com/ShowayLiao/OtakuNeko/actions/runs/38378018557) 已完成，conclusion 为 **success**，触发事件为 pull_request。本次查询命令退出码为 0。
 
-本地接入完成后，需要明确授权才能创建本地 commit 和执行 `git push`。获得授权后应只暂存以上 6 个文件，更新现有 PR，并使用实际新 SHA 核验 frontend 的 format/lint/typecheck/test/build 和 repository-quality。远端验证完成前，不将整个接入任务标为完成。
+| 远端检查                                                                  | 结果         |
+| ------------------------------------------------------------------------- | ------------ |
+| frontend：Install frontend dependencies                                   | success      |
+| frontend：Check frontend formatting                                       | success      |
+| frontend：Run frontend lint                                               | success      |
+| frontend：Run frontend typecheck                                          | success      |
+| frontend：Run frontend tests                                              | success      |
+| frontend：Build frontend                                                  | success      |
+| repository-quality                                                        | success      |
+| software / backend-quality-baseline / harness / benchmark / configuration | 全部 success |
+
+CI 使用 workflow 中固定的 Node.js 20.19.0、pnpm 10.15.1。此次远端验证对应接入格式门禁的新 SHA，不再使用旧 SHA 的成功结果代替。API 返回步骤与 job 结论；未下载测试日志，远端测试数量 UNKNOWN，本地 99 个前端测试和 40 个配置测试的数量记录仍保留为本地证据。
+
+本任务验收通过：已测量和清除债务，明确决定接入，新增步骤只位于现有 frontend job，回归与对应新 SHA 的远端验证均成功。未合并 PR；合并不属于此任务验收要求。本次仅回填文档中的实际 CI 结果，没有新提交或推送。
 
 ## 最终审查与文档卫生
 
-独立审查 verdict 为 **pass**，findings 为空，无延期问题。审查覆盖完整 6 文件 diff，独立重跑 `pnpm --dir frontend format:check` 和 `git diff --check`，退出码均为 0。该结论只代表本地接入验收，新 SHA 远端 CI 仍待完成。
+独立审查 verdict 为 **pass**，findings 为空，无延期问题。审查覆盖完整 6 文件 diff，独立重跑 `pnpm --dir frontend format:check` 和 `git diff --check`，退出码均为 0。该结论覆盖本地接入；新 SHA 的远端 CI 也已核验为 success。
 
 `git diff --check`、`git diff --stat` 与 `rg -n "standard-agent-harness-reference|harness-execution|BATCH-[0-9]+" AGENTS.md docs` 均退出 0；没有六文件范围外的改动。
 

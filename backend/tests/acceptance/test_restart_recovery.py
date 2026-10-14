@@ -74,6 +74,8 @@ async def test_restart_reopens_checkpoint_and_marks_stale_run_abandoned(
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_resume_requires_owner_thread_and_run_scope(db_session) -> None:
     run_store = RunStore(db_session)
     await run_store.create(

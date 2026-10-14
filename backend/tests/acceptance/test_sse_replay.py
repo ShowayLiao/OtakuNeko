@@ -58,6 +58,8 @@ def test_replay_wiring_respects_disabled_interactive_store(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.api
 async def test_run_and_event_projection_is_scoped_and_replayable(db_session) -> None:
     run_store = RunStore(db_session)
     event_store = EventStore(db_session)

@@ -180,6 +180,8 @@ def test_rule_payload_and_url_are_not_logged(caplog) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.db
 async def test_sql_idempotency_replays_after_database_restart(tmp_path) -> None:
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'idempotency.db').as_posix()}"
     first_engine = create_async_engine(database_url)

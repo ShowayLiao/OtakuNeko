@@ -226,6 +226,8 @@ async def test_sql_store_filters_remain_user_scoped(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.integration
+@pytest.mark.db
 async def test_sql_store_survives_engine_restart(tmp_path):
     database_url = f"sqlite+aiosqlite:///{(tmp_path / 'traces.db').as_posix()}"
     first_engine = create_async_engine(database_url)

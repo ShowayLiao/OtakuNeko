@@ -66,6 +66,8 @@ class TestInMemoryCheckpointStore:
             fencing_token=second.fencing_token,
         )
 
+    @pytest.mark.integration
+    @pytest.mark.db
     async def test_durable_cancellation_survives_store_reopen(self, tmp_path) -> None:
         path = str(tmp_path / "cancel" / "checkpoints.db")
         first = SqliteCheckpointStore(path)
@@ -162,6 +164,8 @@ class TestInMemoryCheckpointStore:
         assert abandoned.context["abandon_reason"] == "worker lease expired"
 
 
+@pytest.mark.integration
+@pytest.mark.db
 class TestSqliteCheckpointStore:
     async def test_sqlite_lease_fencing_survives_worker_restart(self, tmp_path) -> None:
         path = str(tmp_path / "leases" / "checkpoints.db")
