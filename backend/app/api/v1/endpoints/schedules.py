@@ -266,7 +266,9 @@ async def create_schedule(
         key = _require_idempotency_key(idempotency_key)
         output = await _dispatch_schedule_write(
             action="create_schedule",
-            arguments=schedule_data.model_dump(exclude={"user_id"}, exclude_none=True),
+            arguments=schedule_data.model_dump(
+                mode="json", exclude={"user_id"}, exclude_none=True
+            ),
             user_id=current_user.id,
             idempotency_key=key,
             db=db,
@@ -312,7 +314,7 @@ async def update_schedule(
             action="update_schedule",
             arguments={
                 "schedule_id": id,
-                **schedule_data.model_dump(exclude_none=True),
+                **schedule_data.model_dump(mode="json", exclude_none=True),
             },
             user_id=current_user.id,
             idempotency_key=key,
