@@ -1,0 +1,476 @@
+{
+  "schema_version": 1,
+  "archive": "A-L1-03-evidence.zip",
+  "archive_sha256": "9d5c73461d4da3beabf3b42963be812b41f6ca33e8c400665cc014c71474a478",
+  "artifact_count": 42,
+  "artifacts": [
+    {
+      "archive_entry": "A-L1-03-all-databases-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-all-databases-junit.xml",
+      "sha256": "b076ac07f662b9294165493bc2e242ada0b01ed5cc66ead0c97d6557c598f887",
+      "bytes": 193613,
+      "junit": {
+        "tests": 975,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-all-databases-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-all-databases-red-junit.xml",
+      "sha256": "1ab8265c236fbe2e0cfacb8970fdfef6c70836975bbfdfe139ee7d4e8af1415e",
+      "bytes": 199669,
+      "junit": {
+        "tests": 974,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 1
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-bootstrap-cli-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-bootstrap-cli-junit.xml",
+      "sha256": "266885aa2bf800caf87800b0482fdd301d991169b3d6e9db23f2b72b8ce3244a",
+      "bytes": 1127,
+      "junit": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-bootstrap-focused-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-bootstrap-focused-junit.xml",
+      "sha256": "b81361fc8f842bff55ac0c11a037e959ac489829d122482781f63771c6e3d364",
+      "bytes": 2943,
+      "junit": {
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-bootstrap-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-bootstrap-green-junit.xml",
+      "sha256": "cf3a8b615d65b658d406425d3bed8b4abaf6f74919394b6e6a42637fd30bea66",
+      "bytes": 3031,
+      "junit": {
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-bootstrap-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-bootstrap-red-junit.xml",
+      "sha256": "2dbabc026731544413c81b33c00d98d7944128491d56afd1365be502ed4e8a91",
+      "bytes": 689,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-cleanup-evidence.json",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-cleanup-evidence.json",
+      "sha256": "ee54a96b185e5b204bb6d96b80662e04f6b72dd527bb047020ec23971ec11d3a",
+      "bytes": 327
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-parser-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-parser-red-junit.xml",
+      "sha256": "0c29f43f596e55e2c85e99ded80e1f7ede534fa0220b64aa6bba530fae1a847c",
+      "bytes": 14350,
+      "junit": {
+        "tests": 13,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-postgres-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-postgres-green-junit.xml",
+      "sha256": "7ff69176ac41637b0722d97eeed76bc19766ff1aad26eec65a8bcb0f0d2d7c5d",
+      "bytes": 3847,
+      "junit": {
+        "tests": 16,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-postgres-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-postgres-reverse-junit.xml",
+      "sha256": "3167e97a71ef57a9b5b50c708c66e8def3e982cbb71a8e77e29abc76f47aba1d",
+      "bytes": 6114,
+      "junit": {
+        "tests": 23,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-red-junit.xml",
+      "sha256": "9f232721d18ce4126d8864bc9f42a32a646a14ce389a2f9211e096e255571e43",
+      "bytes": 13541,
+      "junit": {
+        "tests": 13,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-regression-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-regression-junit.xml",
+      "sha256": "3cf659d122ede40e0f080aed620d97039d44fd46347922e213e04bf665794101",
+      "bytes": 197934,
+      "junit": {
+        "tests": 993,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-sqlite-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-sqlite-green-junit.xml",
+      "sha256": "a6f2dfb985b4a5d0003c3c4f996137184fafaa8d1f80c39e0175f852e55b749d",
+      "bytes": 4979,
+      "junit": {
+        "tests": 20,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-constraints-sqlite-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-constraints-sqlite-reverse-junit.xml",
+      "sha256": "f2f8796778a88f137ab692a8204fa6caad6e74159a93d9410c86e67c863d313a",
+      "bytes": 12486,
+      "junit": {
+        "tests": 53,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-cleanup-evidence.json",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-cleanup-evidence.json",
+      "sha256": "13911c06c1c8cdf0cf85ed533498e547d7dc9b5a2dc583175a941bed671863c9",
+      "bytes": 322
+    },
+    {
+      "archive_entry": "A-L1-03-guards-postgres-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-postgres-green-junit.xml",
+      "sha256": "205d26215eb058503454477ad21e14f69cece801055aa471c83625e37404678b",
+      "bytes": 3711,
+      "junit": {
+        "tests": 15,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-postgres-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-postgres-red-junit.xml",
+      "sha256": "37bc9baabf963ad02758c0f39bb301d09cfa0dfa8f3fc9fc173859068411361f",
+      "bytes": 2178,
+      "junit": {
+        "tests": 4,
+        "failures": 4,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-postgres-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-postgres-reverse-junit.xml",
+      "sha256": "e3cecca5aa50ecad3a5c240978e7c20966062b121dc06fc145ce0f5322f33b87",
+      "bytes": 5911,
+      "junit": {
+        "tests": 22,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-regression-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-regression-junit.xml",
+      "sha256": "e911185e61c307f78e16035ae356605b3eba3878a533000afec6970764718be9",
+      "bytes": 195695,
+      "junit": {
+        "tests": 984,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 1
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-sqlite-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-sqlite-green-junit.xml",
+      "sha256": "ed6fcdd23d869e8d7fc791b947ba5c37859cec6512c640e3aebd0facfbcc5066",
+      "bytes": 3471,
+      "junit": {
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-sqlite-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-sqlite-red-junit.xml",
+      "sha256": "0c5125a36768d5288dcd217ccfe937dba2b8142c6d45a07911a90f4a32e85c49",
+      "bytes": 8189,
+      "junit": {
+        "tests": 5,
+        "failures": 4,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-guards-sqlite-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-guards-sqlite-reverse-junit.xml",
+      "sha256": "c78721d88c17e24be27a8aa74802767c010848410bcb7d3a8c4495877f58f011",
+      "bytes": 10450,
+      "junit": {
+        "tests": 45,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-historical-migration-evidence.json",
+      "original_path": "docs/quality-baselines/A-L1-03-historical-migration-evidence.json",
+      "sha256": "934beb817b8db064855ffb1b0935319a0762a91ddd7ba0d31a1482548722a97f",
+      "bytes": 280
+    },
+    {
+      "archive_entry": "A-L1-03-migration-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-migration-junit.xml",
+      "sha256": "515c333784feef92f2b6c99b1b224a67fd42b5fde0ee023977aa3c1f59a917fd",
+      "bytes": 2134,
+      "junit": {
+        "tests": 3,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-cleanup-evidence.json",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-cleanup-evidence.json",
+      "sha256": "bf60f1160e35ea903df7b7a187927fd073dd153c9c682b0fa3f289da822a1bd1",
+      "bytes": 254
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-cli-evidence.json",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-cli-evidence.json",
+      "sha256": "34c9c647dda51eaf04e796d3b38b5a92141d1a48ad242b21fc58536e41f40eda",
+      "bytes": 484
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-final-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-final-junit.xml",
+      "sha256": "afc01d621be54b836077893efbe34ed610ab6686c89a7281268dc6b9f5634b11",
+      "bytes": 4823,
+      "junit": {
+        "tests": 17,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-green-junit.xml",
+      "sha256": "b4c8c02149e580944e91442ed0780ea9e318ed0441dd94f589c672c9b85a5ee8",
+      "bytes": 2311,
+      "junit": {
+        "tests": 4,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-initial-evidence.json",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-initial-evidence.json",
+      "sha256": "243c6eca5a529b5975a6d9282a98245ce37d0c9128c03e68c2ab10590f800d4a",
+      "bytes": 255
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-precision-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-precision-red-junit.xml",
+      "sha256": "95a0234a6c8809876ca4a98dd4828fd312c5b09d55455b50194d8a460c492e1b",
+      "bytes": 732,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-red-junit.xml",
+      "sha256": "ed15bf6fa723a50e329815cd7e322e9d931d6d2b6bf7e3f2e9a659878f3cd200",
+      "bytes": 76800,
+      "junit": {
+        "tests": 4,
+        "failures": 4,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-reflection-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-reflection-green-junit.xml",
+      "sha256": "1952f5e87dee92547d300d0744f992ab0cb6d5bacf69bdea723b6792f10d475e",
+      "bytes": 405,
+      "junit": {
+        "tests": 1,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-reflection-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-reflection-red-junit.xml",
+      "sha256": "136692c42639f67b89f1e3bb1d2be79556e1d31ba78d16206cedc062ab301399",
+      "bytes": 1329,
+      "junit": {
+        "tests": 1,
+        "failures": 1,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-reverse-junit.xml",
+      "sha256": "d8c9d7335d8d4da7cc33d9aeff9f65a654d662fa334e29ea844f684d9e400cec",
+      "bytes": 5041,
+      "junit": {
+        "tests": 18,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-review-green-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-review-green-junit.xml",
+      "sha256": "c83e0eeef85f0cdc2f50de421be938cd954c1dd8172cf51d5ea62e8987b0c4dc",
+      "bytes": 1785,
+      "junit": {
+        "tests": 7,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-postgres-review-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-postgres-review-red-junit.xml",
+      "sha256": "f1d81374511f7df7b3cb3ca1d8650d65a6d1a3c7fbd1381a3286856359dd19b4",
+      "bytes": 1510,
+      "junit": {
+        "tests": 4,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-regression-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-regression-junit.xml",
+      "sha256": "526e2855e61a134fa0f6224026d4234b33b07d6125cff404cb3107699fee48fc",
+      "bytes": 190751,
+      "junit": {
+        "tests": 959,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 8
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-repaired-regression-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-repaired-regression-junit.xml",
+      "sha256": "74b8da407b67e8125f26193d6fdb573fd6e37e5c5ea91eb90b7241fea153964b",
+      "bytes": 191859,
+      "junit": {
+        "tests": 964,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 8
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-repaired-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-repaired-reverse-junit.xml",
+      "sha256": "d50b5bddbb32792533374503e3f01aa8340de8d78ffb4d6168246ee1cd364a8d",
+      "bytes": 9238,
+      "junit": {
+        "tests": 40,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-reverse-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-reverse-junit.xml",
+      "sha256": "4d6f43eaf32964eb55969cd77d2fb22d2cbb7c51d2ac6c1cfd153bcaa214709b",
+      "bytes": 8130,
+      "junit": {
+        "tests": 35,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-review-red-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-review-red-junit.xml",
+      "sha256": "4e9305d3cdc804417e9fa5fc0145dd229de22fdedf0db45cee3ec6b72a5ddc2c",
+      "bytes": 30959,
+      "junit": {
+        "tests": 2,
+        "failures": 2,
+        "errors": 0,
+        "skipped": 0
+      }
+    },
+    {
+      "archive_entry": "A-L1-03-timestamp-regression-junit.xml",
+      "original_path": "docs/quality-baselines/A-L1-03-timestamp-regression-junit.xml",
+      "sha256": "e185b3972c1d7b0529eeaa46bf8ac902302fe281d3375cf77b762bb11c996dbc",
+      "bytes": 5508,
+      "junit": {
+        "tests": 35,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0
+      }
+    }
+  ]
+}

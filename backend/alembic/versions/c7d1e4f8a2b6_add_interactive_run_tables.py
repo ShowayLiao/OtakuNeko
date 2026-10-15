@@ -3,6 +3,8 @@
 from typing import Sequence, Union
 
 from alembic import op
+
+from app.db.migration_compatibility import adopt_existing_tables
 import sqlalchemy as sa
 
 
@@ -13,6 +15,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if adopt_existing_tables(
+        op.get_bind(), ("agent_run", "agent_invocation", "agent_run_event")
+    ):
+        return
     op.create_table(
         "agent_run",
         sa.Column("run_id", sa.String(), nullable=False),

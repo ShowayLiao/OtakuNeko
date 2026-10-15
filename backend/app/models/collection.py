@@ -5,6 +5,7 @@ from sqlmodel import SQLModel, Field
 from sqlalchemy import Column, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSON
 from .enums import CollectionStatus
+from app.db.types import UTCNaiveDateTime
 
 
 def utc_now():
@@ -29,7 +30,11 @@ class Collection(SQLModel, table=True):
     rate: Optional[int] = Field(default=None, description="用户评分")
     comment: Optional[str] = Field(default=None, description="用户评论")
     updated_at: datetime = Field(
-        default_factory=utc_now, index=True, description="最后更新时间"
+        default_factory=utc_now,
+        sa_column=Column(
+            UTCNaiveDateTime(), nullable=False, index=True, default=utc_now
+        ),
+        description="最后更新时间",
     )
     private: bool = Field(default=False, description="是否私密收藏")
     tags: list[str] = Field(

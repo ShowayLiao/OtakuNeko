@@ -9,6 +9,8 @@ Create Date: 2026-07-29 20:12:37.901152
 from typing import Sequence, Union
 
 from alembic import op
+
+from app.db.migration_compatibility import adopt_existing_tables
 import sqlalchemy as sa
 
 
@@ -19,6 +21,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if adopt_existing_tables(op.get_bind(), ("agent_trace", "trace_event")):
+        return
     op.create_table(
         "agent_trace",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -81,11 +85,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_index("ix_trace_event_trace_id_step_index", table_name="trace_event")
+    # Both validated ORM-created and migration-created layouts are supported.
+    # Dropping a table removes its indexes, whose names differ across layouts.
     op.drop_table("trace_event")
-    op.drop_index("ix_agent_trace_started_at_trace_id", table_name="agent_trace")
-    op.drop_index("ix_agent_trace_status", table_name="agent_trace")
-    op.drop_index("ix_agent_trace_task_id", table_name="agent_trace")
-    op.drop_index("ix_agent_trace_user_id", table_name="agent_trace")
-    op.drop_index("ix_agent_trace_trace_id", table_name="agent_trace")
     op.drop_table("agent_trace")

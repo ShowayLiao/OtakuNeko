@@ -9,6 +9,8 @@ Create Date: 2026-07-29 17:26:24.174229
 from typing import Sequence, Union
 
 from alembic import op
+
+from app.db.migration_compatibility import adopt_existing_tables
 import sqlalchemy as sa
 
 
@@ -19,6 +21,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if adopt_existing_tables(op.get_bind(), ("agent_task_def", "agent_task_run")):
+        return
     op.create_table(
         "agent_task_def",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
@@ -38,7 +42,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'Asia/Shanghai'"),
         ),
-        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("1")),
+        sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.true()),
         sa.Column("deleted_at", sa.DateTime(), nullable=True),
         sa.Column("next_run", sa.DateTime(), nullable=True),
         sa.Column(

@@ -1,5 +1,4 @@
 from typing import AsyncGenerator
-from sqlmodel import SQLModel
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from app.core.config import settings
@@ -41,8 +40,19 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db():
-    """初始化数据库，创建所有表"""
-    # 注意：在生产环境通常推荐使用 alembic 进行迁移
-    # 但保留此函数可以确保本地模式下自动建表，非常方便
-    async with engine.begin() as conn:
-        await conn.run_sync(SQLModel.metadata.create_all)
+    """Initialize local databases through the same versioned path as the CLI."""
+    from pathlib import Path
+
+    from alembic import command
+    from alembic.config import Config
+
+    backend_root = Path(__file__).resolve().parents[2]
+    config = Config(str(backend_root / "alembic.ini"))
+    config.attributes["configure_logger"] = False
+
+    def upgrade(connection):
+        config.attributes["connection"] = connection
+        command.upgrade(config, "head")
+
+    async with engine.begin() as connection:
+        await connection.run_sync(upgrade)

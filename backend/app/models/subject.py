@@ -5,11 +5,17 @@ from sqlmodel import SQLModel, Field
 from sqlalchemy import Column, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSON
 from .enums import SubjectType
+from app.db.types import UTCNaiveDateTime
 
 
 def utc_now():
     """获取当前 UTC 时间"""
     return datetime.utcnow()
+
+
+def utc_aware_now():
+    """Preserve the public aware-UTC default and Core insert default."""
+    return datetime.now(timezone.utc)
 
 
 class Subject(SQLModel, table=True):
@@ -81,7 +87,9 @@ class Subject(SQLModel, table=True):
     air_time: Optional[datetime] = Field(default=None, description="放送时间")
     air_weekday: Optional[int] = Field(default=None, description="放送星期 (1-7)")
     last_sync: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc), description="最后同步时间"
+        default_factory=utc_aware_now,
+        sa_column=Column(UTCNaiveDateTime(), nullable=False, default=utc_aware_now),
+        description="最后同步时间",
     )
 
     # 联合唯一索引：确保同一数据源的同一条目不重复

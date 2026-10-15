@@ -9,6 +9,8 @@ Create Date: 2026-07-23 01:16:12.588508
 from typing import Sequence, Union
 
 from alembic import op
+
+from app.db.migration_compatibility import adopt_existing_tables
 import sqlalchemy as sa
 
 
@@ -20,6 +22,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    if adopt_existing_tables(op.get_bind(), ("agent_memory",)):
+        return
     op.create_table(
         "agent_memory",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),

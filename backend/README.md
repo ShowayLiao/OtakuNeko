@@ -37,6 +37,18 @@ uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 本地模式由 `DEPLOY_MODE=local` 启用，数据库路径由 `SQLITE_FILE` 控制。Cloud 模式需要配置 PostgreSQL、Redis、Checkpoint 和 Provider 出站策略；可用变量及开发默认值见 `.env.example` 与 `app/core/config.py`。
 
+## 数据库初始化与兼容范围
+
+本地启动的 `init_db()` 与上述 CLI 使用同一 Alembic 迁移链，并记录版本；不再以当前 ORM 的 `create_all` 替代升级。Cloud 模式仍在启动 API 前显式执行迁移。
+
+空库由 `a10300000001` 固定业务 schema 基线开始建立。已有的未版本化本地库，仅在现存表的列、类型、主键、唯一键、外键、检查约束和索引满足固定兼容快照时接管；保留数据并逐 revision 前进，不直接 `stamp head`。快照为 `app/db/migration_snapshot.py`，未来模型变化应新增 revision，不能随模型更新这个快照。
+
+更早的 `user` 表、`collection.subject_id` 等未定义转换的结构会报 `unsupported_business_schema`。请保留备份并单独设计数据转换，不要通过删除数据库、手动 stamp 或忽略异常绕过检查。已有版本记录的数据库继续按其 revision 执行；旧版本记录本身不能证明 schema 完整。
+
+操作已有数据库前先备份。`alembic downgrade a10300000001` 保留业务基线，但会删除后续 Agent 表及其中数据；`alembic downgrade base` 还会删除业务表。迁移失败时 SQLite 可能残留部分 DDL，不能把它当作自动完整回滚；生产失败库需从备份恢复或经过审计的修复，测试用失败库应隔离并丢弃。
+
+以上路径已在 SQLite 与隔离的 PostgreSQL 16.15 上完成回归，包含真实 CLI、接管和回退。Collection.updated_at 和 Subject.last_sync 保持无时区 UTC 存储契约，绑定 aware 输入时先归一化为 UTC；不改写已有行数据。当前变更未提供离线 `--sql` 迁移支持，接管检查需要在线反射 schema。
+
 ## Docker Compose
 
 从仓库根目录启动完整开发环境：
