@@ -135,6 +135,8 @@ lerna-debug.log*
 # System
 Thumbs.db
 .DS_Store
+# Literal Windows environment-variable cache directory
+/%SystemDrive%/
 
 #=====================
 # 9. 文档
