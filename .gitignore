@@ -32,7 +32,11 @@ node_modules/
 # 我们只用 pnpm，所以忽略其他包管理器的锁文件，防止混乱
 package-lock.json
 yarn.lock
-# 注意：pnpm-lock.yaml 必须提交，所以不要写在这里！
+# 前端依赖锁 frontend/pnpm-lock.yaml 必须提交。
+
+# Root dependency lock and locally generated frontend registry settings
+/pnpm-lock.yaml
+/frontend/.npmrc
 
 # Next.js
 .next/
