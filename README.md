@@ -197,39 +197,6 @@
 
 ---
 
-## 📸 界面预览
-
-<div align="center">
-
-<table>
-  <tr>
-    <td align="center" width="50%">
-      <img src="docs/image/chat.png" alt="AI 聊天界面" /><br/>
-      <em>AI 多轮对话 + Tool Calling</em>
-    </td>
-    <td align="center" width="50%">
-      <img src="docs/image/collection.png" alt="收藏管理" /><br/>
-      <em>网格/列表双视图</em>
-    </td>
-  </tr>
-  <tr>
-    <td align="center" width="50%">
-      <img src="docs/image/timetable.png" alt="放送排班表" /><br/>
-      <em>拖拽式新番排班</em>
-    </td>
-    <td align="center" width="50%">
-      <img src="docs/image/role.png" alt="AI 角色工厂" /><br/>
-      <em>自定义角色人格</em>
-    </td>
-  </tr>
-</table>
-
-</div>
-
-
-
----
-
 ## 🚀 快速开始
 
 OtakuNeko 提供多种启动方式，无论你是普通用户还是开发者，都能找到适合自己的方案。

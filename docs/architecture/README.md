@@ -1,25 +1,21 @@
 # Architecture Documentation
 
-## Target architecture
+本目录保存 OtakuNeko 的长期架构约束和必要开发规范，不保存个人计划、审计明细或验证记录。
 
-- [`agent-runtime-target-architecture.md`](agent-runtime-target-architecture.md): the persisted AgentRuntime-only target topology, contracts, ownership rules, current implementation gap, and migration exit criteria.
+## 规范入口
 
-- [`../harness-audit/13-unified-runtime-consolidation-audit.md`](../harness-audit/13-unified-runtime-consolidation-audit.md): current gap audit after the first unified-runtime task package.
-- [`../harness-audit/14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md): target exit criteria matrix and remaining architecture closure gaps.
-- [`../harness-tasks/UNIFIED-RUNTIME-CONSOLIDATION/`](../harness-tasks/UNIFIED-RUNTIME-CONSOLIDATION/): follow-up tasks for migrating the primary chat loop and retiring legacy control paths.
+- [项目级 Harness 规范](standard-agent-harness-reference.md)：Runtime ownership、可信身份、受控调度及真实实现边界。
+- [通用 Harness 参考与审计指南](standard-agent-harness-reference-and-codex-audit-guide.md)：术语、目标模型、审计方法与任务模板。
+- [Runtime 目标架构](agent-runtime-target-architecture.md)：组件边界、契约及迁移退出条件；不能替代当前源码证据。
+- [Code Review 规范](code-review.md)：审查输入、证据要求、严重度和验收门槛。
+- [仓库协作指引](../../AGENTS.md)：任务范围、验证命令、Git 规则及本地资料读取条件。
 
-本目录保存 OtakuNeko Agent Harness 的稳定架构约束和边界说明。
+源码和真实验证优先于架构目标、历史审计或文件命名。新克隆只依赖随仓库分发的规范和用户提供的当前任务；不得凭空补造不存在的 Batch 或执行记录。
 
-## 文档职责
+## Git 文档边界
 
-- [`standard-agent-harness-reference.md`](standard-agent-harness-reference.md)：本仓库执行 Harness 重构时的项目级规范入口。
-- [`../standard-agent-harness-reference-and-codex-audit-guide.md`](../standard-agent-harness-reference-and-codex-audit-guide.md)：完整的通用参考架构、审计方法和任务编写指南。
-- [`../harness-audit/`](../harness-audit/)：基于当前源码形成的审计事实、Gap、目标架构和迁移建议。
+`docs/` 只分发本目录和 [changelog](../changelog/archive.md)。architecture 中遗留的 `a-l1-01-test-matrix-plan.md` 与 `a-l1-01-test-matrix-report.md` 属于历史验证记录，也仅保留本地。
 
-项目级规范优先说明 OtakuNeko 当前真实边界；通用参考文档提供术语、成熟度模型和审计模板。两者冲突时，以源码事实和项目级任务约束为准，并把不一致记录到对应执行记录。
+审计、任务、执行记录、质量报告、原始测试输出、截图和个人资料由 `.gitignore` 忽略；取消跟踪时保留本地文件。需要交付的运行证据使用单独 artifact，新增架构说明不得夹带这些材料或把它们作为必读链接。
 
-## 当前成熟度
-
-当前审计结论为 Level 4：主聊天路径已由 AgentRuntime 控制，并通过 ModelGateway、DecisionParser、Dispatcher 和 canonical Run/Event 持久化；旧 Graph/adapter 已移除，specialist 已通过 Runtime 注入 Dispatcher，审批恢复契约和 SQLite 单 worker 边界仍明确保留。详细历史证据见 [`14-target-architecture-gap-audit.md`](../harness-audit/14-target-architecture-gap-audit.md) 与 BATCH-20～26 execution records。
-
-当前重构批次按 [`../harness-tasks/INDEX.md`](../harness-tasks/INDEX.md) 顺序推进，一次只实施一个 Batch。
+本地历史材料存在时可以辅助核对，但不随 Git 分发。用户明确要求执行 Batch 时，仍必须具备任务范围、依赖、验收与回滚信息；缺少必需信息时停止该 Batch 实施。取消跟踪不会清除已有 Git 历史。

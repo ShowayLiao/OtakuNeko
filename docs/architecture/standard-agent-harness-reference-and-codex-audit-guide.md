@@ -1,5 +1,7 @@
 # 标准 AI Agent Harness 参考架构与 Codex 审计指南
 
+> OtakuNeko 文档分发约定：本指南及必要开发规范位于 `docs/architecture/`。下文审计、任务、计划与执行记录目录是本地输出示例，不要求新克隆预先存在，也不随 Git 分发。项目当前任务范围以用户明确授权及当前源码为准；不得将本地审计、个人信息或运行明细重新复制进公开架构文档。
+
 > 文档类型：参考架构 / 工程规范 / 代码审计基线  
 > 适用项目：OtakuNeko 及其他具备 LLM、Tool Calling、Workflow、Subagent 的应用  
 > 版本：1.0  

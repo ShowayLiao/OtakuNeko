@@ -145,7 +145,15 @@ Thumbs.db
 #=====================
 # 9. 文档
 # ==========================
-docs/goal/
+# Publish only durable architecture documents and the changelog.
+# Audits, task plans, execution records, screenshots and raw evidence stay local.
+/docs/*
+!/docs/architecture/
+!/docs/changelog/
+
+# Historical verification records are not architecture documentation.
+/docs/architecture/a-l1-01-test-matrix-plan.md
+/docs/architecture/a-l1-01-test-matrix-report.md
 
 backend/spec/
 

@@ -13,9 +13,9 @@ Review 不是格式化、lint 或实现过程复述。机械问题交给自动�
 Reviewer 必须按以下顺序建立上下文：
 
 1. <code>docs/architecture/standard-agent-harness-reference.md</code>；
-2. <code>docs/standard-agent-harness-reference-and-codex-audit-guide.md</code>；
-3. 相关 <code>docs/harness-audit/*.md</code>；
-4. 当前任务和 <code>docs/harness-tasks/INDEX.md</code>；
+2. <code>docs/architecture/standard-agent-harness-reference-and-codex-audit-guide.md</code>；
+3. 用户提供的当前任务，以及本地存在的相关审计；
+4. 当前任务涉及 Batch 时，读取用户提供或本地存在的任务范围和依赖；缺少必需资料时停止该 Batch 的实施审查；
 5. 当前路径下更具体的 <code>AGENTS.md</code>；
 6. 完整未提交 diff；
 7. 执行记录中的真实命令、退出码和测试结果。
@@ -122,7 +122,7 @@ Low 可以延期，但必须记录原因和后续任务。
 - 是否只修改当前任务允许文件；
 - 是否误改业务表、依赖、前端协议或生成文件；
 - 规划、审计、执行记录和源码事实是否分层；
-- <code>docs/architecture/</code>、<code>docs/harness-audit/</code>、<code>docs/harness-tasks/</code>、<code>docs/harness-execution/</code> 的相对链接是否有效；
+- 随 Git 分发的架构文档相对链接是否有效；本地审计、任务和执行记录不得作为新克隆的必备文件或被重新复制到公开文档；
 - 是否创建了没有活动 Batch 对应关系的执行记录；
 - 是否把未实现的 Run Coordinator、Event Store、Decision 或 Approval 写成已存在。
 

@@ -4,7 +4,7 @@
 >
 > Scope: the primary OtakuNeko chat path and the shared Agent Harness boundary.
 >
-> Related references: [standard-agent-harness-reference.md](standard-agent-harness-reference.md), [post-batch13 audit](../harness-audit/12-post-batch13-current-audit.md), and [post-audit execution plan](../harness-execution/POST-AUDIT-EXECUTION-PLAN.md).
+> Related references: [standard-agent-harness-reference.md](standard-agent-harness-reference.md) and [code-review.md](code-review.md). Historical audits and execution plans are local-only materials and are not required in a fresh clone.
 
 ## 1. Purpose and status vocabulary
 

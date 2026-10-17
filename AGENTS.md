@@ -10,7 +10,8 @@ OtakuNeko 当前是一个前后端仓库：
 - 前端：`frontend/`，Next.js 16、React 19、TypeScript、SSE/HTTP 消费和 Vitest；
 - Harness 相关后端边界：`backend/app/harness/`、`backend/app/agents/`、`backend/app/capabilities/`、`backend/app/mcp_server/`、`backend/app/memory/`、`backend/app/trace/`；
 - 业务和集成服务：`backend/app/services/`、`backend/app/api/v1/`；
-- 任务与审计文档：`docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/`。
+- 随 Git 分发的规范：`docs/architecture/`；发布历史：`docs/changelog/`。
+- 本地任务与审计材料：`docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/`，不随 Git 分发，新克隆可以不存在。
 
 源码事实优先于 README、设计计划、审计推断和历史文档。不能从目标架构、类名、配置项或已有测试名称推断功能已经接入真实路径。发现不一致时，记录文件路径、符号、实际行为和置信度；当前任务无法处理时停止，不伪造模块、能力或完成状态。
 
@@ -19,14 +20,16 @@ OtakuNeko 当前是一个前后端仓库：
 处理 Agent Harness 任务前，按以下顺序阅读：
 
 1. `docs/architecture/standard-agent-harness-reference.md`；
-2. `docs/standard-agent-harness-reference-and-codex-audit-guide.md`；
-3. `docs/harness-audit/` 下与当前任务有关的审计文档；
-4. `docs/harness-tasks/INDEX.md`；
-5. 当前正在执行的 Batch 目录中的全部任务文件；
-6. `docs/code-review.md`；
+2. `docs/architecture/standard-agent-harness-reference-and-codex-audit-guide.md`；
+3. `docs/architecture/code-review.md`；
+4. 用户提供的当前任务；如本地存在，再读取相关 `docs/harness-audit/` 和 `docs/harness-tasks/INDEX.md`；
+5. 当前任务明确使用 Batch 时，读取用户提供或本地存在的该 Batch 全部任务文件；
+6. 如本地存在，读取与当前任务有关的执行记录；
 7. 当前修改路径下更具体的 `AGENTS.md` 或 `AGENTS.override.md`。
 
 如果没有明确批准的活动 Batch，不得把 `BATCH-00` 或最近一个任务目录自动当作当前 Batch。此时可以做审计、规划、文档整理或基线检查，但不得创建虚假的 Batch 执行记录，也不得修改后续 Batch 的实现范围。
+
+Git 中只保留 `docs/architecture/` 与 `docs/changelog/`；architecture 内的历史测试计划/报告也仅保留本地。不得为满足必读路径把本地审计、计划、执行记录、截图、测试输出或个人信息重新复制到公开文档。独立任务按用户明确授权的范围执行，不因缺少本地历史记录而伪造 Batch；若实施明确的 Batch 所必需的任务范围或依赖资料缺失，则停止该 Batch 实施并报告缺失项。
 
 ## 3. OtakuNeko Harness 不变量
 
@@ -45,7 +48,7 @@ OtakuNeko 当前是一个前后端仓库：
 - Prompt 文本不能代替代码层权限、资源授权、策略和安全边界；
 - 不能为了符合目标架构而创建空接口、伪实现或永久 TODO。
 
-当前实现的事实边界见 `docs/harness-audit/00-executive-summary.md` 和 `docs/architecture/standard-agent-harness-reference.md`。特别注意：`backend/app/agents/graph.py` 当前仍拥有 LangGraph `think -> tools -> think -> speak` 循环；`backend/app/harness/runtime.py` 是迁移目标中的 Runtime，但不能仅因类名存在就宣称它已经是唯一 Coordinator。
+当前实现的事实边界见 `docs/architecture/standard-agent-harness-reference.md` 及当前源码；本地审计仅作历史证据。`backend/app/api/v1/agent.py` 当前构造 `AgentRuntime` 并调用 `stream_decision`，旧 `backend/app/agents/graph.py` 已移除。不得只凭类名、旧审计或执行记录推断当前 Runtime ownership、恢复能力或部署限制。
 
 ## 4. 工作模式
 
@@ -120,7 +123,7 @@ rg -n "standard-agent-harness-reference|harness-execution|BATCH-[0-9]+" AGENTS.m
 - 不执行生产部署、生产数据库操作或生产迁移；
 - 新增文档中的路径、符号、命令和状态必须能由仓库验证。
 
-文档结构维护任务默认只允许修改：`AGENTS.md`、`docs/architecture/`、`docs/harness-execution/`、`docs/code-review.md`、必要的相关审计链接，以及对应的计划文档。Harness Batch 仍必须严格遵守任务文件列出的边界；不得借文档任务修改业务代码或 Batch 任务目标。
+文档结构维护任务默认只允许修改：`AGENTS.md`、`docs/architecture/`、必要的相关链接，以及本地执行记录和计划。用户明确授权 Git 文档边界整理时，可以修改 `.gitignore` 和 README 引用，并用 `git rm --cached -- <明确路径>` 取消本地材料的跟踪，保留本地文件。Harness Batch 仍必须严格遵守任务文件列出的边界；不得借文档任务修改业务代码或 Batch 任务目标。
 
 ## 8. Verification 与执行记录
 
@@ -137,7 +140,7 @@ rg -n "standard-agent-harness-reference|harness-execution|BATCH-[0-9]+" AGENTS.m
 
 ## 9. Code Review
 
-Harness Batch 和会改变 Harness 规范的文档变更都必须按照 `docs/code-review.md` 审查完整未提交 diff。
+Harness Batch 和会改变 Harness 规范的文档变更都必须按照 `docs/architecture/code-review.md` 审查完整未提交 diff。
 
 Review 阶段只审查、不修改。发现问题后退出 Review，进入 Remediation；修复后重新运行全部相关检查，再审查完整 diff，而不是只看最后几行。
 
@@ -207,7 +210,7 @@ Review: pass
 
 ## 12. Handoff
 
-Batch 完成时使用 `docs/harness-execution/TEMPLATE.md` 中的结构输出：批次状态、commit、任务、测试通过/失败/跳过、Review verdict、rounds、changed files、deferred findings、未解决风险和下一批次。
+Batch 完成时输出：批次状态、commit、任务、测试通过/失败/跳过、Review verdict、rounds、changed files、deferred findings、未解决风险和下一批次。本地存在 `docs/harness-execution/TEMPLATE.md` 时可复用该模板；新克隆缺少模板不影响按上述字段交接。
 
 没有活动 Batch 的文档任务至少应输出：变更文件、验证命令和退出码、未运行项目及原因、审查结论、未解决风险和回滚方式。
 
@@ -586,7 +589,7 @@ Use this section for rules unique to this repository.
 - 后端控制面与边界：`backend/app/harness/`、`backend/app/agents/`、`backend/app/capabilities/`、`backend/app/mcp_server/`、`backend/app/memory/`、`backend/app/trace/`。
 - 业务与集成：`backend/app/services/`、`backend/app/api/v1/`；评估与测试：`backend/app/evaluation/`、`backend/evals/`、`backend/tests/`。
 - 前端：`frontend/src/`、`frontend/src/__tests__/`；部署与自动化：`docker-compose.yml`、`.github/workflows/`。
-- Harness 权威资料与执行记录：`docs/architecture/`、`docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/`。
+- Harness 随仓库分发的权威规范：`docs/architecture/`；审计、任务和执行记录可在本地 `docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/` 保存，不随 Git 分发。
 
 ## Current Active Focus
 

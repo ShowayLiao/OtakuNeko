@@ -4,7 +4,7 @@
 > 日期：2026-08-08
 > 适用范围：`backend/app/agents`、`backend/app/harness`、`backend/app/capabilities`、`backend/app/mcp_server`、`backend/app/memory`、`backend/app/trace` 及其 API、前端事件投影和测试。
 
-本文档是 OtakuNeko 的项目级 Harness 规范入口。通用术语、完整架构模型、审计输出格式和成熟度定义见 [`../standard-agent-harness-reference-and-codex-audit-guide.md`](../standard-agent-harness-reference-and-codex-audit-guide.md)。当前源码审计证据见 [`../harness-audit/`](../harness-audit/)。
+本文档是 OtakuNeko 的项目级 Harness 规范入口。通用术语、完整架构模型、审计输出格式和成熟度定义见 [`standard-agent-harness-reference-and-codex-audit-guide.md`](standard-agent-harness-reference-and-codex-audit-guide.md)，审查规则见 [`code-review.md`](code-review.md)。审计、任务和执行记录仅保留本地，不是新克隆的必备文件；当前行为以源码和真实验证为准。
 
 ## 1. 规范地位
 
@@ -13,7 +13,7 @@
 当本文档、审计、任务或 README 与源码不一致时：
 
 1. 记录文件路径、符号和实际行为；
-2. 将不一致写入 `docs/harness-execution/BATCH-XX-execution.md`；
+2. 有活动 Batch 时，将不一致写入本地 `docs/harness-execution/BATCH-XX-execution.md`；独立任务记录在本地变更报告或交接中；
 3. 在当前任务允许范围内修正文档或增加兼容适配；
 4. 超出任务范围时停止，不通过伪造模块或 Prompt 约束掩盖差异。
 
@@ -118,8 +118,8 @@ Run 至少应能经历：`queued -> running -> waiting/paused -> completed | fai
 
 ## 5. 批次、范围和完成门槛
 
-- 批次顺序以 [`../harness-tasks/INDEX.md`](../harness-tasks/INDEX.md) 为准；一次只实施一个 Batch。
-- 当前没有“正在执行”的 Batch 时，只能做审计、规划或文档整理，不得伪造 `BATCH-XX-execution.md`。
+- 批次顺序以用户明确批准的任务及依赖为准；本地存在 `docs/harness-tasks/INDEX.md` 时核对该索引，一次只实施一个 Batch。必需的任务范围或依赖资料缺失时停止该 Batch 实施。
+- 当前没有“正在执行”的 Batch 时，可做审计、规划、文档整理或用户明确授权的独立任务，不得伪造 `BATCH-XX-execution.md`。
 - 每个 Batch 必须有允许/禁止文件范围、前置条件、验收测试、兼容策略、回滚方式和执行记录。
 - 新增能力先覆盖 read-only 和契约测试，再进入写能力；不得为了符合目标架构同时迁移 Runtime、所有 Tool、Memory、数据库和前端协议。
 - 提交前必须完成完整 diff Review；Blocker、Critical、High 和未处理 Medium Finding 均阻止提交。
