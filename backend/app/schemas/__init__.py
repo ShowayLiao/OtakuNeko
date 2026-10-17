@@ -1,29 +1,18 @@
-from app.schemas.user import (
-    UserBase,
-    UserCreate,
-    UserUpdate,
-    UserRead
-)
-from app.schemas.subject import (
-    SubjectBase,
-    SubjectRead
-)
+from app.schemas.user import UserBase, UserCreate, UserUpdate, UserRead
+from app.schemas.subject import SubjectBase, SubjectRead
 from app.schemas.collection import (
     CollectionBase,
     CollectionCreate,
     CollectionUpdate,
     CollectionRead,
-    CollectionList
+    CollectionList,
 )
-from app.schemas.agent import (
-    Message,
-    ChatRequest
-)
+from app.schemas.agent import Message, ChatRequest
 from app.schemas.rss import (
     AddRssFeedRequest,
     RemoveRssItemRequest,
     SetRssRuleRequest,
-    RemoveRssRuleRequest
+    RemoveRssRuleRequest,
 )
 
 __all__ = [
@@ -43,5 +32,5 @@ __all__ = [
     "AddRssFeedRequest",
     "RemoveRssItemRequest",
     "SetRssRuleRequest",
-    "RemoveRssRuleRequest"
+    "RemoveRssRuleRequest",
 ]

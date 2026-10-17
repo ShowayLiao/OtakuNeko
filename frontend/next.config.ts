@@ -1,6 +1,14 @@
 import type { NextConfig } from "next";
+import path from "node:path";
 
 const nextConfig: NextConfig = {
+  // The repository has a second lockfile at its parent level. Without an
+  // explicit root, Turbopack can select the repository root and fail to
+  // resolve frontend-only packages such as tailwindcss.
+  turbopack: {
+    root: path.resolve(__dirname),
+  },
+
   // ---------------------------------------------------------
   // 1. 核心修改：开启 Standalone 模式
   // 这会让 Next.js 构建时自动分析依赖，只打包必要文件，大幅减小 Docker 体积
@@ -9,20 +17,20 @@ const nextConfig: NextConfig = {
 
   /* config options here */
   reactCompiler: true,
-  
+
   images: {
     remotePatterns: [
       {
-        protocol: 'https',
-        hostname: 'picsum.photos',
+        protocol: "https",
+        hostname: "picsum.photos",
       },
       {
-        protocol: 'https',
-        hostname: 'lain.bgm.tv',
+        protocol: "https",
+        hostname: "lain.bgm.tv",
       },
       {
-        protocol: 'https',
-        hostname: '**.doubanio.com',
+        protocol: "https",
+        hostname: "**.doubanio.com",
       },
     ],
   },
@@ -33,13 +41,13 @@ const nextConfig: NextConfig = {
   // Docker 部署时，可以通过环境变量 API_PROXY_URL=http://backend:8000 来指定内部地址
   // ---------------------------------------------------------
   async rewrites() {
-    const apiUrl = process.env.API_PROXY_URL || 'http://localhost:8000';
-    
+    const apiUrl = process.env.API_PROXY_URL || "http://localhost:8000";
+
     console.log(`[Next.js Rewrite] Proxying /api to: ${apiUrl}`);
-    
+
     return [
       {
-        source: '/api/:path*',
+        source: "/api/:path*",
         destination: `${apiUrl}/api/:path*`,
       },
     ];

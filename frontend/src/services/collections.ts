@@ -1,4 +1,5 @@
-import { request } from './client';
+/* eslint-disable @typescript-eslint/no-explicit-any -- import data is user-provided JSON. */
+import { request } from "./client";
 
 // 同步收藏请求参数
 export interface CollectionSyncRequest {
@@ -55,36 +56,47 @@ export interface DoubanUploadRequest {
 // 收藏服务
 export const collectionService = {
   // 同步用户的 Bangumi 收藏数据到本地数据库
-  async syncBgm(data: CollectionSyncRequest = {}): Promise<CollectionSyncResponse> {
-    return request<CollectionSyncResponse>('/collections/sync/bgm', {
-      method: 'POST',
+  async syncBgm(
+    data: CollectionSyncRequest = {},
+  ): Promise<CollectionSyncResponse> {
+    return request<CollectionSyncResponse>("/collections/sync/bgm", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
 
   // 获取收藏列表
-  async getCollections(data: GetCollectionsRequest = {}): Promise<CollectionListResponse> {
+  async getCollections(
+    data: GetCollectionsRequest = {},
+  ): Promise<CollectionListResponse> {
     // 构建查询参数
     const params = new URLSearchParams();
-    if (data.subject_type !== undefined) params.append('subject_type', data.subject_type.toString());
-    if (data.status !== undefined) params.append('status', data.status.toString());
-    if (data.keyword) params.append('keyword', data.keyword);
-    if (data.limit) params.append('limit', data.limit.toString());
-    if (data.offset) params.append('offset', data.offset.toString());
-    if (data.sort_by) params.append('sort_by', data.sort_by);
+    if (data.subject_type !== undefined)
+      params.append("subject_type", data.subject_type.toString());
+    if (data.status !== undefined)
+      params.append("status", data.status.toString());
+    if (data.keyword) params.append("keyword", data.keyword);
+    if (data.limit) params.append("limit", data.limit.toString());
+    if (data.offset) params.append("offset", data.offset.toString());
+    if (data.sort_by) params.append("sort_by", data.sort_by);
 
     const queryString = params.toString();
-    const endpoint = `/collections${queryString ? `?${queryString}` : ''}`;
+    // The backend route is declared with a trailing slash. Calling the
+    // canonical URL avoids a 307 redirect through the Next.js rewrite, which
+    // can otherwise drop the Authorization header.
+    const endpoint = `/collections/${queryString ? `?${queryString}` : ""}`;
 
     return request<CollectionListResponse>(endpoint, {
-      method: 'GET',
+      method: "GET",
     });
   },
 
   // 上传豆瓣 JSON 数据
-  async uploadDouban(data: DoubanUploadRequest): Promise<CollectionSyncResponse> {
-    return request<CollectionSyncResponse>('/collections/upload/douban', {
-      method: 'POST',
+  async uploadDouban(
+    data: DoubanUploadRequest,
+  ): Promise<CollectionSyncResponse> {
+    return request<CollectionSyncResponse>("/collections/upload/douban", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },

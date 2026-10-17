@@ -2,9 +2,9 @@
 
 :root {
   /* Default Theme (Orange) */
-  --primary: #FF6600;
-  --bg-bubble-user: #FF8E72;
-  --bg-bubble-assistant: #F3F4F6;
+  --primary: #ff6600;
+  --bg-bubble-user: #ff8e72;
+  --bg-bubble-assistant: #f3f4f6;
   --text-primary: #ffffff;
   --text-secondary: #171717;
   --background: #ffffff;
@@ -13,18 +13,18 @@
 
 /* Ocean Theme */
 :root[data-theme="ocean"] {
-  --primary: #00BFFF;
-  --bg-bubble-user: #87CEFA;
-  --bg-bubble-assistant: #F0F8FF;
+  --primary: #00bfff;
+  --bg-bubble-user: #87cefa;
+  --bg-bubble-assistant: #f0f8ff;
   --text-primary: #ffffff;
   --text-secondary: #000080;
 }
 
 /* Sakura Theme */
 :root[data-theme="sakura"] {
-  --primary: #FFB6C1;
-  --bg-bubble-user: #FF69B4;
-  --bg-bubble-assistant: #FFF0F5;
+  --primary: #ffb6c1;
+  --bg-bubble-user: #ff69b4;
+  --bg-bubble-assistant: #fff0f5;
   --text-primary: #ffffff;
   --text-secondary: #800080;
 }
@@ -52,4 +52,14 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
 }

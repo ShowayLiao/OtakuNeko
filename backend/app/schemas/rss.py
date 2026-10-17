@@ -1,18 +1,32 @@
-from typing import Optional, Dict, List, Any
-from pydantic import BaseModel, RootModel
+from typing import Annotated, Optional, Dict, List
+from pydantic import BaseModel, Field
+
+
+IdempotencyKey = Annotated[
+    str,
+    Field(
+        min_length=1,
+        max_length=128,
+        pattern=r"^[\x21-\x7E]+$",
+        description="A caller-provided printable ASCII idempotency key.",
+    ),
+]
 
 
 class RemoveRssRuleRequest(BaseModel):
     """
     删除 RSS 自动下载规则请求模型
     """
+
     rule_name: str
+    idempotency_key: IdempotencyKey
 
 
 class TorrentParams(BaseModel):
     """
     种子参数模型
     """
+
     category: str
     content_layout: Optional[str] = None
     download_limit: int
@@ -37,6 +51,7 @@ class RssRule(BaseModel):
     """
     RSS 自动下载规则模型
     """
+
     addPaused: Optional[bool] = None
     affectedFeeds: List[str]
     assignedCategory: str
@@ -59,6 +74,7 @@ class RssFeedItem(BaseModel):
     """
     RSS 订阅项模型
     """
+
     uid: str
     url: str
 
@@ -67,12 +83,13 @@ class RssItemsResponse(BaseModel):
     """
     RSS 订阅项列表响应模型
     """
+
     items: Dict[str, RssFeedItem]
-    
+
     @classmethod
     def __get_validators__(cls):
         yield cls.validate
-    
+
     @classmethod
     def validate(cls, v):
         if isinstance(v, dict):
@@ -84,12 +101,13 @@ class RssRulesResponse(BaseModel):
     """
     RSS 自动下载规则响应模型
     """
+
     rules: Dict[str, RssRule]
-    
+
     @classmethod
     def __get_validators__(cls):
         yield cls.validate
-    
+
     @classmethod
     def validate(cls, v):
         if isinstance(v, dict):
@@ -101,7 +119,9 @@ class AddRssFeedRequest(BaseModel):
     """
     添加 RSS 订阅源请求模型
     """
+
     url: str
+    idempotency_key: IdempotencyKey
     name: Optional[str] = None
 
 
@@ -109,14 +129,16 @@ class RemoveRssItemRequest(BaseModel):
     """
     删除 RSS 订阅项请求模型
     """
+
     item_path: str
+    idempotency_key: IdempotencyKey
 
 
 class SetRssRuleRequest(BaseModel):
     """
     设置 RSS 自动下载规则请求模型
     """
+
     rule_name: str
     rule: RssRule
-
-
+    idempotency_key: IdempotencyKey

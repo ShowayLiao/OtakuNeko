@@ -1,4 +1,4 @@
-import { request } from './client';
+import { request } from "./client";
 
 // 登录请求参数
 export interface LoginRequest {
@@ -59,7 +59,7 @@ export const authService = {
       return user;
     } catch (error) {
       // 404 错误表示用户不存在，检查错误消息中是否包含 '用户不存在'
-      if ((error as Error).message.includes('用户不存在')) {
+      if ((error as Error).message.includes("用户不存在")) {
         return null;
       }
       throw error;
@@ -68,8 +68,8 @@ export const authService = {
 
   // 用户登录
   async login(data: LoginRequest): Promise<LoginResponse> {
-    return request<LoginResponse>('/auth/login', {
-      method: 'POST',
+    return request<LoginResponse>("/auth/login", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },

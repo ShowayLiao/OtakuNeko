@@ -4,15 +4,15 @@
 
 ## 子模块
 
-| 目录 | 功能 | 核心依赖 |
-|------|------|----------|
-| `chat/` | AI 聊天界面（ChatPage 主组件、ChatInput、ModelSelector、RoleSelector、SearchBar） | `@lobehub/ui/chat`, `zustand` |
-| `collection/` | 收藏展示（CollectionContent 列表/网格、MediaCard 卡片、BilibiliIcon） | `antd` |
-| `header/` | 各页面顶部工具栏（ChatHeader、CollectionHeader、TimetableHeader、PersonaHeader、User、SearchBar） | `@lobehub/ui`, `lucide-react` |
-| `timetable/` | 排班表拖拽系统（TimelineBoard、DraggablePanel、DraggableItemWrapper、DroppableCell、StandardLanes 等） | `@dnd-kit/core`, `@dnd-kit/sortable` |
-| `Modal/` | 全局弹窗（LoginModal、ApiKeyModal、SubjectModal、ImportModal、ExportCalendarModal 等 8 个弹窗 + SubjectForm 子表单） | `@lobehub/ui`, `antd` |
-| `providers/` | 全局上下文（LobeProvider 主题/外观管理、ColorSchemes 配色常量） | `@lobehub/ui`, `antd` |
-| `sidebar/` | 角色侧边栏（RoleSidebar） | `@lobehub/ui` |
+| 目录          | 功能                                                                                                                                                                                                    | 核心依赖                             |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| `chat/`       | AI 聊天界面（ChatPage 主组件、AgentMessageRenderer 流式渲染器含 Thinking/ToolCallCard/ProgressPanel、ChatInput、ModelSelector、RoleSelector、SearchBar、MessageList、SessionPanel、TypingIndicator 等） | `@lobehub/ui/chat`, `zustand`        |
+| `collection/` | 收藏展示（CollectionContent 列表/网格、MediaCard 卡片、BilibiliIcon）                                                                                                                                   | `antd`                               |
+| `header/`     | 各页面顶部工具栏（ChatHeader、CollectionHeader、TimetableHeader、PersonaHeader、User、SearchBar）                                                                                                       | `@lobehub/ui`, `lucide-react`        |
+| `timetable/`  | 排班表拖拽系统（TimelineBoard、DraggablePanel、DraggableItemWrapper、DroppableCell、StandardLanes 等）                                                                                                  | `@dnd-kit/core`, `@dnd-kit/sortable` |
+| `Modal/`      | 全局弹窗（LoginModal、ApiKeyModal、SubjectModal、ImportModal、ExportCalendarModal 等 8 个弹窗 + SubjectForm 子表单）                                                                                    | `@lobehub/ui`, `antd`                |
+| `providers/`  | 全局上下文（LobeProvider 主题/外观管理、ColorSchemes 配色常量）                                                                                                                                         | `@lobehub/ui`, `antd`                |
+| `sidebar/`    | 角色侧边栏（RoleSidebar）                                                                                                                                                                               | `@lobehub/ui`                        |
 
 ## 依赖关系
 

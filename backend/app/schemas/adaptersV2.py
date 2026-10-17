@@ -1,14 +1,31 @@
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import logging
-from datetime import datetime, time
-from .subject import SubjectUpsert, SubjectUpsertList, SubjectRead, SubjectReadList, SubjectWithCollection, SubjectWithCollectionList
-from .collection import CollectionUpsert, CollectionUpsertList, CollectionRead, CollectionReadList, CollectionWithSubject, CollectionWithSubjectList
+from datetime import time
+from .subject import (
+    SubjectUpsert,
+    SubjectUpsertList,
+    SubjectRead,
+    SubjectReadList,
+    SubjectWithCollection,
+    SubjectWithCollectionList,
+)
+from .collection import (
+    CollectionUpsert,
+    CollectionUpsertList,
+    CollectionRead,
+    CollectionReadList,
+    CollectionWithSubject,
+    CollectionWithSubjectList,
+)
 from .schedule import ScheduleUpsert, ScheduleUpsertList
-from .bangumi import BangumiCalendar, BangumiCalendarDay, BangumiCalendarItem
+from .bangumi import BangumiCalendar
 from ..models import SubjectType
 from app.models.enums import CollectionStatus, WatchType
 from pydantic import BaseModel, Field
 from .shared import BaseList
+
+if TYPE_CHECKING:
+    from .collection import CollectionSubjectList
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +36,13 @@ class UnifiedCollectionSubject(BaseModel):
     无论数据源是Collection还是Subject，都转换为此格式返回给前端。
     允许 collection 或 subject 任意一方为空。
     """
-    collection: Optional['CollectionRead'] = Field(None, description="收藏信息，若条目未关联收藏则为 null")
-    subject: Optional['SubjectRead'] = Field(None, description="条目信息，若收藏为空收藏则为 null")
+
+    collection: Optional["CollectionRead"] = Field(
+        None, description="收藏信息，若条目未关联收藏则为 null"
+    )
+    subject: Optional["SubjectRead"] = Field(
+        None, description="条目信息，若收藏为空收藏则为 null"
+    )
 
     class Config:
         from_attributes = True
@@ -29,15 +51,18 @@ class UnifiedCollectionSubject(BaseModel):
 class UnifiedList(BaseList):
     """
     统一视图模型列表
-    
+
     用于返回统一视图模型的列表，无论数据源是Collection还是Subject，都转换为此格式返回给前端。
     允许 collection 或 subject 任意一方为空。
-    
+
     Attributes:
         total: 总记录数
         items: 统一视图模型列表
     """
-    items: List[UnifiedCollectionSubject] = Field(default_factory=list, description="统一视图模型列表")
+
+    items: List[UnifiedCollectionSubject] = Field(
+        default_factory=list, description="统一视图模型列表"
+    )
 
 
 # 解决循环导入问题
@@ -46,34 +71,33 @@ UnifiedList.model_rebuild()
 
 
 def convert_to_collection_subject_list(
-    collection_read_list: CollectionReadList, 
-    subject_read_list: SubjectReadList
-) -> 'CollectionSubjectList':
+    collection_read_list: CollectionReadList, subject_read_list: SubjectReadList
+) -> "CollectionSubjectList":
     """
     将 CollectionReadList 和 SubjectReadList 转换为 CollectionSubjectList
-    
+
     Args:
         collection_read_list: 收藏读取列表
         subject_read_list: 条目读取列表
-        
+
     Returns:
         转换后的 CollectionSubjectList 对象
     """
-    from .adapters import CollectionSubject, CollectionSubjectList
-    
+    from .collection import CollectionSubject, CollectionSubjectList
+
     # 创建 subject 字典，方便通过 source 和 source_id 查找
-    subject_dict = {}
+    subject_dict: dict[tuple[str, str], SubjectRead] = {}
     for subject in subject_read_list.items:
         key = (subject.source, subject.source_id)
         subject_dict[key] = subject
-    
+
     # 转换 CollectionRead 为 CollectionSubject
     collection_subjects = []
     for collection in collection_read_list.items:
         # 查找对应的 subject
         key = (collection.source, collection.source_id)
-        subject = subject_dict.get(key)
-        
+        matched_subject = subject_dict.get(key)
+
         # 创建 CollectionSubject 对象
         collection_subject = CollectionSubject(
             user_id=collection.user_id,
@@ -88,45 +112,46 @@ def convert_to_collection_subject_list(
             ep_status=collection.ep_status,
             subject_type=collection.subject_type,
             updated_at=collection.updated_at,
-            subject=subject
+            subject=matched_subject,
         )
         collection_subjects.append(collection_subject)
-    
+
     # 创建并返回 CollectionSubjectList
     return CollectionSubjectList(
-        total=collection_read_list.total,
-        items=collection_subjects
+        total=collection_read_list.total, items=collection_subjects
     )
 
 
-def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") -> SubjectUpsertList:
+def bangumi_subject_to_subjectlist(
+    data: Dict[str, Any], source: str = "bangumi"
+) -> SubjectUpsertList:
     """
     将 Bangumi 条目数据格式或收藏数据格式转换为 SubjectUpsertList 格式
     输入参考 bangumi_subject.json 或 bangumi_collection.json
     输出使用 SubjectUpsertList schema
-    
+
     Args:
         data: 原始 Bangumi 条目 JSON 数据或收藏 JSON 数据
-        
+
     Returns:
         转换后的 SubjectUpsertList 对象
     """
     # 确保data是字典类型
     if not isinstance(data, dict):
         raise ValueError("Input data must be a dictionary")
-    
+
     # 提取data数组，支持直接传入data字段或完整的JSON结构
     raw_items = data.get("data", [])
     if not isinstance(raw_items, list):
         raw_items = []
-    
+
     subjects = []
-    
+
     for item in raw_items:
         # 确保item是字典类型
         if not isinstance(item, dict):
             continue
-        
+
         # 处理不同格式的差异
         # 检查是否存在subject字段（收藏格式）
         if "subject" in item and isinstance(item["subject"], dict):
@@ -135,55 +160,57 @@ def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") 
             # 从item中获取subject_id（如果存在）
             subject_id = item.get("subject_id")
             if subject_id:
-                subject_upsert_data = {
+                subject_upsert_data: dict[str, Any] = {
                     "source": source,
-                    "source_id": str(subject_id)
+                    "source_id": str(subject_id),
                 }
             else:
                 subject_upsert_data = {
                     "source": source,
-                    "source_id": str(subject_data.get("id", ""))
+                    "source_id": str(subject_data.get("id", "")),
                 }
         else:
             # 使用直接的条目格式数据
             subject_data = item
             subject_upsert_data = {
                 "source": source,
-                "source_id": str(item.get("id", ""))
+                "source_id": str(item.get("id", "")),
             }
-        
+
         # 处理其他字段
         if "name" in subject_data:
             subject_upsert_data["name"] = subject_data["name"]
-        
+
         if "name_cn" in subject_data:
             subject_upsert_data["name_cn"] = subject_data["name_cn"]
-        
+
         if "type" in subject_data:
             try:
                 subject_upsert_data["type"] = SubjectType(subject_data["type"])
             except ValueError:
                 logger.warning(f"未知的Subject类型: {subject_data['type']}, 将使用None")
                 subject_upsert_data["type"] = None
-        
+
         if "date" in subject_data:
             subject_upsert_data["date"] = subject_data["date"]
-        
+
         if "platform" in subject_data:
             subject_upsert_data["platform"] = subject_data["platform"]
-        
+
         if "images" in subject_data and isinstance(subject_data["images"], dict):
             subject_upsert_data["images"] = subject_data["images"]
             # 如果存在common图片，使用它作为image字段
             if "common" in subject_data["images"]:
                 subject_upsert_data["image"] = subject_data["images"]["common"]
-        
+
         if "image" in subject_data:
             subject_upsert_data["image"] = subject_data["image"]
-        
+
         if "summary" in subject_data or "short_summary" in subject_data:
-            subject_upsert_data["summary"] = subject_data.get("summary", "") or subject_data.get("short_summary", "")
-        
+            subject_upsert_data["summary"] = subject_data.get(
+                "summary", ""
+            ) or subject_data.get("short_summary", "")
+
         if "tags" in subject_data and isinstance(subject_data["tags"], list):
             subject_upsert_data["tags"] = subject_data["tags"]
             # 从tags列表中提取name字段作为meta_tags
@@ -193,40 +220,40 @@ def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") 
                     meta_tags.append(tag["name"])
             if meta_tags:
                 subject_upsert_data["meta_tags"] = meta_tags
-        
+
         if "meta_tags" in subject_data and isinstance(subject_data["meta_tags"], list):
             subject_upsert_data["meta_tags"] = subject_data["meta_tags"]
-        
+
         if "infobox" in subject_data and isinstance(subject_data["infobox"], list):
             subject_upsert_data["infobox"] = subject_data["infobox"]
-        
+
         if "rating" in subject_data and isinstance(subject_data["rating"], dict):
             subject_upsert_data["rating"] = subject_data["rating"]
-        
-        if "collection" in subject_data and isinstance(subject_data["collection"], dict):
+
+        if "collection" in subject_data and isinstance(
+            subject_data["collection"], dict
+        ):
             subject_upsert_data["collection"] = subject_data["collection"]
-        
+
         if "eps" in subject_data:
             subject_upsert_data["eps"] = subject_data["eps"]
-        
+
         if "volumes" in subject_data:
             subject_upsert_data["volumes"] = subject_data["volumes"]
-        
+
         if "series" in subject_data:
             subject_upsert_data["series"] = subject_data["series"]
-        
+
         if "locked" in subject_data:
             subject_upsert_data["locked"] = subject_data["locked"]
-        
+
         if "nsfw" in subject_data:
             subject_upsert_data["nsfw"] = subject_data["nsfw"]
-        
+
         # 如果只有score字段，创建rating字典
         if "score" in subject_data and not subject_upsert_data.get("rating"):
-            subject_upsert_data["rating"] = {
-                "score": subject_data["score"]
-            }
-        
+            subject_upsert_data["rating"] = {"score": subject_data["score"]}
+
         # 使用SubjectUpsert进行验证和转换
         try:
             subject = SubjectUpsert(**subject_upsert_data)
@@ -235,12 +262,9 @@ def bangumi_subject_to_subjectlist(data: Dict[str, Any], source: str="bangumi") 
             # 如果验证失败，跳过该条目
             logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
             continue
-    
+
     # 返回转换后的SubjectUpsertList对象
-    return SubjectUpsertList(
-        total=len(subjects),
-        items=subjects
-    )
+    return SubjectUpsertList(total=len(subjects), items=subjects)
 
 
 def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList:
@@ -248,66 +272,66 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
     将 Bangumi 收藏数据格式转换为 SubjectUpsertList 格式
     输入参考 bangumi_collection.json
     输出使用 SubjectUpsertList schema
-    
+
     Args:
         data: 原始 Bangumi 收藏 JSON 数据
-        
+
     Returns:
         转换后的 SubjectUpsertList 对象
     """
     # 确保data是字典类型
     if not isinstance(data, dict):
         raise ValueError("Input data must be a dictionary")
-    
+
     # 提取data数组，支持直接传入data字段或完整的JSON结构
     raw_items = data.get("data", [])
     if not isinstance(raw_items, list):
         raw_items = []
-    
+
     subjects = []
-    
+
     for item in raw_items:
         # 确保item是字典类型
         if not isinstance(item, dict):
             continue
-        
+
         # 提取subject数据
         subject_data = item.get("subject", {})
-        
+
         # 确保subject_data是字典类型
         if not isinstance(subject_data, dict):
             continue
-        
+
         # 处理不同格式的差异
         # 设置默认值
-        subject_upsert_data = {
+        subject_upsert_data: dict[str, Any] = {
             "source": "bangumi",
-            "source_id": str(subject_data.get("id", ""))
+            "source_id": str(subject_data.get("id", "")),
         }
-        
+
         # 处理其他字段
         if "name" in subject_data:
             subject_upsert_data["name"] = subject_data["name"]
-        
+
         if "name_cn" in subject_data:
             subject_upsert_data["name_cn"] = subject_data["name_cn"]
-        
+
         if "type" in subject_data:
             try:
                 subject_upsert_data["type"] = SubjectType(subject_data["type"])
             except ValueError:
                 logger.warning(f"未知的Subject类型: {subject_data['type']}, 将使用None")
                 subject_upsert_data["type"] = None
-        
+
         if "date" in subject_data:
             subject_upsert_data["date"] = subject_data["date"]
-        
+
         if "images" in subject_data and isinstance(subject_data["images"], dict):
             subject_upsert_data["images"] = subject_data["images"]
             # 如果存在common图片，使用它作为image字段
             if "common" in subject_data["images"]:
                 subject_upsert_data["image"] = subject_data["images"]["common"]
-        
+
         if "tags" in subject_data and isinstance(subject_data["tags"], list):
             subject_upsert_data["tags"] = subject_data["tags"]
             # 从tags列表中提取name字段作为meta_tags
@@ -317,22 +341,22 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
                     meta_tags.append(tag["name"])
             if meta_tags:
                 subject_upsert_data["meta_tags"] = meta_tags
-        
+
         if "score" in subject_data:
             # 如果只有score字段，创建rating字典
-            subject_upsert_data["rating"] = {
-                "score": subject_data["score"]
-            }
-        
+            subject_upsert_data["rating"] = {"score": subject_data["score"]}
+
         if "eps" in subject_data:
             subject_upsert_data["eps"] = subject_data["eps"]
-        
+
         if "volumes" in subject_data:
             subject_upsert_data["volumes"] = subject_data["volumes"]
-        
-        if "collection" in subject_data and isinstance(subject_data["collection"], dict):
+
+        if "collection" in subject_data and isinstance(
+            subject_data["collection"], dict
+        ):
             subject_upsert_data["collection"] = subject_data["collection"]
-        
+
         # 使用SubjectUpsert进行验证和转换
         try:
             subject = SubjectUpsert(**subject_upsert_data)
@@ -341,85 +365,86 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
             # 如果验证失败，跳过该条目
             logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
             continue
-    
+
     # 返回转换后的SubjectUpsertList对象
-    return SubjectUpsertList(
-        total=len(subjects),
-        items=subjects
-    )
+    return SubjectUpsertList(total=len(subjects), items=subjects)
 
 
-def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int, source: str="bangumi") -> CollectionUpsertList:
+def bangumi_collection_to_collectionlist(
+    data: Dict[str, Any], user_id: int, source: str = "bangumi"
+) -> CollectionUpsertList:
     """
     将 Bangumi 收藏数据格式转换为 CollectionUpsertList 格式
     输入参考 bangumi_collection.json
     输出使用 CollectionUpsertList schema
-    
+
     Args:
         data: 原始 Bangumi 收藏 JSON 数据
         user_id: 用户ID，用于设置 CollectionUpsert 中的 user_id 字段
-        
+
     Returns:
         转换后的 CollectionUpsertList 对象
     """
     # 确保data是字典类型
     if not isinstance(data, dict):
         raise ValueError("Input data must be a dictionary")
-    
+
     # 提取data数组，支持直接传入data字段或完整的JSON结构
     raw_items = data.get("data", [])
     if not isinstance(raw_items, list):
         raw_items = []
-    
+
     collections = []
-    
+
     for item in raw_items:
         # 确保item是字典类型
         if not isinstance(item, dict):
             continue
-        
+
         # 提取subject数据
         subject_data = item.get("subject", {})
-        
+
         # 确保subject_data是字典类型
         if not isinstance(subject_data, dict):
             continue
-        
+
         # 处理不同格式的差异
         # 设置默认值
-        collection_upsert_data = {
+        collection_upsert_data: dict[str, Any] = {
             "user_id": user_id,
             "source": source,
             "source_id": str(item.get("subject_id", subject_data.get("id", ""))),
-            "type": CollectionStatus(2)  # 默认值为"看过"
+            "type": CollectionStatus(2),  # 默认值为"看过"
         }
-        
+
         # 处理其他字段
         if "type" in item:
             try:
                 collection_upsert_data["type"] = CollectionStatus(item["type"])
             except ValueError:
-                logger.warning(f"未知的Collection类型: {item['type']}, 将使用默认值 2 (看过)")
+                logger.warning(
+                    f"未知的Collection类型: {item['type']}, 将使用默认值 2 (看过)"
+                )
                 collection_upsert_data["type"] = CollectionStatus(2)
-        
+
         if "rate" in item:
             collection_upsert_data["rate"] = item["rate"]
-        
+
         if "comment" in item:
             collection_upsert_data["comment"] = item["comment"]
-        
+
         if "private" in item:
             collection_upsert_data["private"] = item["private"]
-        
+
         if "tags" in item and isinstance(item["tags"], list):
             collection_upsert_data["tags"] = item["tags"]
-        
+
         if "vol_status" in item:
             collection_upsert_data["vol_status"] = item["vol_status"]
-        
+
         if "ep_status" in item:
             collection_upsert_data["ep_status"] = item["ep_status"]
-        
+
         if "subject_type" in item:
             collection_upsert_data["subject_type"] = item["subject_type"]
         elif "type" in subject_data:
@@ -429,6 +454,7 @@ def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int, sou
             try:
                 # 尝试将updated_at转换为datetime对象
                 from datetime import datetime, timezone
+
                 updated_at_value = item["updated_at"]
                 if isinstance(updated_at_value, str):
                     # 解析ISO格式的字符串（Bangumi API返回的格式）
@@ -440,32 +466,40 @@ def bangumi_collection_to_collectionlist(data: Dict[str, Any], user_id: int, sou
                 elif isinstance(updated_at_value, datetime):
                     # 已经是datetime对象，确保移除时区信息
                     if updated_at_value.tzinfo:
-                        updated_at_value = updated_at_value.astimezone(timezone.utc).replace(tzinfo=None)
+                        updated_at_value = updated_at_value.astimezone(
+                            timezone.utc
+                        ).replace(tzinfo=None)
                     collection_upsert_data["updated_at"] = updated_at_value
                 else:
                     # 其他类型，使用当前UTC时间（不带时区信息）
-                    logger.warning(f"updated_at类型不正确，使用当前UTC时间: {type(updated_at_value)}")
-                    collection_upsert_data["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
+                    logger.warning(
+                        f"updated_at类型不正确，使用当前UTC时间: {type(updated_at_value)}"
+                    )
+                    collection_upsert_data["updated_at"] = datetime.now(
+                        timezone.utc
+                    ).replace(tzinfo=None)
             except Exception as e:
                 # 如果处理失败，使用当前UTC时间（不带时区信息）
                 from datetime import datetime, timezone
+
                 logger.warning(f"处理updated_at失败: {e}")
-                collection_upsert_data["updated_at"] = datetime.now(timezone.utc).replace(tzinfo=None)
-        
+                collection_upsert_data["updated_at"] = datetime.now(
+                    timezone.utc
+                ).replace(tzinfo=None)
+
         # 使用CollectionUpsert进行验证和转换
         try:
             collection = CollectionUpsert(**collection_upsert_data)
             collections.append(collection)
         except Exception as e:
             # 如果验证失败，跳过该条目
-            logger.warning(f"验证Collection数据失败: {e}, 数据: {collection_upsert_data}")
+            logger.warning(
+                f"验证Collection数据失败: {e}, 数据: {collection_upsert_data}"
+            )
             continue
-    
+
     # 返回转换后的CollectionUpsertList对象
-    return CollectionUpsertList(
-        total=len(collections),
-        collections=collections
-    )
+    return CollectionUpsertList(total=len(collections), collections=collections)
 
 
 def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -473,10 +507,10 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
     将豆瓣数据转换为 Bangumi 收藏格式列表
     输入参考 tofu[208745052].json
     输出参考 bangumi_collection.json
-    
+
     Args:
         douban_data: 豆瓣数据（字典格式）
-        
+
     Returns:
         Bangumi 收藏格式的 JSON 数据列表
     """
@@ -486,31 +520,25 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
         "doing": 3,
     }
 
-    subject_type_map = {
-        "book": 1,
-        "movie": 6,
-        "tv": 6,
-        "music": 3,
-        "game": 4
-    }
-    
+    subject_type_map = {"book": 1, "movie": 6, "tv": 6, "music": 3, "game": 4}
+
     # 提取interest数组
     interest_items = douban_data.get("interest", [])
     if not isinstance(interest_items, list):
         interest_items = []
-    
+
     bangumi_items = []
-    
+
     for item in interest_items:
         # 确保item是字典类型
         if not isinstance(item, dict):
             continue
-        
+
         # 提取interest数据
         db_interest = item.get("interest", {})
         if not isinstance(db_interest, dict):
             continue
-        
+
         # 获取状态和类型
         db_status = db_interest.get("status", "")
         bgm_type = status_map.get(db_status, 2)
@@ -519,25 +547,27 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
         db_subject = db_interest.get("subject", {})
         if not isinstance(db_subject, dict):
             continue
-        
+
         # 获取subject类型
         db_subject_type = db_subject.get("type", "")
         bgm_subject_type = subject_type_map.get(db_subject_type, 1)
 
         if db_subject_type not in subject_type_map:
-            logger.warning(f"无法识别的豆瓣类型: '{db_subject_type}'，使用默认值 1 (书籍)")
+            logger.warning(
+                f"无法识别的豆瓣类型: '{db_subject_type}'，使用默认值 1 (书籍)"
+            )
 
         # 处理图片
         pic = db_subject.get("pic", {})
         if not isinstance(pic, dict):
             pic = {}
-        
+
         large_url = pic.get("large", "")
         normal_url = pic.get("normal", "")
         small_url = pic.get("small", "")
         medium_url = pic.get("medium", "")
         grid_url = pic.get("grid", "")
-        
+
         # 处理评分
         rating = db_interest.get("rating", {})
         if isinstance(rating, dict):
@@ -552,17 +582,15 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
         bangumi_tags = []
         for tag in db_tags:
             if isinstance(tag, str):
-                bangumi_tags.append({
-                    "name": tag,
-                    "count": 0,
-                    "total_cont": 0
-                })
+                bangumi_tags.append({"name": tag, "count": 0, "total_cont": 0})
             elif isinstance(tag, dict):
-                bangumi_tags.append({
-                    "name": tag.get("name", ""),
-                    "count": tag.get("count", 0),
-                    "total_cont": tag.get("total_cont", 0)
-                })
+                bangumi_tags.append(
+                    {
+                        "name": tag.get("name", ""),
+                        "count": tag.get("count", 0),
+                        "total_cont": tag.get("total_cont", 0),
+                    }
+                )
 
         # 构造bangumi格式数据
         bangumi_item = {
@@ -570,25 +598,29 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
             "comment": db_interest.get("comment", "") or None,
             "tags": db_interest.get("tags", []),
             "subject": {
-                "date": db_subject.get("pubdate", [""])[0] if isinstance(db_subject.get("pubdate"), list) else db_subject.get("pubdate", ""),
+                "date": db_subject.get("pubdate", [""])[0]
+                if isinstance(db_subject.get("pubdate"), list)
+                else db_subject.get("pubdate", ""),
                 "images": {
                     "large": large_url,
                     "common": normal_url,
                     "medium": medium_url,
                     "small": small_url,
-                    "grid": grid_url
+                    "grid": grid_url,
                 },
                 "name": db_subject.get("title", ""),
                 "name_cn": db_subject.get("title", ""),
                 "short_summary": db_subject.get("intro", ""),
                 "tags": bangumi_tags,
-                "score": db_subject.get("rating", {}).get("value", 0) if isinstance(db_subject.get("rating"), dict) else 0,
+                "score": db_subject.get("rating", {}).get("value", 0)
+                if isinstance(db_subject.get("rating"), dict)
+                else 0,
                 "id": int(db_subject.get("id", 0)),
                 "type": bgm_subject_type,
                 "eps": 0,
                 "volumes": 0,
                 "collection_total": 0,
-                "rank": 0
+                "rank": 0,
             },
             "subject_id": int(db_subject.get("id", 0)),
             "vol_status": 0,
@@ -596,81 +628,81 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
             "subject_type": bgm_subject_type,
             "type": bgm_type,
             "rate": rate,
-            "private": db_interest.get("is_private", False)
+            "private": db_interest.get("is_private", False),
         }
-        
+
         bangumi_items.append(bangumi_item)
-    
+
     # 返回Bangumi格式的列表
-    return {
-        "data": bangumi_items
-    }
+    return {"data": bangumi_items}
 
 
 def douban_to_subjectlist(douban_data: Dict[str, Any]) -> SubjectUpsertList:
     """
     将豆瓣数据转换为 SubjectUpsertList 格式
     先转换为 Bangumi 收藏格式，再调用 bangumi_subject_to_subjectlist
-    
+
     Args:
         douban_data: 豆瓣数据（字典格式）
-        
+
     Returns:
         转换后的 SubjectUpsertList 对象
     """
     # 先转换为 Bangumi 收藏格式
     bangumi_data = douban_to_bangumi_list(douban_data)
-    
+
     # 调用 bangumi_subject_to_subjectlist 进行转换
     return bangumi_subject_to_subjectlist(bangumi_data)
 
 
-def douban_to_collectionlist(douban_data: Dict[str, Any], user_id: int) -> CollectionUpsertList:
+def douban_to_collectionlist(
+    douban_data: Dict[str, Any], user_id: int
+) -> CollectionUpsertList:
     """
     将豆瓣数据转换为 CollectionUpsertList 格式
     先转换为 Bangumi 收藏格式，再调用 bangumi_collection_to_collectionlist
-    
+
     Args:
         douban_data: 豆瓣数据（字典格式）
         user_id: 用户ID，用于设置 CollectionUpsert 中的 user_id 字段
-        
+
     Returns:
         转换后的 CollectionUpsertList 对象
     """
     # 先转换为 Bangumi 收藏格式
     bangumi_data = douban_to_bangumi_list(douban_data)
-    
+
     # 调用 bangumi_collection_to_collectionlist 进行转换
     return bangumi_collection_to_collectionlist(bangumi_data, user_id)
 
 
 def collection_with_subject_to_unified(
-    collection_with_subject: CollectionWithSubject
+    collection_with_subject: CollectionWithSubject,
 ) -> UnifiedCollectionSubject:
     """
     将 CollectionWithSubject 转换为 UnifiedCollectionSubject
-    
+
     Args:
         collection_with_subject: 收藏及其关联条目信息
-        
+
     Returns:
         转换后的统一视图模型对象
     """
     return UnifiedCollectionSubject(
         subject=collection_with_subject.subject,
-        collection=collection_with_subject.collection
+        collection=collection_with_subject.collection,
     )
 
 
 def collection_with_subject_list_to_unified_list(
-    collection_with_subject_list: CollectionWithSubjectList
+    collection_with_subject_list: CollectionWithSubjectList,
 ) -> UnifiedList:
     """
     将 CollectionWithSubjectList 转换为 UnifiedList
-    
+
     Args:
         collection_with_subject_list: 收藏及其关联条目信息列表
-        
+
     Returns:
         转换后的统一视图模型列表
     """
@@ -678,39 +710,36 @@ def collection_with_subject_list_to_unified_list(
         collection_with_subject_to_unified(item)
         for item in collection_with_subject_list.items
     ]
-    return UnifiedList(
-        total=collection_with_subject_list.total,
-        items=items
-    )
+    return UnifiedList(total=collection_with_subject_list.total, items=items)
 
 
 def subject_with_collection_to_unified(
-    subject_with_collection: SubjectWithCollection
+    subject_with_collection: SubjectWithCollection,
 ) -> UnifiedCollectionSubject:
     """
     将 SubjectWithCollection 转换为 UnifiedCollectionSubject
-    
+
     Args:
         subject_with_collection: 条目及其关联收藏信息
-        
+
     Returns:
         转换后的统一视图模型对象
     """
     return UnifiedCollectionSubject(
         subject=subject_with_collection.subject,
-        collection=subject_with_collection.collection
+        collection=subject_with_collection.collection,
     )
 
 
 def subject_with_collection_list_to_unified_list(
-    subject_with_collection_list: SubjectWithCollectionList
+    subject_with_collection_list: SubjectWithCollectionList,
 ) -> UnifiedList:
     """
     将 SubjectWithCollectionList 转换为 UnifiedList
-    
+
     Args:
         subject_with_collection_list: 条目及其关联收藏信息列表
-        
+
     Returns:
         转换后的统一视图模型列表
     """
@@ -718,10 +747,7 @@ def subject_with_collection_list_to_unified_list(
         subject_with_collection_to_unified(item)
         for item in subject_with_collection_list.items
     ]
-    return UnifiedList(
-        total=subject_with_collection_list.total,
-        items=items
-    )
+    return UnifiedList(total=subject_with_collection_list.total, items=items)
 
 
 def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
@@ -729,29 +755,29 @@ def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
     将 Bangumi 搜索响应数据转换为 UnifiedList 格式
     输入参考 Bangumi API 搜索响应
     输出使用 UnifiedList schema
-    
+
     Args:
         data: 原始 Bangumi 搜索响应 JSON 数据
-        
+
     Returns:
         转换后的 UnifiedList 对象
     """
     # 确保data是字典类型
     if not isinstance(data, dict):
         raise ValueError("Input data must be a dictionary")
-    
+
     # 提取data数组，支持直接传入data字段或完整的JSON结构
     raw_items = data.get("data", [])
     if not isinstance(raw_items, list):
         raw_items = []
-    
+
     items = []
-    
+
     for item in raw_items:
         # 确保item是字典类型
         if not isinstance(item, dict):
             continue
-        
+
         # 处理类型
         subject_type = item.get("type")
         try:
@@ -759,7 +785,7 @@ def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
         except ValueError:
             logger.warning(f"未知的Subject类型: {subject_type}, 将使用None")
             type_enum = None
-        
+
         # 构造SubjectRead数据
         subject_read = SubjectRead(
             id=0,  # 默认ID，数据库中会生成
@@ -767,7 +793,7 @@ def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
             source_id=str(item.get("id", "")),
             name=item.get("name", ""),
             name_cn=item.get("name_cn", ""),
-            type=type_enum,
+            type=type_enum or SubjectType.ANIME,
             summary=item.get("summary"),
             date=item.get("date", ""),
             platform=item.get("platform", ""),
@@ -784,58 +810,55 @@ def bangumi_search_to_unified_list(data: Dict[str, Any]) -> UnifiedList:
             locked=item.get("locked", False),
             nsfw=item.get("nsfw", False),
         )
-        
+
         # 构造UnifiedCollectionSubject对象
         unified_item = UnifiedCollectionSubject(
             subject=subject_read,
-            collection=None  # 搜索响应中可能没有收藏数据
+            collection=None,  # 搜索响应中可能没有收藏数据
         )
-        
+
         items.append(unified_item)
-    
+
     # 返回转换后的UnifiedList对象
-    return UnifiedList(
-        total=len(items),
-        items=items
-    )
+    return UnifiedList(total=len(items), items=items)
 
 
 def bangumi_calendar_to_schedule_upsert_list(
-    bangumi_calendar: BangumiCalendar, 
-    user_id: int
+    bangumi_calendar: BangumiCalendar, user_id: int
 ) -> ScheduleUpsertList:
     """
     将 BangumiCalendar 转换为 ScheduleUpsertList
-    
+
     Args:
         bangumi_calendar: Bangumi 日历数据
         user_id: 用户ID，用于设置 ScheduleUpsert 中的 user_id 字段
-    
+
     Returns:
         转换后的 ScheduleUpsertList 对象
     """
     schedules = []
-    
+
     for day in bangumi_calendar.root:
         # 遍历当天的所有番剧
         for item in day.items:
             # 解析星期几（后端返回的是 1-7，需要转换为 0-6，0=周日）
-            weekday_id = day.weekday.get('id', 1)
+            weekday_id = day.weekday.get("id", 1)
             day_of_week = (weekday_id - 1) % 7
-            
+
             # 解析时间
             start_time_obj = time(0, 0)  # 默认时间
             if item.air_date:
                 try:
                     # 尝试从 air_date 中提取时间
                     import re
-                    time_match = re.search(r'(\d{2}:\d{2})', item.air_date)
+
+                    time_match = re.search(r"(\d{2}:\d{2})", item.air_date)
                     if time_match:
-                        hour, minute = map(int, time_match.group(1).split(':'))
+                        hour, minute = map(int, time_match.group(1).split(":"))
                         start_time_obj = time(hour, minute)
                 except Exception as e:
                     logger.warning(f"解析时间失败: {e}")
-            
+
             # 构造 ScheduleUpsert 数据
             schedule_upsert_data = {
                 "user_id": user_id,
@@ -846,45 +869,45 @@ def bangumi_calendar_to_schedule_upsert_list(
                 "watch_day": None,  # 默认不设置观看星期
                 "watch_time": None,  # 默认不设置观看时间
                 "duration": None,  # 默认不设置观看周期
-                "watch_type": WatchType.NEW  # 默认为新番
+                "watch_type": WatchType.NEW,  # 默认为新番
             }
-            
+
             # 使用 ScheduleUpsert 进行验证和转换
             try:
                 schedule = ScheduleUpsert(**schedule_upsert_data)
                 schedules.append(schedule)
             except Exception as e:
                 # 如果验证失败，跳过该条目
-                logger.warning(f"验证Schedule数据失败: {e}, 数据: {schedule_upsert_data}")
+                logger.warning(
+                    f"验证Schedule数据失败: {e}, 数据: {schedule_upsert_data}"
+                )
                 continue
-    
+
     # 返回转换后的 ScheduleUpsertList 对象
-    return ScheduleUpsertList(
-        items=schedules
-    )
+    return ScheduleUpsertList(items=schedules)
 
 
 def bangumi_calendar_to_subject_upsert_list(
-    bangumi_calendar: BangumiCalendar
+    bangumi_calendar: BangumiCalendar,
 ) -> SubjectUpsertList:
     """
     将 BangumiCalendar 转换为 SubjectUpsertList
-    
+
     Args:
         bangumi_calendar: Bangumi 日历数据
-    
+
     Returns:
         转换后的 SubjectUpsertList 对象
     """
     subjects = []
-    
+
     for day in bangumi_calendar.root:
         # 遍历当天的所有番剧
         for item in day.items:
             # 解析星期几（后端返回的是 1-7，需要转换为 1-7，1=周一）
-            weekday_id = day.weekday.get('id', 1)
+            weekday_id = day.weekday.get("id", 1)
             logger.info(f"解析星期几: {weekday_id}")
-            
+
             # 构造 SubjectUpsert 数据
             subject_upsert_data = {
                 "source": "bangumi",
@@ -893,14 +916,16 @@ def bangumi_calendar_to_subject_upsert_list(
                 "name_cn": item.name_cn or "",
                 "summary": item.summary or "",
                 "images": item.images.model_dump() if item.images else {},
-                "image": item.images.common if item.images and item.images.common else "",
+                "image": item.images.common
+                if item.images and item.images.common
+                else "",
                 "rating": item.rating.model_dump() if item.rating else {},
                 "type": SubjectType.ANIME,  # 日历中的条目都是动画
-                "air_weekday": weekday_id  # 添加 air_weekday 字段
+                "air_weekday": weekday_id,  # 添加 air_weekday 字段
             }
-            
+
             logger.info(f"构造 SubjectUpsert 数据: {subject_upsert_data}")
-            
+
             # 使用 SubjectUpsert 进行验证和转换
             try:
                 subject = SubjectUpsert(**subject_upsert_data)
@@ -909,11 +934,6 @@ def bangumi_calendar_to_subject_upsert_list(
                 # 如果验证失败，跳过该条目
                 logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
                 continue
-    
+
     # 返回转换后的 SubjectUpsertList 对象
-    return SubjectUpsertList(
-        total=len(subjects),
-        items=subjects
-    )
-
-
+    return SubjectUpsertList(total=len(subjects), items=subjects)

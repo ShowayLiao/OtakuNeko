@@ -4,7 +4,9 @@ from openai import AsyncOpenAI
 
 
 class VectorRetriever:
-    def __init__(self, api_key: str, base_url: str, model: str = "text-embedding-3-small"):
+    def __init__(
+        self, api_key: str, base_url: str, model: str = "text-embedding-3-small"
+    ):
         self.client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self.model = model
 
@@ -21,7 +23,9 @@ class VectorRetriever:
         response = await self.client.embeddings.create(model=self.model, input=texts)
         return [item.embedding for item in response.data]
 
-    async def search(self, query: str, facts: list[dict], top_k: int = 5) -> list[tuple[int, float]]:
+    async def search(
+        self, query: str, facts: list[dict], top_k: int = 5
+    ) -> list[tuple[int, float]]:
         no_emb = [(i, f) for i, f in enumerate(facts) if not f.get("embedding")]
         if no_emb:
             texts = [f["content"] for _, f in no_emb]
@@ -30,6 +34,8 @@ class VectorRetriever:
                 facts[i]["embedding"] = emb
 
         query_emb = (await self.embed([query]))[0]
-        scores = [self.cosine_similarity(query_emb, f.get("embedding", [])) for f in facts]
+        scores = [
+            self.cosine_similarity(query_emb, f.get("embedding", [])) for f in facts
+        ]
         ranked = sorted(enumerate(scores), key=lambda x: x[1], reverse=True)
         return [(int(i), float(s)) for i, s in ranked[:top_k] if s > 0]
