@@ -406,7 +406,9 @@ class SqlTaskRepository:
                     from app.harness.scheduler.time import next_slot
 
                     task_def.next_run = next_slot(
-                        task_def.schedule_expr, stored.scheduled_slot, task_def.timezone
+                        task_def.schedule_expr,
+                        _aware(stored.scheduled_slot),
+                        task_def.timezone,
                     )
                 await session.commit()
                 return True

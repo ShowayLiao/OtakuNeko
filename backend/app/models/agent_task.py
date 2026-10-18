@@ -16,6 +16,8 @@ from pydantic import model_validator
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
 
+from app.db.types import UTCNaiveDateTime
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -37,16 +39,19 @@ class AgentTaskDef(SQLModel, table=True):
     )  # cron-like: "0 9 * * 1"
     timezone: str = Field(default="Asia/Shanghai")
     enabled: bool = Field(default=True)
-    deleted_at: Optional[datetime] = Field(default=None)
-    next_run: Optional[datetime] = Field(default=None)
+    # Preserve the historical UTC-naive schema; normalize aware values at binding.
+    deleted_at: Optional[datetime] = Field(default=None, sa_type=UTCNaiveDateTime)
+    next_run: Optional[datetime] = Field(default=None, sa_type=UTCNaiveDateTime)
     catch_up: str = Field(default="latest", nullable=False)  # skip | latest | all
     policy: str = Field(
         default="{}", nullable=False
     )  # JSON policy, validated at creation
     idempotency_key: Optional[str] = Field(default=None, index=True)
-    created_at: datetime = Field(default_factory=_utc_now)
+    created_at: datetime = Field(default_factory=_utc_now, sa_type=UTCNaiveDateTime)
     updated_at: datetime = Field(
-        default_factory=_utc_now, sa_column_kwargs={"onupdate": _utc_now}
+        default_factory=_utc_now,
+        sa_type=UTCNaiveDateTime,
+        sa_column_kwargs={"onupdate": _utc_now},
     )
 
     def __init__(self, **data: Any) -> None:
@@ -82,18 +87,20 @@ class AgentTaskRun(SQLModel, table=True):
         foreign_key="agent_task_def.id", index=True, nullable=False
     )
     user_id: int = Field(foreign_key="users.id", index=True, nullable=False)
-    scheduled_slot: datetime = Field(nullable=False)  # the UTC slot this run belongs to
+    scheduled_slot: datetime = Field(
+        nullable=False, sa_type=UTCNaiveDateTime
+    )  # the UTC slot this run belongs to
     attempt: int = Field(default=0)
     lease_id: Optional[str] = Field(default=None)
-    lease_expires_at: Optional[datetime] = Field(default=None)
+    lease_expires_at: Optional[datetime] = Field(default=None, sa_type=UTCNaiveDateTime)
     status: str = Field(
         default="pending"
     )  # pending | running | success | failed | cancelled
     trace_id: Optional[str] = Field(default=None)
     error_category: Optional[str] = Field(default=None)
-    started_at: Optional[datetime] = Field(default=None)
-    finished_at: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=_utc_now)
+    started_at: Optional[datetime] = Field(default=None, sa_type=UTCNaiveDateTime)
+    finished_at: Optional[datetime] = Field(default=None, sa_type=UTCNaiveDateTime)
+    created_at: datetime = Field(default_factory=_utc_now, sa_type=UTCNaiveDateTime)
 
 
 _CRON_TOKEN = re.compile(r"^(\*|\d{1,2})(/(\d{1,2}))?(,((\*|\d{1,2})(/(\d{1,2}))?))*$")
