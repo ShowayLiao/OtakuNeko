@@ -1,7 +1,7 @@
 from collections import Counter
 from typing import Any, cast
 
-from sqlalchemy import func, select, and_
+from sqlalchemy import func, select, and_, case
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi_cache.decorator import cache
 
@@ -131,7 +131,13 @@ async def get_user_stats(user_id: int, db: AsyncSession) -> DashboardStats:
 
 def _effective_subject_type():
     """Use the denormalized collection type, falling back to Subject.type."""
-    return func.coalesce(func.nullif(Collection.subject_type, 0), Subject.type)
+    # Subject.type is a native enum on PostgreSQL; normalize it to the integer
+    # collection contract before COALESCE instead of mixing incompatible types.
+    subject_type_number = case(
+        *((_SUBJECT_TYPE == kind, int(kind)) for kind in SubjectType),
+        else_=None,
+    )
+    return func.coalesce(func.nullif(Collection.subject_type, 0), subject_type_number)
 
 
 def _subject_tag_names(meta_tags, tags) -> set[str]:
