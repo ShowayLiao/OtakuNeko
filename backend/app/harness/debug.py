@@ -7,7 +7,13 @@ resume and replay use their existing Runtime entrypoints.
 """
 
 from app.harness.budget import CancellationToken, RunBudget
-from app.harness.contracts import ContractModel, ExecutionContext, RunEvent, RunRequest
+from app.harness.contracts import (
+    ContractModel,
+    ExecutionContext,
+    RunEvent,
+    RunRequest,
+    termination_reason_for,
+)
 from app.harness.runtime import AgentRuntime
 from app.harness.task import AgentTask
 
@@ -19,6 +25,7 @@ class DebugRunReport(ContractModel):
     principal_id: int
     status: str
     error_code: str | None = None
+    termination_reason: str | None = None
     events: list[RunEvent]
 
 
@@ -96,10 +103,24 @@ async def run_debug(
             for item in page
         )
         after_sequence = page[-1].sequence
+    reason = next(
+        (
+            item.payload["termination_reason"]
+            for item in reversed(events)
+            if item.event_type
+            in {"run.succeeded", "run.failed", "run.cancelled", "run.abandoned"}
+            and isinstance(item.payload.get("termination_reason"), str)
+            and item.payload["termination_reason"].strip()
+        ),
+        None,
+    )
+    if reason is None and stored.status != "paused":
+        reason = termination_reason_for(stored.status, stored.error_code)
     return DebugRunReport(
         run_id=stored.run_id,
         principal_id=principal_id,
         status=stored.status,
         error_code=stored.error_code,
+        termination_reason=reason,
         events=events,
     )

@@ -3,7 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.harness.authority import reject_runtime_owned_fields
 
@@ -113,3 +113,25 @@ class RunResult(ContractModel):
     status: Literal["completed", "failed", "cancelled", "timeout"]
     content: str | None = None
     error_code: ErrorCode | None = None
+    termination_reason: str | None = None
+
+    @model_validator(mode="after")
+    def populate_termination_reason(self) -> "RunResult":
+        # Old v1 callers may omit the field; every validated result emits it.
+        if not self.termination_reason or not self.termination_reason.strip():
+            self.termination_reason = termination_reason_for(
+                self.status, self.error_code
+            )
+        return self
+
+
+def termination_reason_for(
+    status: str, error_code: ErrorCode | str | None = None
+) -> str:
+    """Safe fallback for old results/events that predate explicit reasons."""
+    if status in {"completed", "succeeded"}:
+        return "completed"
+    if status in {"cancelled", "timeout", "abandoned"}:
+        return status
+    code = error_code.value if isinstance(error_code, ErrorCode) else error_code
+    return code if code in {item.value for item in ErrorCode} else "failed"

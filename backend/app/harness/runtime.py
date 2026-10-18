@@ -30,6 +30,7 @@ from app.harness.contracts import (
     ExecutionContext,
     RunEvent,
     RunResult,
+    termination_reason_for,
 )
 from app.harness.decision_parser import DecisionParseError, DecisionParser
 from app.harness.dispatcher import Dispatcher
@@ -57,6 +58,24 @@ _DECISION_REPAIR_PROMPT = (
     "Return one valid JSON Decision object only. "
     "Do not include markdown, commentary, or reasoning outside the JSON object."
 )
+
+_TERMINAL_EVENTS = {"run_completed", "run_failed", "run_cancelled", "run_timeout"}
+_DURABLE_TERMINAL_EVENTS = {
+    "run.succeeded",
+    "run.failed",
+    "run.cancelled",
+    "run.abandoned",
+}
+
+
+def _budget_termination_reason(exc: BudgetExceededError) -> str:
+    return {
+        "steps": "max_steps",
+        "model_calls": "max_model_calls",
+        "tool_calls": "max_tool_calls",
+        "total_tokens": "max_total_tokens",
+        "cost_usd": "max_cost_usd",
+    }.get(exc.dimension, "budget_exceeded")
 
 
 def _tool_feedback_message(invocation: Any) -> dict[str, str]:
@@ -241,7 +260,9 @@ class AgentRuntime:
         self._checkpoint_lease: CheckpointLease | None = None
         self._canonical_sequence = 0
         self._canonical_invocations: set[str] = set()
+        self._canonical_decision_ids: set[str] = set()
         self._canonical_terminal_error_code: str | None = None
+        self._canonical_termination_reason: str | None = None
 
     @property
     def adapter_name(self) -> str:
@@ -379,7 +400,9 @@ class AgentRuntime:
         """Create or resume the durable Run header and its first fact."""
         self._canonical_sequence = 0
         self._canonical_invocations = set()
+        self._canonical_decision_ids = set()
         self._canonical_terminal_error_code = None
+        self._canonical_termination_reason = None
         if self.run_store is None or self.event_store is None:
             return None
         try:
@@ -398,9 +421,25 @@ class AgentRuntime:
                 )
             )
             self._canonical_terminal_error_code = run.error_code
-            existing_events = await self.event_store.list_after(
-                run_id, after_sequence=0
-            )
+            existing_events = []
+            after_sequence = 0
+            while page := await self.event_store.list_after(
+                run_id, after_sequence=after_sequence, limit=1000
+            ):
+                existing_events.extend(page)
+                after_sequence = page[-1].sequence
+            for event in reversed(existing_events):
+                if event.event_type in _DURABLE_TERMINAL_EVENTS:
+                    reason = event.payload.get("termination_reason")
+                    if isinstance(reason, str) and reason.strip():
+                        self._canonical_termination_reason = reason
+                    break
+            self._canonical_decision_ids = {
+                str(event.payload["decision_id"])
+                for event in existing_events
+                if event.event_type == "model_decision"
+                and isinstance(event.payload.get("decision_id"), str)
+            }
             self._canonical_sequence = max(
                 (int(event.sequence) for event in existing_events),
                 default=0,
@@ -886,6 +925,7 @@ class AgentRuntime:
             )
             .model_dump(mode="json")
         )
+        seen_decision_ids: set[str] = set()
         try:
             for _ in range(run_budget.max_model_calls):
                 run_cancellation.raise_if_cancelled()
@@ -920,7 +960,10 @@ class AgentRuntime:
                         )
                         continue
                     return RunResult(
-                        run_id=run_id, status="failed", error_code=exc.error_code
+                        run_id=run_id,
+                        status="failed",
+                        error_code=exc.error_code,
+                        termination_reason="invalid_decision",
                     )
 
                 if decision.run_id != run_id:
@@ -929,11 +972,20 @@ class AgentRuntime:
                         status="failed",
                         error_code=ErrorCode.INVALID_REQUEST,
                     )
+                if decision.decision_id in seen_decision_ids:
+                    return RunResult(
+                        run_id=run_id,
+                        status="failed",
+                        error_code=ErrorCode.INVALID_REQUEST,
+                        termination_reason="repeated_decision",
+                    )
+                seen_decision_ids.add(decision.decision_id)
                 if decision.action in {"respond", "finish"}:
                     return RunResult(
                         run_id=run_id,
                         status="completed",
                         content=decision.content or "",
+                        termination_reason=decision.action,
                     )
 
                 messages.append(_assistant_continuation_message(model_result))
@@ -967,7 +1019,10 @@ class AgentRuntime:
                     )
                 messages.append(_tool_feedback_message(invocation))
             return RunResult(
-                run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.BUDGET_EXCEEDED,
+                termination_reason="max_model_calls",
             )
         except asyncio.CancelledError:
             return RunResult(
@@ -977,9 +1032,12 @@ class AgentRuntime:
             return RunResult(
                 run_id=run_id, status="timeout", error_code=ErrorCode.TIMEOUT
             )
-        except BudgetExceededError:
+        except BudgetExceededError as exc:
             return RunResult(
-                run_id=run_id, status="failed", error_code=ErrorCode.BUDGET_EXCEEDED
+                run_id=run_id,
+                status="failed",
+                error_code=ErrorCode.BUDGET_EXCEEDED,
+                termination_reason=_budget_termination_reason(exc),
             )
         except RunCancellationError:
             return RunResult(
@@ -1009,6 +1067,7 @@ class AgentRuntime:
                 "type": "run_failed",
                 "run_id": run_id,
                 "error_code": ErrorCode.PERMANENT.value,
+                "termination_reason": "runtime_not_configured",
             }
             return
 
@@ -1025,6 +1084,7 @@ class AgentRuntime:
                 "type": "run_failed",
                 "run_id": run_id,
                 "error_code": ErrorCode.INVALID_REQUEST.value,
+                "termination_reason": "invalid_request",
             }
             return
 
@@ -1049,6 +1109,7 @@ class AgentRuntime:
         pending_decision: AgentDecision | None = None
         pending_invocation_started = False
         parse_recovery_attempted = False
+        seen_decision_ids: set[str] = set()
         try:
             await self._acquire_checkpoint_lease(task)
             restored_state = None
@@ -1091,6 +1152,7 @@ class AgentRuntime:
                 "type": "run_failed",
                 "run_id": run_id,
                 "error_code": "checkpoint_lease_lost",
+                "termination_reason": "checkpoint_lease_lost",
             }
             return
 
@@ -1102,6 +1164,7 @@ class AgentRuntime:
                 run_id=run_id,
                 status="failed",
                 error_code=ErrorCode.PERMANENT,
+                termination_reason="persistence_error",
             )
             await self._canonical_mark_failed(run_id)
             yield {
@@ -1109,9 +1172,11 @@ class AgentRuntime:
                 "run_id": run_id,
                 "sequence": 1,
                 "error_code": ErrorCode.PERMANENT.value,
+                "termination_reason": "persistence_error",
             }
             return
         sequence = self._canonical_sequence
+        seen_decision_ids.update(self._canonical_decision_ids)
         if pending_decision is not None and approval is not None:
             if existing_status == "paused" and self.run_store is not None:
                 await self.run_store.transition(run_id, "running")
@@ -1146,11 +1211,25 @@ class AgentRuntime:
                     else self._canonical_terminal_error_code
                     or ErrorCode.PERMANENT.value
                 ),
+                "termination_reason": self._canonical_termination_reason
+                or termination_reason_for(
+                    existing_status, self._canonical_terminal_error_code
+                ),
             }
             return
 
         async def emit(event_type: str, **payload: Any) -> dict[str, Any]:
             nonlocal sequence
+            if event_type in _TERMINAL_EVENTS:
+                payload.setdefault(
+                    "termination_reason",
+                    state.terminal_result.termination_reason
+                    if state.terminal_result is not None
+                    else termination_reason_for(
+                        "completed" if event_type == "run_completed" else "failed",
+                        payload.get("error_code"),
+                    ),
+                )
             sequence += 1
             event = {
                 "type": event_type,
@@ -1488,6 +1567,7 @@ class AgentRuntime:
                             run_id=run_id,
                             status="failed",
                             error_code=exc.error_code,
+                            termination_reason="invalid_decision",
                         )
                         await self._save_checkpoint(state)
                         yield await emit(
@@ -1496,6 +1576,20 @@ class AgentRuntime:
                         )
                         return
 
+                    if decision.decision_id in seen_decision_ids:
+                        state.status = "failed"
+                        state.terminal_result = RunResult(
+                            run_id=run_id,
+                            status="failed",
+                            error_code=ErrorCode.INVALID_REQUEST,
+                            termination_reason="repeated_decision",
+                        )
+                        await self._save_checkpoint(state)
+                        yield await emit(
+                            "run_failed", error_code=ErrorCode.INVALID_REQUEST.value
+                        )
+                        return
+                    seen_decision_ids.add(decision.decision_id)
                     messages.append(_assistant_continuation_message(model_result))
                     yield await emit(
                         "model_decision",
@@ -1516,6 +1610,7 @@ class AgentRuntime:
                 else:
                     decision = pending_decision
                     pending_decision = None
+                    seen_decision_ids.add(decision.decision_id)
 
                 if decision.action in {"respond", "finish"}:
                     content = decision.content or ""
@@ -1549,6 +1644,7 @@ class AgentRuntime:
                         run_id=run_id,
                         status="completed",
                         content=content,
+                        termination_reason=decision.action,
                     )
                     await self._save_checkpoint(state)
                     yield await emit("run_completed", content=content)
@@ -1704,12 +1800,13 @@ class AgentRuntime:
             )
             await self._save_checkpoint(state)
             yield await emit("run_timeout", error_code=ErrorCode.TIMEOUT.value)
-        except BudgetExceededError:
+        except BudgetExceededError as exc:
             state.status = "failed"
             state.terminal_result = RunResult(
                 run_id=run_id,
                 status="failed",
                 error_code=ErrorCode.BUDGET_EXCEEDED,
+                termination_reason=_budget_termination_reason(exc),
             )
             await self._save_checkpoint(state)
             yield await emit("run_failed", error_code=ErrorCode.BUDGET_EXCEEDED.value)
@@ -1720,6 +1817,7 @@ class AgentRuntime:
                 run_id=run_id,
                 status="failed",
                 error_code=ErrorCode.PERMANENT,
+                termination_reason="checkpoint_lease_lost",
             )
             await self._canonical_mark_failed(
                 run_id,
@@ -1737,6 +1835,7 @@ class AgentRuntime:
                     "run_id": run_id,
                     "sequence": sequence + 1,
                     "error_code": "checkpoint_lease_lost",
+                    "termination_reason": "checkpoint_lease_lost",
                 }
         except (asyncio.CancelledError, GeneratorExit):
             state.status = "cancelled"
@@ -1756,6 +1855,7 @@ class AgentRuntime:
                 run_id=run_id,
                 status="failed",
                 error_code=ErrorCode.PERMANENT,
+                termination_reason="persistence_error",
             )
             await self._canonical_mark_failed(run_id)
             yield {
@@ -1763,6 +1863,7 @@ class AgentRuntime:
                 "run_id": run_id,
                 "sequence": sequence + 1,
                 "error_code": ErrorCode.PERMANENT.value,
+                "termination_reason": "persistence_error",
             }
         except Exception:
             logger.exception("runtime_decision_loop_failed", extra={"run_id": run_id})
