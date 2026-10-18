@@ -1671,7 +1671,12 @@ class AgentRuntime:
                     cancellation=run_cancellation,
                     approval=approval,
                 )
-                await self._observe_checkpoint_controls(run_id, run_cancellation)
+                try:
+                    await self._observe_checkpoint_controls(run_id, run_cancellation)
+                except RunCancellationError:
+                    # Preserve the returned invocation fact before terminating
+                    # the Run. Lease/persistence failures still propagate.
+                    pass
                 yield await emit(
                     "tool_call_end",
                     invocation_id=invocation.invocation_id,
@@ -1683,7 +1688,9 @@ class AgentRuntime:
                         else invocation.error_code
                     ),
                     output=invocation.output,
+                    retryable=invocation.retryable,
                 )
+                run_cancellation.raise_if_cancelled()
                 if invocation.status != "succeeded":
                     error_code = invocation.error_code
                     registry = getattr(self.dispatcher, "registry", None)
@@ -1710,6 +1717,9 @@ class AgentRuntime:
                         approval is None
                         and approval_required
                         and error_value == ErrorCode.POLICY_DENIED.value
+                        and invocation.output.get("approval_required") is True
+                        and invocation.provenance.get("source") == "policy"
+                        and invocation.provenance.get("trust") == "trusted"
                     ):
                         state.status = "paused"
                         state.terminal_result = None
@@ -1767,6 +1777,22 @@ class AgentRuntime:
                             else "failed"
                         ),
                         error_code=safe_code,
+                        termination_reason=(
+                            error_value
+                            if error_value
+                            in {
+                                "attention_required",
+                                "idempotency_conflict",
+                                "idempotency_required",
+                                "policy_denied",
+                                "unauthorized",
+                                "not_configured",
+                                "invalid_request",
+                                "transient",
+                                "rate_limited",
+                            }
+                            else safe_code.value
+                        ),
                     )
                     await self._save_checkpoint(state)
                     yield await emit(terminal_type, error_code=safe_code.value)

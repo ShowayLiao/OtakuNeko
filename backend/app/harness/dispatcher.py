@@ -36,7 +36,12 @@ from app.harness.policy import Approval, PolicyEngine, Principal
 
 
 class Dispatcher:
-    """Resolve, authorize, execute and normalize one model decision."""
+    """Resolve, authorize, execute and normalize one model decision.
+
+    A retryable read failure is advisory for an explicit new Run; this boundary
+    never retries an invocation automatically. Writes remain non-retryable even
+    when an idempotency record can safely replay their prior result.
+    """
 
     def __init__(
         self,
@@ -151,6 +156,11 @@ class Dispatcher:
                 "Capability arguments did not match the declared input contract",
             )
 
+        allowed_for_run = not context.capability_allowlist or bool(
+            request.capability in context.capability_allowlist
+            or capability.name in context.capability_allowlist
+            or descriptor.name in context.capability_allowlist
+        )
         principal = (
             Principal(context.principal_id)
             if context.principal_id is not None
@@ -163,12 +173,30 @@ class Dispatcher:
             request.idempotency_key,
         )
         if not policy.allowed:
-            return self._result(
+            # Missing approval is actionable only after all other admission
+            # prerequisites hold. Permanent refusals must not suspend a Run.
+            pending_approval = (
+                policy.approval_required
+                and allowed_for_run
+                and (
+                    not descriptor.is_side_effect
+                    or (
+                        self.idempotency_store is not None
+                        and isinstance(request.idempotency_key, str)
+                        and bool(request.idempotency_key.strip())
+                    )
+                )
+            )
+            result = self._result(
                 invocation_id,
                 "denied",
                 policy.error_type or "policy_denied",
                 policy.reason or "Capability denied",
+                output={"approval_required": True} if pending_approval else None,
             )
+            if pending_approval:
+                result.provenance = {"source": "policy", "trust": "trusted"}
+            return result
         if descriptor.is_side_effect and self.idempotency_store is None:
             return self._result(
                 invocation_id,
@@ -176,11 +204,7 @@ class Dispatcher:
                 "idempotency_required",
                 "An idempotency store is required for writes",
             )
-        if context.capability_allowlist and not (
-            request.capability in context.capability_allowlist
-            or capability.name in context.capability_allowlist
-            or descriptor.name in context.capability_allowlist
-        ):
+        if not allowed_for_run:
             return self._result(
                 invocation_id,
                 "denied",
@@ -254,6 +278,13 @@ class Dispatcher:
                 None if success else (error_type or "tool_error"),
                 None if success else "Capability execution failed",
                 output=normalized.ui_projection(),
+                retryable=(
+                    not descriptor.is_side_effect
+                    and descriptor.retry_class == "transient"
+                    and normalized.retryable
+                    and status == "failed"
+                    and error_type in {"transient", "rate_limited", "timeout"}
+                ),
             )
             result.run_id = normalized.run_id
             result.decision_id = normalized.decision_id
@@ -276,7 +307,10 @@ class Dispatcher:
                 "timeout",
                 "timeout",
                 "Capability execution timed out",
-                retryable=True,
+                retryable=(
+                    not descriptor.is_side_effect
+                    and descriptor.retry_class == "transient"
+                ),
             )
         except DeadlineExceededError:
             result = self._result(

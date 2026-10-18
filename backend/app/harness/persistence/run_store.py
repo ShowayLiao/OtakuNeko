@@ -373,8 +373,7 @@ class RunStore:
             raise InvalidRunTransition(f"unknown invocation status: {status}")
         invocation.status = status
         invocation.finished_at = _utc_now()
-        if error_code is not None:
-            invocation.error_code = error_code
+        invocation.error_code = error_code
         self._session.add(invocation)
         try:
             await self._session.commit()

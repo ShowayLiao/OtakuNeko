@@ -37,6 +37,7 @@ class PolicyDecision:
     allowed: bool
     error_type: str | None = None
     reason: str | None = None
+    approval_required: bool = False
 
     def __bool__(self) -> bool:
         return self.allowed
@@ -85,6 +86,7 @@ class PolicyEngine:
                 False,
                 "policy_denied",
                 "Trusted approval is required",
+                approval_required=approval is None,
             )
         if descriptor.approval_required and (
             principal is not None
