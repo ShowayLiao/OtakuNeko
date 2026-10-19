@@ -13,10 +13,15 @@ from sqlmodel import col
 from app.schemas.agent import ChatRequest
 from app.schemas.user import UserRead
 from app.capabilities.factory import build_capability_registry
-from app.harness.runtime import AgentRuntime
+from app.harness.runtime import AgentRuntime, CanonicalPersistenceError
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.cancellation_store import cancellation_store
-from app.harness.checkpoint import SqliteCheckpointStore
+from app.harness.checkpoint import (
+    SqliteCheckpointStore,
+    CheckpointLeaseLost,
+    is_recoverable_checkpoint,
+    terminal_checkpoint_result,
+)
 from app.harness.contracts import ExecutionContext, RunEvent
 from app.harness.dispatcher import Dispatcher
 from app.harness.capability_adapter import CapabilityAdapter
@@ -156,7 +161,7 @@ async def _get_scoped_run(
 
 
 async def _recover_stale_run(run, db: AsyncSession):
-    """Fail closed after a single-worker lease has clearly expired.
+    """Preserve primary recovery points; abandon expired legacy Run state.
 
     AgentRun has no separate lease column by design in this batch. The start
     timestamp is therefore a conservative local-development lease boundary;
@@ -167,6 +172,50 @@ async def _recover_stale_run(run, db: AsyncSession):
     if run.status == "running" and _checkpoint_adapter_enabled():
         checkpoint_store = SqliteCheckpointStore(settings.CHECKPOINT_DB_PATH)
         try:
+            state = await checkpoint_store.load(run.run_id, run.thread_id)
+            if (
+                terminal_checkpoint_result(
+                    state,
+                    run_id=run.run_id,
+                    thread_id=run.thread_id,
+                    user_id=run.user_id,
+                )
+                is not None
+            ):
+                if cancellation_store.is_active(run.run_id):
+                    return run
+                assert state is not None
+                runtime = AgentRuntime(
+                    checkpoint_store=checkpoint_store,
+                    run_store=RunStore(db),
+                    event_store=EventStore(db),
+                    checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
+                )
+                try:
+                    await runtime.reconcile_terminal_checkpoint(
+                        state.task,
+                        context=ExecutionContext(
+                            principal_id=run.user_id,
+                            run_id=run.run_id,
+                            trace_id=str(state.context.get("trace_id") or run.run_id),
+                            thread_id=run.thread_id,
+                        ),
+                    )
+                except CheckpointLeaseLost:
+                    return run  # An executing owner still owns this fact.
+                except CanonicalPersistenceError:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Terminal checkpoint requires reconciliation",
+                    ) from None
+                recovered = await RunStore(db).get(run.run_id, user_id=run.user_id)
+                return recovered if recovered is not None else run
+            if is_recoverable_checkpoint(
+                state, run_id=run.run_id, thread_id=run.thread_id, user_id=run.user_id
+            ):
+                # A versioned Runtime checkpoint can be explicitly resumed after
+                # lease takeover. Reads must not destroy that recovery point.
+                return run
             lease_recovered = await checkpoint_store.recover_expired(
                 run.run_id,
                 "checkpoint lease expired during service recovery",
@@ -697,9 +746,15 @@ async def resume_chat(
     user: UserRead = Depends(get_current_user),
     db: AsyncSession = Depends(get_session),
 ):
+    """Approve/reject pending work, or continue a versioned primary checkpoint.
+
+    ``continue`` grants no approval. Interrupted writes require a fresh explicit
+    approval and durable idempotency replay; unknown outcomes are not retried.
+    """
     thread_scope = _resolve_user_thread(user, thread_id)
 
-    if decision not in ("approve", "reject"):
+    if decision not in ("approve", "reject", "continue"):
+        # Preserve the existing invalid-decision error contract for clients.
         raise HTTPException(
             status_code=400, detail="decision must be 'approve' or 'reject'"
         )
@@ -709,6 +764,8 @@ async def resume_chat(
     run = await RunStore(db).get(run_id, user_id=user.id)
     if run is None or run.thread_id != thread_scope.internal_id:
         raise HTTPException(status_code=404, detail="Run not found")
+    if cancellation_store.is_active(run_id):
+        raise HTTPException(status_code=409, detail="Run is active on this worker")
     run = await _recover_stale_run(run, db)
     if run.status not in {"running", "paused"}:
         raise HTTPException(status_code=409, detail="Run is not resumable")
@@ -724,25 +781,53 @@ async def resume_chat(
         await checkpoint_store.close()
         raise HTTPException(status_code=409, detail="Run checkpoint is not resumable")
     pending = state.context.get("pending_decision")
-    if not isinstance(pending, dict):
+    if (
+        state.task.user_id != user.id
+        or state.task.metadata.get("run_id") != run_id
+        or state.task.metadata.get("thread_id") != thread_scope.internal_id
+        or state.status not in {"running", "paused"}
+    ):
+        await checkpoint_store.close()
+        raise HTTPException(status_code=409, detail="Run checkpoint is not resumable")
+    if decision == "continue" and not is_recoverable_checkpoint(
+        state, run_id=run_id, thread_id=thread_scope.internal_id, user_id=user.id
+    ):
+        await checkpoint_store.close()
+        raise HTTPException(status_code=409, detail="Run checkpoint is not resumable")
+    if decision != "continue" and not isinstance(pending, dict):
         await checkpoint_store.close()
         raise HTTPException(status_code=409, detail="Run has no pending approval")
 
     capability_registry = build_capability_registry()
-    capability_name = pending.get("capability")
+    capability_name = pending.get("capability") if isinstance(pending, dict) else None
     owner = capability_registry.find_action(str(capability_name or ""))
-    if owner is None or not owner[1].approval_required:
+    if decision == "continue":
+        if (
+            run.status == "paused"
+            or state.status == "paused"
+            or (
+                isinstance(pending, dict)
+                and pending.get("action") == "invoke"
+                and (owner is None or owner[1].approval_required)
+            )
+        ):
+            await checkpoint_store.close()
+            raise HTTPException(status_code=409, detail="Run requires approval")
+    elif owner is None or not owner[1].approval_required:
         await checkpoint_store.close()
         raise HTTPException(
             status_code=409, detail="Run approval target is no longer configured"
         )
 
-    approval = Approval(
-        approval_id=f"approval:{run_id}:{pending.get('decision_id', 'pending')}",
-        approved=decision == "approve",
-        principal_id=user.id,
-        action=owner[1].name,
-    )
+    approval = None
+    if decision != "continue":
+        assert isinstance(pending, dict) and owner is not None
+        approval = Approval(
+            approval_id=f"approval:{run_id}:{pending.get('decision_id', 'pending')}",
+            approved=decision == "approve",
+            principal_id=user.id,
+            action=owner[1].name,
+        )
     api_key = x_api_key or os.getenv("OPENAI_API_KEY")
     base_url = _resolve_provider_base_url(x_base_url)
     if not api_key and not (
@@ -750,6 +835,33 @@ async def resume_chat(
     ):
         await checkpoint_store.close()
         raise HTTPException(status_code=401, detail="Missing API Key")
+
+    worker_id = f"resume:{uuid4().hex}"
+    lease = None
+    try:
+        lease = await checkpoint_store.claim_lease(
+            run_id,
+            thread_scope.internal_id,
+            worker_id,
+            settings.CHECKPOINT_LEASE_SECONDS,
+        )
+        if lease is None:
+            raise HTTPException(
+                status_code=409, detail="Run is active on another worker"
+            )
+        current = await checkpoint_store.load(run_id, thread_scope.internal_id)
+        if current is None or current.context.get(
+            "checkpoint_version"
+        ) != state.context.get("checkpoint_version"):
+            raise HTTPException(
+                status_code=409, detail="Run checkpoint changed; retry recovery"
+            )
+    except Exception:
+        if lease is not None:
+            await checkpoint_store.release_lease(lease)
+        await checkpoint_store.close()
+        raise
+    assert lease is not None
 
     task = state.task.model_copy(deep=True)
     task.metadata["run_id"] = run_id
@@ -769,7 +881,10 @@ async def resume_chat(
         thread_id=thread_scope.internal_id,
     )
     cancellation = CancellationToken()
-    cancellation_store.register(run_id, cancellation)
+    if not cancellation_store.register_if_absent(run_id, cancellation):
+        await checkpoint_store.release_lease(lease)
+        await checkpoint_store.close()
+        raise HTTPException(status_code=409, detail="Run is active on this worker")
 
     async def stream_generator():
         model_gateway: Optional[OpenAIModelGateway] = None
@@ -804,6 +919,7 @@ async def resume_chat(
                 run_store=RunStore(db),
                 event_store=EventStore(db),
                 checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
+                worker_id=worker_id,
             )
             async for chunk_data in runtime.stream_decision(
                 task,
@@ -833,6 +949,7 @@ async def resume_chat(
             )
         finally:
             cancellation_store.unregister(run_id, cancellation)
+            await checkpoint_store.release_lease(lease)
             await checkpoint_store.close()
             if model_gateway is not None:
                 await model_gateway.close()

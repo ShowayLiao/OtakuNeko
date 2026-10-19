@@ -30,6 +30,21 @@ class CancellationStore:
         token.cancel()
         return True
 
+    def is_active(self, run_id: str) -> bool:
+        with self._lock:
+            return str(run_id).strip() in self._tokens
+
+    def register_if_absent(self, run_id: str, token: CancellationToken) -> bool:
+        """Admit a local recovery without replacing an executing owner's token."""
+        normalized = str(run_id).strip()
+        if not normalized:
+            raise ValueError("run_id is required")
+        with self._lock:
+            if normalized in self._tokens:
+                return False
+            self._tokens[normalized] = token
+            return True
+
     def unregister(self, run_id: str, token: CancellationToken | None = None) -> None:
         normalized = str(run_id).strip()
         with self._lock:

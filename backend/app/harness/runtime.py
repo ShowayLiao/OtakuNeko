@@ -7,6 +7,8 @@ import json
 import os
 from contextlib import nullcontext
 from datetime import datetime, timezone
+from decimal import Decimal
+from math import isfinite
 from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, Protocol, cast
 from uuid import uuid4
 
@@ -14,6 +16,8 @@ from app.agents.router import AgentRouter
 from app.agents.routing import validate_handoff
 from app.harness.checkpoint import CheckpointStore
 from app.harness.checkpoint import CheckpointLease, CheckpointLeaseLost
+from app.harness.checkpoint import terminal_checkpoint_result
+from app.harness.cancellation_store import cancellation_store
 from app.harness.budget import (
     BudgetExceededError,
     CancellationToken,
@@ -46,7 +50,7 @@ from app.trace.redaction import sanitize_trace
 from app.trace.recorder import bind_trace, current_trace_recorder
 from app.trace.store import TraceStore
 from app.core.logging import get_logger
-from app.models.agent_run import AgentRun
+from app.models.agent_run import AgentRun, AgentRunEvent
 
 if TYPE_CHECKING:
     from app.memory.interfaces import MemoryContext
@@ -66,6 +70,51 @@ _DURABLE_TERMINAL_EVENTS = {
     "run.cancelled",
     "run.abandoned",
 }
+
+
+def _restore_recovery_budget(state: AgentState, budget: RunBudget) -> RunBudget:
+    """Restore finite counters without granting a fresh budget after a crash."""
+    raw = state.context.get("recovery_budget")
+    if state.context.get("recovery_version") != 1:
+        return budget  # Legacy approval checkpoints predate durable budgets.
+    if not isinstance(raw, dict):
+        raise ValueError("Missing recovery budget")
+    limits = {}
+    for name in ("max_steps", "max_tool_calls", "max_model_calls", "max_total_tokens"):
+        value = raw[name]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("Invalid recovery budget limit")
+        limits[name] = min(value, getattr(budget, name))
+    restored = RunBudget(
+        **limits,
+        deadline_seconds=min(float(raw["deadline_seconds"]), budget.deadline_seconds),
+        max_cost_usd=min(Decimal(str(raw["max_cost_usd"])), budget.max_cost_usd),
+    )
+    for name in (
+        "steps_used",
+        "tool_calls_used",
+        "model_calls_used",
+        "total_tokens_used",
+        "unknown_token_calls",
+        "unknown_cost_calls",
+    ):
+        value = raw[name]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("Invalid recovery budget counter")
+        setattr(restored, name, max(value, getattr(budget, name)))
+    cost = Decimal(str(raw["total_cost_usd"]))
+    if not cost.is_finite() or cost < 0:
+        raise ValueError("Invalid recovery cost")
+    restored.total_cost_usd = max(cost, budget.total_cost_usd)
+    remaining = float(raw["remaining_seconds"])
+    saved_at = datetime.fromisoformat(raw["saved_at"])
+    if not isfinite(remaining) or saved_at.tzinfo is None:
+        raise ValueError("Invalid recovery deadline")
+    if state.status != "paused":
+        remaining -= max(0.0, (datetime.now(timezone.utc) - saved_at).total_seconds())
+    remaining = min(remaining, budget.remaining_seconds(), restored.deadline_seconds)
+    restored.started_at -= restored.deadline_seconds - max(0.0, remaining)
+    return restored
 
 
 def _budget_termination_reason(exc: BudgetExceededError) -> str:
@@ -391,6 +440,144 @@ class AgentRuntime:
         if self.checkpoint_store is not None and lease is not None:
             await self.checkpoint_store.release_lease(lease)
 
+    async def reconcile_terminal_checkpoint(
+        self, task: AgentTask, *, context: ExecutionContext
+    ) -> dict[str, Any] | None:
+        """Finish a persisted terminal decision without resuming execution.
+
+        The checkpoint, Event and Run header live in separate transactions. A
+        retry may find just the checkpoint or an Event whose header transition
+        was interrupted; both must converge on the same terminal fact.
+        """
+        if (
+            self.checkpoint_store is None
+            or self.run_store is None
+            or self.event_store is None
+        ):
+            return None
+        run_id = str(task.metadata.get("run_id") or "")
+        thread_id = str(task.metadata.get("thread_id") or "")
+        if not run_id or not thread_id:
+            return None
+        state = await self.checkpoint_store.load(run_id, thread_id)
+        if (
+            terminal_checkpoint_result(
+                state, run_id=run_id, thread_id=thread_id, user_id=task.user_id
+            )
+            is None
+        ):
+            return None
+        if (
+            context.run_id != run_id
+            or context.thread_id not in {None, thread_id}
+            or context.principal_id != task.user_id
+        ):
+            raise CanonicalPersistenceError("Invalid terminal recovery scope")
+        token = CancellationToken()
+        registered = False
+        leased = False
+        try:
+            registered = cancellation_store.register_if_absent(run_id, token)
+            if not registered:
+                raise CheckpointLeaseLost("Run is active on this worker")
+            await self._acquire_checkpoint_lease(task)
+            leased = True
+            # Re-read the fact only after obtaining exclusive recovery ownership.
+            state = await self.checkpoint_store.load(run_id, thread_id)
+            result = terminal_checkpoint_result(
+                state, run_id=run_id, thread_id=thread_id, user_id=task.user_id
+            )
+            if result is None:
+                raise CanonicalPersistenceError("Terminal checkpoint changed")
+            current = await self.run_store.get(run_id, user_id=task.user_id)
+            expected_status = {"completed": "succeeded", "timeout": "failed"}.get(
+                result.status, result.status
+            )
+            error_code = (
+                result.error_code.value if result.error_code is not None else None
+            )
+            if current is None or current.thread_id != thread_id:
+                raise CanonicalPersistenceError("Terminal Run scope changed")
+            if current.status in {"succeeded", "failed", "cancelled", "abandoned"} and (
+                current.status != expected_status or current.error_code != error_code
+            ):
+                raise CanonicalPersistenceError(
+                    "Terminal Run conflicts with checkpoint"
+                )
+            if current.goal_hash != hashlib.sha256(
+                task.goal.encode("utf-8")
+            ).hexdigest() or current.model != str(task.metadata.get("model") or ""):
+                raise CanonicalPersistenceError("Terminal Run identity changed")
+            event_type = {
+                "completed": "run_completed",
+                "failed": "run_failed",
+                "cancelled": "run_cancelled",
+                "timeout": "run_timeout",
+            }[result.status]
+            canonical_type = {
+                "completed": "run.succeeded",
+                "failed": "run.failed",
+                "cancelled": "run.cancelled",
+                "timeout": "run.failed",
+            }[result.status]
+            payload: dict[str, Any] = {"termination_reason": result.termination_reason}
+            if result.status == "completed":
+                payload["content"] = result.content or ""
+            else:
+                payload["error_code"] = error_code
+            expected_payload = dict(payload)
+            if result.status == "timeout":
+                expected_payload["status"] = "timeout"
+            terminal_events: list[AgentRunEvent] = []
+            after = 0
+            while page := await self.event_store.list_after(
+                run_id, after_sequence=after, limit=1000
+            ):
+                terminal_events.extend(
+                    event
+                    for event in page
+                    if event.event_type in _DURABLE_TERMINAL_EVENTS
+                )
+                after = int(page[-1].sequence)
+            if len(terminal_events) > 1:
+                raise CanonicalPersistenceError("Multiple canonical terminal facts")
+            sequence = after + 1
+            if terminal_events:
+                existing = terminal_events[0]
+                if (
+                    existing.event_type != canonical_type
+                    or existing.payload != expected_payload
+                ):
+                    raise CanonicalPersistenceError(
+                        "Terminal Event conflicts with checkpoint"
+                    )
+                sequence = int(existing.sequence)
+            assert self._checkpoint_lease is not None
+            renewed = await self.checkpoint_store.renew_lease(
+                self._checkpoint_lease, self.checkpoint_lease_seconds
+            )
+            if renewed is None:
+                raise CheckpointLeaseLost("Terminal recovery lease was fenced")
+            self._checkpoint_lease = renewed
+            current = await self.run_store.get(run_id, user_id=task.user_id)
+            if current is None or current.thread_id != thread_id:
+                raise CanonicalPersistenceError("Terminal Run was deleted")
+            event = {
+                "type": event_type,
+                "run_id": run_id,
+                "sequence": sequence,
+                **payload,
+            }
+            event["sequence"] = await self._canonical_append(
+                event, sequence=sequence, require_existing_run=True
+            )
+            return event
+        finally:
+            if registered:
+                cancellation_store.unregister(run_id, token)
+            if leased:
+                await self._release_checkpoint_lease()
+
     async def _canonical_start(
         self,
         task: AgentTask,
@@ -470,6 +657,7 @@ class AgentRuntime:
         event: dict[str, Any],
         *,
         sequence: int,
+        require_existing_run: bool = False,
     ) -> int:
         if self.run_store is None or self.event_store is None:
             return sequence
@@ -521,7 +709,12 @@ class AgentRuntime:
                     )
             if stored_sequence != sequence:
                 event["sequence"] = stored_sequence
-            await self.event_store.append(
+            append_event = (
+                self.event_store.append_to_existing_run
+                if require_existing_run
+                else self.event_store.append
+            )
+            await append_event(
                 RunEvent(
                     run_id=str(event["run_id"]),
                     sequence=stored_sequence,
@@ -1062,15 +1255,6 @@ class AgentRuntime:
         committed as the canonical fact before it is exposed to the caller.
         """
         run_id = self._ensure_run_id(task)
-        if self.model_gateway is None or self.dispatcher is None:
-            yield {
-                "type": "run_failed",
-                "run_id": run_id,
-                "error_code": ErrorCode.PERMANENT.value,
-                "termination_reason": "runtime_not_configured",
-            }
-            return
-
         trusted_context = context or ExecutionContext(
             principal_id=task.user_id if task.user_id > 0 else None,
             run_id=run_id,
@@ -1078,6 +1262,9 @@ class AgentRuntime:
             capability_allowlist=frozenset(
                 task.metadata.get("capability_allowlist") or ()
             ),
+            thread_id=str(task.metadata["thread_id"])
+            if task.metadata.get("thread_id") is not None
+            else None,
         )
         if trusted_context.run_id != run_id:
             yield {
@@ -1085,6 +1272,30 @@ class AgentRuntime:
                 "run_id": run_id,
                 "error_code": ErrorCode.INVALID_REQUEST.value,
                 "termination_reason": "invalid_request",
+            }
+            return
+
+        try:
+            terminal = await self.reconcile_terminal_checkpoint(
+                task, context=trusted_context
+            )
+        except (CheckpointLeaseLost, CanonicalPersistenceError):
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "error_code": ErrorCode.PERMANENT.value,
+                "termination_reason": "terminal_reconciliation_required",
+            }
+            return
+        if terminal is not None:
+            yield terminal
+            return
+        if self.model_gateway is None or self.dispatcher is None:
+            yield {
+                "type": "run_failed",
+                "run_id": run_id,
+                "error_code": ErrorCode.PERMANENT.value,
+                "termination_reason": "runtime_not_configured",
             }
             return
 
@@ -1110,6 +1321,30 @@ class AgentRuntime:
         pending_invocation_started = False
         parse_recovery_attempted = False
         seen_decision_ids: set[str] = set()
+
+        async def save_checkpoint(*, reserve_tool: str | None = None) -> None:
+            snapshot = run_budget.snapshot()
+            if reserve_tool:
+                # Dispatcher consumes the live counter. Persist a conservative
+                # reservation before crossing its external execution boundary.
+                snapshot["tool_calls_used"] += 1
+                state.context["pending_tool_budget_reservation"] = reserve_tool
+            elif state.context.get("pending_decision") is None:
+                state.context.pop("pending_tool_budget_reservation", None)
+            state.context.update(
+                recovery_version=1,
+                recovery_budget={
+                    **snapshot,
+                    "remaining_seconds": run_budget.remaining_seconds(),
+                    "saved_at": datetime.now(timezone.utc).isoformat(),
+                },
+            )
+            if state.terminal_result is not None:
+                state.context["recovery_terminal_result"] = (
+                    state.terminal_result.model_dump(mode="json")
+                )
+            await self._save_checkpoint(state)
+
         try:
             await self._acquire_checkpoint_lease(task)
             restored_state = None
@@ -1120,6 +1355,23 @@ class AgentRuntime:
                         run_id,
                         str(thread_id),
                     )
+            if restored_state is not None and restored_state.status in {
+                "completed",
+                "succeeded",
+                "failed",
+                "cancelled",
+                "timeout",
+                "abandoned",
+            }:
+                # An incomplete/legacy terminal record is never a fresh Run.
+                await self._release_checkpoint_lease()
+                yield {
+                    "type": "run_failed",
+                    "run_id": run_id,
+                    "error_code": ErrorCode.PERMANENT.value,
+                    "termination_reason": "terminal_reconciliation_required",
+                }
+                return
             if restored_state is not None and restored_state.status not in {
                 "completed",
                 "succeeded",
@@ -1130,6 +1382,7 @@ class AgentRuntime:
             }:
                 state = restored_state
                 state.task = task
+                run_budget = _restore_recovery_budget(state, run_budget)
                 state.context = {
                     **state.context,
                     "run_id": run_id,
@@ -1146,7 +1399,7 @@ class AgentRuntime:
                     )
             else:
                 state.context["decision_messages"] = _checkpoint_messages(messages)
-                await self._save_checkpoint(state)
+                await save_checkpoint()
         except CheckpointLeaseLost:
             yield {
                 "type": "run_failed",
@@ -1181,7 +1434,7 @@ class AgentRuntime:
             if existing_status == "paused" and self.run_store is not None:
                 await self.run_store.transition(run_id, "running")
             state.status = "running"
-            await self._save_checkpoint(state)
+            await save_checkpoint()
         elif existing_status == "paused" and pending_decision is not None:
             if approval is None:
                 yield {
@@ -1265,6 +1518,10 @@ class AgentRuntime:
                 route = self.specialist_router.route(task.goal, messages)
                 validate_handoff(route)
                 if route.selected_agent != "fallback":
+                    # Specialist continuations do not yet have a persisted
+                    # control contract. Keep their existing fail-closed recovery.
+                    state.context["recovery_kind"] = "specialist"
+                    await save_checkpoint()
                     yield await emit(
                         "route_decision",
                         route=route.intent.value,
@@ -1281,7 +1538,7 @@ class AgentRuntime:
                             status="failed",
                             error_code=ErrorCode.PERMANENT,
                         )
-                        await self._save_checkpoint(state)
+                        await save_checkpoint()
                         yield await emit(
                             "run_failed",
                             error_code="dispatcher_required",
@@ -1427,7 +1684,7 @@ class AgentRuntime:
                             status="failed",
                             error_code=ErrorCode.TOOL_ERROR,
                         )
-                        await self._save_checkpoint(state)
+                        await save_checkpoint()
                         yield await emit(
                             "run_failed",
                             error_code=ErrorCode.TOOL_ERROR.value,
@@ -1446,7 +1703,7 @@ class AgentRuntime:
                         status="completed",
                         content=content,
                     )
-                    await self._save_checkpoint(state)
+                    await save_checkpoint()
                     yield await emit("run_completed", content=content)
                     return
 
@@ -1456,6 +1713,7 @@ class AgentRuntime:
                 run_budget.consume_step()
                 if pending_decision is None:
                     run_budget.reserve_model_call()
+                    await save_checkpoint()
                     model_result = None
                     stream_infer = getattr(self.model_gateway, "stream_infer", None)
                     if callable(stream_infer):
@@ -1506,6 +1764,7 @@ class AgentRuntime:
                         )
                     await self._observe_checkpoint_controls(run_id, run_cancellation)
                     run_budget.record_model_usage(getattr(model_result, "usage", None))
+                    await save_checkpoint()
                     yield await emit(
                         "model_call",
                         call_id=model_result.call_id,
@@ -1529,7 +1788,7 @@ class AgentRuntime:
                     if model_terminal is not None:
                         state.status = model_terminal.status
                         state.terminal_result = model_terminal
-                        await self._save_checkpoint(state)
+                        await save_checkpoint()
                         terminal_type = {
                             "cancelled": "run_cancelled",
                             "timeout": "run_timeout",
@@ -1569,7 +1828,7 @@ class AgentRuntime:
                             error_code=exc.error_code,
                             termination_reason="invalid_decision",
                         )
-                        await self._save_checkpoint(state)
+                        await save_checkpoint()
                         yield await emit(
                             "run_failed",
                             error_code=exc.error_code.value,
@@ -1584,7 +1843,7 @@ class AgentRuntime:
                             error_code=ErrorCode.INVALID_REQUEST,
                             termination_reason="repeated_decision",
                         )
-                        await self._save_checkpoint(state)
+                        await save_checkpoint()
                         yield await emit(
                             "run_failed", error_code=ErrorCode.INVALID_REQUEST.value
                         )
@@ -1606,7 +1865,7 @@ class AgentRuntime:
                         "pending_decision": decision.model_dump(mode="json"),
                         "pending_invocation_started": False,
                     }
-                    await self._save_checkpoint(state)
+                    await save_checkpoint()
                 else:
                     decision = pending_decision
                     pending_decision = None
@@ -1646,7 +1905,7 @@ class AgentRuntime:
                         content=content,
                         termination_reason=decision.action,
                     )
-                    await self._save_checkpoint(state)
+                    await save_checkpoint()
                     yield await emit("run_completed", content=content)
                     return
 
@@ -1662,8 +1921,18 @@ class AgentRuntime:
                         **state.context,
                         "pending_invocation_started": True,
                     }
-                    await self._save_checkpoint(state)
+                    await save_checkpoint()
                 await self._observe_checkpoint_controls(run_id, run_cancellation)
+                if (
+                    state.context.get("pending_tool_budget_reservation")
+                    == decision.decision_id
+                    and run_budget.tool_calls_used > 0
+                ):
+                    # Replay the exact pending proposal using its already
+                    # reserved slot; a new Decision cannot claim this credit.
+                    run_budget.tool_calls_used -= 1
+                    state.context.pop("pending_tool_budget_reservation")
+                await save_checkpoint(reserve_tool=decision.decision_id)
                 invocation = await self.dispatcher.dispatch(
                     decision,
                     trusted_context,
@@ -1731,7 +2000,7 @@ class AgentRuntime:
                                 f"approval:{run_id}:{decision.decision_id}"
                             ),
                         }
-                        await self._save_checkpoint(state)
+                        await save_checkpoint()
                         yield await emit(
                             "approval_required",
                             approval_id=f"approval:{run_id}:{decision.decision_id}",
@@ -1794,7 +2063,7 @@ class AgentRuntime:
                             else safe_code.value
                         ),
                     )
-                    await self._save_checkpoint(state)
+                    await save_checkpoint()
                     yield await emit(terminal_type, error_code=safe_code.value)
                     return
 
@@ -1807,7 +2076,7 @@ class AgentRuntime:
                     "pending_invocation_started": False,
                 }
                 pending_invocation_started = False
-                await self._save_checkpoint(state)
+                await save_checkpoint()
         except RunCancellationError:
             state.status = "cancelled"
             state.terminal_result = RunResult(
@@ -1815,7 +2084,7 @@ class AgentRuntime:
                 status="cancelled",
                 error_code=ErrorCode.CANCELLED,
             )
-            await self._save_checkpoint(state)
+            await save_checkpoint()
             yield await emit("run_cancelled", error_code=ErrorCode.CANCELLED.value)
         except (DeadlineExceededError, asyncio.TimeoutError):
             state.status = "timeout"
@@ -1824,7 +2093,7 @@ class AgentRuntime:
                 status="timeout",
                 error_code=ErrorCode.TIMEOUT,
             )
-            await self._save_checkpoint(state)
+            await save_checkpoint()
             yield await emit("run_timeout", error_code=ErrorCode.TIMEOUT.value)
         except BudgetExceededError as exc:
             state.status = "failed"
@@ -1834,7 +2103,7 @@ class AgentRuntime:
                 error_code=ErrorCode.BUDGET_EXCEEDED,
                 termination_reason=_budget_termination_reason(exc),
             )
-            await self._save_checkpoint(state)
+            await save_checkpoint()
             yield await emit("run_failed", error_code=ErrorCode.BUDGET_EXCEEDED.value)
         except CheckpointLeaseLost:
             logger.warning("runtime_checkpoint_lease_lost", extra={"run_id": run_id})
@@ -1870,7 +2139,7 @@ class AgentRuntime:
                 status="cancelled",
                 error_code=ErrorCode.CANCELLED,
             )
-            await self._save_checkpoint(state)
+            await save_checkpoint()
             raise
         except CanonicalPersistenceError:
             logger.exception(
@@ -1899,7 +2168,7 @@ class AgentRuntime:
                 status="failed",
                 error_code=ErrorCode.PROVIDER_ERROR,
             )
-            await self._save_checkpoint(state)
+            await save_checkpoint()
             yield await emit("run_failed", error_code=ErrorCode.PROVIDER_ERROR.value)
         finally:
             await self._release_checkpoint_lease()

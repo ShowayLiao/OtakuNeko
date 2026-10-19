@@ -9,11 +9,12 @@ from datetime import datetime, timezone
 from typing import Any, cast
 
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import exists, insert, literal
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.harness.contracts import RunEvent
-from app.models.agent_run import AgentRunEvent
+from app.models.agent_run import AgentRun, AgentRunEvent
 
 
 _SENSITIVE_KEYS = {
@@ -31,6 +32,7 @@ _MAX_PAYLOAD_BYTES = 64 * 1024
 _EVENT_RUN_ID = cast(Any, AgentRunEvent.run_id)
 _EVENT_SEQUENCE = cast(Any, AgentRunEvent.sequence)
 _EVENT_OCCURRED_AT = cast(Any, AgentRunEvent.occurred_at)
+_RUN_RUN_ID = cast(Any, AgentRun.run_id)
 
 
 class EventStoreError(RuntimeError):
@@ -127,6 +129,19 @@ class EventStore:
         *,
         event_id: str | None = None,
     ) -> AgentRunEvent:
+        return await self._append(event, event_id=event_id)
+
+    async def append_to_existing_run(self, event: RunEvent) -> AgentRunEvent:
+        """Atomically refuse an insert after the owning Run has been deleted."""
+        return await self._append(event, require_existing_run=True)
+
+    async def _append(
+        self,
+        event: RunEvent | AgentRunEvent,
+        *,
+        event_id: str | None = None,
+        require_existing_run: bool = False,
+    ) -> AgentRunEvent:
         if isinstance(event, RunEvent):
             run_id = event.run_id
             sequence = event.sequence
@@ -184,8 +199,35 @@ class EventStore:
             payload_json=payload_json,
             occurred_at=occurred_at,
         )
-        self._session.add(stored)
         try:
+            if require_existing_run:
+                # INSERT ... SELECT checks ownership existence in the same SQL
+                # statement as insertion, including when SQLite FK checks are
+                # disabled. A concurrent delete cannot leave a revived answer.
+                fields = [
+                    "event_id",
+                    "run_id",
+                    "sequence",
+                    "event_type",
+                    "invocation_id",
+                    "payload_json",
+                    "occurred_at",
+                ]
+                statement = insert(AgentRunEvent).from_select(
+                    fields,
+                    select(*(literal(getattr(stored, name)) for name in fields)).where(
+                        exists(select(_RUN_RUN_ID).where(_RUN_RUN_ID == run_id))
+                    ),
+                )
+                outcome = await self._session.execute(statement)
+                if cast(Any, outcome).rowcount != 1:
+                    raise EventConflict("Owning Run disappeared before Event insertion")
+                await self._session.commit()
+                persisted = await self._session.get(AgentRunEvent, resolved_event_id)
+                if persisted is None:
+                    raise EventConflict("Event was deleted during recovery")
+                return persisted
+            self._session.add(stored)
             await self._session.commit()
             await self._session.refresh(stored)
             return stored

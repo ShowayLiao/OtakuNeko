@@ -12,6 +12,49 @@ from typing import Callable, Protocol
 import aiosqlite
 
 from app.harness.state import AgentState
+from app.harness.contracts import RunResult
+
+
+def is_recoverable_checkpoint(
+    state: AgentState | None, *, run_id: str, thread_id: str, user_id: int
+) -> bool:
+    """Recognize primary Runtime state, never legacy adapter state or caller data."""
+    return bool(
+        state is not None
+        and state.status in {"running", "paused"}
+        and state.context.get("recovery_version") == 1
+        and state.context.get("recovery_kind", "decision") == "decision"
+        and isinstance(state.context.get("recovery_budget"), dict)
+        and state.task.user_id == user_id
+        and state.task.metadata.get("run_id") == run_id
+        and state.task.metadata.get("thread_id") == thread_id
+    )
+
+
+def terminal_checkpoint_result(
+    state: AgentState | None, *, run_id: str, thread_id: str, user_id: int
+) -> RunResult | None:
+    """Read an explicit Runtime terminal fact; never infer it from status/text."""
+    if (
+        state is None
+        or state.context.get("recovery_version") != 1
+        or state.context.get("recovery_kind", "decision") != "decision"
+        or state.task.user_id != user_id
+        or state.task.metadata.get("run_id") != run_id
+        or state.task.metadata.get("thread_id") != thread_id
+        or state.status not in {"completed", "failed", "cancelled", "timeout"}
+    ):
+        return None
+    raw = state.context.get("recovery_terminal_result")
+    if not isinstance(raw, dict) or raw.get("schema_version") != "v1":
+        return None
+    try:
+        result = RunResult.model_validate(raw)
+    except ValueError:
+        return None
+    if result.run_id != run_id or result.status != state.status:
+        return None
+    return result
 
 
 def _utc_now() -> str:
