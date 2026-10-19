@@ -106,6 +106,7 @@ async def _main(args: argparse.Namespace) -> int:
     from app.capabilities.base import BaseCapability
     from app.capabilities.registry import CapabilityRegistry
     from app.capabilities.types import ActionDescriptor, CapabilityResult
+    from app.harness import execution as harness_execution
     from app.harness.model_types import ModelCallResult
     from app.harness.contracts import RunEvent
     from app.harness.persistence.event_store import EventStore
@@ -377,6 +378,9 @@ async def _main(args: argparse.Namespace) -> int:
     setattr(agent_api, "SqliteCheckpointStore", _WorkerCheckpointStore)
     setattr(agent_api, "SqlIdempotencyStore", _WorkerIdempotencyStore)
     setattr(agent_api, "EventStore", _WorkerEventStore)
+    # The shared composition root constructs durable stores in its own module.
+    setattr(harness_execution, "SqlIdempotencyStore", _WorkerIdempotencyStore)
+    setattr(harness_execution, "EventStore", _WorkerEventStore)
 
     class _OneToolRunBudget(RunBudget):
         def __init__(self, *values: Any, **kwargs: Any) -> None:

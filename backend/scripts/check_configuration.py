@@ -29,6 +29,7 @@ CHECKED_PATHS = (
     "backend/evals/config/fast.yaml",
     "backend/evals/config/observability.yaml",
     "backend/evals/config/full.yaml",
+    "backend/evals/config/entrypoint.yaml",
     "backend/evals/baselines/v1-fast.json",
     "backend/evals/baselines/v1-full.json",
     "backend/typecheck-baseline.json",
@@ -392,6 +393,9 @@ def run(root: Path) -> dict:
         ),
         "backend/evals/config/full.yaml": lambda: check_eval(
             root, "backend/evals/config/full.yaml"
+        ),
+        "backend/evals/config/entrypoint.yaml": lambda: check_eval(
+            root, "backend/evals/config/entrypoint.yaml"
         ),
         "backend/evals/baselines/v1-fast.json": lambda: check_baseline(
             root, "backend/evals/baselines/v1-fast.json"

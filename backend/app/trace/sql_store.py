@@ -132,6 +132,88 @@ class SqlTraceStore:
             raise
         await self._enforce_retention()
 
+    async def record_projection(self, trace: AgentTrace) -> None:
+        """Merge primary-loop segments for the same trusted Run and owner.
+
+        Trace is a diagnostic projection. Existing terminal facts cannot be
+        downgraded by a rejected or interrupted replay. This local update does
+        not provide shared-worker coordination.
+        """
+        safe = sanitize_trace(trace)
+        model = (
+            (
+                await self._session.execute(
+                    select(AgentTraceModel).where(_TRACE_ID == safe.trace_id)
+                )
+            )
+            .scalars()
+            .one_or_none()
+        )
+        if model is None:
+            await self.record(safe)
+            return
+        headers = json.loads(model.headers_json or "{}")
+        if model.user_id != safe.user_id or headers.get("run_id") != safe.run_id:
+            raise ValueError("trace projection identity conflict")
+        if model.status in {"completed", "failed", "timeout", "cancelled"}:
+            return
+        previous = await self._model_to_trace(model)
+        # Canonical sequence identifies an event across a recovery/replay.
+        seen: set[tuple[Any, ...]] = set()
+        merged = []
+        for step in [*previous.steps, *safe.steps]:
+            for event in step.events:
+                key = (
+                    (event.sequence, event.event_type, event.invocation_id)
+                    if event.sequence
+                    else (event.event_id,)
+                )
+                if key not in seen:
+                    seen.add(key)
+                    merged.append(event)
+        safe.started_at = previous.started_at
+        if safe.started_at.tzinfo is None:
+            safe.started_at = safe.started_at.replace(tzinfo=timezone.utc)
+        if safe.completed_at is not None:
+            if safe.completed_at.tzinfo is None:
+                safe.completed_at = safe.completed_at.replace(tzinfo=timezone.utc)
+            safe._set_duration()
+        step = TraceStep(
+            step_index=0,
+            step_label="decision",
+            agent_name="primary-runtime",
+            started_at=safe.started_at,
+            completed_at=safe.completed_at,
+            status=safe.status,
+            events=merged,
+        )
+        safe.steps = [step]
+        try:
+            model.status = safe.status
+            model.headers_json = json.dumps(
+                safe.model_dump(mode="json", exclude={"steps"}), ensure_ascii=False
+            )
+            await self._session.execute(
+                delete(TraceEventModel).where(_EVENT_TRACE_ID == safe.trace_id)
+            )
+            self._session.add(
+                TraceEventModel(
+                    trace_id=safe.trace_id,
+                    step_index=0,
+                    step_label=step.step_label,
+                    agent_name=step.agent_name,
+                    status=step.status,
+                    step_json=json.dumps(
+                        step.model_dump(mode="json"), ensure_ascii=False
+                    ),
+                )
+            )
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            raise
+        await self._enforce_retention()
+
     async def query(
         self,
         trace_id: str,

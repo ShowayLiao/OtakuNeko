@@ -17,6 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "backend/scripts/check_configuration.py"
 
 
+def test_shared_entrypoint_config_is_covered():
+    assert "backend/evals/config/entrypoint.yaml" in CHECKED_PATHS
+
+
 @pytest.fixture
 def configuration_root(tmp_path: Path) -> Path:
     for relative in (
@@ -24,7 +28,9 @@ def configuration_root(tmp_path: Path) -> Path:
         "backend/evals/datasets/v1.jsonl",
         "backend/evals/datasets/v1-full.jsonl",
         "backend/evals/datasets/v1-observability.jsonl",
+        "backend/evals/datasets/v1-entrypoint.jsonl",
         "backend/app/evaluation/adapter.py",
+        "backend/app/evaluation/entrypoint.py",
         "backend/app/evaluation/judge.py",
     ):
         target = tmp_path / relative
@@ -55,7 +61,7 @@ def test_checker_accepts_repository_configuration(configuration_root: Path):
     code, report, _ = run_checker(configuration_root)
     assert code == 0
     assert report["failed_paths"] == 0
-    assert report["checked_paths"] == 11
+    assert report["checked_paths"] == len(CHECKED_PATHS)
 
 
 @pytest.mark.parametrize(

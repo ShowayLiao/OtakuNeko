@@ -23,9 +23,7 @@ from app.harness.checkpoint import (
     terminal_checkpoint_result,
 )
 from app.harness.contracts import ExecutionContext, RunEvent
-from app.harness.dispatcher import Dispatcher
-from app.harness.capability_adapter import CapabilityAdapter
-from app.harness.persistence.idempotency import SqlIdempotencyStore
+from app.harness.execution import build_runtime
 from app.harness.model_gateway import (
     OpenAICompatibleModelAdapter,
     OpenAIModelGateway,
@@ -33,7 +31,7 @@ from app.harness.model_gateway import (
 )
 from app.harness.persistence.event_store import EventStore
 from app.harness.persistence.run_store import InvalidRunTransition, RunStore
-from app.harness.policy import Approval, PolicyEngine
+from app.harness.policy import Approval
 from app.harness.task import AgentTask
 from app.memory.service import MemoryServiceImpl
 from app.memory.sql_repository import SqlMemoryRepository
@@ -92,40 +90,6 @@ def format_sse(event: str, data: dict, *, event_id: int | str | None = None) -> 
     return (
         f"{identifier}event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
     )
-
-
-def _capability_adapter_factory(
-    *,
-    db: AsyncSession,
-    user: UserRead | None,
-    policy_engine: PolicyEngine,
-    approval: Approval | None,
-    idempotency_store: Any | None,
-):
-    """Build adapters with trusted request dependencies, never model arguments."""
-
-    def factory(capability: Any) -> CapabilityAdapter:
-        capability_name = getattr(capability, "name", "")
-        trusted_args: dict[str, Any] = {}
-        if capability_name in {
-            "collections",
-            "subjects",
-            "stats",
-            "schedule",
-            "recommendation",
-        }:
-            trusted_args["db"] = db
-        if user is not None and capability_name in {"collections", "anime"}:
-            trusted_args["user"] = user
-        return CapabilityAdapter(
-            capability,
-            policy_engine=policy_engine,
-            approval=approval,
-            idempotency_store=idempotency_store,
-            trusted_args=trusted_args,
-        )
-
-    return factory
 
 
 def _parse_replay_cursor(after: str | None, last_event_id: str | None) -> int:
@@ -187,6 +151,7 @@ async def _recover_stale_run(run, db: AsyncSession):
                 assert state is not None
                 runtime = AgentRuntime(
                     checkpoint_store=checkpoint_store,
+                    trace_store=SqlTraceStore(db),
                     run_store=RunStore(db),
                     event_store=EventStore(db),
                     checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
@@ -503,24 +468,9 @@ async def chat_endpoint(
 
     async def stream_generator():
         checkpoint_store: Optional[SqliteCheckpointStore] = None
-        dispatcher: Optional[Dispatcher] = None
         model_gateway: Optional[OpenAIModelGateway] = None
         try:
             capability_registry = build_capability_registry()
-            policy_engine = PolicyEngine(allow_side_effects=True)
-            idempotency_store = SqlIdempotencyStore(db) if durable_run else None
-            dispatcher = Dispatcher(
-                capability_registry,
-                policy_engine=policy_engine,
-                idempotency_store=idempotency_store,
-                adapter_factory=_capability_adapter_factory(
-                    db=db,
-                    user=user,
-                    policy_engine=policy_engine,
-                    approval=None,
-                    idempotency_store=idempotency_store,
-                ),
-            )
             execution_context = ExecutionContext(
                 principal_id=user.id if user is not None else None,
                 run_id=run_id,
@@ -595,14 +545,16 @@ async def chat_endpoint(
                 else None
             )
             run_budget = RunBudget()
-            runtime = AgentRuntime(
+            runtime = build_runtime(
+                session=db,
+                user=user,
+                registry=capability_registry,
+                durable=durable_run,
+                allow_side_effects=True,
                 checkpoint_store=checkpoint_store,
                 trace_store=SqlTraceStore(db),
                 model_gateway=model_gateway,
-                dispatcher=dispatcher,
                 specialist_router=specialist_router,
-                run_store=RunStore(db) if durable_run else None,
-                event_store=EventStore(db) if durable_run else None,
                 memory_context=memory_context,
                 memory_service=memory,
                 checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
@@ -896,28 +848,15 @@ async def resume_chat(
                 temperature=0.6,
                 endpoint_policy=_provider_endpoint_policy(),
             )
-            policy_engine = PolicyEngine(allow_side_effects=True)
-            idempotency_store = SqlIdempotencyStore(db)
-            dispatcher = Dispatcher(
-                capability_registry,
-                policy_engine=policy_engine,
+            runtime = build_runtime(
+                session=db,
+                user=user,
+                registry=capability_registry,
+                allow_side_effects=True,
                 approval=approval,
-                idempotency_store=idempotency_store,
-                adapter_factory=_capability_adapter_factory(
-                    db=db,
-                    user=user,
-                    policy_engine=policy_engine,
-                    approval=approval,
-                    idempotency_store=idempotency_store,
-                ),
-            )
-            runtime = AgentRuntime(
                 checkpoint_store=checkpoint_store,
                 trace_store=SqlTraceStore(db),
                 model_gateway=model_gateway,
-                dispatcher=dispatcher,
-                run_store=RunStore(db),
-                event_store=EventStore(db),
                 checkpoint_lease_seconds=settings.CHECKPOINT_LEASE_SECONDS,
                 worker_id=worker_id,
             )

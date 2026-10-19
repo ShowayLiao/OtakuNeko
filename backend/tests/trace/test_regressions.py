@@ -35,7 +35,8 @@ async def test_trace_list_ignores_user_id_override(monkeypatch):
     store = InMemoryTraceStore()
     await store.record(AgentTrace(user_id=1, goal="private"))
     await store.record(AgentTrace(user_id=2, goal="other"))
-    trace_api.init_trace_store(store)
+    # monkeypatch restores the module-global store, so later API tests query SQL.
+    monkeypatch.setattr(trace_api, "_trace_store", store)
 
     user = UserRead(
         id=1,

@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import json
 import os
-import time
 from typing import Any, AsyncIterator, Literal, Protocol
 
 from app.capabilities.factory import build_capability_registry
 from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent
-from app.harness.budget import CancellationToken, RunBudget
-from app.harness.contracts import ExecutionContext
-from app.harness.dispatcher import Dispatcher
+from app.agents.provider_endpoint import (
+    ProviderEndpointPolicy,
+    make_provider_endpoint_policy,
+    parse_provider_allowlists,
+)
 from app.harness.model_gateway import OpenAIModelGateway
 from app.harness.runtime import AgentRuntime
 from app.harness.state import AgentState
@@ -122,10 +123,12 @@ def normalize_events(
             else:
                 open_tools.remove(tool_key)
             status = str(event.get("status") or "success").lower()
-            if status in {"success", "completed", "ok"}:
+            if status in {"success", "succeeded", "completed", "ok"}:
                 tool_success_count += 1
             else:
                 tool_failure_count += 1
+                if status in {"denied", "policy_denied"}:
+                    policy_denied_count += 1
             latency_ms += float(event.get("duration_ms") or 0)
             arguments = event.get("arguments", event.get("inputs"))
             if isinstance(arguments, dict):
@@ -152,6 +155,16 @@ def normalize_events(
             reconnect_count += 1
         elif event_type == "provider_error":
             run_status = "failed"
+        elif event_type == "run_completed":
+            run_status = "completed"
+        elif event_type == "run_failed":
+            run_status = "failed"
+        elif event_type == "run_cancelled":
+            cancelled_count += 1
+            run_status = "cancelled"
+        elif event_type == "run_timeout":
+            run_status = "timeout"
+            latency_ms += float(event.get("duration_ms") or 0)
         elif event_type == "model_call":
             model_call_count += 1
             append_unique(providers, event.get("provider"))
@@ -319,72 +332,41 @@ class ProductionRuntimeTarget:
         self._model = config.agent.model
 
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
+        from app.evaluation.entrypoint import run_headless_case
+
         gateway = OpenAIModelGateway(
             api_key=self._api_key,
             base_url=self._base_url,
             model=self._model,
             temperature=0,
+            endpoint_policy=_provider_endpoint_policy(),
         )
-        registry = build_capability_registry()
-        dispatcher = Dispatcher(registry)
-        run_id = f"eval-{case.id}"
-        context = ExecutionContext(
-            principal_id=case.user_fixture.user_id,
-            run_id=run_id,
-            trace_id=run_id,
-            thread_id=run_id,
-            capability_allowlist=frozenset(
-                definition.public_name
-                for definition in registry.allowed_public_definitions()
-            ),
-        )
-        task = AgentTask(
-            user_id=case.user_fixture.user_id,
-            goal=case.input_messages[-1].content,
-            task_metadata={
-                "model": self._model,
-                "messages": [message.model_dump() for message in case.input_messages],
-                "thread_id": run_id,
-                "run_id": run_id,
-            },
-        )
-        runtime = AgentRuntime(
-            model_gateway=gateway,
-            dispatcher=dispatcher,
-            memory_context=await FixtureMemory(case).retrieve_context(
-                run_id,
-                task.goal,
-            ),
-        )
-        started = time.perf_counter()
         try:
-            events = [
-                event
-                async for event in runtime.stream_decision(
-                    task,
-                    context=context,
-                    budget=RunBudget(),
-                    cancellation=CancellationToken(),
-                )
-            ]
+            result, _events = await run_headless_case(
+                case,
+                registry=build_capability_registry(),
+                model_gateway=gateway,
+                model=self._model,
+                fail_on_run_failure=False,
+            )
         finally:
             await gateway.close()
-        duration_ms = (time.perf_counter() - started) * 1000
-        normalized = normalize_events(
-            events,
-            response_schema=case.assertions.response_schema,
-            run_id=run_id,
-        )
-        return normalized.model_copy(
-            update={
-                "route": classify_route(
-                    events,
-                    normalized.capabilities,
-                    normalized.text,
-                ),
-                "latency_ms": duration_ms,
-            }
-        )
+        return result
+
+
+def _provider_endpoint_policy() -> ProviderEndpointPolicy:
+    from app.core.config import settings
+
+    allowed_hosts, allowed_ports = parse_provider_allowlists(
+        settings.PROVIDER_ALLOWED_HOSTS,
+        settings.PROVIDER_ALLOWED_PORTS,
+    )
+    return make_provider_endpoint_policy(
+        deploy_mode=settings.DEPLOY_MODE,
+        resolve_dns=settings.PROVIDER_RESOLVE_DNS,
+        allowed_hosts=allowed_hosts,
+        allowed_ports=allowed_ports,
+    )
 
 
 def normalize_production_result(

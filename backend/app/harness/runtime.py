@@ -9,7 +9,15 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from decimal import Decimal
 from math import isfinite
-from typing import TYPE_CHECKING, Any, AsyncIterator, Literal, Protocol, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncGenerator,
+    AsyncIterator,
+    Literal,
+    Protocol,
+    cast,
+)
 from uuid import uuid4
 
 from app.agents.router import AgentRouter
@@ -571,12 +579,63 @@ class AgentRuntime:
             event["sequence"] = await self._canonical_append(
                 event, sequence=sequence, require_existing_run=True
             )
+            await self._record_reconciled_trace(task, context, result.status)
             return event
         finally:
             if registered:
                 cancellation_store.unregister(run_id, token)
             if leased:
                 await self._release_checkpoint_lease()
+
+    async def _record_reconciled_trace(
+        self, task: AgentTask, context: ExecutionContext, status: str
+    ) -> None:
+        """Rebuild diagnostics from confirmed events, without executing work."""
+        if self.trace_store is None or self.event_store is None:
+            return
+        from app.harness.decision_trace import DecisionTraceProjection
+
+        try:
+            projection = DecisionTraceProjection(context, task)
+            after = 0
+            terminal_error = None
+            while page := await self.event_store.list_after(
+                context.run_id, after_sequence=after, limit=1000
+            ):
+                for stored in page:
+                    event_type = {
+                        "run.succeeded": "run_completed",
+                        "run.failed": "run_failed",
+                        "run.cancelled": "run_cancelled",
+                    }.get(stored.event_type, stored.event_type)
+                    if stored.event_type in _DURABLE_TERMINAL_EVENTS:
+                        terminal_error = stored.payload.get("error_code")
+                        if stored.payload.get("status") == "timeout":
+                            event_type = "run_timeout"
+                    projection.observe(
+                        {
+                            **stored.payload,
+                            "type": event_type,
+                            "run_id": context.run_id,
+                            "sequence": stored.sequence,
+                            "invocation_id": stored.invocation_id,
+                            "event_id": stored.event_id,
+                        }
+                    )
+                after = page[-1].sequence
+            trace = sanitize_trace(
+                projection.finish(
+                    "failed" if status == "timeout" else status, terminal_error
+                )
+            )
+            record = getattr(
+                self.trace_store, "record_projection", self.trace_store.record
+            )
+            await record(trace)
+        except Exception:
+            logger.warning(
+                "trace_reconciliation_failed", extra={"run_id": context.run_id}
+            )
 
     async def _canonical_start(
         self,
@@ -1246,6 +1305,113 @@ class AgentRuntime:
         cancellation: CancellationToken | None = None,
         approval: Approval | None = None,
     ) -> AsyncIterator[dict[str, Any]]:
+        """Execute the primary loop and persist its safe diagnostic projection."""
+        from app.harness.decision_trace import DecisionTraceProjection
+
+        run_id = self._ensure_run_id(task)
+        context = context or ExecutionContext(
+            principal_id=task.user_id if task.user_id > 0 else None,
+            run_id=run_id,
+            trace_id=str(task.metadata.get("trace_id") or run_id),
+            thread_id=str(task.metadata["thread_id"])
+            if task.metadata.get("thread_id") is not None
+            else None,
+            capability_allowlist=frozenset(
+                task.metadata.get("capability_allowlist") or ()
+            ),
+        )
+        projection = (
+            DecisionTraceProjection(context, task)
+            if self.trace_store is not None
+            else None
+        )
+        status = "running"
+        error_code = None
+        iterator = self._stream_decision(
+            task,
+            context=context,
+            budget=budget,
+            cancellation=cancellation,
+            approval=approval,
+        )
+        try:
+            async for event in iterator:
+                if projection is not None:
+                    try:
+                        projection.observe(event)
+                    except Exception:
+                        # Diagnostics must never interrupt canonical execution.
+                        logger.warning(
+                            "trace_projection_failed", extra={"run_id": run_id}
+                        )
+                        projection = None
+                event_type = event.get("type")
+                if event_type in {
+                    "run_completed",
+                    "run_failed",
+                    "run_cancelled",
+                    "run_timeout",
+                }:
+                    status = {
+                        "run_completed": "completed",
+                        "run_failed": "failed",
+                        "run_cancelled": "cancelled",
+                        "run_timeout": "failed",
+                    }[event_type]
+                    error_code = event.get("error_code")
+                yield event
+        except (asyncio.CancelledError, GeneratorExit):
+            if status == "running":
+                status = "cancelled"
+                error_code = "cancelled"
+            raise
+        except Exception:
+            status = "failed"
+            error_code = "permanent"
+            raise
+        finally:
+            await iterator.aclose()
+            if projection is not None and self.trace_store is not None:
+                try:
+                    trace = sanitize_trace(projection.finish(status, error_code))
+                    record_allowed = context.run_id == run_id
+                    if self.run_store is not None:
+                        run = await self.run_store.get(
+                            run_id, user_id=context.principal_id
+                        )
+                        expected = {
+                            "completed": {"succeeded"},
+                            "failed": {"failed", "abandoned"},
+                            "cancelled": {"cancelled"},
+                            "running": {"queued", "running", "paused"},
+                        }
+                        record_allowed = bool(
+                            record_allowed
+                            and run is not None
+                            and run.user_id == context.principal_id
+                            and run.status in expected.get(status, set())
+                        )
+                    if record_allowed:
+                        record = getattr(
+                            self.trace_store,
+                            "record_projection",
+                            self.trace_store.record,
+                        )
+                        await record(trace)
+                except Exception:
+                    logger.exception(
+                        "trace_storage_failed", extra={"trace_id": context.trace_id}
+                    )
+
+    async def _stream_decision(
+        self,
+        task: AgentTask,
+        *,
+        context: ExecutionContext | None = None,
+        budget: RunBudget | None = None,
+        cancellation: CancellationToken | None = None,
+        approval: Approval | None = None,
+    ) -> AsyncGenerator[dict[str, Any], None]:
         """Run the primary structured Decision loop under Runtime ownership.
 
         Unlike ``stream()``, this path does not invoke an agent adapter.  Each
@@ -2133,13 +2299,14 @@ class AgentRuntime:
                     "termination_reason": "checkpoint_lease_lost",
                 }
         except (asyncio.CancelledError, GeneratorExit):
-            state.status = "cancelled"
-            state.terminal_result = RunResult(
-                run_id=run_id,
-                status="cancelled",
-                error_code=ErrorCode.CANCELLED,
-            )
-            await save_checkpoint()
+            if state.terminal_result is None:
+                state.status = "cancelled"
+                state.terminal_result = RunResult(
+                    run_id=run_id,
+                    status="cancelled",
+                    error_code=ErrorCode.CANCELLED,
+                )
+                await save_checkpoint()
             raise
         except CanonicalPersistenceError:
             logger.exception(

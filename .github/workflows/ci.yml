@@ -220,10 +220,26 @@ jobs:
           echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
 
       - name: Run deterministic Harness regression
-        run: uv run --locked pytest tests/harness tests/acceptance tests/capabilities tests/trace -q
+        run: |
+          mkdir -p .runtime/junit
+          uv run --locked pytest tests/harness tests/acceptance tests/capabilities tests/trace tests/api tests/evaluation -q --junitxml=.runtime/junit/harness.xml
+
+      - name: Evaluate the shared primary entrypoint
+        run: uv run --locked python -m app.evaluation.runner --config evals/config/entrypoint.yaml
 
       - name: Lint Harness boundaries
-        run: uv run --locked ruff check app/harness app/capabilities app/trace tests/harness tests/acceptance tests/capabilities tests/trace
+        run: uv run --locked ruff check app/harness app/capabilities app/trace app/evaluation app/api/v1/agent.py tests/harness tests/acceptance tests/capabilities tests/trace tests/api tests/evaluation
+
+      - name: Preserve Harness and entrypoint failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-harness-entrypoint-evidence
+          path: |
+            backend/.runtime/junit/harness.xml
+            backend/.runtime/evaluation/entrypoint.json
+          retention-days: 14
+          if-no-files-found: warn
 
   benchmark:
     name: benchmark

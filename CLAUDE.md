@@ -1,791 +1,650 @@
-# OtakuNeko - Claude Code Rules
+# OtakuNeko Agent Instructions
 
-## 📋 Project Overview
+本文件适用于整个仓库。子目录中的 `AGENTS.md` 可以补充本文件；`AGENTS.override.md` 可以在明确范围内覆盖本文件。更具体的规则只适用于其所在目录及子目录。
 
-**OtakuNeko** is a private anime management assistant built with:
-- **Backend**: FastAPI 0.109+ + Python 3.11+ + LangGraph ReAct Agent + SQLModel ORM
-- **Frontend**: Next.js 16.1 (App Router) + React 19 + TypeScript + Tailwind CSS + Zustand
-- **Database**: Dual-mode (SQLite for local dev / PostgreSQL for production)
-- **Cache**: In-memory (local) / Redis (production)
-- **AI Engine**: LangGraph ReAct workflow with 7 built-in tools for anime data analysis
+## 1. 项目边界与源码事实
 
-**Purpose**: Personal anime collection management, smart scheduling, AI-powered recommendations, and character analysis via Bangumi API integration.
+OtakuNeko 当前是一个前后端仓库：
 
----
+- 后端：`backend/`，FastAPI、LangGraph、SQLModel/SQLAlchemy、Alembic、SQLite/PostgreSQL、Redis 配置、MCP、Memory、Trace 和 Evaluation；
+- 前端：`frontend/`，Next.js 16、React 19、TypeScript、SSE/HTTP 消费和 Vitest；
+- Harness 相关后端边界：`backend/app/harness/`、`backend/app/agents/`、`backend/app/capabilities/`、`backend/app/mcp_server/`、`backend/app/memory/`、`backend/app/trace/`；
+- 业务和集成服务：`backend/app/services/`、`backend/app/api/v1/`；
+- 随 Git 分发的规范：`docs/architecture/`；发布历史：`docs/changelog/`。
+- 本地任务与审计材料：`docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/`，不随 Git 分发，新克隆可以不存在。
 
-## 🏗️ Architecture Rules
+源码事实优先于 README、设计计划、审计推断和历史文档。不能从目标架构、类名、配置项或已有测试名称推断功能已经接入真实路径。发现不一致时，记录文件路径、符号、实际行为和置信度；当前任务无法处理时停止，不伪造模块、能力或完成状态。
 
-### Layered Architecture (Backend)
+## 2. 权威资料读取顺序
 
-```
-API Layer (Routers) → Service Layer → Repository Layer → Database
-```
+处理 Agent Harness 任务前，按以下顺序阅读：
 
-1. **API Layer** (`backend/app/api/v1/`): 9 routers with ~30 endpoints
-   - Each router is a separate file: `collections.py`, `subjects.py`, `bangumi.py`, `agent.py`, etc.
-   - All endpoints use async/await
-   - Authentication via `get_current_user` dependency
-   - Response models use Pydantic schemas from `schemas/`
+1. `docs/architecture/standard-agent-harness-reference.md`；
+2. `docs/architecture/standard-agent-harness-reference-and-codex-audit-guide.md`；
+3. `docs/architecture/code-review.md`；
+4. 用户提供的当前任务；如本地存在，再读取相关 `docs/harness-audit/` 和 `docs/harness-tasks/INDEX.md`；
+5. 当前任务明确使用 Batch 时，读取用户提供或本地存在的该 Batch 全部任务文件；
+6. 如本地存在，读取与当前任务有关的执行记录；
+7. 当前修改路径下更具体的 `AGENTS.md` 或 `AGENTS.override.md`。
 
-2. **Service Layer** (`backend/app/services/`): 11 services
-   - One service per domain: `collection_service.py`, `bangumi_service.py`, `qb_service.py`, etc.
-   - Business logic lives here, not in routers
-   - Services are stateless and async
+如果没有明确批准的活动 Batch，不得把 `BATCH-00` 或最近一个任务目录自动当作当前 Batch。此时可以做审计、规划、文档整理或基线检查，但不得创建虚假的 Batch 执行记录，也不得修改后续 Batch 的实现范围。
 
-3. **Repository Layer** (`backend/app/repositories/`): 4 repositories
-   - `subject_repo.py`, `collection_repo.py`, `user_repo.py`, `schedule_repo.py`
-   - Handle database CRUD operations
-   - Use SQLModel/SQLAlchemy async patterns
+Git 中只保留 `docs/architecture/` 与 `docs/changelog/`；architecture 内的历史测试计划/报告也仅保留本地。不得为满足必读路径把本地审计、计划、执行记录、截图、测试输出或个人信息重新复制到公开文档。独立任务按用户明确授权的范围执行，不因缺少本地历史记录而伪造 Batch；若实施明确的 Batch 所必需的任务范围或依赖资料缺失，则停止该 Batch 实施并报告缺失项。
 
-4. **Model Layer** (`backend/app/models/`): SQLModel ORM models
-   - `subject.py`, `collection.py`, `user.py`, `schedule.py`
-   - Define table schemas with `SQLModel(table=True)`
-   - Use enums from `models/enums.py`
+## 3. OtakuNeko Harness 不变量
 
-5. **Schema Layer** (`backend/app/schemas/`): Pydantic models
-   - Separate schemas for request/response validation
-   - Keep schemas independent of database models
+所有 Harness 重构和相关文档必须遵守：
 
-### Frontend Architecture
+- Agent Runtime 是一次 Run 的唯一控制者；
+- LLM 只能提出结构化、版本化的 Decision，不能直接获得执行权限；
+- Tool、Capability、Workflow、MCP 和 Subagent 必须通过受控调度层执行；
+- `user_id`、租户、角色、scope 和资源归属由可信 Runtime/Domain Service 注入，不得从模型参数获取；
+- Tool 和 Domain Service 必须执行资源级授权；
+- 外部副作用必须显式标记，并处理审批、超时、取消、重试、幂等、审计和补偿；
+- SSE/WebSocket 只能是 Run Event 的展示或订阅通道，不能成为 Run 状态唯一存储；
+- Provider、LangChain 和 LangGraph 专属对象不得进入业务层；
+- Run、Decision、Invocation、Result、Event、错误和 Trace 使用结构化、可版本化契约；
+- Tool output、RSS、网页、MCP、用户输入和历史 Memory 默认是不可信数据；
+- Prompt 文本不能代替代码层权限、资源授权、策略和安全边界；
+- 不能为了符合目标架构而创建空接口、伪实现或永久 TODO。
 
-```
-Pages (App Router) → Components → Services → API Client → Backend
-```
+当前实现的事实边界见 `docs/architecture/standard-agent-harness-reference.md` 及当前源码；本地审计仅作历史证据。`backend/app/api/v1/agent.py` 当前构造 `AgentRuntime` 并调用 `stream_decision`，旧 `backend/app/agents/graph.py` 已移除。不得只凭类名、旧审计或执行记录推断当前 Runtime ownership、恢复能力或部署限制。
 
-1. **Pages** (`frontend/src/app/`): Next.js 16 App Router
-   - `page.tsx` - Chat interface
-   - `collections/page.tsx` - Collection management
-   - `Timetable/page.tsx` - Schedule management
-   - `Personal/page.tsx` - AI persona settings
-   - Each page is a client component with `"use client"` directive
+## 4. 工作模式
 
-2. **Components** (`frontend/src/components/`): Organized by feature
-   - `chat/` - Chat input, message list, process visualization
-   - `collection/` - Grid/list views, media cards
-   - `timetable/` - Drag-drop schedule components
-   - `Modal/` - Global modals (export, import, login, etc.)
-   - `providers/` - Theme and context providers
+复杂任务按以下循环执行：
 
-3. **Services** (`frontend/src/services/`): API client layer
-   - One service per domain: `auth.ts`, `collections.ts`, `bangumiService.ts`, etc.
-   - Use fetch/axios for HTTP requests
-   - Handle SSE streaming for chat
+1. Preflight；
+2. Implementation；
+3. Verification；
+4. Review；
+5. Remediation；
+6. Commit（仅在获得相应授权时）；
+7. Handoff。
 
-4. **State Management** (`frontend/src/stores/`, `frontend/src/store/`):
-   - Zustand for global state: `useChatStore.ts`, `useRoleStore.ts`
-   - Local state with React hooks in components
+一次只实施一个 Batch。当前 Batch 尚未通过验收和 Review 时，不得提前修改后续 Batch。没有明确允许的修改不得顺手完成。
 
----
+文档-only 任务也必须核对源码引用和路径；不能把目标架构、审计建议或任务规划写成当前已实现能力。
 
-## 🔧 Tech Stack Rules
+## 5. Preflight
 
-### Backend Dependencies (MUST use)
+开始实施前必须：
 
-| Category | Library | Purpose |
-|----------|---------|---------|
-| Framework | FastAPI 0.109+ | REST API + SSE streaming |
-| ORM | SQLModel + SQLAlchemy | Async database models |
-| AI Agent | LangGraph 1.0+ | ReAct workflow orchestration |
-| LLM | LangChain-OpenAI | Unified LLM interface |
-| Database | SQLite (local) / PostgreSQL (cloud) | Dual-mode |
-| Cache | fastapi-cache2 | API response caching |
-| Auth | python-jose + passlib(bcrypt) | JWT + password hashing |
-| HTTP | httpx | Async external API calls |
-| Scraper | BeautifulSoup4 + lxml | Bangumi HTML scraping |
-| Package Manager | uv | Python dependency management |
+- 运行 `git status --short`、`git branch --show-current`、`git rev-parse HEAD`；
+- 检查是否处于普通检出或 linked worktree，并识别已有用户修改；
+- 明确当前 Batch、任务依赖、前置 Batch 的完成状态和 commit；
+- 阅读任务允许/禁止的文件边界；
+- 检查源码、测试、依赖和部署配置，而不是只看 README；
+- 从实际配置确认测试、lint、format、typecheck、build 和 Eval 命令；
+- 运行任务要求的基线检查；
+- 活动 Batch 才创建或更新 `docs/harness-execution/BATCH-XX-execution.md`；文档整理任务使用普通变更记录，不伪造 Batch 记录。
 
-### Frontend Dependencies (MUST use)
+工作区已有的用户修改必须区分来源。不能使用 `git reset --hard`、`git checkout --` 或其他方式覆盖它们。
 
-| Category | Library | Purpose |
-|----------|---------|---------|
-| Framework | Next.js 16.1 (App Router) | React SSR + API proxy |
-| UI | React 19 + @lobehub/ui + antd | Chat-focused UI components |
-| State | Zustand 5.0 | Global state management |
-| Styling | Tailwind CSS + antd-style | Atomic CSS + theme system |
-| Drag-Drop | @dnd-kit 6.3 | Schedule drag interactions |
-| HTTP | fetch + axios | API requests + SSE streaming |
-| Build | Turbopack + React Compiler | Fast builds |
-| Package Manager | pnpm 10.x | Dependency management |
+## 6. 真实验证命令
 
----
+以下命令来自当前仓库的 `backend/pyproject.toml`、`backend/uv.lock`、根 `package.json` 和 `frontend/package.json`。从仓库根目录执行：
 
-## 📁 File Structure Rules
+~~~powershell
+# 后端
+uv run --directory backend pytest
+uv run --directory backend ruff check app tests
 
-### Backend File Naming
+# 前端
+pnpm --dir frontend lint
+pnpm --dir frontend typecheck
+pnpm --dir frontend test
+pnpm --dir frontend build
+~~~
 
-```
-backend/app/
-├── api/v1/           # API routers (lowercase, plural)
-│   ├── collections.py
-│   ├── subjects.py
-│   ├── bangumi.py
-│   └── agent.py
-├── services/         # Business logic (lowercase, singular)
-│   ├── collection_service.py
-│   └── bangumi_service.py
-├── repositories/     # Data access (lowercase, plural)
-│   ├── subject_repo.py
-│   └── collection_repo.py
-├── models/           # SQLModel ORM (lowercase, singular)
-│   ├── subject.py
-│   └── collection.py
-├── schemas/          # Pydantic schemas (lowercase, plural)
-│   ├── collection.py
-│   └── subject.py
-└── core/             # Infrastructure
-    ├── config.py     # Settings (pydantic-settings)
-    ├── security.py   # JWT + auth
-    └── logging.py    # Logger setup
-```
+也可以从 `backend/` 目录执行 `uv run pytest` 和 `uv run ruff check app tests`。不存在项目配置依据的命令不得自行写入执行记录；未运行的项目必须说明原因。
 
-### Frontend File Naming
+文档-only 变更至少运行：
 
-```
-frontend/src/
-├── app/                  # Next.js App Router pages
-│   ├── page.tsx          # Chat page (root)
-│   ├── layout.tsx        # Root layout (always present)
-│   ├── collections/
-│   ├── Timetable/
-│   └── Personal/
-├── components/           # UI components (lowercase, plural)
-│   ├── chat/             # Feature-based grouping
-│   ├── collection/
-│   └── Modal/
-├── services/             # API clients (lowercase, plural)
-│   ├── auth.ts
-│   └── collections.ts
-├── stores/               # Zustand stores (lowercase, plural)
-│   ├── useChatStore.ts
-│   └── useRoleStore.ts
-├── lib/                  # Utilities
-│   ├── utils.ts          # cn() class name merger
-│   └── fetcher.ts        # SSE streaming
-└── hooks/                # Custom React hooks
-    └── useChatStreaming.ts
-```
+~~~powershell
+git diff --check
+git diff --stat
+rg -n "standard-agent-harness-reference|harness-execution|BATCH-[0-9]+" AGENTS.md docs
+~~~
 
----
+随后审查完整未提交 diff，确认没有业务代码、依赖、数据库、Secret、缓存或生成文件的意外变化。
 
-## 🎨 Code Style Rules
+## 7. 修改约束
 
-### Python (Backend)
+实施任务时：
 
-1. **Type Hints**: Always use type hints for function parameters and return values
-   ```python
-   async def get_collection(
-       collection_id: int,
-       current_user: User = Depends(get_current_user)
-   ) -> CollectionRead:
-   ```
+- 只修改当前任务允许的文件；
+- 不进行无关重构、全仓库格式化或无关依赖升级；
+- 不改变公共 API，除非任务明确要求并提供兼容路径；
+- 不删除兼容层、旧实现、失败测试或强断言来制造通过结果；
+- 不把 Secret、Token、密码、完整用户数据、完整 BYOK 或 raw provider payload 写入日志、测试、Eval fixture 或文档；
+- 不向模型暴露数据库连接、文件句柄、Shell、凭据或任意网络客户端；
+- 不绕过 Domain Service 的权限、业务约束和资源范围；
+- 不执行生产部署、生产数据库操作或生产迁移；
+- 新增文档中的路径、符号、命令和状态必须能由仓库验证。
 
-2. **Docstrings**: Use Google-style docstrings for public functions
-   ```python
-   async def sync_user_collections(
-       username: str,
-       token: Optional[str] = None
-   ) -> List[CollectionRead]:
-       """Sync user collections from Bangumi API.
-       
-       Args:
-           username: Bangumi username
-           token: Optional API token for private data
-           
-       Returns:
-           List of synced collections
-       """
-   ```
+文档结构维护任务默认只允许修改：`AGENTS.md`、`docs/architecture/`、必要的相关链接，以及本地执行记录和计划。用户明确授权 Git 文档边界整理时，可以修改 `.gitignore` 和 README 引用，并用 `git rm --cached -- <明确路径>` 取消本地材料的跟踪，保留本地文件。Harness Batch 仍必须严格遵守任务文件列出的边界；不得借文档任务修改业务代码或 Batch 任务目标。
 
-3. **Async/Await**: Use async/await for all I/O operations
-   ```python
-   async def fetch_subject(source_id: str) -> Subject:
-       async with httpx.AsyncClient() as client:
-           response = await client.get(f"https://api.bgm.tv/subject/{source_id}")
-           return response.json()
-   ```
+## 8. Verification 与执行记录
 
-4. **Error Handling**: Use HTTPException for API errors
-   ```python
-   if not collection:
-       raise HTTPException(status_code=404, detail="Collection not found")
-   ```
+每次修改后，按变更范围运行适用的：
 
-5. **Logging**: Use structured logging from `core/logging.py`
-   ```python
-   from app.core.logging import get_logger
-   logger = get_logger(__name__)
-   logger.info(f"Syncing collections for user {username}")
-   ```
+- 单元、集成、回归和安全测试；
+- ruff/eslint/lint；
+- format check、typecheck；
+- 前端 build；
+- 后端启动检查、Alembic/数据库迁移检查；
+- Agent Eval 或真实 API + fake provider/tool 回归。
 
-6. **Imports**: Group imports by standard library, third-party, local
-   ```python
-   from typing import Optional, List
-   from datetime import datetime
-   
-   from fastapi import APIRouter, Depends, HTTPException
-   from sqlmodel import select
-   
-   from app.db.database import get_session
-   from app.models.user import User
-   ```
+执行记录必须记录完整命令、退出码、通过/失败/跳过数量、已知警告和未运行项目及原因。不能只写“测试通过”。
 
-### TypeScript/React (Frontend)
+## 9. Code Review
 
-1. **TypeScript**: Use strict mode, define interfaces for all props
-   ```typescript
-   interface ChatInputProps {
-     onSend: (text: string, contextItems: SearchResultItem[]) => void;
-     loading: boolean;
-     selectedModel: string;
-   }
-   
-   export const ChatInput: React.FC<ChatInputProps> = ({
-     onSend,
-     loading,
-     selectedModel
-   }) => {
-     // Component logic
-   };
-   ```
+Harness Batch 和会改变 Harness 规范的文档变更都必须按照 `docs/architecture/code-review.md` 审查完整未提交 diff。
 
-2. **Client Components**: Always add `"use client"` directive for interactive components
-   ```typescript
-   "use client";
-   
-   import { useState } from 'react';
-   ```
+Review 阶段只审查、不修改。发现问题后退出 Review，进入 Remediation；修复后重新运行全部相关检查，再审查完整 diff，而不是只看最后几行。
 
-3. **Zustand Stores**: Use `use` prefix for store hooks
-   ```typescript
-   export const useChatStore = create<ChatState>((set) => ({
-     messages: [],
-     addMessage: (message) => set((state) => ({
-       messages: [...state.messages, message]
-     }))
-   }));
-   ```
+提交门槛：
 
-4. **Styling**: Use Tailwind CSS classes + antd-style for theme tokens
-   ```typescript
-   const { token } = theme.useToken();
-   return (
-     <div className="bg-white dark:bg-gray-800 p-4 rounded-lg">
-       {/* Content */}
-     </div>
-   );
-   ```
+- Review verdict 为 `pass`；
+- 不存在 blocker、critical、high Finding；
+- 不存在未处理的 medium Finding；
+- 任务验收项全部满足；
+- 适用测试和检查均有真实退出码；
+- 修改范围符合任务约束；
+- 回滚方式明确。
 
-5. **Services**: Keep API calls in services/, use fetch with proper error handling
-   ```typescript
-   export async function fetchCollections(params: CollectionParams) {
-     const response = await fetch(`/api/collections?${new URLSearchParams(params)}`);
-     if (!response.ok) throw new Error('Failed to fetch collections');
-     return response.json();
-   }
-   ```
+## 10. Git 规则
+
+允许查看 `status`、`diff`、`log`，以及在明确授权后创建本地 commit。提交前必须运行：
+
+~~~powershell
+git status --short
+git diff --check
+git diff --stat
+git diff
+~~~
+
+禁止：
+
+~~~text
+git add .
+git add -A
+git commit --no-verify
+git reset --hard
+git push --force
+~~~
+
+暂存时必须显式列出当前任务文件路径。未经用户明确授权，不得 `git push`、创建或合并 PR、修改主分支、删除远程分支、发布、部署或运行生产迁移。
+
+推荐 commit 格式：
+
+~~~text
+<type>(harness): <batch objective>
+
+Batch: BATCH-XX
+Tasks: TASK-HARNESS-XXX
+Gaps: GAP-XXX
+Tests: <summary>
+Review: pass
+~~~
+
+没有活动 Batch 的文档整理不应伪造 Batch 编号；使用能准确描述文档变更的 commit message。
+
+## 11. 停止条件
+
+出现以下情况时停止当前工作，不得继续扩大范围：
+
+- 前置条件不满足或当前 Batch 无法确定；
+- 工作区存在无法归属的修改；
+- 任务要求相互矛盾；
+- 需要超出允许范围的大规模修改；
+- 关键测试失败且无法在当前范围内修复；
+- 发现跨用户访问、Secret 泄漏或未授权副作用；
+- 无法确定写操作的幂等语义、回滚路径或外部状态；
+- 连续三轮 Review 仍未通过；
+- 计划与源码事实严重不一致；
+- 当前上下文不足以可靠完成下一步。
+
+停止时必须报告：阻塞原因、源码证据、当前分支和 commit、工作区状态、已完成内容和建议恢复方式。
+
+## 12. Handoff
+
+Batch 完成时输出：批次状态、commit、任务、测试通过/失败/跳过、Review verdict、rounds、changed files、deferred findings、未解决风险和下一批次。本地存在 `docs/harness-execution/TEMPLATE.md` 时可复用该模板；新克隆缺少模板不影响按上述字段交接。
+
+没有活动 Batch 的文档任务至少应输出：变更文件、验证命令和退出码、未运行项目及原因、审查结论、未解决风险和回滚方式。
+
+
+# Project Management
+
+This repository uses the global `$ticktick-project-system` skill for external project management.
+
+Use `$ticktick-project-system` when the user explicitly asks to:
+
+* create a TickTick project structure
+* sync a plan to TickTick
+* update project state
+* review project progress
+* create or update hypotheses, capabilities, or AI actions
+* perform a weekly review
+* materialize the current plan into TickTick tasks
+
+Do not modify TickTick when the user only asks for analysis, brainstorming, coding, or planning unless they explicitly ask to sync/update/create the project state.
+
+Assume AI handles most implementation details. Do not create TickTick tasks for individual file edits, functions, shell commands, test commands, plots, or other low-level implementation steps unless they require independent human tracking.
 
 ---
 
-## 🗄️ Database Rules
+## Project Identity
 
-### Dual-Mode Configuration
+Project name:
+Otakuneko
 
-```python
-# backend/app/core/config.py
-DEPLOY_MODE: str = "local"  # or "cloud"
+TickTick project:
+Otakuneko
 
-# Auto-generates DATABASE_URL based on mode
-@computed_field
-@property
-def DATABASE_URL(self) -> str:
-    if self.DEPLOY_MODE == "local":
-        return f"sqlite+aiosqlite:///{self.SQLITE_FILE}"
-    else:
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
-```
+Project mode:
+Agent development
 
-### Table Naming
+Repository purpose:
+`OtakuNeko 是一个前后端分离的个人番剧管理与分析助手：后端基于 FastAPI 提供收藏同步、排班、外部集成和 AI 聊天能力，前端基于 Next.js 提供管理与实时聊天界面。Agent Harness 正在从现有 LangGraph 运行路径向 Runtime-owned、可观测且可恢复的控制面演进；是否已接入真实主路径必须以源码和测试为准。`
 
-- Use singular snake_case: `subject`, `collection`, `user`, `schedule`
-- Add `source` and `source_id` fields for multi-source data (Bangumi, Douban)
-- Use JSON columns for flexible nested data: `images`, `tags`, `infobox`
 
-### Indexing Rules
+# Mode B — Agent / Software System Development
 
-- Index foreign keys and frequently queried fields: `user_id`, `source_id`, `type`, `status`
-- Add composite indexes for common query patterns
-- Use unique constraints for multi-source deduplication: `(source, source_id)`
+> 如果当前项目不是 Agent / 软件系统开发项目，可保留本节但忽略执行。
+> 当 `Project mode = Agent development` 时，遵循本节。
 
----
+## Management Model
 
-## 🤖 AI Agent Rules
+Use this hierarchy:
 
-### LangGraph ReAct Workflow
+`Project -> Workstream -> Capability -> AI Action`
 
-```python
-# backend/app/agents/graph.py
-graph = StateGraph(AgentState)
-graph.add_node("agent", call_model)
-graph.add_node("tools", tool_executor)
-graph.add_edge(START, "agent")
-graph.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
-graph.add_edge("tools", "agent")
-```
+Development loop:
 
-### Tool Registration
+`Problem -> Capability Spec -> AI Implementation -> Eval -> Acceptance -> Decision -> Next Capability / Iteration`
 
-- Tools are defined in `agents/tools/` directory
-- Each tool is a function with `@tool` decorator
-- Tools must have clear docstrings for LLM understanding
-- Return structured data (dict/list), not raw strings
+## Project Top Notes
 
-### Available Tools
+The TickTick project should contain two top notes:
 
-| Tool | Source | Purpose |
-|------|--------|---------|
-| `get_anime_info` | Bangumi API | Query anime details |
-| `fetch_audience_reviews` | Bangumi Scraper | Get reviews |
-| `get_anime_staff` | Bangumi API | Query production staff |
-| `get_anime_cast` | Bangumi API | Query voice actors |
-| `search_anime_advanced` | Bangumi API | Advanced search |
-| `get_current_time` | Local system | Current datetime |
-| `generate_user_profile_tool` | Database + LLM | User profile analysis |
+### `00｜Project Definition`
 
----
+Maintain:
 
-## 🔐 Authentication Rules
+* outcome
+* scope
+* non-goals
+* definition of done
+* current stage/version
+* important links
 
-### JWT Token Flow
+### `01｜System Metrics`
 
-1. User registers/logs in via `/api/v1/auth/` endpoints
-2. Server validates credentials with bcrypt
-3. Returns JWT token with `user_id` and `exp` claims
-4. Client stores token in localStorage
-5. Subsequent requests include `Authorization: Bearer <token>` header
-6. Backend validates via `get_current_user` dependency
+Maintain:
 
-### Password Hashing
+* current version
+* baseline/current/target metrics
+* current bottlenecks
+* current best commit/eval
+* current focus
+* regression guardrails
+* latest major decision
 
-```python
-# backend/app/core/security.py
-from passlib.context import CryptContext
+These two notes are the source of truth for system state.
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+## Workstream
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(plain_password, hashed_password)
+TickTick groups represent stable technical workstreams.
 
-def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
-```
+Examples:
 
----
+* `CORE RUNTIME`
+* `TOOLS & SANDBOX`
+* `CONTEXT & MEMORY`
+* `PLANNING & CONTROL`
+* `EVAL & OBSERVABILITY`
+* `PERFORMANCE`
+* `RELEASE`
 
-## 🌐 API Design Rules
+Use workstreams to express where the capability belongs, not whether it is complete.
 
-### RESTful Conventions
+## Capability Parent Task
 
-- **GET** `/api/v1/collections/` - List collections (with filters)
-- **GET** `/api/v1/collections/{id}` - Get single collection
-- **POST** `/api/v1/collections/` - Create collection
-- **PUT** `/api/v1/collections/{id}` - Update collection
-- **DELETE** `/api/v1/collections/{id}` - Delete collection
+A parent task represents a system capability.
 
-### Query Parameters
+Recommended title format:
 
-- Use snake_case: `sort_by`, `limit`, `offset`, `subject_type`
-- Provide sensible defaults: `limit=20`, `offset=0`
-- Document parameters with `description` in `Query()`
+`Capability Name｜vX`
 
-### Response Models
+Examples:
 
-- Use Pydantic schemas from `schemas/` directory
-- Return `UnifiedList` for paginated responses
-- Include proper HTTP status codes: 200, 201, 404, 422, 500
+* `Context Compaction｜v1`
+* `Tool Recovery｜v2`
+* `Stuck Detection｜v1`
 
----
+A capability task should contain:
 
-## 🎯 SSE Streaming Rules (Chat)
+* Problem
+* Goal
+* Scope
+* Expected Behavior
+* Acceptance Criteria
+* Metrics
+* Result
+* Decision
+* Next
+* Artifacts
 
-### Backend Streaming
+A capability is complete only after evaluation leads to a clear decision:
 
-```python
-# backend/app/api/v1/agent.py
-from fastapi.responses import StreamingResponse
+* Accept
+* Iterate
+* Rework
+* Revert
+* Park
 
-async def chat_stream(message: str):
-    async for event in agent.astream_events({"messages": [("user", message)]}):
-        if event["event"] == "on_chat_model_stream":
-            yield f"data: {json.dumps({'type': 'token', 'content': event['data']['chunk'].content})}\n\n"
-        elif event["event"] == "on_tool_start":
-            yield f"data: {json.dumps({'type': 'tool_start', 'tool': event['name']})}\n\n"
-    yield "data: [DONE]\n\n"
+Do not mark a capability complete merely because the implementation exists.
 
-return StreamingResponse(chat_stream(message), media_type="text/event-stream")
-```
+## AI Action Subtask
 
-### Frontend Consumption
+A child task represents one independently delegable AI work package.
 
-```typescript
-// frontend/src/lib/fetcher.ts
-const response = await fetch('/api/agent/chat', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ message })
-});
+Recommended title format:
 
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
+`Axxx｜完成实现 + eval + regression + 结论`
 
-while (true) {
-  const { done, value } = await reader.read();
-  if (done) break;
-  
-  const chunk = decoder.decode(value);
-  const lines = chunk.split('\n');
-  
-  for (const line of lines) {
-    if (line.startsWith('data: ')) {
-      const data = JSON.parse(line.slice(6));
-      // Handle token, tool_start, tool_end events
-    }
-  }
-}
-```
+A good AI Action may include:
+
+* implementation
+* tests
+* eval
+* regression checks
+* benchmark comparison
+* result summary
+
+Prefer one outcome-oriented AI Action over many coding micro-tasks.
+
+Example:
+
+`实现 Context Compaction v1，完成 long-task eval、regression 检查并输出结果总结`
+
+Avoid creating separate TickTick tasks for:
+
+* editing individual files
+* implementing functions
+* running shell commands
+* writing unit tests
+* changing config files
+
+unless they require independent tracking.
+
+## Capability Decision Rule
+
+After an AI Action:
+
+1. update Result
+2. check Acceptance Criteria
+3. update system metrics if necessary
+4. decide Accept / Iterate / Rework / Revert / Park
+5. identify the next bottleneck
+6. create a new capability or iteration only if justified
+7. mark only the true next action as `#next`
 
 ---
 
-## 🧪 Testing Rules
+# Shared TickTick Rules
 
-### Backend (pytest)
+These rules apply to both project modes.
 
-- Test files: `tests/` directory
-- Use `pytest-asyncio` for async tests
-- Mock external APIs (Bangumi, qBittorrent) with `pytest-mock`
-- Test fixtures in `conftest.py`
+## Tags
 
-```python
-# backend/tests/test_collections.py
-import pytest
-from httpx import AsyncClient
+Use only a small set of execution-state tags:
 
-@pytest.mark.asyncio
-async def test_get_collections(client: AsyncClient, auth_headers: dict):
-    response = await client.get("/api/v1/collections/", headers=auth_headers)
-    assert response.status_code == 200
-    assert "items" in response.json()
-```
+* `#next`
+* `#waiting`
+* `#blocked`
 
-### Frontend (vitest)
+Meaning:
 
-- Test files: `frontend/src/__tests__/` directory
-- Use React Testing Library for component tests
-- Mock API calls with MSW or jest.mock
+### `#next`
 
-```typescript
-// frontend/src/__tests__/components/chat/AgentMessageRenderer.test.tsx
-import { render, screen } from '@testing-library/react';
-import { AgentMessageRenderer } from '@/components/chat/AgentMessageRenderer';
+The item can be acted on now and is a genuine next step.
 
-test('renders message content', () => {
-  render(<AgentMessageRenderer content="Hello World" />);
-  expect(screen.getByText('Hello World')).toBeInTheDocument();
-});
-```
+### `#waiting`
 
----
+The item is waiting for:
 
-## 🚀 Deployment Rules
+* training
+* machine/GPU
+* external result
+* another person
+* dependency
 
-### Docker Compose (5 Services)
+### `#blocked`
 
-```yaml
-services:
-  db:           # PostgreSQL 15
-  redis:        # Redis 7
-  backend:      # FastAPI (port 8000)
-  frontend:     # Next.js (port 3000)
-  qbittorrent:  # BT downloader (port 8080)
-```
+There is a known blocker preventing progress.
 
-### Environment Variables
+Do not use project-name tags when the project is already represented by a TickTick list.
 
-```bash
-# Required
-DEPLOY_MODE=local|cloud
-OPENAI_API_KEY=your-key
-JWT_SECRET_KEY=strong-secret
+## Dates
 
-# Local mode
-SQLITE_FILE=./local.db
+TickTick dates mean:
 
-# Cloud mode
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=otakuneko
-POSTGRES_PASSWORD=password
-POSTGRES_DB=otakuneko
-REDIS_URL=redis://localhost:6379/0
+`I plan to handle this around this date.`
 
-# Optional integrations
-BANGUMI_TOKEN=your-token
-QB_URL=http://localhost:8080
-QB_USERNAME=admin
-QB_PASSWORD=adminadmin
-```
+They do not mean hard calendar commitments.
 
-### Startup Commands
+Only assign dates to:
 
-```bash
-# Local development
-start_all.bat  # Windows
-./start_all.sh  # macOS/Linux
+* genuine short-term execution plans
+* items that truly need to appear in Today
 
-# Docker deployment
-start_docker.bat  # Windows
-./start_docker.sh  # macOS/Linux
+Do not pre-schedule large amounts of future research or development work.
 
-# Manual start
-cd backend && uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-cd frontend && pnpm dev
-```
+## Calendar Boundary
 
----
+Apple Calendar is the source of truth for hard time commitments.
 
-## ⚠️ Critical Rules
+Use Calendar for:
 
-1. **NEVER commit secrets**: `.env` files, API keys, passwords must be in `.gitignore`
-2. **Always use async/await**: Both FastAPI and Next.js support async; don't block the event loop
-3. **Use dual-mode config**: Test with SQLite locally, deploy with PostgreSQL in production
-4. **Validate with Pydantic**: All API inputs/outputs must use Pydantic schemas
-5. **Error handling**: Use try/except for external API calls, HTTPException for API errors
-6. **Logging**: Use structured logging from `core/logging.py`, not print statements
-7. **Type safety**: Use TypeScript strict mode, Python type hints everywhere
-8. **Component organization**: Group components by feature, not by type
-9. **Service layer**: Business logic stays in services/, not in routers or components
-10. **Database migrations**: Use Alembic for schema changes, never modify tables directly
+* meetings
+* appointments
+* travel
+* fixed-time reviews
+* hard deadlines
+* anything that occupies a specific time slot
+
+Do not duplicate ordinary TickTick work into Calendar unless time-blocking is explicitly desired.
+
+## Reminder Boundary
+
+Apple Reminders is the capture inbox.
+
+Use it for:
+
+* quick Siri capture
+* things the user is afraid of forgetting
+* temporary unprocessed actions
+
+After review:
+
+* project-related item -> TickTick
+* knowledge/idea -> Apple Notes
+* fixed-time event -> Apple Calendar
+* simple timed reminder -> remain in Apple Reminders
+* irrelevant -> delete
+
+## Notes Boundary
+
+Apple Notes stores durable information, not project execution state.
+
+Use it for:
+
+* knowledge
+* ideas
+* reflections
+* life systems
+* book/movie/series lists
+* long-term references
+
+Do not use Apple Notes as the primary project task manager.
 
 ---
 
-## 📚 Key Documentation
+# Weekly Review
 
-- `docs/backend-architecture-whitepaper.md` - Backend architecture deep-dive
-- `docs/frontend-src-research-report.md` - Frontend codebase analysis
-- `backend/QUICK_START.md` - Backend setup guide
-- `frontend/FRONTEND_DOCUMENTATION.md` - Frontend development guide
+Use the `$ticktick-project-system` skill when the user asks for a weekly review.
 
----
+The weekly review should:
 
-## 📦 Package Management Rules
+1. clear Apple Reminders Inbox
+2. review Apple Notes Inbox
+3. inspect the next two weeks of Calendar
+4. review all active TickTick projects
+5. update LLM metrics/hypotheses or Agent capabilities/metrics
+6. review `#waiting`
+7. review `#blocked`
+8. update routines/habits if necessary
+9. select weekly focus
+10. identify true `#next` actions
 
-### Backend (uv)
+Weekly focus should normally contain:
 
-```bash
-# Install dependencies
-uv sync
+## ONE BIG THING
 
-# Add new dependency
-uv add <package>
+The single most important result, judgment, or capability to advance.
 
-# Add dev dependency
-uv add --dev <package>
+## SECONDARY
 
-# Run commands in venv
-uv run python script.py
-uv run pytest
-uv run uvicorn app.main:app --reload
+At most 1–2 additional priorities.
 
-# Lock file
-# IMPORTANT: uv.lock MUST be committed to git
-```
+## NOT THIS WEEK
 
-### Frontend (pnpm)
+Explicitly defer attractive but non-critical work.
 
-```bash
-# Install dependencies
-pnpm install
+For LLM research, weekly focus should prefer:
 
-# Add dependency
-pnpm add <package>
+* resolving an important uncertainty
+* validating/rejecting a hypothesis
+* identifying the true bottleneck
 
-# Add dev dependency
-pnpm add -D <package>
+For Agent development, weekly focus should prefer:
 
-# Run scripts
-pnpm dev
-pnpm build
-pnpm test
-pnpm lint
-
-# Lock file
-# IMPORTANT: pnpm-lock.yaml MUST be committed to git
-# NEVER use npm or yarn - only pnpm is allowed
-```
+* getting a capability to an acceptance decision
+* removing the largest system bottleneck
+* completing a meaningful reliability/eval milestone
 
 ---
 
-## 🧠 AI Memory System Rules
+# TickTick Tool Usage
 
-### Memory Storage Structure
+When syncing or creating project state:
 
-```
-backend/data/memory/
-├── short_term/
-│   └── {thread_id}.json          # Recent 10 messages
-└── long_term/
-    └── {thread_id}_facts.json    # BM25 + vector hybrid retrieval
-```
+1. first inspect the currently available TickTick MCP/CLI/tooling
+2. read its actual schema/help
+3. map the semantic operations to the available commands
+4. reuse existing project objects when possible
+5. avoid duplicate lists, groups, notes, tasks, or tags
+6. update existing objects before creating new ones
+7. preserve user-written content unless an update is explicitly required
 
-### Memory Implementation
+Required semantic operations may include:
 
-- **Short-term memory**: Stores recent conversation context (last 10 messages)
-- **Long-term memory**: Uses BM25 + vector embeddings for semantic search
-- **Embedding model**: text-embedding-3-small via OpenAI API
-- **Storage**: JSON files (not database)
-- **Retrieval**: Hybrid approach combining keyword and semantic search
+* find/create project list
+* find/create group
+* find/create/update note
+* find/create/update parent task
+* find/create/update subtask
+* set/remove tags
+* set/remove dates
+* complete/archive task
+* move task/group
+* inspect current project state
 
-### Memory Manager
-
-```python
-# backend/app/memory/manager.py
-class MemoryManager:
-    async def add_message(self, thread_id: str, message: dict):
-        # Add to short-term (append to JSON)
-        # Optionally add to long-term (extract facts)
-        
-    async def retrieve_context(self, thread_id: str, query: str) -> list:
-        # Search long-term memory with BM25 + vector
-        # Return relevant context for LLM
-```
+Do not assume a specific MCP function name or CLI syntax.
 
 ---
 
-## 🚫 Git Ignore Rules (CRITICAL)
+# Project-Specific Overrides
 
-### Files That MUST NOT Be Committed
+Use this section for rules unique to this repository.
 
-```bash
-# Environment & secrets
-.env
-.env.local
-.env.*.local
+## Technical Constraints
 
-# Databases
-*.sqlite3
-*.db
-*.db-journal
+- 后端 `requires-python = ">=3.10"`，使用 FastAPI、SQLModel/SQLAlchemy、Alembic、LangChain/LangGraph 和 pytest/Ruff；前端使用 Next.js 16、React 19、TypeScript 和 Vitest。
+- 前端包管理器为 pnpm `10.15.1`；CI 使用 Node.js `20.19.0`。版本与命令以 `backend/pyproject.toml`、`backend/uv.lock`、`frontend/package.json` 和工作流配置为准。
+- 本地 SQLite checkpoint adapter 仅按单 Worker 使用；当前已有受限的 checkpoint、取消和重启恢复路径，但不得据此宣称支持共享多 Worker recovery。容器化部署使用 Docker Compose 编排 PostgreSQL、Redis、Backend、Frontend 和 qBittorrent。
+- Agent 运行必须遵守本文前述 Runtime ownership、结构化 Decision、可信身份/资源授权、显式副作用、审计和恢复不变量；Provider/LangChain/LangGraph 专属对象不得泄漏到业务层。
 
-# Python
-__pycache__/
-*.pyc
-.venv/
-venv/
+## Evaluation Source of Truth
 
-# Node
-node_modules/
-.next/
+评估以 `backend/app/evaluation/runner.py`、`backend/evals/config/`、`backend/evals/datasets/` 和 `backend/evals/baselines/` 为准；离线快速评估使用 `evals/config/fast.yaml`，可观测性评估使用 `evals/config/observability.yaml`，完整评估使用 `evals/config/full.yaml`。仓库未配置 WandB 作为权威来源。
 
-# Docker data
-data/postgres_data/
-data/redis_data/
+适用的工程门禁为：`uv run --directory backend pytest`、`uv run --directory backend ruff check app tests`、`pnpm --dir frontend lint`、`pnpm --dir frontend typecheck`、`pnpm --dir frontend test` 和 `pnpm --dir frontend build`；Eval 命令和报告路径以 `.github/workflows/` 及 `backend/evals/README.md` 为准。
 
-# Runtime downloads
-.runtime/
-.node_runtime/
+## Important Repositories / Paths
 
-# IDE
-.vscode/
-.idea/
-.trae/
+- 后端控制面与边界：`backend/app/harness/`、`backend/app/agents/`、`backend/app/capabilities/`、`backend/app/mcp_server/`、`backend/app/memory/`、`backend/app/trace/`。
+- 业务与集成：`backend/app/services/`、`backend/app/api/v1/`；评估与测试：`backend/app/evaluation/`、`backend/evals/`、`backend/tests/`。
+- 前端：`frontend/src/`、`frontend/src/__tests__/`；部署与自动化：`docker-compose.yml`、`.github/workflows/`。
+- Harness 随仓库分发的权威规范：`docs/architecture/`；审计、任务和执行记录可在本地 `docs/harness-audit/`、`docs/harness-tasks/`、`docs/harness-execution/` 保存，不随 Git 分发。
 
-# Logs
-logs/
-*.log
-```
+## Current Active Focus
 
-### Files That MUST Be Committed
+当前没有明确批准的活动 Batch；BATCH-26 是最近已完成的执行批次。近期焦点是维护 Level 4 Runtime-owned 主路径及其 CI/Eval 门禁，并处理已声明的剩余风险：Dispatcher-backed specialist/subagent 合约，以及超出 SQLite 单 Worker 限制的共享 checkpoint、取消和 worker recovery。目标架构或历史 execution record 仍不能替代当前源码与真实验证证据。
 
-```bash
-# Lock files (CRITICAL)
-uv.lock
-pnpm-lock.yaml
+## Explicit Non-Goals
 
-# Configuration
-.env.example
-backend/.env.example
-docker-compose.yml
+- 不仅凭 README、目标架构、任务计划、类名或测试名称断言真实接入；当前能力必须由源码和真实验证证据确认，也不在没有活动 Batch 时伪造执行记录。
+- 没有明确任务范围时，不重写 LangGraph 图、不替换模型框架，也不整体迁移收藏/日程等业务 Service；相关变更必须保留受控 Runtime、Registry、Policy 和 adapter 边界。
+- 不执行生产部署、生产数据库操作或生产迁移；不把真实 Secret、Token、完整用户数据或 raw Provider payload 写入仓库、日志、测试、Eval fixture 或文档。
+- 用户未明确要求时，不同步或修改 TickTick 等外部项目状态，也不扩展到与当前任务无关的业务功能。
 
-# Documentation
-docs/**/*.md
-README.md
-CLAUDE.md
-```
 
----
+## Model delegation
 
-## ⚙️ Configuration File Locations
+Use the `model-router-luna` skill when a coding task contains substantial bounded execution work.
 
-| File | Location | Purpose |
-|------|----------|---------|
-| `.env.example` | Root & backend/ | Environment variable template |
-| `pyproject.toml` | backend/ | Python dependencies + tool config |
-| `package.json` | frontend/ | Node.js dependencies |
-| `docker-compose.yml` | Root | Docker service orchestration |
-| `alembic.ini` | backend/ | Database migration config |
-| `tsconfig.json` | frontend/ | TypeScript compiler config |
-| `tailwind.config.ts` | frontend/ | Tailwind CSS config |
-| `.gitignore` | Root | Git ignore rules |
-| `CLAUDE.md` | Root | This file (AI assistant rules) |
+The primary model remains the coordinator. It owns architecture, unresolved requirements,
+consequential decisions, integration, and final review. Delegate only settled,
+independently verifiable implementation slices to `luna_worker`.
 
----
+Do not recursively delegate from Luna. If Luna encounters a missing consequential decision
+or repeated failure, escalate the task back to the primary model.
 
-## 🔧 Development Workflow
+## Frontend Browser Validation
 
-### Making Changes
+前端 UI、样式、布局、组件外观、响应式和交互任务必须对运行中的应用进行浏览器验证，不能仅凭源码判断视觉任务已完成。此仓库的浏览器验证统一使用 `agent-browser`；优先调用当前会话的 `agent-browser` MCP 工具，若工具调用不可用，可用已安装的 `agent-browser` CLI 在独立命名会话中完成同样的检查。不要为此改用 Playwright MCP。浏览器工具不可用时如实报告。
 
-1. **Backend changes**:
-   - Edit files in `backend/app/`
-   - Run `uv run pytest` to test
-   - Run `uv run alembic upgrade head` if DB schema changed
-   - Restart backend: `uv run uvicorn app.main:app --reload`
+### 默认迭代流程
 
-2. **Frontend changes**:
-   - Edit files in `frontend/src/`
-   - Run `pnpm typecheck` for TypeScript validation
-   - Run `pnpm test` for unit tests
-   - Frontend auto-reloads with Turbopack
+1. 从 `frontend/package.json` 确认启动命令；当前为仓库根目录执行 `pnpm --dir frontend dev`，Next.js 默认地址为 `http://localhost:3000`，实际端口以启动输出为准。
+2. 打开本地页面，检查 DOM / accessibility snapshot、相关 Console 错误，并在重大视觉修改前按需截图。
+3. 修改前端实现，等待 HMR 或重新加载页面。
+4. 再次检查实际渲染结果并截图；发现明显视觉问题时继续迭代。
+5. 涉及响应式时至少检查 Desktop `1440x900`、Tablet `768x1024`、Mobile `390x844`。
 
-3. **Database migrations**:
-   - Edit models in `backend/app/models/`
-   - Generate migration: `uv run alembic revision --autogenerate -m "description"`
-   - Apply migration: `uv run alembic upgrade head`
-   - NEVER modify tables directly
+只检查与改动相关的布局、间距、对齐、字体、视觉层次、颜色、边框与阴影、组件一致性、溢出、响应式，以及 hover、focus、disabled、empty、loading、error 状态。优先使用现有设计 token、组件、CSS 变量与设计约定；不为视觉润色做无关重构，也不破坏既有行为。
 
-4. **Adding new API endpoints**:
-   - Create/update router in `backend/app/api/v1/`
-   - Add Pydantic schemas in `backend/app/schemas/`
-   - Implement business logic in `backend/app/services/`
-   - Register router in `backend/app/api/__init__.py`
+完成前须确认修改页面已在浏览器中查看、最终渲染已目视检查、无明显布局或溢出回归、相关视口已检查，且无本次改动引入的 Console 错误。浏览器验证无法执行时，明确报告原因，不得声称已验证。
 
-5. **Adding new frontend features**:
-   - Create components in `frontend/src/components/`
-   - Create services in `frontend/src/services/`
-   - Create Zustand store in `frontend/src/stores/` if needed
-   - Create page in `frontend/src/app/` if new route
+<!-- ai-task-log:begin -->
+## AI task logging
 
----
+This repository uses lifecycle hooks to create one engineering task record per Codex turn under `.ai/runs/YYYY-MM/`.
 
-## 📊 Key Metrics & Limits
+Do not manually create or rewrite task-log files unless explicitly asked. The hook is the source of truth.
 
-- **Max file size**: Keep files under 500 lines when possible
-- **API response time**: Target < 200ms for non-AI endpoints
-- **SSE streaming**: Token-by-token streaming for chat responses
-- **Database queries**: Use pagination (limit/offset) for all list endpoints
-- **Cache TTL**: 60 seconds default for cached endpoints
-- **Max upload size**: 10MB for file uploads
-- **Concurrent requests**: FastAPI handles async I/O efficiently
+For implementation-oriented final responses, keep the result concise and observable. Prefer these headings when applicable:
 
----
+- Summary
+- Validation
+- Decisions
+- Remaining
 
-*Last updated: 2026-06-24*
-*This CLAUDE.md provides rules for AI assistants working with the OtakuNeko codebase. Follow these conventions to maintain consistency and quality.*
+Validation claims must match commands actually run. Never say a test/lint/typecheck passed unless it was executed successfully.
+If a command exit code is unavailable, mark its validation status UNKNOWN; never infer PASS from output text.
+Do not include chain-of-thought, full transcripts, file contents, Git diff contents, or full shell output in task-log notes or final responses intended for logging.
+<!-- ai-task-log:end -->
