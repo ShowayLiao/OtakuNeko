@@ -7,6 +7,7 @@ from fastapi_cache import FastAPICache
 from app.core.logging import get_logger
 
 from app.models import Subject
+from app.models.enums import SubjectType
 from app.schemas.subject import (
     SubjectCreate,
     SubjectUpdate,
@@ -27,6 +28,10 @@ from app.schemas.adaptersV2 import (
 )
 
 logger = get_logger(__name__)
+
+
+class SubjectSearchError(Exception):
+    """A search could not produce a complete, valid result."""
 
 
 async def create_subject(
@@ -276,7 +281,7 @@ async def search_subject_by_name(
 
 
 async def search_subject_cloud(
-    db: AsyncSession | None, search_data: SubjectSearchCloud
+    db: AsyncSession | None, search_data: SubjectSearchCloud, *, strict: bool = False
 ) -> UnifiedList:
     """
     调用 Bangumi API 进行搜索，使用SubjectSearchCloud schema
@@ -298,16 +303,41 @@ async def search_subject_cloud(
 
         # 直接使用 bangumi_search_to_unified_list 函数转换为 UnifiedList 格式
         if not isinstance(remote_response, dict):
+            if strict:
+                raise SubjectSearchError("Subject search unavailable")
             return UnifiedList(total=0, items=[])
+        if strict and (
+            not isinstance(remote_response.get("data"), list)
+            or not isinstance(remote_response.get("total"), int)
+            or isinstance(remote_response.get("total"), bool)
+            or remote_response["total"] < 0
+            or any(not isinstance(item, dict) for item in remote_response["data"])
+            or any(
+                type(item.get("id")) is not int
+                or item["id"] <= 0
+                or type(item.get("type")) is not int
+                or item["type"] not in {kind.value for kind in SubjectType}
+                or not isinstance(item.get("name"), str)
+                or not item["name"].strip()
+                for item in remote_response["data"]
+            )
+        ):
+            raise SubjectSearchError("Subject search unavailable")
         return bangumi_search_to_unified_list(remote_response)
 
     except Exception as e:
-        logger.error(f"远程搜索失败: {e}")
+        logger.error(
+            "subject_remote_search_failed", extra={"error_type": type(e).__name__}
+        )
+        if strict:
+            raise SubjectSearchError("Subject search unavailable") from None
         # 返回空结果列表
         return UnifiedList(total=0, items=[])
 
 
-async def search_mixed(db: AsyncSession, search_data: SubjectSearchBase) -> UnifiedList:
+async def search_mixed(
+    db: AsyncSession, search_data: SubjectSearchBase, *, strict: bool = False
+) -> UnifiedList:
     """
     混合搜索服务：并行搜索 + 结果合并
 
@@ -353,7 +383,11 @@ async def search_mixed(db: AsyncSession, search_data: SubjectSearchBase) -> Unif
         local_task = get_all_subjects(db, search_data)
 
     # 云端搜索任务
-    remote_task = search_subject_cloud(db, cloud_search_data)
+    remote_task = (
+        search_subject_cloud(db, cloud_search_data, strict=True)
+        if strict
+        else search_subject_cloud(db, cloud_search_data)
+    )
 
     # 并行执行
     local_results, remote_results = await asyncio.gather(
@@ -361,24 +395,32 @@ async def search_mixed(db: AsyncSession, search_data: SubjectSearchBase) -> Unif
     )
 
     # 处理异常情况
-    if isinstance(local_results, asyncio.CancelledError):
-        raise local_results
+    # Cancellation and process-control signals take precedence over a failure
+    # from either branch, including when both branches fail concurrently.
     if isinstance(local_results, BaseException) and not isinstance(
         local_results, Exception
     ):
         raise local_results
-    if isinstance(local_results, Exception):
-        logger.error(f"本地搜索失败: {local_results}")
-        local_results = UnifiedList(total=0, items=[])
-
-    if isinstance(remote_results, asyncio.CancelledError):
-        raise remote_results
     if isinstance(remote_results, BaseException) and not isinstance(
         remote_results, Exception
     ):
         raise remote_results
+    if isinstance(local_results, Exception):
+        logger.error(
+            "subject_local_search_failed",
+            extra={"error_type": type(local_results).__name__},
+        )
+        if strict:
+            raise SubjectSearchError("Subject search unavailable") from None
+        local_results = UnifiedList(total=0, items=[])
+
     if isinstance(remote_results, Exception):
-        logger.error(f"云端搜索失败: {remote_results}")
+        logger.error(
+            "subject_mixed_remote_search_failed",
+            extra={"error_type": type(remote_results).__name__},
+        )
+        if strict:
+            raise SubjectSearchError("Subject search unavailable") from None
         remote_results = UnifiedList(total=0, items=[])
 
     logger.info(f"本地搜索结果: {len(local_results.items)} 条记录")

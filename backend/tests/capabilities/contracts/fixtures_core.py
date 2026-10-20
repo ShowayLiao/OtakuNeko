@@ -282,7 +282,12 @@ def _subject_search_prepare(
     local: bool,
 ) -> Callable[[Environment], Any]:
     async def prepare(environment: Environment) -> None:
-        async def fake(db: Any, search: Any) -> dict[str, Any]:
+        async def fake(db: Any, search: Any, **options: Any) -> dict[str, Any]:
+            assert options == (
+                {"strict": True}
+                if dependency in {"search_subject_cloud", "search_mixed"}
+                else {}
+            )
             if local:
                 _assert_db_user(environment, db, search.user_id)
             else:
@@ -674,30 +679,45 @@ CASES: dict[tuple[str, str], Case] = {
     ),
     ("search_local_subjects", VERSION): _case(
         {"keyword": "Synthetic", "type": 2, "skip": 0, "limit": 5},
-        {"total": 1, "subjects": [{"id": 101, "name": "Synthetic Anime"}]},
+        {
+            "total": 1,
+            "subjects": [
+                {"subject": {"id": 101, "name": "Synthetic Anime"}, "collection": None}
+            ],
+        },
         _subject_search_prepare(
             "subjects.search_local",
-            {"total": 1, "items": [_SUBJECT]},
+            {"total": 1, "items": [{"subject": _SUBJECT, "collection": None}]},
             dependency="search_subject_by_name",
             local=True,
         ),
     ),
     ("search_remote_subjects", VERSION): _case(
         {"keyword": "Synthetic", "type": 2, "skip": 0, "limit": 5},
-        {"total": 1, "subjects": [{"id": 101, "name": "Synthetic Anime"}]},
+        {
+            "total": 1,
+            "subjects": [
+                {"subject": {"id": 101, "name": "Synthetic Anime"}, "collection": None}
+            ],
+        },
         _subject_search_prepare(
             "subjects.search_remote",
-            {"total": 1, "items": [_SUBJECT]},
+            {"total": 1, "items": [{"subject": _SUBJECT, "collection": None}]},
             dependency="search_subject_cloud",
             local=False,
         ),
     ),
     ("search_mixed_subjects", VERSION): _case(
         {"keyword": "Synthetic", "type": 2, "skip": 0, "limit": 5},
-        {"total": 1, "subjects": [{"id": 101, "name": "Synthetic Anime"}]},
+        {
+            "total": 1,
+            "subjects": [
+                {"subject": {"id": 101, "name": "Synthetic Anime"}, "collection": None}
+            ],
+        },
         _subject_search_prepare(
             "subjects.search_mixed",
-            {"total": 1, "items": [_SUBJECT]},
+            {"total": 1, "items": [{"subject": _SUBJECT, "collection": None}]},
             dependency="search_mixed",
             local=True,
         ),

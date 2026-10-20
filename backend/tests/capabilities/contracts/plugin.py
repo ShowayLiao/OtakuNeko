@@ -145,6 +145,7 @@ def pytest_sessionfinish(session, exitstatus):
             "success": "real registered Capability.execute through shared Runtime Dispatcher",
             "error_timeout_isolation_unsafe_output": "Dispatcher boundary fault injection; not domain implementation failure coverage",
             "anime_certification": "Real registered Anime handlers; only imported Bangumi dependencies are isolated. Six anime_* scenarios are mandatory per action.",
+            "subjects_certification": "Real registered Subjects handlers; imported domain dependencies are isolated for six subjects_* scenarios per action. Additional service and HTTP/JWT tests use real SQL views with fake external I/O.",
         },
     }
     target = Path(config.getoption("--capability-contract-report"))

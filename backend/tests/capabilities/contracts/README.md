@@ -63,3 +63,14 @@ filtering them, or skipping a required scenario fails the same execution gate.
 HTTP/JWT integration is additionally exercised by
 `tests/api/test_anime_certification.py`. Public Anime lookups permit anonymous
 execution; linked-account lookup requires the authenticated user's binding.
+
+Subjects certification adds six mandatory scenarios per production Registry
+action owned by `subjects`: `subjects_error`, `subjects_timeout`,
+`subjects_isolation`, `subjects_serialization`, `subjects_authorization`, and
+`subjects_dispatcher`. `tests/capabilities/contracts/test_subjects_handlers.py`
+uses the real registered Subjects handlers and isolates imported service or
+repository dependencies. Omitting that file, filtering it, or skipping a
+required scenario fails the same execution gate. This certifies handler
+behavior through the Runtime Dispatcher; service behavior and SQL persistence
+remain outside this certification's evidence boundary and require their own
+service and database tests.

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.capabilities.base import BaseCapability
+from app.capabilities.subjects_contracts import output_schema
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.core.logging import get_logger
 from app.schemas.subject import (
@@ -14,6 +15,7 @@ from app.schemas.subject import (
     SubjectSearchCloud,
 )
 from app.services.subject_service import (
+    SubjectSearchError,
     get_subject_by_source,
     search_mixed,
     search_subject_by_name,
@@ -71,6 +73,7 @@ class SubjectCapability(BaseCapability):
                 reference,
                 requires_auth=True,
                 public_name="get_subject",
+                output_schema=output_schema("get_subject"),
             ),
             ActionDescriptor(
                 "search_local_subjects",
@@ -78,12 +81,14 @@ class SubjectCapability(BaseCapability):
                 _schema(search),
                 requires_auth=True,
                 public_name="search_local_subjects",
+                output_schema=output_schema("search_local_subjects"),
             ),
             ActionDescriptor(
                 "search_remote_subjects",
                 "Search the remote Bangumi subject catalog",
                 _schema(search),
                 public_name="search_remote_subjects",
+                output_schema=output_schema("search_remote_subjects"),
             ),
             ActionDescriptor(
                 "search_mixed_subjects",
@@ -91,6 +96,7 @@ class SubjectCapability(BaseCapability):
                 _schema(search),
                 requires_auth=True,
                 public_name="search_mixed_subjects",
+                output_schema=output_schema("search_mixed_subjects"),
             ),
             ActionDescriptor(
                 "get_subject_air_time",
@@ -98,6 +104,7 @@ class SubjectCapability(BaseCapability):
                 reference,
                 requires_auth=True,
                 public_name="get_subject_air_time",
+                output_schema=output_schema("get_subject_air_time"),
             ),
         ]
 
@@ -115,10 +122,19 @@ class SubjectCapability(BaseCapability):
             ).to_dict()
         try:
             return await handler(**kwargs)
-        except ValueError as exc:
-            return CapabilityResult.fail(str(exc), error_type="invalid_args").to_dict()
-        except Exception:
-            logger.exception("subject_capability_failed", extra={"action": action})
+        except SubjectSearchError:
+            return CapabilityResult.fail(
+                "Subject search unavailable", error_type="upstream_error"
+            ).to_dict()
+        except ValueError:
+            return CapabilityResult.fail(
+                "Invalid subject arguments", error_type="invalid_args"
+            ).to_dict()
+        except Exception as exc:
+            logger.error(
+                "subject_capability_failed",
+                extra={"action": action, "error_type": type(exc).__name__},
+            )
             return CapabilityResult.fail(
                 "Subject operation failed", error_type="internal"
             ).to_dict()
@@ -183,10 +199,11 @@ class SubjectCapability(BaseCapability):
             SubjectSearchCloud(
                 keyword=kwargs.get("keyword", ""),
                 type=kwargs.get("type"),
-                skip=kwargs.get("skip", 0),
+                offset=kwargs.get("skip", 0),
                 limit=min(kwargs.get("limit", 10), 100),
                 user_id=None,
             ),
+            strict=True,
         )
         payload = _public(result)
         return CapabilityResult.ok(
@@ -210,6 +227,7 @@ class SubjectCapability(BaseCapability):
                 user_id=user_id,
                 sort_by=kwargs.get("sort_by", "updated_at"),
             ),
+            strict=True,
         )
         payload = _public(result)
         return CapabilityResult.ok(

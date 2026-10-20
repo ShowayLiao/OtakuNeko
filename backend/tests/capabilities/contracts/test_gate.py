@@ -19,7 +19,13 @@ ANIME_CONTRACT_TESTS = (
     "tests/capabilities/contracts/test_anime_handlers.py",
     "tests/capabilities/contracts/test_anime_authorization.py",
 )
-CONTRACT_TEST_PATHS = (CONTRACT_TEST, *ANIME_CONTRACT_TESTS)
+SUBJECTS_CONTRACT_TEST = "tests/capabilities/contracts/test_subjects_handlers.py"
+SUBJECTS_CONTRACT_TESTS = (SUBJECTS_CONTRACT_TEST,)
+CONTRACT_TEST_PATHS = (
+    *CORE_CONTRACT_TEST_PATHS,
+    *ANIME_CONTRACT_TESTS,
+    *SUBJECTS_CONTRACT_TESTS,
+)
 GATE_PLUGIN = "tests.capabilities.contracts.plugin"
 
 
@@ -36,6 +42,31 @@ def _expected_observations():
     actions, examples = census(), cases()
     assert fixture_errors(actions, examples) == []
     return expected_observations(actions, examples)
+
+
+def test_subjects_actions_require_full_scenario_matrix():
+    from tests.capabilities.contracts import catalog
+
+    required = (
+        "subjects_error",
+        "subjects_timeout",
+        "subjects_isolation",
+        "subjects_serialization",
+        "subjects_authorization",
+        "subjects_dispatcher",
+    )
+    assert getattr(catalog, "SUBJECTS_SCENARIOS", None) == required
+
+    registry = catalog.build_capability_registry()
+    subjects = {
+        (descriptor.public_name or descriptor.name, descriptor.version)
+        for descriptor in registry.list_actions()
+        if (owner := registry.find_action(descriptor.public_name or descriptor.name))
+        and owner[0].name == "subjects"
+    }
+    expected = catalog.expected_observations(catalog.census(), catalog.cases())
+    assert subjects
+    assert {(*key, scenario) for key in subjects for scenario in required} <= expected
 
 
 def _write_probe_plugin(tmp_path: Path, source: str) -> Path:
@@ -259,7 +290,11 @@ def test_gate_rejects_missing_timeout_scenario(tmp_path):
     missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
     expected_timeouts = {row for row in expected if row[2].endswith("timeout")}
     assert expected_timeouts
-    assert {row[2] for row in expected_timeouts} == {"timeout", "anime_timeout"}
+    assert {row[2] for row in expected_timeouts} == {
+        "timeout",
+        "anime_timeout",
+        "subjects_timeout",
+    }
     assert missing == expected_timeouts
     assert (coverage or {}).get("passed") == len(expected) - len(expected_timeouts)
 
@@ -269,7 +304,7 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "missing_anime_certification",
         tmp_path,
-        contract_test_paths=CORE_CONTRACT_TEST_PATHS,
+        contract_test_paths=(*CORE_CONTRACT_TEST_PATHS, *SUBJECTS_CONTRACT_TESTS),
         pytest_args=ignored_anime_tests,
     )
     _assert_gate_failure(
@@ -286,8 +321,34 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
     assert missing == expected_anime
     assert (coverage or {}).get("expected") == len(expected)
     assert (coverage or {}).get("passed") == len(expected) - len(expected_anime)
-    assert (coverage or {}).get("passed") == 331
+    assert (coverage or {}).get("passed") == 361
     for name, version, scenario in sorted(expected_anime):
+        assert f"{name}@{version}/{scenario}" in output
+
+
+def test_gate_rejects_missing_subjects_certification(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_subjects_certification",
+        tmp_path,
+        contract_test_paths=(*CORE_CONTRACT_TEST_PATHS, *ANIME_CONTRACT_TESTS),
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    from tests.capabilities.contracts.catalog import SUBJECTS_SCENARIOS
+
+    expected = _expected_observations()
+    expected_subjects = {row for row in expected if row[2] in SUBJECTS_SCENARIOS}
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_subjects) == 30
+    assert missing == expected_subjects
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - len(expected_subjects)
+    for name, version, scenario in sorted(expected_subjects):
         assert f"{name}@{version}/{scenario}" in output
 
 

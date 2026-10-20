@@ -80,11 +80,11 @@ FINGERPRINTS = {
     (
         "get_subject",
         "v1",
-    ): "604a1abb972cc3d3a4efbb51ed3a75949870926977fb2898098074a6f5bb2bb4",
+    ): "e29cf22a2b11bc02330a69be2a67972a95a058a6715efb1b7ee2e5dfcd638e4a",
     (
         "get_subject_air_time",
         "v1",
-    ): "bd88ddf5174ee80a060e069c1747063ff57aafd2b7f0365b203fc4458cf58082",
+    ): "78688b3da3ba87caf2b286ec1bb9f000261b3a2e93b12bdbd46dc3e57dfaa2fb",
     (
         "get_user_stats",
         "v1",
@@ -140,15 +140,15 @@ FINGERPRINTS = {
     (
         "search_local_subjects",
         "v1",
-    ): "4d8b5fb64cce46c7bbeb3c9c0e45b9ddefdfcd3080c934cf9faf9d67c2cd9ca8",
+    ): "463ae0b93a55594fb55708f521c222b803c9ab2a89b3aa1364b92e7d66ad4a2b",
     (
         "search_mixed_subjects",
         "v1",
-    ): "6431c5e2ab05c3aa8618658ec7cdd0a6f3938d6d509bb0fb596af744ec27df85",
+    ): "91ddc316a10e742e0de5b0a1f21480731ae39b30f785e287b2eb991631adf1f4",
     (
         "search_remote_subjects",
         "v1",
-    ): "611faa52a18369b66b223d5851dbe57707830a8a76c72aa009447bf9f3c198a2",
+    ): "cde9f7fbb860860781d3ace9f5ef3b216450d3a8a9b3cb20a220c5c26d9a6220",
     (
         "set_rss_rule",
         "v1",
