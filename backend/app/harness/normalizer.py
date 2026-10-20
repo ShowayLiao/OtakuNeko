@@ -123,11 +123,18 @@ def _schema_error(value: Any, schema: dict[str, Any], path: str) -> str | None:
                 error = _schema_error(child, child_schema, f"{path}.{key}")
                 if error:
                     return error
-    if isinstance(value, list) and isinstance(schema.get("items"), dict):
-        for index, child in enumerate(value):
-            error = _schema_error(child, schema["items"], f"{path}[{index}]")
-            if error:
-                return error
+    if isinstance(value, list):
+        minimum_items = schema.get("minItems")
+        maximum_items = schema.get("maxItems")
+        if isinstance(minimum_items, int) and len(value) < minimum_items:
+            return f"{path} has fewer items than allowed"
+        if isinstance(maximum_items, int) and len(value) > maximum_items:
+            return f"{path} has more items than allowed"
+        if isinstance(schema.get("items"), dict):
+            for index, child in enumerate(value):
+                error = _schema_error(child, schema["items"], f"{path}[{index}]")
+                if error:
+                    return error
     for keyword in ("allOf", "anyOf", "oneOf"):
         alternatives = schema.get(keyword)
         if not isinstance(alternatives, list):
@@ -546,7 +553,9 @@ class ResultNormalizer:
                 label="output",
             )
             schema_error = _schema_error(data, descriptor.output_schema, "output")
-            if schema_error:
+            # Output schemas describe successful business data. A structured
+            # failure has no obligation to fabricate those required fields.
+            if success and schema_error:
                 raise SchemaContractError(schema_error)
         except SchemaContractError:
             return self._failure(

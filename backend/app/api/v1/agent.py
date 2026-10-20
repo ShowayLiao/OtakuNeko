@@ -552,7 +552,7 @@ async def chat_endpoint(
                 durable=durable_run,
                 allow_side_effects=True,
                 checkpoint_store=checkpoint_store,
-                trace_store=SqlTraceStore(db),
+                trace_store=SqlTraceStore(db) if user is not None else None,
                 model_gateway=model_gateway,
                 specialist_router=specialist_router,
                 memory_context=memory_context,

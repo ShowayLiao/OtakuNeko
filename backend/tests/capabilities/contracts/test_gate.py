@@ -1,0 +1,434 @@
+"""Subprocess self-tests for the capability contract CI gate."""
+
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import textwrap
+
+import pytest
+
+BACKEND_ROOT = Path(__file__).resolve().parents[3]
+EVIDENCE_ROOT = BACKEND_ROOT / ".runtime" / "capability-contracts" / "probes"
+CONTRACT_TEST = "tests/capabilities/contracts/test_contracts.py"
+CORE_CONTRACT_TEST_PATHS = (CONTRACT_TEST,)
+ANIME_CONTRACT_TESTS = (
+    "tests/capabilities/contracts/test_anime_handlers.py",
+    "tests/capabilities/contracts/test_anime_authorization.py",
+)
+CONTRACT_TEST_PATHS = (CONTRACT_TEST, *ANIME_CONTRACT_TESTS)
+GATE_PLUGIN = "tests.capabilities.contracts.plugin"
+
+
+def _expected_observations():
+    # Import in the isolated parent pytest process, after its conftest has set
+    # test-only configuration. The count follows the live registry and fixtures.
+    from tests.capabilities.contracts.catalog import (
+        cases,
+        census,
+        expected_observations,
+        fixture_errors,
+    )
+
+    actions, examples = census(), cases()
+    assert fixture_errors(actions, examples) == []
+    return expected_observations(actions, examples)
+
+
+def _write_probe_plugin(tmp_path: Path, source: str) -> Path:
+    plugin = tmp_path / "capability_contract_probe.py"
+    plugin.write_text(textwrap.dedent(source), encoding="utf-8")
+    return plugin
+
+
+def _decode_subprocess_output(value: object) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value if isinstance(value, str) else ""
+
+
+def _run_gate_probe(
+    name: str,
+    tmp_path: Path,
+    *,
+    plugin_source: str | None = None,
+    contract_test_paths: tuple[str, ...] = CONTRACT_TEST_PATHS,
+    pytest_args: tuple[str, ...] = (),
+) -> tuple[subprocess.CompletedProcess[bytes] | None, dict | None, str, Path]:
+    evidence_dir = EVIDENCE_ROOT / name
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    output_path = evidence_dir / "output.txt"
+    report_path = evidence_dir / "coverage.json"
+    exitcode_path = evidence_dir / "exitcode.json"
+    target_path = tmp_path / "probe-target.json"
+
+    # A stale report could make a broken child appear to have exercised the
+    # gate, so each subprocess starts with a clean result slot.
+    report_path.unlink(missing_ok=True)
+    target_path.unlink(missing_ok=True)
+
+    command = [sys.executable, "-m", "pytest", "-p", GATE_PLUGIN]
+    env = os.environ.copy()
+    if plugin_source is not None:
+        _write_probe_plugin(tmp_path, plugin_source)
+        command.extend(("-p", "capability_contract_probe"))
+        existing_pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = os.pathsep.join(
+            part for part in (str(tmp_path), existing_pythonpath) if part
+        )
+        env["CAPABILITY_GATE_PROBE_TARGET"] = str(target_path)
+
+    command.extend(
+        (
+            *contract_test_paths,
+            *pytest_args,
+            "--capability-contract-gate",
+            f"--capability-contract-report={report_path}",
+            "-q",
+            "--tb=short",
+        )
+    )
+
+    completed = None
+    exit_record: dict[str, object]
+    timeout_output = ""
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=BACKEND_ROOT,
+            env=env,
+            capture_output=True,
+            timeout=120,
+            check=False,
+        )
+        stdout = completed.stdout.decode("utf-8", errors="replace")
+        stderr = completed.stderr.decode("utf-8", errors="replace")
+        output = f"--- stdout ---\n{stdout}--- stderr ---\n{stderr}"
+        exit_record = {"exitcode": completed.returncode, "timed_out": False}
+    except subprocess.TimeoutExpired as exc:
+        timeout_stdout = _decode_subprocess_output(exc.stdout)
+        timeout_stderr = _decode_subprocess_output(exc.stderr)
+        timeout_output = (
+            f"--- stdout ---\n{timeout_stdout}--- stderr ---\n{timeout_stderr}"
+        )
+        output = timeout_output
+        exit_record = {"exitcode": None, "timed_out": True, "timeout_seconds": 120}
+
+    output_path.write_text(output, encoding="utf-8")
+    exitcode_path.write_text(
+        json.dumps(exit_record, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    coverage = None
+    if report_path.is_file():
+        coverage = json.loads(report_path.read_text(encoding="utf-8"))
+    if target_path.is_file():
+        (evidence_dir / "probe-target.json").write_text(
+            target_path.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+    return completed, coverage, output, evidence_dir
+
+
+def _assert_gate_failure(
+    completed: subprocess.CompletedProcess[bytes] | None,
+    coverage: dict | None,
+    output: str,
+    expected_error: str,
+) -> None:
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed.returncode != 0, output
+    assert coverage is not None, "gate subprocess did not write a coverage report"
+    assert coverage["gate"] == "fail"
+    assert any(
+        error == expected_error or error.startswith(expected_error)
+        for error in coverage["errors"]
+    )
+    assert "Capability contract gate FAILED" in output
+    assert expected_error in output
+
+
+def test_gate_rejects_new_registered_action_without_fixture(tmp_path):
+    plugin_source = """
+        import os
+        from pathlib import Path
+
+        import pytest
+
+
+        def pytest_sessionstart(session):
+            from tests.capabilities.contracts import catalog
+            from app.capabilities.base import BaseCapability
+            from app.capabilities.types import ActionDescriptor
+
+            action_name = "gate_probe_unfixture_action"
+
+            class ProbeCapability(BaseCapability):
+                @property
+                def name(self):
+                    return "gate_probe_capability"
+
+                @property
+                def description(self):
+                    return "Temporary gate self-test capability"
+
+                def actions(self):
+                    return [ActionDescriptor(
+                        name=action_name,
+                        public_name=action_name,
+                        description="Temporary action without a fixture",
+                        input_schema={"type": "object", "properties": {}},
+                    )]
+
+                async def execute(self, action, **kwargs):
+                    return {"success": True}
+
+            build_registry = catalog.build_capability_registry
+
+            def build_with_unfixture_action():
+                registry = build_registry()
+                registry.register(ProbeCapability())
+                return registry
+
+            catalog.build_capability_registry = build_with_unfixture_action
+            Path(os.environ["CAPABILITY_GATE_PROBE_TARGET"]).write_text(
+                __import__("json").dumps([action_name, "v1"]), encoding="utf-8"
+            )
+    """
+    completed, coverage, output, _ = _run_gate_probe(
+        "new_action_without_fixture", tmp_path, plugin_source=plugin_source
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing action fixtures: [('gate_probe_unfixture_action', 'v1')]",
+    )
+
+
+def test_gate_rejects_removed_existing_fixture(tmp_path):
+    plugin_source = """
+        import json
+        import os
+        from pathlib import Path
+
+
+        def pytest_sessionstart(session):
+            from tests.capabilities.contracts import catalog
+
+            original_cases = catalog.cases
+            removed_key = sorted(original_cases())[0]
+
+            def cases_without_one_fixture():
+                examples = original_cases()
+                examples.pop(removed_key)
+                return examples
+
+            catalog.cases = cases_without_one_fixture
+            Path(os.environ["CAPABILITY_GATE_PROBE_TARGET"]).write_text(
+                json.dumps(removed_key), encoding="utf-8"
+            )
+    """
+    completed, coverage, output, _ = _run_gate_probe(
+        "removed_existing_fixture", tmp_path, plugin_source=plugin_source
+    )
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    target_path = tmp_path / "probe-target.json"
+    assert target_path.is_file(), output
+    removed_key = json.loads(target_path.read_text(encoding="utf-8"))
+    expected_error = f"Missing action fixtures: {[tuple(removed_key)]}"
+    _assert_gate_failure(completed, coverage, output, expected_error)
+
+
+def test_gate_rejects_missing_timeout_scenario(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_timeout_scenario",
+        tmp_path,
+        pytest_args=("-k", "not timeout"),
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+    expected = _expected_observations()
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    expected_timeouts = {row for row in expected if row[2].endswith("timeout")}
+    assert expected_timeouts
+    assert {row[2] for row in expected_timeouts} == {"timeout", "anime_timeout"}
+    assert missing == expected_timeouts
+    assert (coverage or {}).get("passed") == len(expected) - len(expected_timeouts)
+
+
+def test_gate_rejects_missing_anime_certification(tmp_path):
+    ignored_anime_tests = tuple(f"--ignore={path}" for path in ANIME_CONTRACT_TESTS)
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_anime_certification",
+        tmp_path,
+        contract_test_paths=CORE_CONTRACT_TEST_PATHS,
+        pytest_args=ignored_anime_tests,
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    expected = _expected_observations()
+    expected_anime = {row for row in expected if row[2].startswith("anime_")}
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_anime) == 48
+    assert missing == expected_anime
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - len(expected_anime)
+    assert (coverage or {}).get("passed") == 331
+    for name, version, scenario in sorted(expected_anime):
+        assert f"{name}@{version}/{scenario}" in output
+
+
+def test_gate_rejects_a_skipped_required_marked_scenario(tmp_path):
+    plugin_source = """
+        import json
+        import os
+        from pathlib import Path
+
+        import pytest
+
+
+        @pytest.hookimpl(tryfirst=True)
+        def pytest_collection_modifyitems(items):
+            for item in items:
+                marker = item.get_closest_marker("capability_contract")
+                if marker is not None and marker.args[2] == "success":
+                    item.add_marker(pytest.mark.skip(reason="gate self-test skip"))
+                    Path(os.environ["CAPABILITY_GATE_PROBE_TARGET"]).write_text(
+                        json.dumps(list(marker.args)), encoding="utf-8"
+                    )
+                    return
+    """
+    completed, coverage, output, evidence_dir = _run_gate_probe(
+        "skipped_required_marked_scenario",
+        tmp_path,
+        plugin_source=plugin_source,
+    )
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    target_path = tmp_path / "probe-target.json"
+    assert target_path.is_file(), output
+    skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert missing == {skipped}
+    assert (coverage or {}).get("expected") == len(_expected_observations())
+    assert (coverage or {}).get("passed") == len(_expected_observations()) - 1
+    assert (evidence_dir / "probe-target.json").is_file()
+
+
+def test_gate_rejects_an_empty_selected_matrix(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "no_action_matrix_selected",
+        tmp_path,
+        pytest_args=("-k", "gate_probe_no_matching_contract_item"),
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed.returncode == 5
+    assert (coverage or {}).get("passed") == 0
+    assert (coverage or {}).get("expected") == len(_expected_observations())
+
+
+def test_gate_accepts_the_complete_registry_matrix(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "complete_registry_matrix", tmp_path
+    )
+    expected = _expected_observations()
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed.returncode == 0, output
+    assert coverage is not None, "gate subprocess did not write a coverage report"
+    assert coverage["gate"] == "pass"
+    assert coverage["errors"] == []
+    assert coverage["expected"] == len(expected)
+    assert coverage["passed"] == len(expected)
+    assert coverage["missing"] == []
+
+
+@pytest.mark.parametrize("failure_kind", ["xfail", "teardown_failure", "unobserved"])
+def test_gate_sessionfinish_excludes_nonpassing_required_observations(
+    tmp_path, failure_kind
+):
+    """Synthetic hook rows isolate gate accounting, not action execution."""
+    from tests.capabilities.contracts.plugin import pytest_sessionfinish
+
+    expected = _expected_observations()
+    target = sorted(expected)[0]
+    rows = {
+        f"synthetic-item-{index}": {
+            "key": observation,
+            "stages": {"setup": "passed", "call": "passed", "teardown": "passed"},
+            "observed": observation,
+            "xfail": False,
+        }
+        for index, observation in enumerate(sorted(expected))
+    }
+    target_row = next(row for row in rows.values() if row["key"] == target)
+    if failure_kind == "xfail":
+        target_row["xfail"] = True
+    elif failure_kind == "teardown_failure":
+        target_row["stages"]["teardown"] = "failed"
+    else:
+        target_row["observed"] = None
+
+    report_path = tmp_path / f"{failure_kind}-coverage.json"
+
+    class _PluginManager:
+        @staticmethod
+        def getplugin(_name):
+            return None
+
+    class _Config:
+        def __init__(self):
+            self._capability_contract_reports = rows
+            self.pluginmanager = _PluginManager()
+
+        @staticmethod
+        def getoption(name):
+            if name == "--capability-contract-gate":
+                return True
+            if name == "--capability-contract-report":
+                return str(report_path)
+            raise AssertionError(f"Unexpected pytest option: {name}")
+
+    class _Session:
+        def __init__(self):
+            self.config = _Config()
+            self.exitstatus = 0
+
+    session = _Session()
+    pytest_sessionfinish(session, 0)
+    coverage = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert session.exitstatus == 1
+    assert coverage["gate"] == "fail"
+    assert coverage["expected"] == len(expected)
+    assert coverage["passed"] == len(expected) - 1
+    assert coverage["missing"] == [list(target)]
+    assert coverage["errors"] == [
+        "Missing executed contracts: "
+        + ", ".join(
+            f"{name}@{version}/{scenario}" for name, version, scenario in [target]
+        )
+    ]

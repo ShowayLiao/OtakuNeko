@@ -159,12 +159,20 @@ class TestMCPServer:
         registry.register(capability)
         server = MCPServer(registry, _anime_exposure())
 
-        async def execute(action_name, **arguments):
-            assert action_name == "search"
-            assert arguments == {"keyword": "Frieren"}
-            return {"success": True, "data": {"items": []}}
+        async def search(**arguments):
+            assert arguments == {
+                "keyword": "Frieren",
+                "subject_types": [2],
+                "tags": None,
+                "rating_ranges": None,
+                "air_date_ranges": None,
+                "limit": 10,
+                "offset": 0,
+            }
+            return {"total": 0, "data": []}
 
-        monkeypatch.setattr(capability, "execute", execute)
+        # Keep the real handler and public output contract in the routing test.
+        monkeypatch.setattr("app.capabilities.anime.search_subjects_advanced", search)
 
         resp = await server.handle_request(
             {
@@ -182,7 +190,7 @@ class TestMCPServer:
         content = resp["result"]["content"][0]["text"]
         assert json.loads(content) == {
             "success": True,
-            "data": {"items": []},
+            "data": {"total": 0, "results": []},
         }
 
     @pytest.mark.asyncio

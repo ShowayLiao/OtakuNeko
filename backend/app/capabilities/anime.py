@@ -10,6 +10,7 @@ from typing import Any
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.types import ActionDescriptor, CapabilityResult
+from app.capabilities.anime_contracts import output_schema
 from app.services.bangumi_service import (
     fetch_subject_by_id,
     get_audience_feedback,
@@ -87,6 +88,7 @@ class AnimeCapability(BaseCapability):
         return [
             ActionDescriptor(
                 name="search",
+                output_schema=output_schema("search"),
                 public_name="search_anime_advanced",
                 description="Search anime by keyword, tags, rating, or air date",
                 input_schema={
@@ -109,12 +111,14 @@ class AnimeCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="get_detail",
+                output_schema=output_schema("get_detail"),
                 public_name="get_anime_info",
                 description="Get detailed information about one anime subject. Use this after a calendar lookup when more evidence is needed.",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_detail_batch",
+                output_schema=output_schema("get_detail_batch"),
                 public_name="get_anime_info_batch",
                 description=(
                     "Get detailed information for up to five selected anime subject IDs. "
@@ -136,24 +140,28 @@ class AnimeCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="get_staff",
+                output_schema=output_schema("get_staff"),
                 public_name="get_anime_staff",
                 description="Get production staff information for an anime",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_cast",
+                output_schema=output_schema("get_cast"),
                 public_name="get_anime_cast",
                 description="Get voice actor / cast information for an anime",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_reviews",
+                output_schema=output_schema("get_reviews"),
                 public_name="fetch_audience_reviews",
                 description="Get audience reviews and feedback for an anime",
                 input_schema=subject_id_schema,
             ),
             ActionDescriptor(
                 name="get_bangumi_calendar",
+                output_schema=output_schema("get_bangumi_calendar"),
                 public_name="get_bangumi_calendar",
                 description=(
                     "Get the complete current Bangumi broadcast calendar. "
@@ -165,6 +173,7 @@ class AnimeCapability(BaseCapability):
             ),
             ActionDescriptor(
                 name="get_bangumi_user_info",
+                output_schema=output_schema("get_bangumi_user_info"),
                 public_name="get_bangumi_user_info",
                 description="Get public profile data for the authenticated user's linked Bangumi account",
                 input_schema={"type": "object", "properties": {}, "required": []},
@@ -193,9 +202,12 @@ class AnimeCapability(BaseCapability):
             return await handler(**kwargs)
         except Exception as exc:
             logger.error(
-                "anime_capability_failed", extra={"action": action, "error": str(exc)}
+                "anime_capability_failed",
+                extra={"action": action, "error_type": type(exc).__name__},
             )
-            return CapabilityResult.fail(str(exc), error_type="internal").to_dict()
+            return CapabilityResult.fail(
+                "Anime operation failed", error_type="internal"
+            ).to_dict()
 
     # -- action handlers -------------------------------------------------------
 
