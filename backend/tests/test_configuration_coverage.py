@@ -1,6 +1,24 @@
 """Coverage accounting must fail closed on missing and failed validators."""
 
-from scripts.check_configuration_coverage import discover_paths, execute, summarize
+from pathlib import Path
+
+from scripts.check_configuration_coverage import (
+    WORKFLOWS,
+    discover_paths,
+    execute,
+    summarize,
+)
+
+
+def test_every_repository_workflow_has_a_validator():
+    repo_root = Path(__file__).resolve().parents[2]
+    workflow_paths = {
+        path.relative_to(repo_root).as_posix()
+        for path in (repo_root / ".github/workflows").glob("*.yml")
+    }
+
+    assert workflow_paths
+    assert workflow_paths <= set(WORKFLOWS)
 
 
 def test_unknown_configuration_is_uncovered(tmp_path):

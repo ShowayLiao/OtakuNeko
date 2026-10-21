@@ -82,7 +82,10 @@ class CollectionRepo:
             )
             return new_collection
         except SQLAlchemyError as e:
-            logger.error(f"创建收藏记录失败: {e}")
+            logger.error(
+                "collection_write_failed",
+                extra={"action": "create", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
 
@@ -175,7 +178,13 @@ class CollectionRepo:
             result = await db.execute(query)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error(f"获取Collection ORM行失败: {e}")
+            logger.error(
+                "collection_write_failed",
+                extra={
+                    "action": "get_orm_by_user_and_subject",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod
@@ -384,7 +393,10 @@ class CollectionRepo:
             )
             return collection
         except SQLAlchemyError as e:
-            logger.error(f"更新收藏记录失败: {e}")
+            logger.error(
+                "collection_write_failed",
+                extra={"action": "update", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
 
@@ -424,7 +436,10 @@ class CollectionRepo:
 
             return True
         except SQLAlchemyError as e:
-            logger.error(f"删除收藏记录失败: {e}")
+            logger.error(
+                "collection_write_failed",
+                extra={"action": "delete", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
 
@@ -649,6 +664,9 @@ class CollectionRepo:
                 f"批量 Upsert 收藏记录成功，处理了 {len(data_list.collections)} 条记录"
             )
         except SQLAlchemyError as e:
-            logger.error(f"批量 Upsert 收藏记录失败: {e}")
+            logger.error(
+                "collection_write_failed",
+                extra={"action": "batch_upsert", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise

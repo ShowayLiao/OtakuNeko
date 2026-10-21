@@ -7,10 +7,18 @@ the model contract while exposing bounded read/write operations to Runtime.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.capabilities.base import BaseCapability
-from app.capabilities.collections_read_contracts import READ_ACTIONS, output_schema
+from app.capabilities.collections_read_contracts import output_schema
+from app.capabilities.collections_write_contracts import (
+    WRITE_ACTIONS,
+    output_schema as write_output_schema,
+)
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.core.logging import get_logger
 from app.schemas.collection import (
@@ -62,6 +70,7 @@ def _schema(
         "type": "object",
         "properties": properties,
         "required": required or [],
+        "additionalProperties": False,
     }
 
 
@@ -185,6 +194,7 @@ class CollectionCapability(BaseCapability):
                 input_schema=_schema(
                     write_payload["properties"], ["source", "source_id", "type"]
                 ),
+                output_schema=write_output_schema("create_collection"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -194,6 +204,7 @@ class CollectionCapability(BaseCapability):
                 input_schema=_schema(
                     write_payload["properties"], ["source", "source_id"]
                 ),
+                output_schema=write_output_schema("update_collection"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -201,6 +212,7 @@ class CollectionCapability(BaseCapability):
                 public_name="delete_collection",
                 description="Delete an owned collection entry",
                 input_schema=write_ref,
+                output_schema=write_output_schema("delete_collection"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -210,6 +222,7 @@ class CollectionCapability(BaseCapability):
                 input_schema=_schema(
                     write_payload["properties"], ["source", "source_id"]
                 ),
+                output_schema=write_output_schema("upsert_collection"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -230,6 +243,7 @@ class CollectionCapability(BaseCapability):
                     ["items"],
                 ),
                 max_payload_bytes=256 * 1024,
+                output_schema=write_output_schema("batch_upsert_collections"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -244,6 +258,7 @@ class CollectionCapability(BaseCapability):
                     ["data"],
                 ),
                 max_payload_bytes=512 * 1024,
+                output_schema=write_output_schema("import_json_collections"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -259,6 +274,7 @@ class CollectionCapability(BaseCapability):
                     }
                 ),
                 max_payload_bytes=16 * 1024,
+                output_schema=write_output_schema("sync_bangumi_collections"),
                 **write_common,
             ),
             ActionDescriptor(
@@ -277,6 +293,7 @@ class CollectionCapability(BaseCapability):
                     ["data"],
                 ),
                 max_payload_bytes=512 * 1024,
+                output_schema=write_output_schema("sync_douban_collections"),
                 **write_common,
             ),
         ]
@@ -300,26 +317,65 @@ class CollectionCapability(BaseCapability):
             return CapabilityResult.fail(
                 f"Unknown action: {action}", error_type="invalid_action"
             ).to_dict()
+        # Track only commits made by this business handler. Idempotency claims
+        # are committed before execute(), so they cannot mark a failed write
+        # as partially committed. A rollback cannot undo an earlier commit.
+        db = kwargs.get("db")
+        session = (
+            db.sync_session
+            if action in WRITE_ACTIONS and isinstance(db, AsyncSession)
+            else None
+        )
+        committed = False
+
+        def after_commit(_session: Any) -> None:
+            nonlocal committed
+            committed = True
+
+        if session is not None:
+            event.listen(session, "after_commit", after_commit)
         try:
-            return await handler(**kwargs)
-        except ValueError as exc:
-            message = (
-                "Invalid collection arguments" if action in READ_ACTIONS else str(exc)
-            )
-            return CapabilityResult.fail(message, error_type="invalid_args").to_dict()
-        except Exception as exc:
-            if action in READ_ACTIONS:
-                logger.error(
-                    "collection_capability_failed",
-                    extra={"action": action, "error_type": type(exc).__name__},
-                )
-            else:
-                logger.exception(
-                    "collection_capability_failed", extra={"action": action}
-                )
+            result = await handler(**kwargs)
+            if action in WRITE_ACTIONS and result.get("success"):
+                # Reject invalid JSON before the idempotency event writer can
+                # turn a malformed business result into an infrastructure error.
+                try:
+                    json.dumps(result, allow_nan=False)
+                except (TypeError, ValueError):
+                    return CapabilityResult.fail(
+                        "The operation state requires manual verification"
+                        if committed
+                        else "Collection output is not safe JSON",
+                        error_type="attention_required"
+                        if committed
+                        else "invalid_output",
+                    ).to_dict()
+            return result
+        except ValueError:
             return CapabilityResult.fail(
-                "Collection operation failed", error_type="internal"
+                "The operation state requires manual verification"
+                if committed
+                else "Invalid collection arguments",
+                error_type="attention_required" if committed else "invalid_args",
             ).to_dict()
+        except Exception as exc:
+            logger.error(
+                "collection_capability_failed",
+                extra={
+                    "action": action,
+                    "error_type": type(exc).__name__,
+                    "committed": committed,
+                },
+            )
+            return CapabilityResult.fail(
+                "The operation state requires manual verification"
+                if committed
+                else "Collection operation failed",
+                error_type="attention_required" if committed else "internal",
+            ).to_dict()
+        finally:
+            if session is not None:
+                event.remove(session, "after_commit", after_commit)
 
     async def _list(self, **kwargs: Any) -> dict[str, Any]:
         trusted = _trusted(kwargs)

@@ -689,3 +689,21 @@ of this software and associated documentation files...
     </p>
     <br>
 </div>
+
+## Frontend QA
+
+Agent 页面功能清单、验收和本轮证据见 [功能清单](docs/frontend-qa/feature-inventory.md)、[验收矩阵](docs/frontend-qa/acceptance-matrix.md)和[审计报告](docs/frontend-qa/audit-report.md)。后续前端审计或交互修复使用项目级 [frontend-qa Skill](.agents/skills/frontend-qa/SKILL.md)。
+
+从仓库根目录执行（Node 20.19.0、pnpm 10.15.1；安装命令见实际 package 配置）：
+
+```powershell
+pnpm --dir frontend install --frozen-lockfile
+pnpm --dir frontend exec playwright install chromium
+pnpm --dir frontend test:e2e
+uv sync --directory backend --locked --dev
+pnpm --dir frontend test:e2e:smoke
+```
+
+Mock E2E 自动启动 `127.0.0.1:3100` 的前端，覆盖 Desktop/Tablet/Mobile。Smoke 独立启动前端和 `127.0.0.1:8100` 的真实后端，使用临时数据库、新测试账户和随机 JWT，禁用外部集成，不调用真实模型；两个端口须空闲。已启动专用 QA 前端时，仅 Mock 可用 `E2E_EXTERNAL_SERVER=1`。下载受阻时可将 `E2E_CHROMIUM_EXECUTABLE_PATH` 指向已安装的 Chromium，报告实际浏览器版本。
+
+失败 screenshot、trace、脱敏日志和 HTML 报告位于被忽略的 `frontend/.runtime/frontend-qa/`，本地报告可用 `pnpm --dir frontend exec playwright show-report .runtime/frontend-qa/html-report` 查看。仅对合成测试数据采集 trace，不采集真实 API Key、用户历史或生产请求。PR 的 `Frontend QA` 工作流分别执行 Mock 和隔离 Smoke，证据保留 7 天；Mock 通过不能证明真实 Agent 业务能力通过。

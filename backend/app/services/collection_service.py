@@ -104,7 +104,10 @@ async def create_collection(
 
         return collection
     except Exception as e:
-        logger.error(f"Failed to create collection: {e}")
+        logger.error(
+            "collection_write_failed",
+            extra={"action": "create_collection", "error_type": type(e).__name__},
+        )
         raise
 
 
@@ -172,7 +175,10 @@ async def update_collection(
 
         return collection
     except Exception as e:
-        logger.error(f"Failed to update collection: {e}")
+        logger.error(
+            "collection_write_failed",
+            extra={"action": "update_collection", "error_type": type(e).__name__},
+        )
         raise
 
 
@@ -209,7 +215,10 @@ async def delete_collection(
             )
         return deleted
     except Exception as e:
-        logger.error(f"Failed to delete collection: {e}")
+        logger.error(
+            "collection_write_failed",
+            extra={"action": "delete_collection", "error_type": type(e).__name__},
+        )
         raise
 
 
@@ -486,7 +495,13 @@ async def batch_upsert_collections(
         return len(normalized)
     except Exception as e:
         await db.rollback()
-        logger.error(f"批量 Upsert 收藏记录失败: {e}")
+        logger.error(
+            "collection_write_failed",
+            extra={
+                "action": "batch_upsert_collections",
+                "error_type": type(e).__name__,
+            },
+        )
         raise
 
 
@@ -562,10 +577,10 @@ async def import_json_collections(
         return total_success
 
     except Exception as e:
-        import traceback
-
-        logger.error(f"导入JSON收藏数据失败: {e}")
-        logger.error(f"错误详情: {traceback.format_exc()}")
+        logger.error(
+            "collection_write_failed",
+            extra={"action": "import_json_collections", "error_type": type(e).__name__},
+        )
         # 回滚事务
         await db.rollback()
         raise

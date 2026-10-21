@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   cancelRun,
+  deleteChatHistory,
   chatWithBackend,
   fetchChatHistory,
   fetchCurrentUser,
@@ -26,6 +27,35 @@ describe("chatWithBackend authentication", () => {
     localStorage.clear();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+  });
+
+  it("does not invalidate a new login after a stale DELETE receives 401", async () => {
+    let respond!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            respond = resolve;
+          }),
+      ),
+    );
+    localStorage.setItem("token", "qa-token-a");
+    const deletion = deleteChatHistory("old-thread").catch((error) => error);
+    localStorage.setItem("token", "qa-token-b");
+    respond(new Response(null, { status: 401 }));
+    expect(await deletion).toBeInstanceOf(Error);
+    expect(localStorage.getItem("token")).toBe("qa-token-b");
+  });
+
+  it("invalidates the same token when DELETE receives 401", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    );
+    localStorage.setItem("token", "qa-token-a");
+    await expect(deleteChatHistory("old-thread")).rejects.toThrow("401");
+    expect(localStorage.getItem("token")).toBeNull();
   });
 
   it("requests durable cancellation without aborting or resubmitting chat", async () => {

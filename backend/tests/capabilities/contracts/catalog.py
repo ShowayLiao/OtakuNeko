@@ -54,6 +54,16 @@ COLLECTIONS_READ_SCENARIOS = (
     "collections_read_authorization",
     "collections_read_dispatcher",
 )
+COLLECTIONS_WRITE_SCENARIOS = (
+    "collections_write_error",
+    "collections_write_timeout",
+    "collections_write_isolation",
+    "collections_write_serialization",
+    "collections_write_authorization",
+    "collections_write_dispatcher",
+    "collections_write_approval",
+    "collections_write_idempotency",
+)
 
 
 def census(registry: CapabilityRegistry | None = None) -> dict[Key, ActionDescriptor]:
@@ -156,6 +166,14 @@ def expected_observations(
             and not descriptor.is_side_effect
         ):
             expected.update((*key, scenario) for scenario in COLLECTIONS_READ_SCENARIOS)
+        elif (
+            owner is not None
+            and owner[0].name == "collections"
+            and descriptor.is_side_effect
+        ):
+            expected.update(
+                (*key, scenario) for scenario in COLLECTIONS_WRITE_SCENARIOS
+            )
         if key not in examples:
             continue  # fixture mismatch is a separate fatal diagnostic
         for path in required_paths(descriptor.input_schema, examples[key].arguments):

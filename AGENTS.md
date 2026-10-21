@@ -648,3 +648,5 @@ Validation claims must match commands actually run. Never say a test/lint/typech
 If a command exit code is unavailable, mark its validation status UNKNOWN; never infer PASS from output text.
 Do not include chain-of-thought, full transcripts, file contents, Git diff contents, or full shell output in task-log notes or final responses intended for logging.
 <!-- ai-task-log:end -->
+
+本项目可复用的前端 QA 与独立 Review 流程见 `.agents/skills/frontend-qa/SKILL.md`。进行 Agent 页面功能审计、E2E 或响应式回归时读取该 Skill；Mock、真实后端 Smoke 和 agent-browser 验证结果必须分别报告。

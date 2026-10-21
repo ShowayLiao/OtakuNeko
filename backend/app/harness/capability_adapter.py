@@ -5,6 +5,8 @@ import hashlib
 import json
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.agents.base import BaseAgent
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.harness.contracts import ExecutionContext
@@ -126,6 +128,11 @@ class CapabilityAdapter:
                 "status": "succeeded" if result.get("success", True) else "failed",
                 "result": result,
                 **(
+                    {"capability_action": action}
+                    if self._capability.name == "collections"
+                    else {}
+                ),
+                **(
                     {"error_code": result.get("error_type")}
                     if not result.get("success", True)
                     else {}
@@ -140,17 +147,44 @@ class CapabilityAdapter:
                 ).to_dict()
             resource_key = self._resource_key(action, public)
             scope = f"{principal.principal_id}:{self._capability.name}:{resource_key}"
-            execution = await self._idempotency_store.execute_once(
-                scope,
-                str(idempotency_key),
-                _payload_hash(public),
-                operation,
-            )
+            try:
+                execution = await self._idempotency_store.execute_once(
+                    scope,
+                    str(idempotency_key),
+                    _payload_hash(public),
+                    operation,
+                )
+            except Exception:
+                if self._capability.name != "collections":
+                    raise
+                db = self._trusted_args.get("db")
+                if isinstance(db, AsyncSession):
+                    await db.rollback()
+                # A durable result may have failed after a business commit.
+                # Keep the key reserved and surface the uncertainty immediately.
+                return CapabilityResult.fail(
+                    "The operation state requires manual verification",
+                    error_type="attention_required",
+                ).to_dict()
             if execution.status == "conflict":
                 return CapabilityResult.fail(
                     "The idempotency key was reused with different arguments",
                     error_type="idempotency_conflict",
                 ).to_dict()
+            if self._capability.name == "collections":
+                recorded_action = execution.result.get("capability_action")
+                if recorded_action is None:
+                    # Legacy records cannot prove which action produced the
+                    # result. Keep their keys reserved; never execute again.
+                    return CapabilityResult.fail(
+                        "The operation state requires manual verification",
+                        error_type="attention_required",
+                    ).to_dict()
+                if recorded_action != action:
+                    return CapabilityResult.fail(
+                        "The idempotency key belongs to another collection action",
+                        error_type="idempotency_conflict",
+                    ).to_dict()
             return self._unwrap_idempotency_result(execution.result)
 
         try:

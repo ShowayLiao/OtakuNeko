@@ -3,7 +3,6 @@
 import React, {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useState,
   useSyncExternalStore,
@@ -61,29 +60,55 @@ export const useAppTheme = (): AppThemeContextType => {
   return context;
 };
 
+const THEME_CHANGED_EVENT = "otakuneko-theme-changed";
+const subscribeToTheme = (onChange: () => void) => {
+  window.addEventListener("storage", onChange);
+  window.addEventListener(THEME_CHANGED_EVENT, onChange);
+  return () => {
+    window.removeEventListener("storage", onChange);
+    window.removeEventListener(THEME_CHANGED_EVENT, onChange);
+  };
+};
+const readAppearance = (): ThemeAppearance => {
+  const value = localStorage.getItem("APP_THEME_APPEARANCE");
+  return value === "light" || value === "dark" ? value : "auto";
+};
+const readPrimaryColor = () =>
+  localStorage.getItem("APP_PRIMARY_COLOR") || "#0072F5";
+const subscribeToHydration = () => () => {};
+
 export const LobeProvider = ({ children }: { children: ReactNode }) => {
-  const [appearance, setAppearance] = useState<ThemeAppearance>(() => {
-    if (typeof window === "undefined") return "auto";
-    return (
-      (localStorage.getItem("APP_THEME_APPEARANCE") as ThemeAppearance) ||
-      "auto"
-    );
-  });
-  const [primaryColor, setPrimaryColor] = useState(() => {
-    if (typeof window === "undefined") return "#0072F5";
-    return localStorage.getItem("APP_PRIMARY_COLOR") || "#0072F5";
-  });
+  // The server and first hydration render use identical snapshots. Browser
+  // preferences are applied after hydration, without overwriting saved values.
+  const appearance = useSyncExternalStore(
+    subscribeToTheme,
+    readAppearance,
+    () => "auto" as ThemeAppearance,
+  );
+  const primaryColor = useSyncExternalStore(
+    subscribeToTheme,
+    readPrimaryColor,
+    () => "#0072F5",
+  );
+  const hydrated = useSyncExternalStore(
+    subscribeToHydration,
+    () => true,
+    () => false,
+  );
+  const setAppearance = (mode: ThemeAppearance) => {
+    localStorage.setItem("APP_THEME_APPEARANCE", mode);
+    window.dispatchEvent(new Event(THEME_CHANGED_EVENT));
+  };
+  const setPrimaryColor = (color: string) => {
+    localStorage.setItem("APP_PRIMARY_COLOR", color);
+    window.dispatchEvent(new Event(THEME_CHANGED_EVENT));
+  };
   const [neutralColor, setNeutralColor] = useState<NeutralColors>("slate");
   const systemIsDark = useSyncExternalStore(
     subscribeToSystemColorScheme,
     getSystemIsDarkMode,
     () => false,
   );
-
-  useEffect(() => {
-    localStorage.setItem("APP_THEME_APPEARANCE", appearance);
-    localStorage.setItem("APP_PRIMARY_COLOR", primaryColor);
-  }, [appearance, primaryColor]);
 
   const isDarkMode =
     appearance === "auto" ? systemIsDark : appearance === "dark";
@@ -113,6 +138,8 @@ export const LobeProvider = ({ children }: { children: ReactNode }) => {
       <ThemeProvider
         key={`${primaryColor}-${resolvedMode}`}
         themeMode={resolvedMode}
+        // Emotion global styles insert DOM nodes during hydration unless deferred.
+        enableGlobalStyle={hydrated}
         customTheme={customTheme}
       >
         <ConfigProvider

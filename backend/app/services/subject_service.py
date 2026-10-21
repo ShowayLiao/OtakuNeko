@@ -192,7 +192,9 @@ async def batch_upsert_subjects(
 
         return processed_count
     except Exception as e:
-        logger.error(f"批量 Upsert 条目失败: {e}")
+        logger.error(
+            "subject_batch_upsert_failed", extra={"error_type": type(e).__name__}
+        )
         raise
 
 

@@ -12,7 +12,7 @@ FINGERPRINTS = {
     (
         "batch_upsert_collections",
         "v1",
-    ): "207c7540f2636b9c5644955d10effd2a2e05eda927f7cc6119f97cded426dcb5",
+    ): "de54b198c0c18b090c600591d727cb888f9e18558f9cabf052855c175c77b1af",
     (
         "bulk_upsert_schedules",
         "v1",
@@ -20,7 +20,7 @@ FINGERPRINTS = {
     (
         "create_collection",
         "v1",
-    ): "12eef5d9c53668e4fd8190afac6b53d1e9d448f6636468076329066fad81fab8",
+    ): "73c3ef232fb1ede718b0c29a6388581ac0c96248c711e390bbc7ec301014b117",
     (
         "create_schedule",
         "v1",
@@ -28,7 +28,7 @@ FINGERPRINTS = {
     (
         "delete_collection",
         "v1",
-    ): "7ad69756f2863fc606145769c3ff3f1ef85d417c2a32bdd4762556e94d32941f",
+    ): "7db3edc57fcda137c3fd39b970a52f730568b7748f89601d0d88e81cb846c659",
     (
         "delete_schedule",
         "v1",
@@ -92,7 +92,7 @@ FINGERPRINTS = {
     (
         "import_json_collections",
         "v1",
-    ): "efa72626cbaf7087f71d88b12b8f170fa486a62f0108ebb05b93f5e660850aa8",
+    ): "488a36a6a5ec47f62607a9236962583124b970a586b6d7c3aa7b646f95c22bda",
     (
         "library_status",
         "v1",
@@ -156,7 +156,7 @@ FINGERPRINTS = {
     (
         "sync_bangumi_collections",
         "v1",
-    ): "71472082e101d42e5a1ed6f7abc5878fa141349e0da344beca332a790a912d30",
+    ): "b5af4e7d8ebe39f901061934d6c56d82511da00e8b0154f02204b4f09e8798d8",
     (
         "sync_bangumi_schedule",
         "v1",
@@ -164,11 +164,11 @@ FINGERPRINTS = {
     (
         "sync_douban_collections",
         "v1",
-    ): "99b5a8351f7fed88dbdb76a3086d971d5491e0c02f198d43576c64d97d524266",
+    ): "6ba32c63ec184a51fb10c19fc7b08838533287138198e1f89b421ca1e8a60145",
     (
         "update_collection",
         "v1",
-    ): "2fa025447dc2814f0e22d96234d3aeb57dc7ec4ee19244162e4e24b14311d9ea",
+    ): "c8c7c0614c4b135f8782bac962927fa192989009ff66b984fbb8d28670d6388f",
     (
         "update_schedule",
         "v1",
@@ -176,7 +176,7 @@ FINGERPRINTS = {
     (
         "upsert_collection",
         "v1",
-    ): "e18d7d01ed4f85c705fcfacca6f26791433141f249b477b66903c016144f8f61",
+    ): "e2c9d12fa6373c864aa4f035b5b3bb1611e9933bbcc10b8a06b0e4c9fc0dd141",
     (
         "upsert_rss_feed",
         "v1",

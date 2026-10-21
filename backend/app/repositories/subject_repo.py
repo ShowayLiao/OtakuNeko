@@ -178,7 +178,9 @@ class SubjectRepo:
             else:
                 return None
         except SQLAlchemyError as e:
-            logger.error(f"获取Subject失败: {e}")
+            logger.error(
+                "subject_lookup_failed", extra={"error_type": type(e).__name__}
+            )
             raise
 
     @staticmethod
@@ -677,12 +679,16 @@ class SubjectRepo:
                         f"Cleared stats cache for user_id: {user_id} due to subject update"
                     )
             except Exception as e:
-                logger.error(f"Failed to clear stats cache: {e}")
+                logger.error(
+                    "subject_cache_clear_failed", extra={"error_type": type(e).__name__}
+                )
 
             logger.info(f"批量 Upsert 完成: {len(subject_dicts)} 个 Subject 处理成功")
             return len(subject_dicts)
 
         except SQLAlchemyError as e:
-            logger.error(f"批量 Upsert Subject 失败: {e}")
+            logger.error(
+                "subject_batch_upsert_failed", extra={"error_type": type(e).__name__}
+            )
             await db.rollback()
             raise

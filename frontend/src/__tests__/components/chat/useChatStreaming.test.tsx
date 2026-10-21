@@ -224,6 +224,111 @@ describe("useChatStreaming RunView projection", () => {
     expect(message?.processes?.[0]?.status).toBe("cancelled");
   });
 
+  it("detaches a durable stream on auth change without an unauthenticated cancel", async () => {
+    let signal: AbortSignal | undefined;
+    let callbacks: StreamingCallbacks;
+    let resolveStream!: () => void;
+    chatWithBackendMock.mockImplementation(
+      (options: StreamingCallbacks & { abortSignal: AbortSignal }) => {
+        callbacks = options;
+        signal = options.abortSignal;
+        options.onRunView?.(runningView);
+        return new Promise<void>((resolve) => {
+          resolveStream = resolve;
+        });
+      },
+    );
+    cancelRunMock.mockResolvedValue({});
+    const sessionId = "auth-session";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: "auth-message",
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
+    act(() => {
+      void result.current.startStreaming({
+        messages: [],
+        temperature: 0.7,
+        activeSessionId: sessionId,
+        aiMessageId: "auth-message",
+      });
+    });
+    await act(async () => {
+      result.current.stopGeneration({ cancelDurable: false });
+      await Promise.resolve();
+    });
+    expect(signal?.aborted).toBe(true);
+    expect(cancelRunMock).not.toHaveBeenCalled();
+    expect(result.current.loading).toBe(false);
+    act(() => {
+      callbacks.onMessageChunk?.("late previous-user content");
+    });
+    await act(async () => {
+      resolveStream();
+      await Promise.resolve();
+    });
+    await flushRevealFrames();
+    expect(
+      useChatStore.getState().chatMessages[sessionId]?.[0]?.content,
+    ).not.toContain("late previous-user content");
+  });
+
+  it("does not resurrect cleared auth state after a stopped stream rejects", async () => {
+    let rejectStream!: (reason: unknown) => void;
+    chatWithBackendMock.mockImplementation((options: StreamingCallbacks) => {
+      options.onRunView?.(runningView);
+      options.onMessageChunk?.("previous user secret fixture");
+      return new Promise<void>((_, reject) => {
+        rejectStream = reject;
+      });
+    });
+    const sessionId = "old-auth-session";
+    useChatStore.getState().setSessionMessages(sessionId, [
+      {
+        id: "old-message",
+        role: "assistant",
+        content: "",
+        createdAt: new Date(),
+      },
+    ]);
+    const { result } = renderHook(() =>
+      useChatStreaming({
+        selectedProvider: "deepseek",
+        selectedModel: "model",
+        onConnectionStatusChange: vi.fn(),
+      }),
+    );
+    let streaming: Promise<void>;
+    act(() => {
+      streaming = result.current.startStreaming({
+        messages: [],
+        temperature: 0.7,
+        activeSessionId: sessionId,
+        aiMessageId: "old-message",
+      });
+    });
+    await act(async () => {
+      useChatStore.getState().resetChat();
+      result.current.stopGeneration({ cancelDurable: false });
+      rejectStream(new DOMException("aborted", "AbortError"));
+      await streaming;
+    });
+    await flushRevealFrames();
+    expect(useChatStore.getState().chatMessages).toEqual({});
+    expect(result.current.streamingPreview).toBeNull();
+    expect(result.current.loading).toBe(false);
+  });
+
   it("preserves a durable partial answer as recovering after stream interruption", async () => {
     chatWithBackendMock.mockImplementation(
       async (options: StreamingCallbacks) => {

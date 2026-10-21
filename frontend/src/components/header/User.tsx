@@ -130,7 +130,9 @@ const User: React.FC = () => {
       // 从localStorage获取token
       const token = localStorage.getItem("token");
       if (!token) {
-        throw new Error("No authentication token found");
+        setUserInfo(null);
+        setError("No authentication token found");
+        return;
       }
 
       // 调用后端API获取用户信息

@@ -38,10 +38,12 @@ export default function ChatPage() {
   const [authState, setAuthState] = useState<AuthState>("loading");
   const [authRefresh, setAuthRefresh] = useState(0);
   const [mobileSessionsOpen, setMobileSessionsOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
 
   const { isDarkMode } = useAppTheme();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const resumedRunIdsRef = useRef(new Set<string>());
+  const deletingSessionIdsRef = useRef(new Set<string>());
 
   const sessions = useChatStore((state) => state.sessions);
   const activeSessionId = useChatStore((state) => state.activeSessionId);
@@ -69,11 +71,16 @@ export default function ChatPage() {
   const resetChat = useChatStore((state) => state.resetChat);
 
   useEffect(() => {
-    const refreshAuth = () => setAuthRefresh((value) => value + 1);
+    const refreshAuth = () => {
+      // Clear the previous principal before any resume effect can inspect its Run.
+      resetChat();
+      setAuthState("loading");
+      setAuthRefresh((value) => value + 1);
+    };
     window.addEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
     return () =>
       window.removeEventListener(AUTH_STATE_CHANGED_EVENT, refreshAuth);
-  }, []);
+  }, [resetChat]);
 
   useEffect(() => {
     let cancelled = false;
@@ -183,7 +190,7 @@ export default function ChatPage() {
   });
 
   useEffect(() => {
-    if (authRefresh > 0) stopGeneration();
+    if (authRefresh > 0) stopGeneration({ cancelDurable: false });
   }, [authRefresh, stopGeneration]);
 
   const displayMessages = useMemo(() => {
@@ -203,7 +210,13 @@ export default function ChatPage() {
   }, [currentMessages, streamingPreview]);
 
   useEffect(() => {
-    if (!activeSessionId || loading) return;
+    if (
+      authState !== "authenticated" ||
+      !localStorage.getItem("token") ||
+      !activeSessionId ||
+      loading
+    )
+      return;
     const resumable = currentMessages.find(
       (message) =>
         message.role === "assistant" &&
@@ -222,7 +235,7 @@ export default function ChatPage() {
       processes: resumable.processes,
       plan: resumable.plan,
     });
-  }, [activeSessionId, currentMessages, loading, resumeRun]);
+  }, [authState, activeSessionId, currentMessages, loading, resumeRun]);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -369,10 +382,28 @@ export default function ChatPage() {
     await handleSend(text, contextItems);
   };
 
-  const handleDeleteSession = (sessionId: string) => {
-    if (authState === "authenticated")
-      deleteChatHistory(sessionId).catch(() => {});
-    deleteSession(sessionId);
+  const handleDeleteSession = async (sessionId: string) => {
+    if (deletingSessionIdsRef.current.has(sessionId)) return;
+    setDeleteError(false);
+
+    const requestToken = localStorage.getItem("token");
+    if (authState !== "authenticated" || !requestToken) {
+      deleteSession(sessionId);
+      return;
+    }
+
+    deletingSessionIdsRef.current.add(sessionId);
+    try {
+      await deleteChatHistory(sessionId);
+      if (localStorage.getItem("token") !== requestToken) return;
+      deleteSession(sessionId);
+    } catch {
+      if (localStorage.getItem("token") === requestToken) {
+        setDeleteError(true);
+      }
+    } finally {
+      deletingSessionIdsRef.current.delete(sessionId);
+    }
   };
 
   return (
@@ -423,11 +454,26 @@ export default function ChatPage() {
             <PanelLeft size={18} aria-hidden="true" />
             会话
           </button>
+          {deleteError && (
+            <div
+              role="alert"
+              style={{
+                margin: "8px 16px 0",
+                border: `1px solid ${isDarkMode ? "rgba(248,113,113,0.35)" : "#fecaca"}`,
+                borderRadius: 8,
+                padding: "8px 12px",
+                color: isDarkMode ? "#fca5a5" : "#b91c1c",
+                background: isDarkMode ? "rgba(127,29,29,0.25)" : "#fef2f2",
+                fontSize: 14,
+              }}
+            >
+              删除会话失败，请重试
+            </div>
+          )}
           <div
             ref={messageContainerRef}
             onScroll={handleMessageScroll}
             className="flex-1 overflow-y-auto p-4"
-            style={{ paddingBottom: 200 }}
           >
             <MessageList
               messages={displayMessages}

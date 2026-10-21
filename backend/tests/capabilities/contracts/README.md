@@ -105,3 +105,21 @@ registered read handlers through the shared Runtime Dispatcher with imported
 dependencies isolated. HTTP/API and Service/SQL behavior are covered separately
 by `tests/api/test_collections_read_certification.py` and
 `tests/capabilities/test_collections_read_semantics.py`.
+
+Collections write certification adds eight mandatory scenarios to every public
+action owned by `collections` whose production descriptor has
+`is_side_effect == true`: `collections_write_error`,
+`collections_write_timeout`, `collections_write_isolation`,
+`collections_write_serialization`, `collections_write_authorization`,
+`collections_write_dispatcher`, `collections_write_approval`, and
+`collections_write_idempotency`. The current Registry has eight such actions,
+so this matrix requires 64 additional observations. The six read scenarios remain
+separate and unchanged.
+
+`tests/capabilities/contracts/test_collections_write_handlers.py` executes the
+real registered write handlers through the shared Runtime Dispatcher and
+isolates only imported handler dependencies. Omitting the file, filtering its
+timeout scenario, or skipping a required observation fails the gate. Actual
+HTTP/JWT behavior and SQL semantics are certified separately by
+`tests/api/test_collections_write_certification.py` and
+`tests/capabilities/test_collections_write_semantics.py`.

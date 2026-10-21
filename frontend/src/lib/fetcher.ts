@@ -955,10 +955,18 @@ export const cancelRun = async (
 
 export const deleteChatHistory = async (threadId: string): Promise<void> => {
   const token = localStorage.getItem("token");
-  await fetch(`/api/v1/chat/history/${encodeURIComponent(threadId)}`, {
-    method: "DELETE",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const response = await fetch(
+    `/api/v1/chat/history/${encodeURIComponent(threadId)}`,
+    {
+      method: "DELETE",
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
+  );
+  if (!response.ok) {
+    if (response.status === 401 && localStorage.getItem("token") === token)
+      invalidateAuth();
+    throw new Error(`Chat history delete failed: ${response.status}`);
+  }
 };
 
 export const listThreads = async (

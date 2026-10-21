@@ -1,13 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Eraser, X } from "lucide-react";
 import { theme } from "antd";
-import {
-  ChatInputArea,
-  ChatInputActionBar,
-  ChatSendButton,
-} from "@lobehub/ui/chat";
+import { ChatInputArea, ChatSendButton } from "@lobehub/ui/chat";
 import { ActionIcon } from "@lobehub/ui";
 import { useAppTheme } from "@/components/providers/LobeProvider";
 import { ModelSelector } from "./ModelSelector";
@@ -50,9 +46,20 @@ export const ChatInput = ({
   const [isExpand, setIsExpand] = useState(false);
   const [text, setText] = useState(() => editText ?? "");
   const [contextItems, setContextItems] = useState<SearchResultItem[]>([]);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(32);
+  useEffect(() => {
+    if (!toolbarRef.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setToolbarHeight(Math.ceil(entry.contentRect.height));
+    });
+    observer.observe(toolbarRef.current);
+    return () => observer.disconnect();
+  }, []);
+  const extraToolbarHeight = Math.max(0, toolbarHeight - 32);
   const heights = {
-    inputHeight: 160,
-    minHeight: 128,
+    inputHeight: 160 + extraToolbarHeight,
+    minHeight: 128 + extraToolbarHeight,
     maxHeight: 600,
   };
 
@@ -73,6 +80,7 @@ export const ChatInput = ({
   };
 
   const handleSend = () => {
+    if (loading) return;
     if (!text.trim() && contextItems.length === 0) return;
     onSend(text, contextItems);
     setText("");
@@ -87,9 +95,8 @@ export const ChatInput = ({
   return (
     <div
       style={{
-        position: "absolute",
-        bottom: 0,
-        left: 0,
+        position: "relative",
+        flexShrink: 0,
         width: "100%",
         padding: "0 16px 24px 16px",
         zIndex: 10,
@@ -152,30 +159,29 @@ export const ChatInput = ({
 
       <ChatInputArea
         topAddons={
-          <ChatInputActionBar
-            leftAddons={
-              <div
-                style={{
-                  marginLeft: "20px",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                }}
-              >
-                <ModelSelector
-                  value={selectedModel}
-                  onChange={onModelChange}
-                  onOpenSettings={onOpenSettings}
-                />
-                <RoleSelector value={selectedRole} onChange={onRoleChange} />
-                <SearchTrigger onSelect={handleSearchSelect} />
-                <ActionIcon icon={Eraser} title="清除" onClick={handleClear} />
-                {connectionStatus && (
-                  <ConnectionStatus status={connectionStatus} />
-                )}
-              </div>
-            }
-          />
+          <div
+            ref={toolbarRef}
+            style={{
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+              minWidth: 0,
+              width: "100%",
+              marginLeft: 0,
+            }}
+          >
+            <ModelSelector
+              value={selectedModel}
+              onChange={onModelChange}
+              onOpenSettings={onOpenSettings}
+            />
+            <RoleSelector value={selectedRole} onChange={onRoleChange} />
+            <SearchTrigger onSelect={handleSearchSelect} />
+            <ActionIcon icon={Eraser} title="清除" onClick={handleClear} />
+            {connectionStatus && <ConnectionStatus status={connectionStatus} />}
+          </div>
         }
         bottomAddons={
           <ChatSendButton

@@ -188,7 +188,7 @@ def bangumi_subject_to_subjectlist(
             try:
                 subject_upsert_data["type"] = SubjectType(subject_data["type"])
             except ValueError:
-                logger.warning(f"未知的Subject类型: {subject_data['type']}, 将使用None")
+                logger.warning("collection_import_subject_type_fallback")
                 subject_upsert_data["type"] = None
 
         if "date" in subject_data:
@@ -260,7 +260,10 @@ def bangumi_subject_to_subjectlist(
             subjects.append(subject)
         except Exception as e:
             # 如果验证失败，跳过该条目
-            logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
+            logger.warning(
+                "collection_import_subject_invalid",
+                extra={"error_type": type(e).__name__},
+            )
             continue
 
     # 返回转换后的SubjectUpsertList对象
@@ -320,7 +323,7 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
             try:
                 subject_upsert_data["type"] = SubjectType(subject_data["type"])
             except ValueError:
-                logger.warning(f"未知的Subject类型: {subject_data['type']}, 将使用None")
+                logger.warning("collection_import_subject_type_fallback")
                 subject_upsert_data["type"] = None
 
         if "date" in subject_data:
@@ -363,7 +366,10 @@ def bangumi_collection_to_subjectlist(data: Dict[str, Any]) -> SubjectUpsertList
             subjects.append(subject)
         except Exception as e:
             # 如果验证失败，跳过该条目
-            logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
+            logger.warning(
+                "collection_import_subject_invalid",
+                extra={"error_type": type(e).__name__},
+            )
             continue
 
     # 返回转换后的SubjectUpsertList对象
@@ -422,9 +428,7 @@ def bangumi_collection_to_collectionlist(
             try:
                 collection_upsert_data["type"] = CollectionStatus(item["type"])
             except ValueError:
-                logger.warning(
-                    f"未知的Collection类型: {item['type']}, 将使用默认值 2 (看过)"
-                )
+                logger.warning("collection_import_status_fallback")
                 collection_upsert_data["type"] = CollectionStatus(2)
 
         if "rate" in item:
@@ -473,7 +477,8 @@ def bangumi_collection_to_collectionlist(
                 else:
                     # 其他类型，使用当前UTC时间（不带时区信息）
                     logger.warning(
-                        f"updated_at类型不正确，使用当前UTC时间: {type(updated_at_value)}"
+                        "collection_import_timestamp_type_fallback",
+                        extra={"value_type": type(updated_at_value).__name__},
                     )
                     collection_upsert_data["updated_at"] = datetime.now(
                         timezone.utc
@@ -482,7 +487,10 @@ def bangumi_collection_to_collectionlist(
                 # 如果处理失败，使用当前UTC时间（不带时区信息）
                 from datetime import datetime, timezone
 
-                logger.warning(f"处理updated_at失败: {e}")
+                logger.warning(
+                    "collection_import_timestamp_invalid",
+                    extra={"error_type": type(e).__name__},
+                )
                 collection_upsert_data["updated_at"] = datetime.now(
                     timezone.utc
                 ).replace(tzinfo=None)
@@ -494,7 +502,7 @@ def bangumi_collection_to_collectionlist(
         except Exception as e:
             # 如果验证失败，跳过该条目
             logger.warning(
-                f"验证Collection数据失败: {e}, 数据: {collection_upsert_data}"
+                "collection_import_item_invalid", extra={"error_type": type(e).__name__}
             )
             continue
 
@@ -553,9 +561,7 @@ def douban_to_bangumi_list(douban_data: Dict[str, Any]) -> Dict[str, Any]:
         bgm_subject_type = subject_type_map.get(db_subject_type, 1)
 
         if db_subject_type not in subject_type_map:
-            logger.warning(
-                f"无法识别的豆瓣类型: '{db_subject_type}'，使用默认值 1 (书籍)"
-            )
+            logger.warning("collection_import_douban_type_fallback")
 
         # 处理图片
         pic = db_subject.get("pic", {})

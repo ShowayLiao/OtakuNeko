@@ -101,12 +101,21 @@ async def sync_user_collections_douban(
         return total_success
 
     except FileNotFoundError as e:
-        logger.error(f"文件未找到: {e}")
+        logger.error(
+            "collection_sync_failed",
+            extra={"source": "douban", "error_type": type(e).__name__},
+        )
         raise
     except json.JSONDecodeError as e:
-        logger.error(f"JSON解析失败: {e}")
+        logger.error(
+            "collection_sync_failed",
+            extra={"source": "douban", "error_type": type(e).__name__},
+        )
         raise
     except Exception as e:
-        logger.error(f"同步用户收藏失败: {e}")
+        logger.error(
+            "collection_sync_failed",
+            extra={"source": "douban", "error_type": type(e).__name__},
+        )
         await db.rollback()
         raise

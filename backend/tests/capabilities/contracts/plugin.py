@@ -157,6 +157,15 @@ def pytest_sessionfinish(session, exitstatus):
                 "separately in tests/api/test_collections_read_certification.py "
                 "and tests/capabilities/test_collections_read_semantics.py."
             ),
+            "collections_write_certification": (
+                "Real registered side-effect Collection handlers through the "
+                "shared Runtime Dispatcher with only imported handler dependencies "
+                "isolated. Eight collections_write_* scenarios apply to each of "
+                "the eight current write actions. Actual HTTP/JWT and SQL behavior "
+                "are certified separately in "
+                "tests/api/test_collections_write_certification.py and "
+                "tests/capabilities/test_collections_write_semantics.py."
+            ),
         },
     }
     target = Path(config.getoption("--capability-contract-report"))

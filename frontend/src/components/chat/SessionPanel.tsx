@@ -74,6 +74,7 @@ export default function SessionPanel({
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <ActionIcon
               icon={Plus}
+              aria-label="新建会话"
               title="新建会话"
               onClick={() => onCreateSession()}
               style={{ cursor: "pointer" }}

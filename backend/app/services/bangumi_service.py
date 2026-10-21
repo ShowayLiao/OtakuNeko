@@ -407,15 +407,18 @@ async def sync_user_collections(
             await FastAPICache.clear(key=f"dashboard:stats:{user_id}")
             logger.info(f"已清理用户 {user_id} 的统计数据缓存")
         except Exception as e:
-            logger.warning(f"清理缓存失败: {e}")
+            logger.warning(
+                "collection_sync_cache_clear_failed",
+                extra={"error_type": type(e).__name__},
+            )
 
         return total_success
 
     except Exception as e:
-        import traceback
-
-        logger.error(f"同步用户收藏失败: {e}")
-        logger.error(f"错误详情: {traceback.format_exc()}")
+        logger.error(
+            "collection_sync_failed",
+            extra={"source": "bangumi", "error_type": type(e).__name__},
+        )
         # 回滚事务
         await db.rollback()
         raise

@@ -150,6 +150,11 @@ Thumbs.db
 /docs/*
 !/docs/architecture/
 !/docs/changelog/
+!/docs/frontend-qa/
+/docs/frontend-qa/*
+!/docs/frontend-qa/feature-inventory.md
+!/docs/frontend-qa/acceptance-matrix.md
+!/docs/frontend-qa/audit-report.md
 
 # Historical verification records are not architecture documentation.
 /docs/architecture/a-l1-01-test-matrix-plan.md
@@ -169,7 +174,10 @@ backend/spec/
 /architecture_report.*
 /lint-current.json
 /frontend/lint-current.json
-/.agents
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/frontend-qa/
 /.claude
 
 # Raw API responses, personal imports and local qBittorrent exports

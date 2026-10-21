@@ -166,9 +166,12 @@ def _collection_upsert_prepare() -> Callable[[Environment], Any]:
             assert data["collection"]["source"] == "bangumi"
             _record(environment, "collections.upsert")
             return {
-                "id": 202,
-                **data["collection"],
-                "user_id": user_id,
+                "collection": {
+                    "id": 202,
+                    **data["collection"],
+                    "user_id": user_id,
+                },
+                "subject": deepcopy(_SUBJECT),
             }
 
         environment.monkeypatch.setattr(
@@ -479,10 +482,13 @@ CASES: dict[tuple[str, str], Case] = {
         },
         {
             "collection": {
-                "id": 202,
-                "source": "bangumi",
-                "source_id": "subject-101",
-                "rate": 8,
+                "collection": {
+                    "id": 202,
+                    "source": "bangumi",
+                    "source_id": "subject-101",
+                    "rate": 8,
+                },
+                "subject": {"id": 101},
             }
         },
         _collection_upsert_prepare(),

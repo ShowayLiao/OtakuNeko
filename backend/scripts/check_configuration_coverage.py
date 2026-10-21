@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
-WORKFLOWS = (".github/workflows/ci.yml", ".github/workflows/evaluation.yml")
+WORKFLOWS = (
+    ".github/workflows/ci.yml",
+    ".github/workflows/evaluation.yml",
+    ".github/workflows/frontend-qa.yml",
+)
 COMPOSE = "docker-compose.yml"
 
 

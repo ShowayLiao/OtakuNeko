@@ -450,79 +450,86 @@ export function useChatStreaming({
     return undefined;
   }, []);
 
-  const stopGeneration = useCallback(() => {
-    const target = streamTargetRef.current;
-    const runView = runViewRef.current;
-    if (
-      target &&
-      runView.durable === true &&
-      runView.runId &&
-      !runView.terminalStatus
-    ) {
-      const cancellingView: RunView = {
-        ...runView,
-        cancelling: true,
-        connectionStatus: "connected",
-      };
-      publishRunView(cancellingView);
-      void cancelRun(runView.runId).catch(() => {
-        publishRunView({
-          ...runViewRef.current,
-          cancelling: false,
-          errorCode: "cancel_request_failed",
+  const stopGeneration = useCallback(
+    (options?: { cancelDurable?: boolean }) => {
+      const target = streamTargetRef.current;
+      const runView = runViewRef.current;
+      if (
+        options?.cancelDurable !== false &&
+        target &&
+        runView.durable === true &&
+        runView.runId &&
+        !runView.terminalStatus
+      ) {
+        const cancellingView: RunView = {
+          ...runView,
+          cancelling: true,
+          connectionStatus: "connected",
+        };
+        publishRunView(cancellingView);
+        void cancelRun(runView.runId).catch(() => {
+          publishRunView({
+            ...runViewRef.current,
+            cancelling: false,
+            errorCode: "cancel_request_failed",
+          });
         });
-      });
-      return;
-    }
+        return;
+      }
 
-    terminalRef.current = true;
-    completionStatusRef.current = "failed";
-    accumulatedContentRef.current = receivedContentRef.current;
-    pendingContentRef.current = accumulatedContentRef.current;
-    contentBufferRef.current.clear();
-    processRevealQueueRef.current.clear();
-    processCompletionsRef.current.clear();
-    if (revealRafIdRef.current !== null) {
-      cancelAnimationFrame(revealRafIdRef.current);
-      revealRafIdRef.current = null;
-    }
-    if (processRevealRafIdRef.current !== null) {
-      cancelAnimationFrame(processRevealRafIdRef.current);
-      processRevealRafIdRef.current = null;
-    }
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
-    }
-    if (target) {
-      const stoppedProcesses = processesRef.current.map((node) =>
-        node.status === "pending"
-          ? { ...node, status: "error" as const }
-          : node,
-      );
-      processesRef.current = stoppedProcesses;
-      pendingProcessesRef.current = stoppedProcesses;
-      updateMessage(
-        target.sessionId,
-        accumulatedContentRef.current,
-        target.messageId,
-        stoppedProcesses,
-        planRef.current || undefined,
-        "failed",
-        {
-          ...runViewRef.current,
-          phase: "failed",
-          connectionStatus: "disconnected",
-          errorCode: "client_stopped",
-        },
-      );
+      // Invalidate callbacks and catch paths before abort can reject the request.
+      runIdRef.current += 1;
+      streamUpdateBatcherRef.current.cancel();
+      terminalRef.current = true;
+      completionStatusRef.current = "failed";
+      accumulatedContentRef.current = receivedContentRef.current;
+      pendingContentRef.current = accumulatedContentRef.current;
+      contentBufferRef.current.clear();
+      processRevealQueueRef.current.clear();
+      processCompletionsRef.current.clear();
+      if (revealRafIdRef.current !== null) {
+        cancelAnimationFrame(revealRafIdRef.current);
+        revealRafIdRef.current = null;
+      }
+      if (processRevealRafIdRef.current !== null) {
+        cancelAnimationFrame(processRevealRafIdRef.current);
+        processRevealRafIdRef.current = null;
+      }
+      if (abortRef.current) {
+        abortRef.current.abort();
+        abortRef.current = null;
+      }
+      if (target && options?.cancelDurable !== false) {
+        const stoppedProcesses = processesRef.current.map((node) =>
+          node.status === "pending"
+            ? { ...node, status: "error" as const }
+            : node,
+        );
+        processesRef.current = stoppedProcesses;
+        pendingProcessesRef.current = stoppedProcesses;
+        updateMessage(
+          target.sessionId,
+          accumulatedContentRef.current,
+          target.messageId,
+          stoppedProcesses,
+          planRef.current || undefined,
+          "failed",
+          {
+            ...runViewRef.current,
+            phase: "failed",
+            connectionStatus: "disconnected",
+            errorCode: "client_stopped",
+          },
+        );
+      }
       setStreamingPreview(null);
-    }
-    streamTargetRef.current = null;
-    setLoading(false);
-    setStreamingMessageId(null);
-    setCancelling(false);
-  }, [publishRunView, updateMessage]);
+      streamTargetRef.current = null;
+      setLoading(false);
+      setStreamingMessageId(null);
+      setCancelling(false);
+    },
+    [publishRunView, updateMessage],
+  );
 
   const startStreaming = useCallback(
     async (params: StreamingParams) => {
