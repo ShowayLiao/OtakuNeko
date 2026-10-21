@@ -241,7 +241,7 @@ class TestMCPServer:
         assert result["error_type"] == "policy_denied"
 
     @pytest.mark.asyncio
-    async def test_authenticated_context_allows_protected_action(self, monkeypatch):
+    async def test_authenticated_context_allows_protected_action(self):
         """auth-required action passes with an authenticated MCPContext."""
         registry = CapabilityRegistry()
         registry.register(RecommendationCapability())
@@ -252,17 +252,13 @@ class TestMCPServer:
 
         from app.mcp_server.context import MCPContext
 
-        async def fake_execute(action_name, **kwargs):
-            return {"success": True, "action": action_name}
-
-        monkeypatch.setattr(registry.get("recommendation"), "execute", fake_execute)
-
         result = await server.call_tool(
             "recommendation_generate_profile",
             {"collections": []},
             context=MCPContext(user_id=42),
         )
         assert result["success"] is True
+        assert result["data"]["evidence"]["source"] == "empty_history"
 
     @pytest.mark.asyncio
     async def test_policy_allows_side_effect(self, monkeypatch):

@@ -8,7 +8,7 @@ FINGERPRINTS = {
     (
         "analyse_taste",
         "v1",
-    ): "74e732bf44631dc5d24cee050f2199bbab62a8e7bc3c6f405551f2263ce12422",
+    ): "418a6e08d5637c5292849c8cbdce6082491e71e6afe739c3b498b65211873751",
     (
         "batch_upsert_collections",
         "v1",
@@ -40,7 +40,7 @@ FINGERPRINTS = {
     (
         "generate_user_profile_tool",
         "v1",
-    ): "f41e02b654c2d486cc23b2957618714b846747f7c82924553531b9ef1553a72f",
+    ): "02a17d4acd8db3e08dac1d7b4eaae22760fad31ae70a3a0875089573d3431bc4",
     (
         "get_anime_cast",
         "v1",
@@ -72,7 +72,7 @@ FINGERPRINTS = {
     (
         "get_collection_statistics",
         "v1",
-    ): "752e74d66f2278a2cef8d9e4891988b786d4aabf5a6aee63f163585fce5115b8",
+    ): "d585e105f405b8728359c1a11f1a80ad9f1c827cbdf36238613c5a7ce85466d1",
     (
         "get_current_time",
         "v1",
@@ -88,7 +88,7 @@ FINGERPRINTS = {
     (
         "get_user_stats",
         "v1",
-    ): "7a20675cf807d7072de223595a04457c80599aca842d587b7284741e445bccd0",
+    ): "43ec963d72ceefba947efe7bf435598f8ed9009ff28539d0ab6ddb8ecec0554e",
     (
         "import_json_collections",
         "v1",

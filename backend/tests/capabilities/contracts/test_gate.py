@@ -21,10 +21,15 @@ ANIME_CONTRACT_TESTS = (
 )
 SUBJECTS_CONTRACT_TEST = "tests/capabilities/contracts/test_subjects_handlers.py"
 SUBJECTS_CONTRACT_TESTS = (SUBJECTS_CONTRACT_TEST,)
+PROFILE_STATS_CONTRACT_TEST = (
+    "tests/capabilities/contracts/test_profile_stats_handlers.py"
+)
+PROFILE_STATS_CONTRACT_TESTS = (PROFILE_STATS_CONTRACT_TEST,)
 CONTRACT_TEST_PATHS = (
     *CORE_CONTRACT_TEST_PATHS,
     *ANIME_CONTRACT_TESTS,
     *SUBJECTS_CONTRACT_TESTS,
+    *PROFILE_STATS_CONTRACT_TESTS,
 )
 GATE_PLUGIN = "tests.capabilities.contracts.plugin"
 
@@ -67,6 +72,51 @@ def test_subjects_actions_require_full_scenario_matrix():
     expected = catalog.expected_observations(catalog.census(), catalog.cases())
     assert subjects
     assert {(*key, scenario) for key in subjects for scenario in required} <= expected
+
+
+def test_recommendation_and_stats_actions_require_full_scenario_matrix():
+    from tests.capabilities.contracts import catalog
+
+    expected_scenarios = (
+        "recommendation_error",
+        "recommendation_timeout",
+        "recommendation_isolation",
+        "recommendation_serialization",
+        "recommendation_authorization",
+        "recommendation_dispatcher",
+    )
+    assert catalog.RECOMMENDATION_SCENARIOS == expected_scenarios
+    expected_stats_scenarios = (
+        "stats_error",
+        "stats_timeout",
+        "stats_isolation",
+        "stats_serialization",
+        "stats_authorization",
+        "stats_dispatcher",
+    )
+    assert catalog.STATS_SCENARIOS == expected_stats_scenarios
+
+    registry = catalog.build_capability_registry()
+    expected = catalog.expected_observations(catalog.census(), catalog.cases())
+    required_counts = {}
+    for owner_name, scenarios in (
+        ("recommendation", expected_scenarios),
+        ("stats", expected_stats_scenarios),
+    ):
+        actions = {
+            (descriptor.public_name or descriptor.name, descriptor.version)
+            for descriptor in registry.list_actions()
+            if (
+                owner := registry.find_action(descriptor.public_name or descriptor.name)
+            )
+            and owner[0].name == owner_name
+        }
+        assert len(actions) == 2
+        required = {(*key, scenario) for key in actions for scenario in scenarios}
+        assert required <= expected
+        required_counts[owner_name] = len(required)
+
+    assert required_counts == {"recommendation": 12, "stats": 12}
 
 
 def _write_probe_plugin(tmp_path: Path, source: str) -> Path:
@@ -294,6 +344,8 @@ def test_gate_rejects_missing_timeout_scenario(tmp_path):
         "timeout",
         "anime_timeout",
         "subjects_timeout",
+        "recommendation_timeout",
+        "stats_timeout",
     }
     assert missing == expected_timeouts
     assert (coverage or {}).get("passed") == len(expected) - len(expected_timeouts)
@@ -304,7 +356,11 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "missing_anime_certification",
         tmp_path,
-        contract_test_paths=(*CORE_CONTRACT_TEST_PATHS, *SUBJECTS_CONTRACT_TESTS),
+        contract_test_paths=(
+            *CORE_CONTRACT_TEST_PATHS,
+            *SUBJECTS_CONTRACT_TESTS,
+            *PROFILE_STATS_CONTRACT_TESTS,
+        ),
         pytest_args=ignored_anime_tests,
     )
     _assert_gate_failure(
@@ -321,7 +377,6 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
     assert missing == expected_anime
     assert (coverage or {}).get("expected") == len(expected)
     assert (coverage or {}).get("passed") == len(expected) - len(expected_anime)
-    assert (coverage or {}).get("passed") == 361
     for name, version, scenario in sorted(expected_anime):
         assert f"{name}@{version}/{scenario}" in output
 
@@ -330,7 +385,11 @@ def test_gate_rejects_missing_subjects_certification(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "missing_subjects_certification",
         tmp_path,
-        contract_test_paths=(*CORE_CONTRACT_TEST_PATHS, *ANIME_CONTRACT_TESTS),
+        contract_test_paths=(
+            *CORE_CONTRACT_TEST_PATHS,
+            *ANIME_CONTRACT_TESTS,
+            *PROFILE_STATS_CONTRACT_TESTS,
+        ),
     )
     _assert_gate_failure(
         completed,
@@ -349,6 +408,36 @@ def test_gate_rejects_missing_subjects_certification(tmp_path):
     assert (coverage or {}).get("expected") == len(expected)
     assert (coverage or {}).get("passed") == len(expected) - len(expected_subjects)
     for name, version, scenario in sorted(expected_subjects):
+        assert f"{name}@{version}/{scenario}" in output
+
+
+def test_gate_rejects_missing_recommendation_stats_certification(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_recommendation_stats_certification",
+        tmp_path,
+        contract_test_paths=(
+            *CORE_CONTRACT_TEST_PATHS,
+            *ANIME_CONTRACT_TESTS,
+            *SUBJECTS_CONTRACT_TESTS,
+        ),
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    expected = _expected_observations()
+    expected_profile_stats = {
+        row for row in expected if row[2].startswith(("recommendation_", "stats_"))
+    }
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_profile_stats) == 24
+    assert missing == expected_profile_stats
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - len(expected_profile_stats)
+    for name, version, scenario in sorted(expected_profile_stats):
         assert f"{name}@{version}/{scenario}" in output
 
 

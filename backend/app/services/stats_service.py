@@ -52,7 +52,15 @@ def stats_key_builder(
     Returns:
         缓存 key 字符串
     """
-    user_id = kwargs.get("user_id", args[0] if args else None)
+    # fastapi-cache envelopes the wrapped function's parameters. Direct
+    # callers may still use the original positional/keyword convention.
+    call_args = kwargs.get("args", args)
+    call_kwargs = kwargs.get("kwargs", kwargs)
+    if not isinstance(call_args, (tuple, list)) or not isinstance(call_kwargs, dict):
+        raise ValueError("A valid trusted user is required for statistics caching")
+    user_id = call_kwargs.get("user_id", call_args[0] if call_args else None)
+    if type(user_id) is not int or user_id <= 0:
+        raise ValueError("A valid trusted user is required for statistics caching")
     return f"dashboard:stats:{user_id}"
 
 

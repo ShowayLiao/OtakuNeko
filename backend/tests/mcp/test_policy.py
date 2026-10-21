@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 import json
+from types import SimpleNamespace
 import pytest
 
 from app.capabilities.anime import AnimeCapability
+from app.capabilities import recommendation as recommendation_module
 from app.capabilities.recommendation import RecommendationCapability
 from app.capabilities.schedule import ScheduleCapability
 from app.capabilities.registry import CapabilityRegistry
@@ -101,15 +103,15 @@ class TestAuthAndPolicyIntegration:
         captured = {}
         trusted_db = object()
 
-        async def capture_execute(action_name, **kwargs):
-            captured["user_id"] = kwargs.get("user_id")
-            captured["db"] = kwargs.get("db")
-            return {"success": True}
+        async def capture_collections(db, search):
+            captured["user_id"] = search.user_id
+            captured["db"] = db
+            return SimpleNamespace(items=[])
 
         monkeypatch.setattr(
-            self.server._registry.get("recommendation"),
-            "execute",
-            capture_execute,
+            recommendation_module,
+            "get_user_collections",
+            capture_collections,
         )
 
         result = await self.server.call_tool(
@@ -118,6 +120,7 @@ class TestAuthAndPolicyIntegration:
             context=MCPContext(user_id=99, extra={"db": trusted_db}),
         )
         assert result["success"] is True
+        assert result["data"]["evidence"]["source"] == "empty_history"
         assert captured["user_id"] == 99
         assert captured["db"] is trusted_db
 

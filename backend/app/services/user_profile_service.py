@@ -196,8 +196,10 @@ def generate_user_profile(
         }
 
     except Exception as e:
-        logger.error(f"生成用户画像时发生错误: {e}", exc_info=True)
-        return _create_error_profile(str(e))
+        logger.error(
+            "user_profile_calculation_failed", extra={"error_type": type(e).__name__}
+        )
+        return _create_error_profile("Profile calculation failed")
 
 
 def _clean_and_extract_data(

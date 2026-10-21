@@ -30,6 +30,22 @@ SUBJECTS_SCENARIOS = (
     "subjects_authorization",
     "subjects_dispatcher",
 )
+RECOMMENDATION_SCENARIOS = (
+    "recommendation_error",
+    "recommendation_timeout",
+    "recommendation_isolation",
+    "recommendation_serialization",
+    "recommendation_authorization",
+    "recommendation_dispatcher",
+)
+STATS_SCENARIOS = (
+    "stats_error",
+    "stats_timeout",
+    "stats_isolation",
+    "stats_serialization",
+    "stats_authorization",
+    "stats_dispatcher",
+)
 
 
 def census(registry: CapabilityRegistry | None = None) -> dict[Key, ActionDescriptor]:
@@ -122,6 +138,10 @@ def expected_observations(
             expected.update((*key, scenario) for scenario in ANIME_SCENARIOS)
         elif owner is not None and owner[0].name == "subjects":
             expected.update((*key, scenario) for scenario in SUBJECTS_SCENARIOS)
+        elif owner is not None and owner[0].name == "recommendation":
+            expected.update((*key, scenario) for scenario in RECOMMENDATION_SCENARIOS)
+        elif owner is not None and owner[0].name == "stats":
+            expected.update((*key, scenario) for scenario in STATS_SCENARIOS)
         if key not in examples:
             continue  # fixture mismatch is a separate fatal diagnostic
         for path in required_paths(descriptor.input_schema, examples[key].arguments):

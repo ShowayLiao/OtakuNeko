@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.capabilities.base import BaseCapability
+from app.capabilities.profile_stats_contracts import output_schema
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.models import SubjectType
 from app.services.stats_service import get_collection_statistics, get_user_stats
@@ -25,7 +26,13 @@ class StatsCapability(BaseCapability):
                 name="get_user_stats",
                 public_name="get_user_stats",
                 description="Get aggregate statistics for the authenticated user",
-                input_schema={"type": "object", "properties": {}, "required": []},
+                input_schema={
+                    "type": "object",
+                    "properties": {},
+                    "required": [],
+                    "additionalProperties": False,
+                },
+                output_schema=output_schema("get_user_stats"),
                 requires_auth=True,
             ),
             ActionDescriptor(
@@ -47,25 +54,9 @@ class StatsCapability(BaseCapability):
                         }
                     },
                     "required": [],
+                    "additionalProperties": False,
                 },
-                output_schema={
-                    "type": "object",
-                    "properties": {
-                        "statistics": {
-                            "type": "object",
-                            "required": [
-                                "subject_type",
-                                "total",
-                                "status_counts",
-                                "top_genres",
-                                "complete",
-                                "genre_subject_count",
-                                "genre_complete",
-                            ],
-                        }
-                    },
-                    "required": ["statistics"],
-                },
+                output_schema=output_schema("get_collection_statistics"),
                 requires_auth=True,
             ),
         ]
@@ -91,8 +82,10 @@ class StatsCapability(BaseCapability):
                 )
             else:
                 result = await get_user_stats(user_id, db)
-        except ValueError as exc:
-            return CapabilityResult.fail(str(exc), error_type="invalid_args").to_dict()
+        except ValueError:
+            return CapabilityResult.fail(
+                "Invalid statistics arguments", error_type="invalid_args"
+            ).to_dict()
         except Exception:
             return CapabilityResult.fail(
                 "Statistics operation failed", error_type="internal"

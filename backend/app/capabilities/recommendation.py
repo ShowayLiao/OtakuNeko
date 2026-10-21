@@ -8,8 +8,12 @@ prose or invoke an agent from the capability.
 from __future__ import annotations
 
 from typing import Any
+from copy import deepcopy
+from functools import partial
 
 from app.capabilities.base import BaseCapability
+from app.capabilities.profile_execution import run_calculation
+from app.capabilities.profile_stats_contracts import output_schema
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.schemas.collection import CollectionSearchBase
 from app.services.collection_service import get_user_collections
@@ -55,7 +59,9 @@ class RecommendationCapability(BaseCapability):
                         },
                     },
                     "required": [],
+                    "additionalProperties": False,
                 },
+                output_schema=output_schema("generate_profile"),
                 requires_auth=True,
             ),
             ActionDescriptor(
@@ -72,7 +78,9 @@ class RecommendationCapability(BaseCapability):
                         },
                     },
                     "required": [],
+                    "additionalProperties": False,
                 },
+                output_schema=output_schema("analyse_taste"),
                 requires_auth=True,
             ),
         ]
@@ -95,9 +103,11 @@ class RecommendationCapability(BaseCapability):
         except Exception as exc:
             logger.error(
                 "recommendation_capability_failed",
-                extra={"action": action, "error": str(exc)},
+                extra={"action": action, "error_type": type(exc).__name__},
             )
-            return CapabilityResult.fail(str(exc), error_type="internal").to_dict()
+            return CapabilityResult.fail(
+                "Recommendation operation failed", error_type="internal"
+            ).to_dict()
 
     # -- action handlers -------------------------------------------------------
 
@@ -116,7 +126,20 @@ class RecommendationCapability(BaseCapability):
                 },
             )
 
-        profile = generate_user_profile(collections)
+        return await run_calculation(partial(self._profile_result, collections))
+
+    @staticmethod
+    def _checked_profile(collections: list[Any]) -> dict[str, Any]:
+        # The service returned owned DTOs, not ORM sessions. Snapshot copying is
+        # part of the bounded worker computation, so it cannot block the loop.
+        profile = generate_user_profile(deepcopy(collections))
+        if profile.get("error") or profile.get("llm_summary", {}).get("error"):
+            raise ValueError("Profile calculation failed")
+        return dict(profile)
+
+    @staticmethod
+    def _profile_result(collections: list[Any]) -> CapabilityResult:
+        profile = RecommendationCapability._checked_profile(collections)
         total_rated = profile.get("llm_summary", {}).get("total_rated", 0)
 
         return CapabilityResult.ok(
@@ -145,7 +168,11 @@ class RecommendationCapability(BaseCapability):
                 },
             )
 
-        profile = generate_user_profile(collections)
+        return await run_calculation(partial(self._taste_result, collections))
+
+    @staticmethod
+    def _taste_result(collections: list[Any]) -> CapabilityResult:
+        profile = RecommendationCapability._checked_profile(collections)
 
         from app.services.user_profile_service import _extract_four_quadrants
 

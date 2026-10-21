@@ -74,3 +74,21 @@ required scenario fails the same execution gate. This certifies handler
 behavior through the Runtime Dispatcher; service behavior and SQL persistence
 remain outside this certification's evidence boundary and require their own
 service and database tests.
+
+Recommendation and Stats certification adds six owner-specific scenarios to
+every public action in the production Registry owned by `recommendation` or
+`stats`: `recommendation_error`, `recommendation_timeout`,
+`recommendation_isolation`, `recommendation_serialization`,
+`recommendation_authorization`, `recommendation_dispatcher`, and the matching
+`stats_*` scenarios. `tests/capabilities/contracts/test_profile_stats_handlers.py`
+executes the real registered handlers through the shared Runtime Dispatcher,
+injecting isolated service/computation dependencies at their imported
+boundaries. Omitting that file, filtering its scenarios, or skipping a required
+observation fails the same execution gate. This handler certification does not
+cover real HTTP/JWT requests or SQL behavior; those are separate evidence in
+`tests/api/test_profile_stats_certification.py` and
+`tests/capabilities/test_recommendation_stats_semantics.py`.
+
+Anime, Subjects, Recommendation, and Stats owner-specific scenarios remain
+mandatory alongside the six base scenarios. Registry and fixture inventory
+determine the global expected and passed counts; no fixed total is used.
