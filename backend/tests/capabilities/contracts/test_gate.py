@@ -25,11 +25,16 @@ PROFILE_STATS_CONTRACT_TEST = (
     "tests/capabilities/contracts/test_profile_stats_handlers.py"
 )
 PROFILE_STATS_CONTRACT_TESTS = (PROFILE_STATS_CONTRACT_TEST,)
+COLLECTIONS_READ_CONTRACT_TEST = (
+    "tests/capabilities/contracts/test_collections_read_handlers.py"
+)
+COLLECTIONS_READ_CONTRACT_TESTS = (COLLECTIONS_READ_CONTRACT_TEST,)
 CONTRACT_TEST_PATHS = (
     *CORE_CONTRACT_TEST_PATHS,
     *ANIME_CONTRACT_TESTS,
     *SUBJECTS_CONTRACT_TESTS,
     *PROFILE_STATS_CONTRACT_TESTS,
+    *COLLECTIONS_READ_CONTRACT_TESTS,
 )
 GATE_PLUGIN = "tests.capabilities.contracts.plugin"
 
@@ -72,6 +77,47 @@ def test_subjects_actions_require_full_scenario_matrix():
     expected = catalog.expected_observations(catalog.census(), catalog.cases())
     assert subjects
     assert {(*key, scenario) for key in subjects for scenario in required} <= expected
+
+
+def test_collections_read_actions_require_full_scenario_matrix():
+    from tests.capabilities.contracts import catalog
+
+    required = (
+        "collections_read_error",
+        "collections_read_timeout",
+        "collections_read_isolation",
+        "collections_read_serialization",
+        "collections_read_authorization",
+        "collections_read_dispatcher",
+    )
+    assert getattr(catalog, "COLLECTIONS_READ_SCENARIOS", None) == required
+
+    registry = catalog.build_capability_registry()
+    actions = catalog.census()
+    collection_reads = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0]))
+        and owner[0].name == "collections"
+        and not descriptor.is_side_effect
+    }
+    collection_writes = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0]))
+        and owner[0].name == "collections"
+        and descriptor.is_side_effect
+    }
+    expected = catalog.expected_observations(actions, catalog.cases())
+    required_reads = {
+        (*key, scenario) for key in collection_reads for scenario in required
+    }
+    required_writes = {
+        (*key, scenario) for key in collection_writes for scenario in required
+    }
+    assert len(collection_reads) == 3
+    assert required_reads <= expected
+    assert not (required_writes & expected)
 
 
 def test_recommendation_and_stats_actions_require_full_scenario_matrix():
@@ -346,6 +392,7 @@ def test_gate_rejects_missing_timeout_scenario(tmp_path):
         "subjects_timeout",
         "recommendation_timeout",
         "stats_timeout",
+        "collections_read_timeout",
     }
     assert missing == expected_timeouts
     assert (coverage or {}).get("passed") == len(expected) - len(expected_timeouts)
@@ -360,6 +407,7 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
             *CORE_CONTRACT_TEST_PATHS,
             *SUBJECTS_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
+            *COLLECTIONS_READ_CONTRACT_TESTS,
         ),
         pytest_args=ignored_anime_tests,
     )
@@ -389,6 +437,7 @@ def test_gate_rejects_missing_subjects_certification(tmp_path):
             *CORE_CONTRACT_TEST_PATHS,
             *ANIME_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
+            *COLLECTIONS_READ_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -419,6 +468,7 @@ def test_gate_rejects_missing_recommendation_stats_certification(tmp_path):
             *CORE_CONTRACT_TEST_PATHS,
             *ANIME_CONTRACT_TESTS,
             *SUBJECTS_CONTRACT_TESTS,
+            *COLLECTIONS_READ_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -438,6 +488,41 @@ def test_gate_rejects_missing_recommendation_stats_certification(tmp_path):
     assert (coverage or {}).get("expected") == len(expected)
     assert (coverage or {}).get("passed") == len(expected) - len(expected_profile_stats)
     for name, version, scenario in sorted(expected_profile_stats):
+        assert f"{name}@{version}/{scenario}" in output
+
+
+def test_gate_rejects_missing_collections_read_certification(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_collections_read_certification",
+        tmp_path,
+        contract_test_paths=(
+            *CORE_CONTRACT_TEST_PATHS,
+            *ANIME_CONTRACT_TESTS,
+            *SUBJECTS_CONTRACT_TESTS,
+            *PROFILE_STATS_CONTRACT_TESTS,
+        ),
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    from tests.capabilities.contracts.catalog import COLLECTIONS_READ_SCENARIOS
+
+    expected = _expected_observations()
+    expected_collections_read = {
+        row for row in expected if row[2] in COLLECTIONS_READ_SCENARIOS
+    }
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_collections_read) == 18
+    assert missing == expected_collections_read
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - len(
+        expected_collections_read
+    )
+    for name, version, scenario in sorted(expected_collections_read):
         assert f"{name}@{version}/{scenario}" in output
 
 

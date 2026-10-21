@@ -346,12 +346,36 @@ CASES: dict[tuple[str, str], Case] = {
         {
             "total": 2,
             "collections": [
-                {"source": "bangumi", "source_id": "subject-101", "type": 3}
+                {
+                    "collection": {
+                        "source": "bangumi",
+                        "source_id": "subject-101",
+                        "type": 3,
+                    },
+                    "subject": {"id": 101},
+                },
+                {
+                    "collection": {
+                        "source": "bangumi",
+                        "source_id": "subject-102",
+                        "type": 3,
+                    },
+                    "subject": {"id": 102},
+                },
             ],
         },
         _collection_search_prepare(
             "collections.list",
-            {"total": 2, "items": [_COLLECTION]},
+            {
+                "total": 2,
+                "items": [
+                    {"collection": _COLLECTION, "subject": _SUBJECT},
+                    {
+                        "collection": {**_COLLECTION, "source_id": "subject-102"},
+                        "subject": {**_SUBJECT, "id": 102, "source_id": "subject-102"},
+                    },
+                ],
+            },
             dependency="get_user_collections",
         ),
     ),
@@ -380,12 +404,19 @@ CASES: dict[tuple[str, str], Case] = {
         {
             "total": 1,
             "collections": [
-                {"source": "bangumi", "source_id": "subject-101", "type": 3}
+                {
+                    "collection": {
+                        "source": "bangumi",
+                        "source_id": "subject-101",
+                        "type": 3,
+                    },
+                    "subject": {"id": 101},
+                }
             ],
         },
         _collection_search_prepare(
             "collections.search",
-            {"total": 1, "items": [_COLLECTION]},
+            {"total": 1, "items": [{"collection": _COLLECTION, "subject": _SUBJECT}]},
             dependency="search_collections",
         ),
     ),

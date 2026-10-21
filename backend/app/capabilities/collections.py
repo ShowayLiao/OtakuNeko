@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.capabilities.base import BaseCapability
+from app.capabilities.collections_read_contracts import READ_ACTIONS, output_schema
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.core.logging import get_logger
 from app.schemas.collection import (
@@ -74,6 +75,12 @@ def _public(value: Any) -> Any:
     return value
 
 
+def _read_schema(
+    properties: dict[str, Any], required: list[str] | None = None
+) -> dict[str, Any]:
+    return {**_schema(properties, required), "additionalProperties": False}
+
+
 def _trusted(kwargs: dict[str, Any]) -> tuple[Any, int] | None:
     db = kwargs.get("db")
     user_id = kwargs.get("user_id")
@@ -94,7 +101,7 @@ class CollectionCapability(BaseCapability):
         return "Read and manage the authenticated user's anime, book, music, game, and real-life collections"
 
     def actions(self) -> list[ActionDescriptor]:
-        collection_ref = _schema(
+        collection_ref = _read_schema(
             {
                 "source": _COLLECTION_FIELDS["source"],
                 "source_id": _COLLECTION_FIELDS["source_id"],
@@ -127,16 +134,20 @@ class CollectionCapability(BaseCapability):
                     "user. This action is not suitable for full-collection statistics; "
                     "use get_collection_statistics instead."
                 ),
-                input_schema=_schema(
+                input_schema=_read_schema(
                     {
-                        "type": {"type": "integer"},
+                        "type": {"type": "integer", "enum": [1, 2, 3, 4, 6]},
                         "status": {"type": "integer", "minimum": 1, "maximum": 5},
                         "skip": {"type": "integer", "minimum": 0},
                         "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                        "sort_by": {"type": "string"},
+                        "sort_by": {
+                            "type": "string",
+                            "enum": ["updated_at", "rate", "score", "date"],
+                        },
                     }
                 ),
                 requires_auth=True,
+                output_schema=output_schema("list_collections"),
             ),
             ActionDescriptor(
                 name="get_collection",
@@ -144,23 +155,28 @@ class CollectionCapability(BaseCapability):
                 description="Get one owned collection entry and its subject",
                 input_schema=collection_ref,
                 requires_auth=True,
+                output_schema=output_schema("get_collection"),
             ),
             ActionDescriptor(
                 name="search_collections",
                 public_name="search_collections",
                 description="Search the authenticated user's collections by title",
-                input_schema=_schema(
+                input_schema=_read_schema(
                     {
                         "keyword": {"type": "string", "minLength": 1},
                         "status": {"type": "integer", "minimum": 1, "maximum": 5},
-                        "type": {"type": "integer"},
+                        "type": {"type": "integer", "enum": [1, 2, 3, 4, 6]},
                         "skip": {"type": "integer", "minimum": 0},
                         "limit": {"type": "integer", "minimum": 1, "maximum": 100},
-                        "sort_by": {"type": "string"},
+                        "sort_by": {
+                            "type": "string",
+                            "enum": ["updated_at", "rate", "score", "date"],
+                        },
                     },
                     ["keyword"],
                 ),
                 requires_auth=True,
+                output_schema=output_schema("search_collections"),
             ),
             ActionDescriptor(
                 name="create_collection",
@@ -287,9 +303,20 @@ class CollectionCapability(BaseCapability):
         try:
             return await handler(**kwargs)
         except ValueError as exc:
-            return CapabilityResult.fail(str(exc), error_type="invalid_args").to_dict()
-        except Exception:
-            logger.exception("collection_capability_failed", extra={"action": action})
+            message = (
+                "Invalid collection arguments" if action in READ_ACTIONS else str(exc)
+            )
+            return CapabilityResult.fail(message, error_type="invalid_args").to_dict()
+        except Exception as exc:
+            if action in READ_ACTIONS:
+                logger.error(
+                    "collection_capability_failed",
+                    extra={"action": action, "error_type": type(exc).__name__},
+                )
+            else:
+                logger.exception(
+                    "collection_capability_failed", extra={"action": action}
+                )
             return CapabilityResult.fail(
                 "Collection operation failed", error_type="internal"
             ).to_dict()

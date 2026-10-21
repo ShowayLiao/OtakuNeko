@@ -133,7 +133,10 @@ async def get_collection(
         # 使用转换函数转换为统一视图模型
         return collection_with_subject_to_unified(collection_result)
     except Exception as e:
-        logger.error(f"Failed to get collection: {e}")
+        logger.error(
+            "collection_read_failed",
+            extra={"action": "get_collection", "error_type": type(e).__name__},
+        )
         raise
 
 
@@ -245,7 +248,10 @@ async def get_user_collections(
             collection_with_subject_list
         )
     except Exception as e:
-        logger.error(f"Failed to get collections: {e}")
+        logger.error(
+            "collection_read_failed",
+            extra={"action": "list_collections", "error_type": type(e).__name__},
+        )
         raise
 
 
@@ -276,7 +282,10 @@ async def search_collections(
             collection_with_subject_list
         )
     except Exception as e:
-        logger.error(f"Failed to search collections: {e}")
+        logger.error(
+            "collection_read_failed",
+            extra={"action": "search_collections", "error_type": type(e).__name__},
+        )
         raise
 
 

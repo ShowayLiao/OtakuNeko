@@ -148,6 +148,15 @@ def pytest_sessionfinish(session, exitstatus):
             "subjects_certification": "Real registered Subjects handlers; imported domain dependencies are isolated for six subjects_* scenarios per action. Additional service and HTTP/JWT tests use real SQL views with fake external I/O.",
             "recommendation_certification": "Real registered Recommendation handlers through the shared Runtime Dispatcher with imported service/computation dependencies injected at their boundaries. Six recommendation_* scenarios per action; HTTP/JWT and SQL behavior are certified separately.",
             "stats_certification": "Real registered Stats handlers through the shared Runtime Dispatcher with imported service/repository dependencies injected at their boundaries. Six stats_* scenarios per action; HTTP/JWT and SQL behavior are certified separately.",
+            "collections_read_certification": (
+                "Real registered non-side-effect Collection handlers through the "
+                "shared Runtime Dispatcher with imported handler dependencies "
+                "isolated. Six collections_read_* scenarios apply to each of the "
+                "three current read actions; collection writes are outside this "
+                "evidence. HTTP/API, service, and SQL behavior are certified "
+                "separately in tests/api/test_collections_read_certification.py "
+                "and tests/capabilities/test_collections_read_semantics.py."
+            ),
         },
     }
     target = Path(config.getoption("--capability-contract-report"))

@@ -68,7 +68,7 @@ FINGERPRINTS = {
     (
         "get_collection",
         "v1",
-    ): "11d67a8e44d085c621e32456308d738113cad41918434079f49ee10d9085a1c7",
+    ): "e63d7d04bb111a9ad1cbb8694e38214eadd85e1fdc02acbd5702735f136e08a3",
     (
         "get_collection_statistics",
         "v1",
@@ -100,7 +100,7 @@ FINGERPRINTS = {
     (
         "list_collections",
         "v1",
-    ): "67f13d41ffc3b3cc142274efd6fc73a77f3936494e701d7fc2d7cf1bd379092f",
+    ): "4be11cb68dd7a90ad86ed25a6aae77aa6a37f7444ac4dc329f98c371d0f74423",
     (
         "list_rss_feeds",
         "v1",
@@ -136,7 +136,7 @@ FINGERPRINTS = {
     (
         "search_collections",
         "v1",
-    ): "09d5c189c8606f1086d627584bb03b4ef05998fbe6f47446560c5384d119fea1",
+    ): "1e8246540e66fc0c791ff061a816e7c7dffb25d9a9b15da0dabecf822ec96b0d",
     (
         "search_local_subjects",
         "v1",

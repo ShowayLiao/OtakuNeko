@@ -132,7 +132,13 @@ class CollectionRepo:
             else:
                 return None
         except SQLAlchemyError as e:
-            logger.error(f"获取收藏记录失败: {e}")
+            logger.error(
+                "collection_read_failed",
+                extra={
+                    "action": "get_by_user_and_subject",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod
@@ -263,7 +269,10 @@ class CollectionRepo:
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
         except SQLAlchemyError as e:
-            logger.error(f"获取用户收藏列表失败: {e}")
+            logger.error(
+                "collection_read_failed",
+                extra={"action": "get_by_user", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -496,6 +505,9 @@ class CollectionRepo:
             if getattr(search_data, "status", None) is not None:
                 query = query.where(_COLLECTION_TYPE == search_data.status)
 
+            if search_data.type is not None:
+                query = query.where(_SUBJECT_TYPE == search_data.type)
+
             # 应用排序
             sort_by = getattr(search_data, "sort_by", "updated_at")
             if sort_by == "updated_at":
@@ -531,7 +543,10 @@ class CollectionRepo:
             # 创建并返回CollectionWithSubjectList对象
             return CollectionWithSubjectList(total=len(items), items=items)
         except SQLAlchemyError as e:
-            logger.error(f"搜索收藏记录失败: {e}")
+            logger.error(
+                "collection_read_failed",
+                extra={"action": "search_by_keyword", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod

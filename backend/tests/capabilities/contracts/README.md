@@ -92,3 +92,16 @@ cover real HTTP/JWT requests or SQL behavior; those are separate evidence in
 Anime, Subjects, Recommendation, and Stats owner-specific scenarios remain
 mandatory alongside the six base scenarios. Registry and fixture inventory
 determine the global expected and passed counts; no fixed total is used.
+
+Collections read certification adds six mandatory scenarios to each public
+action owned by `collections` only when its production descriptor has
+`is_side_effect == false`: `collections_read_error`,
+`collections_read_timeout`, `collections_read_isolation`,
+`collections_read_serialization`, `collections_read_authorization`, and
+`collections_read_dispatcher`. The current Registry has three such actions;
+collection writes are not certified by this matrix.
+`tests/capabilities/contracts/test_collections_read_handlers.py` exercises the
+registered read handlers through the shared Runtime Dispatcher with imported
+dependencies isolated. HTTP/API and Service/SQL behavior are covered separately
+by `tests/api/test_collections_read_certification.py` and
+`tests/capabilities/test_collections_read_semantics.py`.
