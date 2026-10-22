@@ -59,7 +59,10 @@ class ScheduleRepository:
             result = await db.execute(query)
             return list(result.scalars().all())
         except SQLAlchemyError as e:
-            logger.error(f"获取用户排班记录失败: {e}")
+            logger.error(
+                "schedule_query_failed",
+                extra={"action": "list_schedules", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -101,7 +104,13 @@ class ScheduleRepository:
             rows: list[Any] = list(result.all())
             return [(row[0], row[1], row[2]) for row in rows]
         except SQLAlchemyError as e:
-            logger.error(f"获取用户统一排班记录失败: {e}")
+            logger.error(
+                "schedule_query_failed",
+                extra={
+                    "action": "list_unified_schedules",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod
@@ -311,7 +320,13 @@ class ScheduleRepository:
             result = await db.execute(query)
             return list(result.scalars().all())
         except SQLAlchemyError as e:
-            logger.error(f"获取指定星期的排班记录失败: {e}")
+            logger.error(
+                "schedule_query_failed",
+                extra={
+                    "action": "list_schedules_by_day",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod

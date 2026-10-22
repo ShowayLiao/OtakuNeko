@@ -112,15 +112,15 @@ FINGERPRINTS = {
     (
         "list_schedules",
         "v1",
-    ): "6c137ab0440c362224bbeacec2f7e5436ea7e9752f123c186a4e89c9e1feea56",
+    ): "d4fe37596f21a45feb22df1ed5d83bc3f3a3d3fa2cdf9081a4af6f5454f2332f",
     (
         "list_schedules_by_day",
         "v1",
-    ): "a90e50ac531d22d56826b808c90164c6d4c4c27507d2dd0dc151ecaf71352cf6",
+    ): "0da568d5f61cf27923e624495545fbb7d866e6523ece667eb979904686c33f76",
     (
         "list_unified_schedules",
         "v1",
-    ): "f7aaadad159cc777563319e57978bf7132769ab17d0d87e3ea89146c3c01f492",
+    ): "bb2f0b379dca74964414c791a3b68e2ff363b823dd3348e1403c031bf6835cb7",
     (
         "remove_rss_feed",
         "v1",

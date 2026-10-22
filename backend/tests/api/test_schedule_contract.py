@@ -173,7 +173,8 @@ async def test_schedule_service_exception_maps_to_http_500(
     monkeypatch.setattr(ScheduleService, "get_unified_user_schedules", fail)
     response = await api_client.get("/api/v1/schedules/", headers=headers())
     assert response.status_code == 500, response.text
-    assert response.json() == {"detail": "获取排班记录失败: synthetic database failure"}
+    assert response.json() == {"detail": "获取排班记录失败"}
+    assert "synthetic database failure" not in response.text
 
 
 async def test_schedule_owner_update_and_delete_persist(

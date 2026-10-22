@@ -11,6 +11,7 @@ import json
 from typing import Any
 
 from app.capabilities.base import BaseCapability
+from app.capabilities.schedule_read_contracts import READ_ACTIONS, output_schema
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.services.schedule_service import ScheduleService
 from app.schemas.schedule import (
@@ -50,6 +51,21 @@ def _idempotency_key(user_id: int, action: str, payload: dict[str, Any]) -> str:
     return sha256(raw.encode()).hexdigest()[:12]
 
 
+def _read_public(value: Any) -> Any:
+    """Remove authority fields only from read views, including joined metadata."""
+    if hasattr(value, "model_dump"):
+        return _read_public(value.model_dump(mode="json"))
+    if isinstance(value, dict):
+        return {
+            key: _read_public(item)
+            for key, item in value.items()
+            if key not in {"user_id", "tenant_id", "roles", "scopes"}
+        }
+    if isinstance(value, list):
+        return [_read_public(item) for item in value]
+    return value
+
+
 class ScheduleCapability(BaseCapability):
     """Read and write user schedule records.
 
@@ -75,8 +91,10 @@ class ScheduleCapability(BaseCapability):
                     "type": "object",
                     "properties": {},
                     "required": [],
+                    "additionalProperties": False,
                 },
                 requires_auth=True,
+                output_schema=output_schema("list_schedules"),
             ),
             ActionDescriptor(
                 name="create_schedule",
@@ -202,15 +220,23 @@ class ScheduleCapability(BaseCapability):
                             }
                         },
                         "required": ["day_of_week"],
+                        "additionalProperties": False,
                     },
                     requires_auth=True,
+                    output_schema=output_schema("list_schedules_by_day"),
                 ),
                 ActionDescriptor(
                     name="list_unified_schedules",
                     public_name="list_unified_schedules",
                     description="List schedules with their related subject and collection data",
-                    input_schema={"type": "object", "properties": {}, "required": []},
+                    input_schema={
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": False,
+                    },
                     requires_auth=True,
+                    output_schema=output_schema("list_unified_schedules"),
                 ),
             ]
         )
@@ -332,7 +358,9 @@ class ScheduleCapability(BaseCapability):
             ).to_dict()
 
         user_id = kwargs.get("user_id")
-        if user_id is None:
+        if user_id is None or (
+            action in READ_ACTIONS and (type(user_id) is not int or user_id <= 0)
+        ):
             return CapabilityResult.fail(
                 "user_id is required", error_type="unauthorized"
             ).to_dict()
@@ -344,6 +372,10 @@ class ScheduleCapability(BaseCapability):
                 "schedule_capability_failed",
                 extra={"action": action, "error_type": type(exc).__name__},
             )
+            if action in READ_ACTIONS and isinstance(exc, ValueError):
+                return CapabilityResult.fail(
+                    "Invalid schedule arguments", error_type="invalid_args"
+                ).to_dict()
             return CapabilityResult.fail(
                 "Schedule operation failed", error_type="internal"
             ).to_dict()
@@ -358,7 +390,7 @@ class ScheduleCapability(BaseCapability):
 
         schedules = await ScheduleService.get_user_schedules(db, user_id)
         return CapabilityResult.ok(
-            schedules=[_public(s) for s in schedules],
+            schedules=[_read_public(s) for s in schedules],
             count=len(schedules),
         ).to_dict()
 
@@ -447,7 +479,7 @@ class ScheduleCapability(BaseCapability):
             db, kwargs["user_id"], kwargs["day_of_week"]
         )
         return CapabilityResult.ok(
-            schedules=[_public(item) for item in schedules], count=len(schedules)
+            schedules=[_read_public(item) for item in schedules], count=len(schedules)
         ).to_dict()
 
     async def _list_unified(self, **kwargs: Any) -> dict[str, Any]:
@@ -457,9 +489,9 @@ class ScheduleCapability(BaseCapability):
                 "db session is required", error_type="invalid_args"
             ).to_dict()
         result = await ScheduleService.get_unified_user_schedules(db, kwargs["user_id"])
-        payload = _public(result)
+        payload = _read_public(result)
         return CapabilityResult.ok(
-            schedules=payload.get("items", []), count=payload.get("total", 0)
+            schedules=payload["items"], count=payload["total"]
         ).to_dict()
 
     @staticmethod

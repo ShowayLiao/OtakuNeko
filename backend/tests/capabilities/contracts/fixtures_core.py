@@ -643,7 +643,7 @@ CASES: dict[tuple[str, str], Case] = {
                     {
                         "schedule": _SCHEDULE,
                         "subject": _SUBJECT,
-                        "collection": {"type": 3, "rate": 9},
+                        "collection": {**_COLLECTION, "rate": 9},
                     }
                 ],
                 "total": 1,

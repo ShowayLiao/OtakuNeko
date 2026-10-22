@@ -89,9 +89,10 @@ cover real HTTP/JWT requests or SQL behavior; those are separate evidence in
 `tests/api/test_profile_stats_certification.py` and
 `tests/capabilities/test_recommendation_stats_semantics.py`.
 
-Anime, Subjects, Recommendation, and Stats owner-specific scenarios remain
-mandatory alongside the six base scenarios. Registry and fixture inventory
-determine the global expected and passed counts; no fixed total is used.
+Anime, Subjects, Recommendation, Stats, Collections read, and Schedule read
+owner-specific scenarios remain mandatory alongside the six base scenarios.
+Registry and fixture inventory determine the global expected and passed counts;
+no fixed total is used.
 
 Collections read certification adds six mandatory scenarios to each public
 action owned by `collections` only when its production descriptor has
@@ -105,6 +106,21 @@ registered read handlers through the shared Runtime Dispatcher with imported
 dependencies isolated. HTTP/API and Service/SQL behavior are covered separately
 by `tests/api/test_collections_read_certification.py` and
 `tests/capabilities/test_collections_read_semantics.py`.
+
+Schedule read certification adds six mandatory scenarios to each public action
+owned by `schedule` only when its production descriptor has
+`is_side_effect == false`: `schedule_read_error`, `schedule_read_timeout`,
+`schedule_read_isolation`, `schedule_read_serialization`,
+`schedule_read_authorization`, and `schedule_read_dispatcher`. The current
+read allowlist is frozen to `list_schedules`, `list_schedules_by_day`, and
+`list_unified_schedules`; schedule writes are outside this matrix.
+`tests/capabilities/contracts/test_schedule_read_handlers.py` exercises the
+registered read handlers through the shared Runtime Dispatcher with imported
+dependencies isolated. Omitting that file, filtering its timeout observation,
+or skipping a required observation fails the execution gate. HTTP/API and
+Service/SQL behavior are covered separately by
+`tests/api/test_schedule_contract.py` and
+`tests/capabilities/test_schedule_read_semantics.py`.
 
 Collections write certification adds eight mandatory scenarios to every public
 action owned by `collections` whose production descriptor has

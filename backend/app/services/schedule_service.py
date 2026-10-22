@@ -58,7 +58,10 @@ class ScheduleService:
             logger.info(f"成功获取用户 {user_id} 的排班记录，共 {len(schedules)} 条")
             return schedules
         except Exception as e:
-            logger.error(f"获取用户排班记录失败: {e}")
+            logger.error(
+                "schedule_read_failed",
+                extra={"action": "list_schedules", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -109,7 +112,13 @@ class ScheduleService:
             # 创建并返回 UnifiedScheduleList
             return UnifiedScheduleList(items=items, total=len(items))
         except Exception as e:
-            logger.error(f"获取用户统一排班记录失败: {e}")
+            logger.error(
+                "schedule_read_failed",
+                extra={
+                    "action": "list_unified_schedules",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod
@@ -228,7 +237,13 @@ class ScheduleService:
             )
             return schedules
         except Exception as e:
-            logger.error(f"获取指定星期的排班记录失败: {e}")
+            logger.error(
+                "schedule_read_failed",
+                extra={
+                    "action": "list_schedules_by_day",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod

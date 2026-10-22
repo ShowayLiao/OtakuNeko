@@ -54,6 +54,14 @@ COLLECTIONS_READ_SCENARIOS = (
     "collections_read_authorization",
     "collections_read_dispatcher",
 )
+SCHEDULE_READ_SCENARIOS = (
+    "schedule_read_error",
+    "schedule_read_timeout",
+    "schedule_read_isolation",
+    "schedule_read_serialization",
+    "schedule_read_authorization",
+    "schedule_read_dispatcher",
+)
 COLLECTIONS_WRITE_SCENARIOS = (
     "collections_write_error",
     "collections_write_timeout",
@@ -166,6 +174,12 @@ def expected_observations(
             and not descriptor.is_side_effect
         ):
             expected.update((*key, scenario) for scenario in COLLECTIONS_READ_SCENARIOS)
+        elif (
+            owner is not None
+            and owner[0].name == "schedule"
+            and not descriptor.is_side_effect
+        ):
+            expected.update((*key, scenario) for scenario in SCHEDULE_READ_SCENARIOS)
         elif (
             owner is not None
             and owner[0].name == "collections"

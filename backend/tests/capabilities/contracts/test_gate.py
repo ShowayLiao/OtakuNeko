@@ -29,6 +29,10 @@ COLLECTIONS_READ_CONTRACT_TEST = (
     "tests/capabilities/contracts/test_collections_read_handlers.py"
 )
 COLLECTIONS_READ_CONTRACT_TESTS = (COLLECTIONS_READ_CONTRACT_TEST,)
+SCHEDULE_READ_CONTRACT_TEST = (
+    "tests/capabilities/contracts/test_schedule_read_handlers.py"
+)
+SCHEDULE_READ_CONTRACT_TESTS = (SCHEDULE_READ_CONTRACT_TEST,)
 COLLECTIONS_WRITE_CONTRACT_TEST = (
     "tests/capabilities/contracts/test_collections_write_handlers.py"
 )
@@ -39,6 +43,7 @@ CONTRACT_TEST_PATHS = (
     *SUBJECTS_CONTRACT_TESTS,
     *PROFILE_STATS_CONTRACT_TESTS,
     *COLLECTIONS_READ_CONTRACT_TESTS,
+    *SCHEDULE_READ_CONTRACT_TESTS,
     *COLLECTIONS_WRITE_CONTRACT_TESTS,
 )
 GATE_PLUGIN = "tests.capabilities.contracts.plugin"
@@ -121,6 +126,55 @@ def test_collections_read_actions_require_full_scenario_matrix():
         (*key, scenario) for key in collection_writes for scenario in required
     }
     assert len(collection_reads) == 3
+    assert required_reads <= expected
+    assert not (required_writes & expected)
+
+
+def test_schedule_read_actions_require_full_scenario_matrix():
+    from tests.capabilities.contracts import catalog
+
+    required = (
+        "schedule_read_error",
+        "schedule_read_timeout",
+        "schedule_read_isolation",
+        "schedule_read_serialization",
+        "schedule_read_authorization",
+        "schedule_read_dispatcher",
+    )
+    assert getattr(catalog, "SCHEDULE_READ_SCENARIOS", None) == required
+
+    registry = catalog.build_capability_registry()
+    actions = catalog.census()
+    schedule_reads = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0]))
+        and owner[0].name == "schedule"
+        and not descriptor.is_side_effect
+    }
+    schedule_writes = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0]))
+        and owner[0].name == "schedule"
+        and descriptor.is_side_effect
+    }
+    frozen_reads = {
+        ("list_schedules", "v1"),
+        ("list_schedules_by_day", "v1"),
+        ("list_unified_schedules", "v1"),
+    }
+    expected = catalog.expected_observations(actions, catalog.cases())
+    required_reads = {
+        (*key, scenario) for key in schedule_reads for scenario in required
+    }
+    required_writes = {
+        (*key, scenario) for key in schedule_writes for scenario in required
+    }
+
+    assert schedule_reads == frozen_reads
+    assert all(actions[key].requires_auth for key in frozen_reads)
+    assert len(required_reads) == 18
     assert required_reads <= expected
     assert not (required_writes & expected)
 
@@ -432,6 +486,7 @@ def test_gate_rejects_missing_timeout_scenario(tmp_path):
         "recommendation_timeout",
         "stats_timeout",
         "collections_read_timeout",
+        "schedule_read_timeout",
         "collections_write_timeout",
     }
     assert missing == expected_timeouts
@@ -448,6 +503,7 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
             *SUBJECTS_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
+            *SCHEDULE_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
         ),
         pytest_args=ignored_anime_tests,
@@ -479,6 +535,7 @@ def test_gate_rejects_missing_subjects_certification(tmp_path):
             *ANIME_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
+            *SCHEDULE_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
         ),
     )
@@ -510,6 +567,7 @@ def test_gate_rejects_missing_recommendation_stats_certification(tmp_path):
             *CORE_CONTRACT_TEST_PATHS,
             *ANIME_CONTRACT_TESTS,
             *SUBJECTS_CONTRACT_TESTS,
+            *SCHEDULE_READ_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
         ),
@@ -543,6 +601,7 @@ def test_gate_rejects_missing_collections_read_certification(tmp_path):
             *ANIME_CONTRACT_TESTS,
             *SUBJECTS_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
+            *SCHEDULE_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
         ),
     )
@@ -570,6 +629,41 @@ def test_gate_rejects_missing_collections_read_certification(tmp_path):
         assert f"{name}@{version}/{scenario}" in output
 
 
+def test_gate_rejects_missing_schedule_read_certification(tmp_path):
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_schedule_read_certification",
+        tmp_path,
+        contract_test_paths=(
+            *CORE_CONTRACT_TEST_PATHS,
+            *ANIME_CONTRACT_TESTS,
+            *SUBJECTS_CONTRACT_TESTS,
+            *PROFILE_STATS_CONTRACT_TESTS,
+            *COLLECTIONS_READ_CONTRACT_TESTS,
+            *COLLECTIONS_WRITE_CONTRACT_TESTS,
+        ),
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    from tests.capabilities.contracts.catalog import SCHEDULE_READ_SCENARIOS
+
+    expected = _expected_observations()
+    expected_schedule_read = {
+        row for row in expected if row[2] in SCHEDULE_READ_SCENARIOS
+    }
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_schedule_read) == 18
+    assert missing == expected_schedule_read
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - len(expected_schedule_read)
+    for name, version, scenario in sorted(expected_schedule_read):
+        assert f"{name}@{version}/{scenario}" in output
+
+
 def test_gate_rejects_missing_collections_write_certification(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "missing_collections_write_certification",
@@ -580,6 +674,7 @@ def test_gate_rejects_missing_collections_write_certification(tmp_path):
             *SUBJECTS_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
+            *SCHEDULE_READ_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -635,6 +730,51 @@ def test_gate_rejects_a_skipped_required_marked_scenario(tmp_path):
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert missing == {skipped}
+    assert (coverage or {}).get("expected") == len(_expected_observations())
+    assert (coverage or {}).get("passed") == len(_expected_observations()) - 1
+    assert (evidence_dir / "probe-target.json").is_file()
+
+
+def test_gate_rejects_a_skipped_schedule_read_observation(tmp_path):
+    plugin_source = """
+        import json
+        import os
+        from pathlib import Path
+
+        import pytest
+
+
+        @pytest.hookimpl(tryfirst=True)
+        def pytest_collection_modifyitems(items):
+            target = ("list_schedules", "v1", "schedule_read_error")
+            for item in items:
+                marker = item.get_closest_marker("capability_contract")
+                if marker is not None and tuple(marker.args) == target:
+                    item.add_marker(pytest.mark.skip(reason="gate self-test skip"))
+                    Path(os.environ["CAPABILITY_GATE_PROBE_TARGET"]).write_text(
+                        json.dumps(list(marker.args)), encoding="utf-8"
+                    )
+                    return
+    """
+    completed, coverage, output, evidence_dir = _run_gate_probe(
+        "skipped_schedule_read_observation",
+        tmp_path,
+        plugin_source=plugin_source,
+    )
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    target_path = tmp_path / "probe-target.json"
+    assert target_path.is_file(), output
+    skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
+    assert skipped == ("list_schedules", "v1", "schedule_read_error")
+    assert skipped in _expected_observations()
     _assert_gate_failure(
         completed,
         coverage,

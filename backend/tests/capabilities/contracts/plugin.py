@@ -157,6 +157,17 @@ def pytest_sessionfinish(session, exitstatus):
                 "separately in tests/api/test_collections_read_certification.py "
                 "and tests/capabilities/test_collections_read_semantics.py."
             ),
+            "schedule_read_certification": (
+                "Real registered non-side-effect Schedule handlers through the "
+                "shared Runtime Dispatcher with imported handler dependencies "
+                "isolated. Six schedule_read_* scenarios apply to the three "
+                "frozen Schedule read actions; Schedule writes are outside this "
+                "evidence. Runtime/JWT, REST regressions, and SQL behavior are "
+                "certified separately in "
+                "tests/api/test_schedule_read_certification.py, "
+                "tests/api/test_schedule_contract.py, and "
+                "tests/capabilities/test_schedule_read_semantics.py."
+            ),
             "collections_write_certification": (
                 "Real registered side-effect Collection handlers through the "
                 "shared Runtime Dispatcher with only imported handler dependencies "

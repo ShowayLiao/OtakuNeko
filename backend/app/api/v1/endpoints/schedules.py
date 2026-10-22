@@ -206,8 +206,8 @@ async def get_user_schedules(
             db, current_user.id
         )
         return schedules
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"获取排班记录失败: {str(e)}")
+    except Exception:
+        raise HTTPException(status_code=500, detail="获取排班记录失败") from None
 
 
 @router.get("/by-day/{day}", response_model=List[ScheduleRead])
@@ -233,10 +233,10 @@ async def get_schedules_by_day(
     try:
         schedules = await ScheduleService.get_schedules_by_day(db, current_user.id, day)
         return schedules
-    except Exception as e:
+    except Exception:
         raise HTTPException(
-            status_code=500, detail=f"获取指定星期的排班记录失败: {str(e)}"
-        )
+            status_code=500, detail="获取指定星期的排班记录失败"
+        ) from None
 
 
 @router.post("/", response_model=ScheduleRead, status_code=201)
