@@ -140,7 +140,7 @@ class ScheduleService:
             Exception: 创建过程中的异常
         """
         try:
-            logger.info(f"为用户 {user_id} 创建新的排班记录: {schedule_data}")
+            logger.info("schedule_create_started", extra={"action": "create_schedule"})
             # 这里可以添加额外的业务逻辑，例如：
             # 1. 校验 subject_id 是否存在于 Bangumi
             # 2. 检查是否与现有排班时间冲突
@@ -150,10 +150,15 @@ class ScheduleService:
             new_schedule = await ScheduleRepository.create_for_user(
                 db, user_id, schedule_data
             )
-            logger.info(f"成功为用户 {user_id} 创建排班记录: {new_schedule.id}")
+            logger.info(
+                "schedule_create_succeeded", extra={"action": "create_schedule"}
+            )
             return new_schedule
         except Exception as e:
-            logger.error(f"创建排班记录失败: {e}")
+            logger.error(
+                "schedule_write_failed",
+                extra={"action": "create_schedule", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -173,18 +178,26 @@ class ScheduleService:
             更新后的排班记录或None（如果记录不存在、不属于该用户或存在冲突）
         """
         try:
-            logger.info(f"更新用户 {user_id} 的排班记录 {schedule_id}: {schedule_data}")
+            logger.info("schedule_update_started", extra={"action": "update_schedule"})
             # 更新排班记录
             updated_schedule = await ScheduleRepository.update(
                 db, schedule_id, user_id, schedule_data
             )
             if updated_schedule:
-                logger.info(f"成功更新用户 {user_id} 的排班记录: {schedule_id}")
+                logger.info(
+                    "schedule_update_succeeded", extra={"action": "update_schedule"}
+                )
             else:
-                logger.warning(f"更新排班记录失败: 记录不存在或不属于用户 {user_id}")
+                logger.warning(
+                    "schedule_update_not_applied",
+                    extra={"action": "update_schedule"},
+                )
             return updated_schedule
         except Exception as e:
-            logger.error(f"更新排班记录失败: {e}")
+            logger.error(
+                "schedule_write_failed",
+                extra={"action": "update_schedule", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -201,16 +214,24 @@ class ScheduleService:
             是否删除成功
         """
         try:
-            logger.info(f"删除用户 {user_id} 的排班记录 {schedule_id}")
+            logger.info("schedule_delete_started", extra={"action": "delete_schedule"})
             # 删除排班记录
             deleted = await ScheduleRepository.delete(db, schedule_id, user_id)
             if deleted:
-                logger.info(f"成功删除用户 {user_id} 的排班记录: {schedule_id}")
+                logger.info(
+                    "schedule_delete_succeeded", extra={"action": "delete_schedule"}
+                )
             else:
-                logger.warning(f"删除排班记录失败: 记录不存在或不属于用户 {user_id}")
+                logger.warning(
+                    "schedule_delete_not_applied",
+                    extra={"action": "delete_schedule"},
+                )
             return deleted
         except Exception as e:
-            logger.error(f"删除排班记录失败: {e}")
+            logger.error(
+                "schedule_write_failed",
+                extra={"action": "delete_schedule", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -265,22 +286,31 @@ class ScheduleService:
             Exception: 处理过程中的异常
         """
         try:
-            logger.info(f"Upsert 用户 {user_id} 的排班记录: {schedule_data}")
+            logger.info("schedule_upsert_started", extra={"action": "upsert_schedule"})
 
             # 校验用户ID
             if schedule_data.user_id != user_id:
-                logger.warning("Upsert 排班记录失败: 用户ID不匹配")
+                logger.warning(
+                    "schedule_upsert_rejected", extra={"action": "upsert_schedule"}
+                )
                 return None
 
             # 直接调用 repository 的 upsert 方法
             result = await ScheduleRepository.upsert(db, user_id, schedule_data)
             if result:
-                logger.info(f"成功 Upsert 用户 {user_id} 的排班记录")
+                logger.info(
+                    "schedule_upsert_succeeded", extra={"action": "upsert_schedule"}
+                )
             else:
-                logger.warning("Upsert 排班记录失败")
+                logger.warning(
+                    "schedule_upsert_not_applied", extra={"action": "upsert_schedule"}
+                )
             return result
         except Exception as e:
-            logger.error(f"Upsert 排班记录失败: {e}")
+            logger.error(
+                "schedule_write_failed",
+                extra={"action": "upsert_schedule", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -303,25 +333,34 @@ class ScheduleService:
         """
         try:
             logger.info(
-                f"批量 Upsert 用户 {user_id} 的排班记录，共 {len(upsert_list.items)} 条"
+                "schedule_bulk_upsert_started",
+                extra={"action": "bulk_upsert_schedules"},
             )
 
             # 直接调用 repository 的 batch_upsert 方法
-            processed_count = await ScheduleRepository.batch_upsert(
-                db, user_id, upsert_list
+            await ScheduleRepository.batch_upsert(db, user_id, upsert_list)
+            logger.info(
+                "schedule_bulk_upsert_succeeded",
+                extra={"action": "bulk_upsert_schedules"},
             )
-            logger.info(f"批量 Upsert 完成，成功处理 {processed_count} 条记录")
 
             # 由于 batch_upsert 返回的是处理的条目数量，而不是处理后的记录列表
             # 我们需要重新获取用户的所有排班记录
             updated_schedules = await ScheduleRepository.get_by_user(db, user_id)
             logger.info(
-                f"成功获取用户 {user_id} 的所有排班记录，共 {len(updated_schedules)} 条"
+                "schedule_bulk_upsert_results_loaded",
+                extra={"action": "bulk_upsert_schedules"},
             )
 
             return updated_schedules
         except Exception as e:
-            logger.error(f"批量 Upsert 排班记录失败: {e}")
+            logger.error(
+                "schedule_write_failed",
+                extra={
+                    "action": "bulk_upsert_schedules",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod
@@ -347,42 +386,66 @@ class ScheduleService:
             Exception: 同步过程中的异常
         """
         try:
-            logger.info(f"开始同步 Bangumi 日历数据，用户ID: {user_id}")
+            logger.info(
+                "schedule_calendar_sync_started",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 1. 调用 get_bangumi_calendar 获取日历数据
-            logger.info("获取 Bangumi 日历数据")
+            logger.info(
+                "schedule_calendar_fetch_started",
+                extra={"action": "sync_bangumi_schedule"},
+            )
             bangumi_calendar = await get_bangumi_calendar()
-            logger.info("成功获取 Bangumi 日历数据")
+            logger.info(
+                "schedule_calendar_fetch_succeeded",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 2. 转换为 SubjectUpsertList
-            logger.info("转换数据格式为 SubjectUpsertList")
+            logger.info(
+                "schedule_calendar_conversion_started",
+                extra={"action": "sync_bangumi_schedule"},
+            )
             subject_upsert_list = bangumi_calendar_to_subject_upsert_list(
                 bangumi_calendar
             )
-            logger.info(f"成功转换 {len(subject_upsert_list.items)} 条数据")
+            logger.info(
+                "schedule_calendar_conversion_succeeded",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 3. 批量填充 Airtime
-            logger.info("批量填充番剧放送时间")
+            logger.info(
+                "schedule_calendar_air_time_lookup_started",
+                extra={"action": "sync_bangumi_schedule"},
+            )
             # 提取所有的 source_id
             bangumi_ids = []
             for subject_upsert in subject_upsert_list.items:
                 try:
                     bangumi_ids.append(int(subject_upsert.source_id))
                 except ValueError:
-                    logger.warning(f"无效的 source_id: {subject_upsert.source_id}")
+                    logger.warning(
+                        "schedule_calendar_source_id_invalid",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
                     continue
 
             # 调用 get_air_time_batch 获取时间字典
             air_time_dict = await BangumiDataSyncService.get_air_time_batch(
                 db, bangumi_ids
             )
-            logger.info(f"成功获取 {len(air_time_dict)} 条番剧放送时间")
+            logger.info(
+                "schedule_calendar_air_time_lookup_succeeded",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 记录第一个返回的时间值
             if air_time_dict:
-                first_id = next(iter(air_time_dict))
                 logger.info(
-                    f"第一个返回的时间值 - bangumi_id: {first_id}, time: {air_time_dict[first_id]}"
+                    "schedule_calendar_air_time_sample_available",
+                    extra={"action": "sync_bangumi_schedule"},
                 )
 
             # 遍历 subject_upsert_list.items，填充 air_time
@@ -396,12 +459,24 @@ class ScheduleService:
                         from datetime import datetime
 
                         subject_upsert.air_time = datetime.fromisoformat(time_str)
-                        logger.debug(f"填充番剧放送时间: {bangumi_id} -> {time_str}")
+                        logger.debug(
+                            "schedule_calendar_air_time_applied",
+                            extra={"action": "sync_bangumi_schedule"},
+                        )
                 except ValueError:
-                    logger.warning(f"无效的 source_id: {subject_upsert.source_id}")
+                    logger.warning(
+                        "schedule_calendar_source_id_invalid",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
                     continue
                 except Exception as e:
-                    logger.warning(f"填充番剧放送时间失败: {e}")
+                    logger.warning(
+                        "schedule_calendar_air_time_apply_failed",
+                        extra={
+                            "action": "sync_bangumi_schedule",
+                            "error_type": type(e).__name__,
+                        },
+                    )
                     continue
 
                 # 记录 air_weekday 值
@@ -419,7 +494,8 @@ class ScheduleService:
             skipped = len(subject_upsert_list.items) - len(valid_items)
             if skipped:
                 logger.error(
-                    f"跳过 {skipped} 条缺少名称或类型的日历条目，不写入空名称数据"
+                    "schedule_calendar_invalid_items_skipped",
+                    extra={"action": "sync_bangumi_schedule"},
                 )
             if not valid_items:
                 raise ValueError("Bangumi 日历没有可写入的有效条目（缺少名称或类型）")
@@ -427,23 +503,25 @@ class ScheduleService:
                 total=len(valid_items), items=valid_items
             )
 
-            logger.info("批量插入 Subject 数据")
             logger.info(
-                f"第一条数据的 air_time 类型: {type(subject_upsert_list.items[0].air_time)}"
-            )
-            logger.info(
-                f"第一条数据的 air_time 值: {subject_upsert_list.items[0].air_time}"
+                "schedule_calendar_subject_upsert_started",
+                extra={"action": "sync_bangumi_schedule"},
             )
             logger.info(
-                f"第一条数据的 air_weekday 值: {subject_upsert_list.items[0].air_weekday}"
+                "schedule_calendar_subject_upsert_sample_available",
+                extra={"action": "sync_bangumi_schedule"},
             )
-            processed_count = await batch_upsert_subjects(
-                db, subject_upsert_list, user_id
+            await batch_upsert_subjects(db, subject_upsert_list, user_id)
+            logger.info(
+                "schedule_calendar_subject_upsert_succeeded",
+                extra={"action": "sync_bangumi_schedule"},
             )
-            logger.info(f"成功插入 {processed_count} 条数据")
 
             # 5. 批量转化为 unified 字段返回
-            logger.info("转换为统一格式返回")
+            logger.info(
+                "schedule_calendar_result_conversion_started",
+                extra={"action": "sync_bangumi_schedule"},
+            )
             unified_items = []
 
             # 构造 SubjectRead 对象
@@ -455,9 +533,9 @@ class ScheduleService:
 
                 # 记录第一个item的airtime值
                 if not first_item_processed:
-                    logger.info(f"第一条数据的 air_time 值: {subject_upsert.air_time}")
                     logger.info(
-                        f"第一条数据的 air_weekday 值: {subject_upsert.air_weekday}"
+                        "schedule_calendar_result_sample_available",
+                        extra={"action": "sync_bangumi_schedule"},
                     )
                     first_item_processed = True
 
@@ -498,11 +576,18 @@ class ScheduleService:
             unified_list = UnifiedList(total=len(unified_items), items=unified_items)
 
             logger.info(
-                f"同步 Bangumi 日历数据完成，共处理 {len(unified_items)} 条记录"
+                "schedule_calendar_sync_succeeded",
+                extra={"action": "sync_bangumi_schedule"},
             )
             return unified_list
         except Exception as e:
-            logger.error(f"同步 Bangumi 日历数据失败: {e}")
+            logger.error(
+                "schedule_write_failed",
+                extra={
+                    "action": "sync_bangumi_schedule",
+                    "error_type": type(e).__name__,
+                },
+            )
             raise
 
     @staticmethod

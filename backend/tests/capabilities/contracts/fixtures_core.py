@@ -701,11 +701,19 @@ CASES: dict[tuple[str, str], Case] = {
     ),
     ("sync_bangumi_schedule", VERSION): _case(
         {"idempotency_key": "schedule-sync-101"},
-        {"count": 1, "schedules": [{"id": 31, "source_id": "subject-101"}]},
+        {
+            "count": 1,
+            "schedules": [
+                {"subject": {"id": 0, "source_id": "subject-101"}, "collection": None}
+            ],
+        },
         _prepare_schedule_dependency(
             "sync_bangumi_calendar",
             "schedule.sync_bangumi",
-            {"items": [_SCHEDULE], "total": 1},
+            {
+                "items": [{"subject": {**_SUBJECT, "id": 0}, "collection": None}],
+                "total": 1,
+            },
             user_argument=0,
         ),
     ),

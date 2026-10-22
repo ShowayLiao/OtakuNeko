@@ -172,11 +172,12 @@ async def test_collections_write_contract(
         boundary = install_collections_service_boundary(
             execution, monkeypatch, handler=block_once_then_succeed
         )
+        original_descriptors = execution.capability.actions()
         descriptors = [
             replace(descriptor, timeout_seconds=0.1)
             if descriptor.name == execution.descriptor.name
             else descriptor
-            for descriptor in execution.capability.actions()
+            for descriptor in original_descriptors
         ]
         monkeypatch.setattr(execution.capability, "actions", lambda: descriptors)
         execution.dispatcher.registry.unregister(execution.capability.name)
@@ -201,6 +202,13 @@ async def test_collections_write_contract(
         assert timed_out.status == "timeout" and timed_out.error_code == "timeout"
         assert timed_out.retryable is False
         assert len(boundary.calls) == 1 and boundary.unexpected_calls == []
+
+        monkeypatch.setattr(
+            execution.capability, "actions", lambda: original_descriptors
+        )
+        execution.dispatcher.registry.unregister(execution.capability.name)
+        execution.dispatcher.registry.register(execution.capability)
+        monkeypatch.setattr(dispatcher, "_run_with_controls", run_controls)
 
         recovered = await execution.dispatch()
         _assert_success(execution, recovered)

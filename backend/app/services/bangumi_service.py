@@ -586,14 +586,13 @@ async def get_bangumi_calendar() -> BangumiCalendar:
             # 转换 items
             items = []
             for item_index, item in enumerate(day_data.get("items", [])):
-                item_id = item.get("id", "unknown")
-                item_name = item.get("name_cn") or item.get("name", "unknown")
                 # 转换 rating
                 rating_data = item.get("rating", {})
                 # 检查 rating_data 是否为 None，防止 AttributeError
                 if rating_data is None:
                     logger.warning(
-                        f"Bangumi日历数据中item的rating字段为None: ID={item_id}, 名称={item_name}"
+                        "bangumi_calendar_rating_missing",
+                        extra={"action": "sync_bangumi_schedule"},
                     )
                     rating_data = {}
 
@@ -609,7 +608,8 @@ async def get_bangumi_calendar() -> BangumiCalendar:
                 # 检查 collection_data 是否为 None，防止 AttributeError
                 if collection_data is None:
                     logger.warning(
-                        f"Bangumi日历数据中item的collection字段为None: ID={item_id}, 名称={item_name}"
+                        "bangumi_calendar_collection_missing",
+                        extra={"action": "sync_bangumi_schedule"},
                     )
                     collection_data = {}
 
@@ -627,7 +627,8 @@ async def get_bangumi_calendar() -> BangumiCalendar:
                 # 检查 images_data 是否为 None，防止 AttributeError
                 if images_data is None:
                     logger.warning(
-                        f"Bangumi日历数据中item的images字段为None: ID={item_id}, 名称={item_name}"
+                        "bangumi_calendar_images_missing",
+                        extra={"action": "sync_bangumi_schedule"},
                     )
                     # 将 None 转换为空字典
                     images_data = {}
@@ -665,10 +666,13 @@ async def get_bangumi_calendar() -> BangumiCalendar:
         return BangumiCalendar(root=calendar_days)
 
     except Exception as e:
-        import traceback
-
-        logger.error(f"获取 Bangumi 每日放送信息失败: {e}")
-        logger.error(f"错误详情: {traceback.format_exc()}")
+        logger.error(
+            "bangumi_calendar_fetch_failed",
+            extra={
+                "action": "sync_bangumi_schedule",
+                "error_type": type(e).__name__,
+            },
+        )
         raise
 
 

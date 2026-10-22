@@ -912,7 +912,10 @@ def bangumi_calendar_to_subject_upsert_list(
         for item in day.items:
             # 解析星期几（后端返回的是 1-7，需要转换为 1-7，1=周一）
             weekday_id = day.weekday.get("id", 1)
-            logger.info(f"解析星期几: {weekday_id}")
+            logger.info(
+                "schedule_calendar_weekday_read",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 构造 SubjectUpsert 数据
             subject_upsert_data = {
@@ -930,7 +933,10 @@ def bangumi_calendar_to_subject_upsert_list(
                 "air_weekday": weekday_id,  # 添加 air_weekday 字段
             }
 
-            logger.info(f"构造 SubjectUpsert 数据: {subject_upsert_data}")
+            logger.info(
+                "schedule_calendar_subject_prepared",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 使用 SubjectUpsert 进行验证和转换
             try:
@@ -938,7 +944,13 @@ def bangumi_calendar_to_subject_upsert_list(
                 subjects.append(subject)
             except Exception as e:
                 # 如果验证失败，跳过该条目
-                logger.warning(f"验证Subject数据失败: {e}, 数据: {subject_upsert_data}")
+                logger.warning(
+                    "schedule_calendar_subject_validation_failed",
+                    extra={
+                        "action": "sync_bangumi_schedule",
+                        "error_type": type(e).__name__,
+                    },
+                )
                 continue
 
     # 返回转换后的 SubjectUpsertList 对象

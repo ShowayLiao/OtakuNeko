@@ -187,7 +187,13 @@ async def batch_upsert_subjects(
 
         # 清除用户的统计数据缓存
         if user_id and processed_count > 0:
-            await FastAPICache.clear(key=f"dashboard:stats:{user_id}")
+            try:
+                await FastAPICache.clear(key=f"dashboard:stats:{user_id}")
+            except KeyError:
+                # InMemoryBackend raises for an absent key; it is already
+                # invalidated. Do not turn the confirmed SQL commit into a
+                # failed operation simply because no stats were cached.
+                logger.debug("subject_batch_stats_cache_already_absent")
             logger.info(f"Cleared stats cache for user_id: {user_id}")
 
         return processed_count

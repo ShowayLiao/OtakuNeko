@@ -139,3 +139,22 @@ timeout scenario, or skipping a required observation fails the gate. Actual
 HTTP/JWT behavior and SQL semantics are certified separately by
 `tests/api/test_collections_write_certification.py` and
 `tests/capabilities/test_collections_write_semantics.py`.
+
+Schedule write certification adds nine mandatory scenarios to each public
+action owned by `schedule` whose production descriptor has
+`is_side_effect == true`: `schedule_write_error`, `schedule_write_timeout`,
+`schedule_write_isolation`, `schedule_write_serialization`,
+`schedule_write_authorization`, `schedule_write_dispatcher`,
+`schedule_write_approval`, `schedule_write_idempotency`, and
+`schedule_write_recovery`. The frozen write inventory has six actions, so this
+matrix requires 54 additional observations; the six Schedule read scenarios
+remain separate and unchanged.
+`tests/capabilities/contracts/test_schedule_write_handlers.py` executes the
+registered write handlers through the shared Runtime Dispatcher and isolates
+only imported handler dependencies. The recovery scenario rebuilds
+Runtime/Adapter/Session from durable state. Omitting the handler file, filtering
+its timeout or recovery scenario, or skipping an observation fails the gate.
+Process kill/restore, HTTP/JWT behavior, and SQL semantics are certified
+separately by `tests/acceptance/test_schedule_write_kill_restore.py`,
+`tests/api/test_schedule_write_certification.py`, and
+`tests/capabilities/test_schedule_write_semantics.py`.

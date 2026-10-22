@@ -129,7 +129,7 @@ class CapabilityAdapter:
                 "result": result,
                 **(
                     {"capability_action": action}
-                    if self._capability.name == "collections"
+                    if self._capability.name in {"collections", "schedule"}
                     else {}
                 ),
                 **(
@@ -155,7 +155,7 @@ class CapabilityAdapter:
                     operation,
                 )
             except Exception:
-                if self._capability.name != "collections":
+                if self._capability.name not in {"collections", "schedule"}:
                     raise
                 db = self._trusted_args.get("db")
                 if isinstance(db, AsyncSession):
@@ -171,7 +171,7 @@ class CapabilityAdapter:
                     "The idempotency key was reused with different arguments",
                     error_type="idempotency_conflict",
                 ).to_dict()
-            if self._capability.name == "collections":
+            if self._capability.name in {"collections", "schedule"}:
                 recorded_action = execution.result.get("capability_action")
                 if recorded_action is None:
                     # Legacy records cannot prove which action produced the
@@ -182,7 +182,9 @@ class CapabilityAdapter:
                     ).to_dict()
                 if recorded_action != action:
                     return CapabilityResult.fail(
-                        "The idempotency key belongs to another collection action",
+                        "The idempotency key belongs to another schedule action"
+                        if self._capability.name == "schedule"
+                        else "The idempotency key belongs to another collection action",
                         error_type="idempotency_conflict",
                     ).to_dict()
             return self._unwrap_idempotency_result(execution.result)

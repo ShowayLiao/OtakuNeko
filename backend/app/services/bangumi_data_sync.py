@@ -91,9 +91,13 @@ class BangumiDataSyncService:
             for source_idx, data_url in enumerate(data_sources):
                 try:
                     logger.info(
-                        f"开始同步 bangumi-data 数据 (尝试 {attempt + 1}/{max_retries}, 数据源 {source_idx + 1}/{len(data_sources)})"
+                        "bangumi_data_sync_attempt_started",
+                        extra={"action": "sync_bangumi_schedule"},
                     )
-                    logger.info(f"使用数据源: {data_url}")
+                    logger.info(
+                        "bangumi_data_source_selected",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
 
                     # 记录请求开始时间
                     start_time = datetime.now()
@@ -109,17 +113,28 @@ class BangumiDataSyncService:
 
                         # 记录详细的网络请求日志
                         logger.info(
-                            f"网络请求完成，状态码: {response.status_code}, 响应时间: {response_time:.2f}s"
+                            "bangumi_data_http_request_completed",
+                            extra={
+                                "action": "sync_bangumi_schedule",
+                                "status_code": response.status_code,
+                                "response_time_seconds": response_time,
+                            },
                         )
 
                         response.raise_for_status()
                         data = response.json()
 
-                    logger.info("成功下载 bangumi-data 数据")
+                    logger.info(
+                        "bangumi_data_download_succeeded",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
 
                     # 验证数据格式
                     if not isinstance(data, dict) or "items" not in data:
-                        logger.error("下载的数据格式不正确，缺少 'items' 字段")
+                        logger.error(
+                            "bangumi_data_payload_invalid",
+                            extra={"action": "sync_bangumi_schedule"},
+                        )
                         continue
 
                     # 计算日期范围
@@ -127,7 +142,10 @@ class BangumiDataSyncService:
                     start_date = current_date - timedelta(days=90)
                     end_date = current_date + timedelta(days=90)
 
-                    logger.info(f"过滤日期范围: {start_date} 到 {end_date}")
+                    logger.info(
+                        "bangumi_data_date_window_applied",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
 
                     # 推荐的重点流媒体平台白名单（基于常见 RSS 压制源）
                     # 使用 set 提供 O(1) 的查找速度
@@ -181,7 +199,11 @@ class BangumiDataSyncService:
                             ).astimezone(timezone.utc)
                         except ValueError as e:
                             logger.warning(
-                                f"解析最优时间失败: {earliest_time_str}, 错误: {e}"
+                                "bangumi_data_air_time_invalid",
+                                extra={
+                                    "action": "sync_bangumi_schedule",
+                                    "error_type": type(e).__name__,
+                                },
                             )
                             continue
 
@@ -198,7 +220,11 @@ class BangumiDataSyncService:
                                     bangumi_id = int(site.get("id"))
                                 except ValueError as e:
                                     logger.warning(
-                                        f"解析 bangumi_id 失败: {site.get('id')}, 错误: {e}"
+                                        "bangumi_data_subject_id_invalid",
+                                        extra={
+                                            "action": "sync_bangumi_schedule",
+                                            "error_type": type(e).__name__,
+                                        },
                                     )
                                 break
 
@@ -223,16 +249,24 @@ class BangumiDataSyncService:
                             {
                                 "bangumi_id": bangumi_id,
                                 "title": item.get("title", ""),
-                                "broadcast_begin": begin_time,
+                                # Existing timestamp columns store UTC without
+                                # timezone; asyncpg rejects aware bindings.
+                                "broadcast_begin": begin_time.replace(tzinfo=None),
                                 "year": year,
                                 "season": season,
                             }
                         )
 
-                    logger.info(f"过滤后的数据条数: {len(filtered_items)}")
+                    logger.info(
+                        "bangumi_data_filter_completed",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
 
                     if not filtered_items:
-                        logger.warning("过滤后没有数据，尝试下一个数据源")
+                        logger.warning(
+                            "bangumi_data_filter_empty",
+                            extra={"action": "sync_bangumi_schedule"},
+                        )
                         continue
 
                     # 执行 Upsert 操作
@@ -251,8 +285,13 @@ class BangumiDataSyncService:
                                 existing_record.broadcast_begin = item[
                                     "broadcast_begin"
                                 ]
-                                existing_record.updated_at = datetime.now(timezone.utc)
-                                logger.debug(f"更新记录: {item['bangumi_id']}")
+                                existing_record.updated_at = datetime.now(
+                                    timezone.utc
+                                ).replace(tzinfo=None)
+                                logger.debug(
+                                    "bangumi_data_metadata_updated",
+                                    extra={"action": "sync_bangumi_schedule"},
+                                )
                             else:
                                 # 插入新记录
                                 new_record = AnimeBroadcastMetadata(
@@ -264,41 +303,70 @@ class BangumiDataSyncService:
                                     season=item["season"],
                                 )
                                 db.add(new_record)
-                                logger.debug(f"插入新记录: {item['bangumi_id']}")
+                                logger.debug(
+                                    "bangumi_data_metadata_inserted",
+                                    extra={"action": "sync_bangumi_schedule"},
+                                )
 
                             synced_count += 1
                         except Exception as e:
                             logger.warning(
-                                f"处理记录失败 {item['bangumi_id']}: {type(e).__name__}: {e}"
+                                "bangumi_data_metadata_write_failed",
+                                extra={
+                                    "action": "sync_bangumi_schedule",
+                                    "error_type": type(e).__name__,
+                                },
                             )
                             continue
 
                     # 提交事务
                     await db.commit()
-                    logger.info(f"同步完成，处理了 {synced_count} 条记录")
+                    logger.info(
+                        "bangumi_data_sync_completed",
+                        extra={"action": "sync_bangumi_schedule"},
+                    )
                     return synced_count
 
                 except httpx.HTTPError as e:
                     # 捕获网络相关错误
-                    logger.error(f"网络请求失败: {type(e).__name__}: {e}")
-                    logger.error(f"错误详情: {str(e)}")
+                    logger.error(
+                        "bangumi_data_http_request_failed",
+                        extra={
+                            "action": "sync_bangumi_schedule",
+                            "error_type": type(e).__name__,
+                        },
+                    )
                     # 尝试下一个数据源
                     continue
                 except json.JSONDecodeError as e:
                     # 捕获 JSON 解析错误
-                    logger.error(f"JSON 解析失败: {type(e).__name__}: {e}")
+                    logger.error(
+                        "bangumi_data_json_parse_failed",
+                        extra={
+                            "action": "sync_bangumi_schedule",
+                            "error_type": type(e).__name__,
+                        },
+                    )
                     # 尝试下一个数据源
                     continue
                 except Exception as e:
                     # 捕获其他所有错误
-                    logger.error(f"同步过程中发生错误: {type(e).__name__}: {e}")
-                    logger.error(f"错误详情: {str(e)}")
+                    logger.error(
+                        "bangumi_data_sync_attempt_failed",
+                        extra={
+                            "action": "sync_bangumi_schedule",
+                            "error_type": type(e).__name__,
+                        },
+                    )
                     # 尝试下一个数据源
                     continue
 
             # 所有数据源都失败，等待重试
             if attempt < max_retries - 1:
-                logger.info(f"所有数据源都失败，{retry_delay} 秒后重试...")
+                logger.info(
+                    "bangumi_data_sync_retry_scheduled",
+                    extra={"action": "sync_bangumi_schedule"},
+                )
                 import asyncio
 
                 await asyncio.sleep(retry_delay)
@@ -306,7 +374,10 @@ class BangumiDataSyncService:
 
         # 所有重试都失败
         error_msg = "所有重试都失败，无法同步 bangumi-data 数据"
-        logger.error(error_msg)
+        logger.error(
+            "bangumi_data_sync_failed",
+            extra={"action": "sync_bangumi_schedule", "error_type": "Exception"},
+        )
         await db.rollback()
         raise Exception(error_msg)
 
@@ -373,7 +444,10 @@ class BangumiDataSyncService:
             包含 bangumi_id 和放送时间的字典，格式为 {bangumi_id: "HH:MM"}
         """
         try:
-            logger.info(f"批量查询番剧放送时间，共 {len(bangumi_ids)} 个 ID")
+            logger.info(
+                "schedule_air_time_batch_query_started",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 批量查询数据库
             query = select(AnimeBroadcastMetadata).where(
@@ -382,12 +456,18 @@ class BangumiDataSyncService:
             result = await db.execute(query)
             records = result.scalars().all()
 
-            logger.info(f"批量查询结果: {len(records)} 条记录")
+            logger.info(
+                "schedule_air_time_batch_query_completed",
+                extra={"action": "sync_bangumi_schedule"},
+            )
 
             # 自动回退机制
             # 如果查询结果的数量远少于传入 ID 的数量，触发同步
             if len(records) < len(bangumi_ids) * 0.5:
-                logger.warning("查询结果数量较少，尝试同步数据")
+                logger.warning(
+                    "schedule_air_time_batch_fallback_started",
+                    extra={"action": "sync_bangumi_schedule"},
+                )
                 await cls.fetch_and_sync_recent_data(db)
 
                 # 重新查询
@@ -397,7 +477,10 @@ class BangumiDataSyncService:
                 result = await db.execute(query)
                 records = result.scalars().all()
 
-                logger.info(f"同步后查询结果: {len(records)} 条记录")
+                logger.info(
+                    "schedule_air_time_batch_fallback_completed",
+                    extra={"action": "sync_bangumi_schedule"},
+                )
 
             # 构建返回字典
             result_dict: Dict[int, str] = {}
@@ -408,8 +491,17 @@ class BangumiDataSyncService:
                 time_str = broadcast_begin.isoformat()
                 result_dict[record.bangumi_id] = time_str
 
-            logger.info(f"批量查询完成，返回 {len(result_dict)} 条记录")
+            logger.info(
+                "schedule_air_time_batch_result_ready",
+                extra={"action": "sync_bangumi_schedule"},
+            )
             return result_dict
         except Exception as e:
-            logger.error(f"批量获取番剧放送时间失败: {e}")
+            logger.error(
+                "schedule_air_time_batch_failed",
+                extra={
+                    "action": "sync_bangumi_schedule",
+                    "error_type": type(e).__name__,
+                },
+            )
             return {}

@@ -149,7 +149,7 @@ async def _upsert_result(
     result = await ScheduleService.upsert_schedule(db, user_id, schedule_data)
     if result is None:
         return {"status": "failed", "error_code": "not_found"}
-    return {"status": "succeeded", "data": result.model_dump()}
+    return {"status": "succeeded", "data": result.model_dump(mode="json")}
 
 
 async def _bulk_upsert_result(
@@ -160,7 +160,7 @@ async def _bulk_upsert_result(
     results = await ScheduleService.bulk_upsert_schedules(db, user_id, upsert_list)
     return {
         "status": "succeeded",
-        "data": {"items": [item.model_dump() for item in results]},
+        "data": {"items": [item.model_dump(mode="json") for item in results]},
     }
 
 
@@ -181,7 +181,7 @@ async def _delete_all_result(db: AsyncSession, user_id: int) -> dict[str, Any]:
 
 async def _sync_bangumi_result(db: AsyncSession, user_id: int) -> dict[str, Any]:
     result = await ScheduleService.sync_bangumi_calendar(db, user_id)
-    return {"status": "succeeded", "data": result.model_dump()}
+    return {"status": "succeeded", "data": result.model_dump(mode="json")}
 
 
 @router.get("/", response_model=UnifiedScheduleList)

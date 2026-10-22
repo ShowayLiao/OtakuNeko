@@ -72,6 +72,17 @@ COLLECTIONS_WRITE_SCENARIOS = (
     "collections_write_approval",
     "collections_write_idempotency",
 )
+SCHEDULE_WRITE_SCENARIOS = (
+    "schedule_write_error",
+    "schedule_write_timeout",
+    "schedule_write_isolation",
+    "schedule_write_serialization",
+    "schedule_write_authorization",
+    "schedule_write_dispatcher",
+    "schedule_write_approval",
+    "schedule_write_idempotency",
+    "schedule_write_recovery",
+)
 
 
 def census(registry: CapabilityRegistry | None = None) -> dict[Key, ActionDescriptor]:
@@ -188,6 +199,12 @@ def expected_observations(
             expected.update(
                 (*key, scenario) for scenario in COLLECTIONS_WRITE_SCENARIOS
             )
+        elif (
+            owner is not None
+            and owner[0].name == "schedule"
+            and descriptor.is_side_effect
+        ):
+            expected.update((*key, scenario) for scenario in SCHEDULE_WRITE_SCENARIOS)
         if key not in examples:
             continue  # fixture mismatch is a separate fatal diagnostic
         for path in required_paths(descriptor.input_schema, examples[key].arguments):

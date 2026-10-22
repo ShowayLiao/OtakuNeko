@@ -148,7 +148,8 @@ class ScheduleRepository:
             )
             if existing_schedule:
                 logger.warning(
-                    f"用户 {user_id} 在 {data['day_of_week']} {data['start_time']} 已存在排班记录"
+                    "schedule_create_existing_entry",
+                    extra={"action": "create_schedule"},
                 )
                 return existing_schedule
 
@@ -159,11 +160,17 @@ class ScheduleRepository:
             await db.refresh(new_schedule)
             return new_schedule
         except IntegrityError as e:
-            logger.error(f"创建排班记录时数据完整性错误: {e}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={"action": "create_schedule", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
         except SQLAlchemyError as e:
-            logger.error(f"创建排班记录失败: {e}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={"action": "create_schedule", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
 
@@ -187,7 +194,10 @@ class ScheduleRepository:
             result = await db.execute(query)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error(f"获取排班记录失败: {e}")
+            logger.error(
+                "schedule_repository_lookup_failed",
+                extra={"action": "get_by_id", "error_type": type(e).__name__},
+            )
             raise
 
     @staticmethod
@@ -238,7 +248,8 @@ class ScheduleRepository:
                 )
                 if existing_schedule:
                     logger.warning(
-                        f"用户 {user_id} 在 {new_day} {new_time} 已存在其他排班记录"
+                        "schedule_update_conflict",
+                        extra={"action": "update_schedule"},
                     )
                     return None
 
@@ -250,11 +261,17 @@ class ScheduleRepository:
             await db.refresh(schedule)
             return schedule
         except IntegrityError as e:
-            logger.error(f"更新排班记录时数据完整性错误: {e}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={"action": "update_schedule", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
         except SQLAlchemyError as e:
-            logger.error(f"更新排班记录失败: {e}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={"action": "update_schedule", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
 
@@ -289,7 +306,10 @@ class ScheduleRepository:
             await db.commit()
             return True
         except SQLAlchemyError as e:
-            logger.error(f"删除排班记录失败: {e}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={"action": "delete_schedule", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise
 
@@ -361,7 +381,13 @@ class ScheduleRepository:
             result = await db.execute(query)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error(f"检查重复排班记录失败: {e}")
+            logger.error(
+                "schedule_repository_lookup_failed",
+                extra={
+                    "action": "find_existing_schedule",
+                    "error_type": type(e).__name__,
+                },
+            )
             return None
 
     @staticmethod
@@ -443,7 +469,10 @@ class ScheduleRepository:
 
                 insert_fn = postgresql_insert
             else:
-                logger.error("Deploy mode not supported")
+                logger.error(
+                    "schedule_repository_deploy_mode_unsupported",
+                    extra={"action": "bulk_upsert_schedules"},
+                )
                 return 0
 
             if not schedule_upsert_list.items:
@@ -454,7 +483,10 @@ class ScheduleRepository:
 
             # 1. 将 ScheduleUpsert 对象转换为字典列表，并进行数据清洗
             schedule_dicts = []
-            logger.info(f"开始处理 {len(schedule_upsert_list.items)} 条排班记录")
+            logger.info(
+                "schedule_repository_bulk_upsert_started",
+                extra={"action": "bulk_upsert_schedules"},
+            )
 
             for i, schedule_upsert in enumerate(schedule_upsert_list.items):
                 # 使用 model_dump 转换为字典，排除 unset 的字段
@@ -489,7 +521,10 @@ class ScheduleRepository:
                     if k not in d:
                         d[k] = None
 
-            logger.info(f"数据清洗与结构统一完成，共处理 {len(schedule_dicts)} 条数据")
+            logger.info(
+                "schedule_repository_bulk_upsert_data_prepared",
+                extra={"action": "bulk_upsert_schedules"},
+            )
             # ===============================================
 
             # 3. 构建 Insert 语句
@@ -517,13 +552,20 @@ class ScheduleRepository:
             await db.execute(stmt)
             await db.commit()
 
-            logger.info(f"批量 Upsert 完成: {len(schedule_dicts)} 个排班记录处理成功")
+            logger.info(
+                "schedule_repository_bulk_upsert_succeeded",
+                extra={"action": "bulk_upsert_schedules"},
+            )
             return len(schedule_dicts)
 
         except SQLAlchemyError as e:
-            logger.error(f"批量 Upsert 排班记录失败: {e}")
-            logger.error(f"错误类型: {type(e).__name__}")
-            logger.error(f"错误堆栈: {traceback.format_exc()}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={
+                    "action": "bulk_upsert_schedules",
+                    "error_type": type(e).__name__,
+                },
+            )
             await db.rollback()
             raise
 
@@ -558,7 +600,10 @@ class ScheduleRepository:
 
                 insert_fn = postgresql_insert
             else:
-                logger.error("Deploy mode not supported")
+                logger.error(
+                    "schedule_repository_deploy_mode_unsupported",
+                    extra={"action": "upsert_schedule"},
+                )
                 return None
 
             # 固定的唯一键字段 - 对于排班记录，使用用户ID、来源和来源ID作为唯一键
@@ -583,7 +628,8 @@ class ScheduleRepository:
                 schedule_dict["duration"] = 1
 
             logger.info(
-                f"开始处理单个排班记录: user_id={user_id}, source={schedule_dict.get('source')}, source_id={schedule_dict.get('source_id')}"
+                "schedule_repository_upsert_started",
+                extra={"action": "upsert_schedule"},
             )
 
             # 2. 构建 Insert 语句
@@ -625,12 +671,16 @@ class ScheduleRepository:
             result = await db.execute(query)
             updated_schedule = result.scalar_one_or_none()
 
-            logger.info("Upsert 完成: 排班记录处理成功")
+            logger.info(
+                "schedule_repository_upsert_succeeded",
+                extra={"action": "upsert_schedule"},
+            )
             return updated_schedule
 
         except SQLAlchemyError as e:
-            logger.error(f"Upsert 排班记录失败: {e}")
-            logger.error(f"错误类型: {type(e).__name__}")
-            logger.error(f"错误堆栈: {traceback.format_exc()}")
+            logger.error(
+                "schedule_repository_write_failed",
+                extra={"action": "upsert_schedule", "error_type": type(e).__name__},
+            )
             await db.rollback()
             raise

@@ -274,7 +274,20 @@ class TestMCPServer:
         from app.mcp_server.policy import Policy
 
         async def fake_execute(action_name, **kwargs):
-            return {"success": True, "action": action_name}
+            return {
+                "success": True,
+                "action": action_name,
+                "data": {
+                    "schedule": {
+                        "id": 1,
+                        "user_id": kwargs["user_id"],
+                        "source": kwargs["source"],
+                        "source_id": kwargs["source_id"],
+                        "day_of_week": kwargs["day_of_week"],
+                        "start_time": kwargs["start_time"],
+                    }
+                },
+            }
 
         monkeypatch.setattr(registry.get("schedule"), "execute", fake_execute)
 

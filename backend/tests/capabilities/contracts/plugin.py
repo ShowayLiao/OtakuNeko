@@ -177,6 +177,17 @@ def pytest_sessionfinish(session, exitstatus):
                 "tests/api/test_collections_write_certification.py and "
                 "tests/capabilities/test_collections_write_semantics.py."
             ),
+            "schedule_write_certification": (
+                "Real registered side-effect Schedule handlers through the "
+                "shared Runtime Dispatcher with only imported handler "
+                "dependencies isolated. Nine schedule_write_* scenarios apply "
+                "to each of the six frozen Schedule write actions. The recovery "
+                "scenario rebuilds Runtime/Adapter/Session from durable state; "
+                "process kill/restore, HTTP/JWT, and SQL behavior are certified "
+                "separately in tests/acceptance/test_schedule_write_kill_restore.py, "
+                "tests/api/test_schedule_write_certification.py, and "
+                "tests/capabilities/test_schedule_write_semantics.py."
+            ),
         },
     }
     target = Path(config.getoption("--capability-contract-report"))

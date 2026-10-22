@@ -16,7 +16,7 @@ FINGERPRINTS = {
     (
         "bulk_upsert_schedules",
         "v1",
-    ): "ed38810e6c214f1a33d0f0b38e202c8d5a89c03e8351c21d62a15b44a9dce1b4",
+    ): "17fde09da344a9e763a9594eafcaa58183f739c234f8323f61d8a344c55fc2d5",
     (
         "create_collection",
         "v1",
@@ -24,7 +24,7 @@ FINGERPRINTS = {
     (
         "create_schedule",
         "v1",
-    ): "81da02a8d3661ccdd046714f120b1ec082b26a9c4514907743266896b8568bda",
+    ): "eda1cc394246a502815000cd4fbc97da19de2ea82ffbd7c7b0283008a9657650",
     (
         "delete_collection",
         "v1",
@@ -32,7 +32,7 @@ FINGERPRINTS = {
     (
         "delete_schedule",
         "v1",
-    ): "da9da42c6d4945ee7f68b2c8395a5588531213fb792fe4a2f60da25d1b381646",
+    ): "3857044ce5dcadf671f7e0a1514ba539dce91b23241b813c739b380366b5790a",
     (
         "fetch_audience_reviews",
         "v1",
@@ -160,7 +160,7 @@ FINGERPRINTS = {
     (
         "sync_bangumi_schedule",
         "v1",
-    ): "3943bd6c7d2d4bb7c51c7fbe1d0e9f1389770419fab09a5f08921b211795dc4e",
+    ): "01a48c36e8c3d673b7abea3c99739c6831dcde14847a99f03aae88ae0edb30bc",
     (
         "sync_douban_collections",
         "v1",
@@ -172,7 +172,7 @@ FINGERPRINTS = {
     (
         "update_schedule",
         "v1",
-    ): "50c42b485fad0d6dba2d9cbeba72ee7091f93e9fff7210bdbb7a83ea10f405f3",
+    ): "dcbc36ee7a712e9424a91244b527b5393a31e500d701a1da1250b0396452746e",
     (
         "upsert_collection",
         "v1",
@@ -184,5 +184,5 @@ FINGERPRINTS = {
     (
         "upsert_schedule",
         "v1",
-    ): "b711bb999e49cc72facf823576466e68b5d28f075e18e0ac447db5fb854dd23b",
+    ): "e31fbbb733ddd96c7a2b14f42b90a5942517d0c857109fd79ad3f1edd1753053",
 }

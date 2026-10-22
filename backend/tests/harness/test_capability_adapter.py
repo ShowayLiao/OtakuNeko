@@ -1,3 +1,5 @@
+from typing import Literal
+
 import pytest
 
 from app.capabilities.schedule import ScheduleCapability
@@ -6,6 +8,7 @@ from app.harness.contracts import ExecutionContext
 from app.harness.persistence.idempotency import InMemoryIdempotencyStore
 from app.harness.policy import Approval, PolicyEngine
 from app.harness.task import AgentTask
+from app.schemas.schedule import ScheduleCreate
 
 
 class FakeCapability:
@@ -45,12 +48,21 @@ def _context(principal_id: int) -> ExecutionContext:
 
 
 class _FakeSchedule:
-    def __init__(self, schedule_id: int, user_id: int) -> None:
+    def __init__(
+        self, schedule_id: int, user_id: int, schedule_data: ScheduleCreate
+    ) -> None:
         self.schedule_id = schedule_id
         self.user_id = user_id
+        self.schedule_data = schedule_data
 
-    def model_dump(self) -> dict[str, int]:
-        return {"id": self.schedule_id, "user_id": self.user_id}
+    def model_dump(
+        self, *, mode: Literal["python", "json"] = "python"
+    ) -> dict[str, object]:
+        return {
+            **self.schedule_data.model_dump(mode=mode),
+            "id": self.schedule_id,
+            "user_id": self.user_id,
+        }
 
 
 @pytest.fixture
@@ -62,7 +74,7 @@ def schedule_adapter(monkeypatch):
         nonlocal next_id
         next_id += 1
         calls.append(user_id)
-        return _FakeSchedule(next_id, user_id)
+        return _FakeSchedule(next_id, user_id, schedule_data)
 
     from app.services.schedule_service import ScheduleService
 

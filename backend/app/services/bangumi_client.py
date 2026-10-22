@@ -501,11 +501,21 @@ class BangumiClient:
                 return _merge_calendar_data(api_calendar, web_calendar)
             except httpx.HTTPStatusError as e:
                 logger.error(
-                    f"Bangumi API 请求失败: {e.response.status_code} - {e.response.text}"
+                    "bangumi_calendar_http_failed",
+                    extra={
+                        "action": "sync_bangumi_schedule",
+                        "error_type": type(e).__name__,
+                    },
                 )
                 raise
             except httpx.RequestError as e:
-                logger.error(f"网络请求错误: {e}")
+                logger.error(
+                    "bangumi_calendar_request_failed",
+                    extra={
+                        "action": "sync_bangumi_schedule",
+                        "error_type": type(e).__name__,
+                    },
+                )
                 raise
 
 

@@ -6,12 +6,21 @@ idempotency keys where duplicate execution could create duplicates.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from hashlib import sha256
 import json
 from typing import Any
 
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.capabilities.base import BaseCapability
-from app.capabilities.schedule_read_contracts import READ_ACTIONS, output_schema
+from app.capabilities.schedule_read_contracts import output_schema
+from app.capabilities.schedule_write_contracts import (
+    WRITE_ACTIONS,
+    input_schema as write_input_schema,
+    output_schema as write_output_schema,
+)
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.services.schedule_service import ScheduleService
 from app.schemas.schedule import (
@@ -21,6 +30,7 @@ from app.schemas.schedule import (
     ScheduleUpsertList,
 )
 from app.core.logging import get_logger
+from app.harness.normalizer import ResultNormalizer
 
 logger = get_logger(__name__)
 
@@ -337,7 +347,17 @@ class ScheduleCapability(BaseCapability):
                 ),
             ]
         )
-        return actions
+        return [
+            replace(
+                action,
+                input_schema=write_input_schema(action.input_schema),
+                output_schema=write_output_schema(action.name),
+                risk_level="medium",
+            )
+            if action.name in WRITE_ACTIONS
+            else action
+            for action in actions
+        ]
 
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         handlers: dict[str, Any] = {
@@ -358,27 +378,86 @@ class ScheduleCapability(BaseCapability):
             ).to_dict()
 
         user_id = kwargs.get("user_id")
-        if user_id is None or (
-            action in READ_ACTIONS and (type(user_id) is not int or user_id <= 0)
-        ):
+        if type(user_id) is not int or user_id <= 0:
             return CapabilityResult.fail(
                 "user_id is required", error_type="unauthorized"
             ).to_dict()
 
+        db = kwargs.get("db")
+        session = (
+            db.sync_session
+            if action in WRITE_ACTIONS and isinstance(db, AsyncSession)
+            else None
+        )
+        committed = False
+
+        def after_commit(_session: Any) -> None:
+            nonlocal committed
+            committed = True
+
+        # Idempotency claims happen before handler entry; only business commits
+        # within this window can make an error an uncertain/partial write.
+        if session is not None:
+            event.listen(session, "after_commit", after_commit)
         try:
-            return await handler(**kwargs)
+            result = await handler(**kwargs)
+            if action in WRITE_ACTIONS:
+                if result.get("success"):
+                    try:
+                        json.dumps(result, allow_nan=False)
+                    except (TypeError, ValueError):
+                        return self._write_failure("invalid_output", committed)
+                    descriptor = next(d for d in self.actions() if d.name == action)
+                    normalized = ResultNormalizer().normalize(
+                        result,
+                        descriptor=descriptor,
+                        run_id="",
+                        decision_id="",
+                        invocation_id="",
+                        trace_id="",
+                    )
+                    if normalized.status != "succeeded":
+                        return self._write_failure(
+                            normalized.error_code or "invalid_output", committed
+                        )
+                elif committed:
+                    return self._write_failure("internal", True)
+            return result
         except Exception as exc:
             logger.error(
                 "schedule_capability_failed",
-                extra={"action": action, "error_type": type(exc).__name__},
+                extra={
+                    "action": action,
+                    "error_type": type(exc).__name__,
+                    "committed": committed,
+                },
             )
-            if action in READ_ACTIONS and isinstance(exc, ValueError):
+            if action in WRITE_ACTIONS:
+                return self._write_failure(
+                    "invalid_args" if isinstance(exc, ValueError) else "internal",
+                    committed,
+                )
+            if isinstance(exc, ValueError):
                 return CapabilityResult.fail(
                     "Invalid schedule arguments", error_type="invalid_args"
                 ).to_dict()
             return CapabilityResult.fail(
                 "Schedule operation failed", error_type="internal"
             ).to_dict()
+        finally:
+            if session is not None:
+                event.remove(session, "after_commit", after_commit)
+
+    @staticmethod
+    def _write_failure(code: str, committed: bool) -> dict[str, Any]:
+        return CapabilityResult.fail(
+            "The operation state requires manual verification"
+            if committed
+            else "Invalid schedule arguments"
+            if code == "invalid_args"
+            else "Schedule operation failed",
+            error_type="attention_required" if committed else code,
+        ).to_dict()
 
     async def _list(self, **kwargs: Any) -> dict[str, Any]:
         user_id: int = kwargs["user_id"]
@@ -565,7 +644,7 @@ class ScheduleCapability(BaseCapability):
         result = await ScheduleService.sync_bangumi_calendar(db, kwargs["user_id"])
         payload = _public(result)
         return CapabilityResult.ok(
-            schedules=payload.get("items", []),
-            count=payload.get("total", 0),
+            schedules=payload["items"],
+            count=payload["total"],
             idempotency_key=kwargs.get("idempotency_key"),
         ).to_dict()
