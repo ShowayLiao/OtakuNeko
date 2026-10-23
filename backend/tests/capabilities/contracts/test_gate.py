@@ -61,6 +61,7 @@ CONTRACT_TEST_PATHS = (
     *SYSTEM_CONTRACT_TESTS,
 )
 GATE_PLUGIN = "tests.capabilities.contracts.plugin"
+GATE_PROBE_TIMEOUT_SECONDS = 180
 
 
 def _expected_observations():
@@ -499,7 +500,7 @@ def _run_gate_probe(
             cwd=BACKEND_ROOT,
             env=env,
             capture_output=True,
-            timeout=120,
+            timeout=GATE_PROBE_TIMEOUT_SECONDS,
             check=False,
         )
         stdout = completed.stdout.decode("utf-8", errors="replace")
@@ -513,7 +514,11 @@ def _run_gate_probe(
             f"--- stdout ---\n{timeout_stdout}--- stderr ---\n{timeout_stderr}"
         )
         output = timeout_output
-        exit_record = {"exitcode": None, "timed_out": True, "timeout_seconds": 120}
+        exit_record = {
+            "exitcode": None,
+            "timed_out": True,
+            "timeout_seconds": GATE_PROBE_TIMEOUT_SECONDS,
+        }
 
     output_path.write_text(output, encoding="utf-8")
     exitcode_path.write_text(
@@ -537,7 +542,9 @@ def _assert_gate_failure(
     output: str,
     expected_error: str,
 ) -> None:
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     assert completed.returncode != 0, output
     assert coverage is not None, "gate subprocess did not write a coverage report"
     assert coverage["gate"] == "fail"
@@ -633,7 +640,9 @@ def test_gate_rejects_removed_existing_fixture(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "removed_existing_fixture", tmp_path, plugin_source=plugin_source
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     removed_key = json.loads(target_path.read_text(encoding="utf-8"))
@@ -1084,7 +1093,9 @@ def test_gate_rejects_a_skipped_required_marked_scenario(tmp_path):
         tmp_path,
         plugin_source=plugin_source,
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
@@ -1127,7 +1138,9 @@ def test_gate_rejects_a_skipped_schedule_read_observation(tmp_path):
         tmp_path,
         plugin_source=plugin_source,
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
@@ -1172,7 +1185,9 @@ def test_gate_rejects_a_skipped_media_read_observation(tmp_path):
         tmp_path,
         plugin_source=plugin_source,
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
@@ -1217,7 +1232,9 @@ def test_gate_rejects_a_skipped_media_write_observation(tmp_path):
         tmp_path,
         plugin_source=plugin_source,
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
@@ -1262,7 +1279,9 @@ def test_gate_rejects_a_skipped_schedule_write_observation(tmp_path):
         tmp_path,
         plugin_source=plugin_source,
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     target_path = tmp_path / "probe-target.json"
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
@@ -1293,10 +1312,49 @@ def test_gate_rejects_an_empty_selected_matrix(tmp_path):
         output,
         "Missing executed contracts:",
     )
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     assert completed.returncode == 5
     assert (coverage or {}).get("passed") == 0
     assert (coverage or {}).get("expected") == len(_expected_observations())
+
+
+def test_gate_records_contract_failure_stage_and_exception(tmp_path):
+    plugin_source = """
+        import pytest
+
+
+        @pytest.hookimpl(tryfirst=True)
+        def pytest_runtest_call(item):
+            marker = item.get_closest_marker("capability_contract")
+            if (
+                marker is not None
+                and marker.args[0] == "get_current_time"
+                and marker.args[2] == "success"
+            ):
+                raise AssertionError("synthetic contract failure")
+    """
+    completed, coverage, output, _ = _run_gate_probe(
+        "contract_failure_reason", tmp_path, plugin_source=plugin_source
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+    assert coverage is not None
+    assert len(coverage["failure_reasons"]) == 1
+    reason = coverage["failure_reasons"][0]
+    assert reason["scenario"] == "success"
+    assert reason["status"] == "failed"
+    assert reason["failures"] == [
+        {"stage": "call", "outcome": "failed", "exception_type": "AssertionError"}
+    ]
+    failed = [row for row in coverage["test_mapping"] if row["status"] == "failed"]
+    assert len(failed) == 1
+    assert failed[0]["scenario"] == "success"
 
 
 def test_gate_accepts_the_complete_registry_matrix(tmp_path):
@@ -1304,7 +1362,9 @@ def test_gate_accepts_the_complete_registry_matrix(tmp_path):
         "complete_registry_matrix", tmp_path
     )
     expected = _expected_observations()
-    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    assert completed is not None, (
+        f"gate subprocess exceeded its {GATE_PROBE_TIMEOUT_SECONDS}-second timeout"
+    )
     assert completed.returncode == 0, output
     assert coverage is not None, "gate subprocess did not write a coverage report"
     assert coverage["gate"] == "pass"
@@ -1312,6 +1372,143 @@ def test_gate_accepts_the_complete_registry_matrix(tmp_path):
     assert coverage["expected"] == len(expected)
     assert coverage["passed"] == len(expected)
     assert coverage["missing"] == []
+    assert coverage["version"] == "v2"
+    assert len(coverage["inventory"]) == coverage["actions"]
+    assert len(coverage["test_mapping"]) == len(expected)
+    assert {row["scenario"] for row in coverage["test_mapping"]} == {
+        scenario for _name, _version, scenario in expected
+    }
+    assert all(row["status"] == "passed" for row in coverage["test_mapping"])
+    assert coverage["failure_reasons"] == []
+    assert coverage["unregistered_calls"] == []
+    assert coverage["invocation_audit"]["unregistered"] == []
+    assert coverage["invocation_audit"]["scanned_files"] > 0
+
+
+def test_gate_rejects_unregistered_production_capability_call(tmp_path):
+    plugin_source = """
+        def pytest_sessionstart(session):
+            from tests.capabilities.contracts import catalog
+
+            original = catalog.invocation_audit
+            call = {
+                "file": "app/probe.py",
+                "line": 1,
+                "receiver": "capability",
+                "method": "execute",
+                "kind": "action",
+                "action": "gate_probe_unregistered_action",
+                "registered": False,
+            }
+
+            def audit(*args, **kwargs):
+                result = original(*args, **kwargs)
+                result["calls"] = [*result["calls"], call]
+                result["unregistered"] = [*result["unregistered"], call]
+                return result
+
+            catalog.invocation_audit = audit
+    """
+    completed, coverage, output, _ = _run_gate_probe(
+        "unregistered_production_call", tmp_path, plugin_source=plugin_source
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Unregistered capability calls:",
+    )
+    assert coverage is not None
+    assert coverage["unregistered_calls"] == [
+        {
+            "file": "app/probe.py",
+            "line": 1,
+            "receiver": "capability",
+            "method": "execute",
+            "kind": "action",
+            "action": "gate_probe_unregistered_action",
+            "registered": False,
+        }
+    ]
+    assert (
+        coverage["invocation_audit"]["unregistered"] == coverage["unregistered_calls"]
+    )
+
+
+def test_gate_sessionfinish_reports_duplicate_and_malformed_rows(tmp_path):
+    from tests.capabilities.contracts.plugin import pytest_sessionfinish
+
+    expected = _expected_observations()
+    target = sorted(expected)[0]
+    rows = {
+        f"synthetic-item-{index}": {
+            "key": observation,
+            "stages": {"setup": "passed", "call": "passed", "teardown": "passed"},
+            "observed": observation,
+            "xfail": False,
+        }
+        for index, observation in enumerate(sorted(expected))
+    }
+    duplicate_nodeid = "synthetic-duplicate"
+    rows[duplicate_nodeid] = {
+        "key": target,
+        "stages": {"setup": "passed", "call": "skipped", "teardown": "passed"},
+        "observed": None,
+        "xfail": False,
+    }
+    malformed_nodeid = "synthetic-malformed"
+    rows[malformed_nodeid] = {
+        "key": ("alpha", "v1"),
+        "stages": {"setup": "passed", "call": "passed", "teardown": "passed"},
+        "observed": ("alpha", "v1"),
+        "xfail": False,
+    }
+    report_path = tmp_path / "duplicate-coverage.json"
+
+    class _PluginManager:
+        @staticmethod
+        def getplugin(_name):
+            return None
+
+    class _Config:
+        def __init__(self):
+            self._capability_contract_reports = rows
+            self.pluginmanager = _PluginManager()
+
+        @staticmethod
+        def getoption(name):
+            if name == "--capability-contract-gate":
+                return True
+            if name == "--capability-contract-report":
+                return str(report_path)
+            raise AssertionError(f"Unexpected pytest option: {name}")
+
+    class _Session:
+        def __init__(self):
+            self.config = _Config()
+            self.exitstatus = 0
+
+    session = _Session()
+    pytest_sessionfinish(session, 0)
+    coverage = json.loads(report_path.read_text(encoding="utf-8"))
+
+    assert session.exitstatus == 1
+    assert coverage["gate"] == "fail"
+    assert "Duplicate action/scenario execution markers" in coverage["errors"]
+    assert any(
+        error.startswith("Malformed capability_contract markers: synthetic-malformed")
+        for error in coverage["errors"]
+    )
+    assert coverage["missing"] == []
+    statuses = {row["nodeid"]: row["status"] for row in coverage["test_mapping"]}
+    target_nodeid = next(
+        nodeid
+        for nodeid, row in rows.items()
+        if nodeid != duplicate_nodeid and row["key"] == target
+    )
+    assert statuses[target_nodeid] == "passed"
+    assert statuses[duplicate_nodeid] == "skipped"
+    assert malformed_nodeid not in statuses
 
 
 @pytest.mark.parametrize("failure_kind", ["xfail", "teardown_failure", "unobserved"])
@@ -1385,3 +1582,14 @@ def test_gate_sessionfinish_excludes_nonpassing_required_observations(
             f"{name}@{version}/{scenario}" for name, version, scenario in [target]
         )
     ]
+    expected_status = {
+        "xfail": "xfail",
+        "teardown_failure": "failed",
+        "unobserved": "not_observed",
+    }[failure_kind]
+    reason = next(
+        row
+        for row in coverage["failure_reasons"]
+        if (row["action"], row["version"], row["scenario"]) == target
+    )
+    assert reason["status"] == expected_status

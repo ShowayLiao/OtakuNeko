@@ -49,6 +49,17 @@ def pytest_runtest_makereport(item, call):
     )
     row["stages"][report.when] = report.outcome
     row["xfail"] = row.get("xfail", False) or hasattr(report, "wasxfail")
+    if report.when in {"setup", "call", "teardown"} and report.outcome != "passed":
+        excinfo = getattr(call, "excinfo", None)
+        row.setdefault("failures", []).append(
+            {
+                "stage": report.when,
+                "outcome": report.outcome,
+                "exception_type": getattr(
+                    getattr(excinfo, "type", None), "__name__", None
+                ),
+            }
+        )
     if report.when == "call":
         row["observed"] = getattr(item, "_capability_contract_observed", None)
         row["duration_seconds"] = report.duration
@@ -61,38 +72,121 @@ def pytest_sessionfinish(session, exitstatus):
     # -p loads before tests/conftest establishes isolated settings. Application
     # imports must remain lazy or the plugin could capture developer .env state.
     from tests.capabilities.contracts.catalog import (
+        build_capability_registry,
         cases,
         census,
         coverage_errors,
         expected_observations,
         fixture_errors,
+        inventory,
+        invocation_audit,
     )
 
-    rows = config._capability_contract_reports
-    passed = {
-        row["key"]
-        for row in rows.values()
+    errors = []
+    raw_rows = config._capability_contract_reports
+    rows: dict[str, dict[str, Any]] = {}
+    malformed = []
+    for nodeid, row in raw_rows.items():
+        key = row.get("key")
+        if (
+            not isinstance(key, tuple)
+            or len(key) != 3
+            or not all(isinstance(value, str) for value in key)
+        ):
+            malformed.append(nodeid)
+            continue
+        rows[nodeid] = row
+    if malformed:
+        errors.append(
+            "Malformed capability_contract markers: " + ", ".join(sorted(malformed))
+        )
+    passed_rows = {
+        nodeid
+        for nodeid, row in rows.items()
         if row["observed"] == row["key"]
         and not row.get("xfail")
         and row["stages"] == {"setup": "passed", "call": "passed", "teardown": "passed"}
     }
-    errors = []
+    passed = {rows[nodeid]["key"] for nodeid in passed_rows}
     actions: dict = {}
     examples: dict = {}
     expected: set = set()
+    inventory_rows: list[dict[str, Any]] = []
+    audit: dict[str, Any] = {
+        "source_root": "app",
+        "scanned_files": 0,
+        "calls": [],
+        "unregistered": [],
+    }
     try:
-        actions, examples = census(), cases()
+        registry = build_capability_registry()
+        actions, examples = census(registry), cases()
         errors.extend(fixture_errors(actions, examples))
         expected = expected_observations(actions, examples)
         errors.extend(coverage_errors(expected, passed))
+        inventory_rows = inventory(actions, registry)
+        audit = invocation_audit(registry=registry)
+        if audit["unregistered"]:
+            errors.append(
+                "Unregistered capability calls: "
+                + ", ".join(
+                    f"{call['file']}:{call['line']} {call['action']}"
+                    for call in audit["unregistered"]
+                )
+            )
     except Exception as exc:
         # Avoid leaking fixture/dependency exception messages into public evidence.
-        errors.append(
-            f"Contract inventory could not be evaluated: {type(exc).__name__}"
-        )
+        message = str(exc)
+        if message.startswith("Capability invocation source is not parseable: "):
+            errors.append(message)
+        else:
+            errors.append(
+                f"Contract inventory could not be evaluated: {type(exc).__name__}"
+            )
     duplicate_counts = Counter(row["key"] for row in rows.values())
     if any(count > 1 for count in duplicate_counts.values()):
         errors.append("Duplicate action/scenario execution markers")
+
+    def row_status(nodeid: str, row: dict[str, Any]) -> str:
+        if nodeid in passed_rows:
+            return "passed"
+        stages = row.get("stages", {})
+        if any(outcome == "failed" for outcome in stages.values()):
+            return "failed"
+        if row.get("xfail"):
+            return "xfail"
+        if any(outcome == "skipped" for outcome in stages.values()):
+            return "skipped"
+        return "not_observed"
+
+    test_mapping = []
+    failure_reasons = []
+    for nodeid, row in sorted(rows.items()):
+        key = row["key"]
+        status = row_status(nodeid, row)
+        test_mapping.append(
+            {
+                "nodeid": nodeid,
+                "action": key[0],
+                "version": key[1],
+                "scenario": key[2],
+                "status": status,
+                "observed": row.get("observed") == key,
+                "stages": dict(row["stages"]),
+                "failures": list(row.get("failures", [])),
+            }
+        )
+        if status != "passed":
+            failure_reasons.append(
+                {
+                    "action": key[0],
+                    "version": key[1],
+                    "scenario": key[2],
+                    "nodeid": nodeid,
+                    "status": status,
+                    "failures": list(row.get("failures", [])),
+                }
+            )
     dimensions: dict[str, Any] = {}
     for scenario in sorted({key[2].split(":")[0] for key in expected}):
         dimension_expected = {
@@ -103,12 +197,17 @@ def pytest_sessionfinish(session, exitstatus):
             "passed": len(dimension_expected & passed),
         }
     payload = {
-        "version": "v1",
+        "version": "v2",
         "gate": "fail" if errors or exitstatus else "pass",
         "actions": len(actions),
         "side_effect_actions": sum(d.is_side_effect for d in actions.values()),
         "read_actions": sum(not d.is_side_effect for d in actions.values()),
         "fixtures": len(examples),
+        "inventory": inventory_rows,
+        "test_mapping": test_mapping,
+        "failure_reasons": failure_reasons,
+        "unregistered_calls": audit["unregistered"],
+        "invocation_audit": audit,
         "expected": len(expected),
         "passed": len(expected & passed),
         "missing": [list(key) for key in sorted(expected - passed)],

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
+from pathlib import Path
+import re
 from typing import Any
 
 from app.capabilities.factory import build_capability_registry
@@ -13,6 +16,27 @@ from tests.capabilities.contracts.model import Case
 
 Key = tuple[str, str]
 Observation = tuple[str, str, str]
+BACKEND_ROOT = Path(__file__).resolve().parents[3]
+APP_ROOT = BACKEND_ROOT / "app"
+EXECUTE_METHODS = frozenset({"execute", "_execute_capability"})
+ACTION_NAME = re.compile(r"^[a-z][a-z0-9_]*$")
+DATABASE_RECEIVERS = frozenset(
+    {"db", "session", "connection", "cursor", "engine", "conn"}
+)
+
+
+def _receiver_label(node: ast.AST) -> str:
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    if isinstance(node, ast.Name):
+        return node.id
+    return "<expression>"
+
+
+def _is_database_receiver(receiver: str) -> bool:
+    return receiver.lower().lstrip("_") in DATABASE_RECEIVERS
+
+
 SCENARIOS = ("schema", "success", "error", "timeout", "isolation", "serialization")
 ANIME_SCENARIOS = (
     "anime_error",
@@ -144,6 +168,151 @@ def fingerprint(descriptor: ActionDescriptor) -> str:
     contract.pop("description")
     encoded = json.dumps(contract, sort_keys=True, allow_nan=False).encode()
     return hashlib.sha256(encoded).hexdigest()
+
+
+def inventory(
+    actions: dict[Key, ActionDescriptor], registry: CapabilityRegistry
+) -> list[dict[str, Any]]:
+    """Return the compact, deterministic Registry inventory for CI evidence."""
+    rows = []
+    for key, descriptor in sorted(actions.items()):
+        owner = registry.find_action(key[0])
+        rows.append(
+            {
+                "public_name": key[0],
+                "name": descriptor.name,
+                "version": key[1],
+                "owner": owner[0].name if owner is not None else None,
+                "side_effect": descriptor.is_side_effect,
+                "requires_auth": descriptor.requires_auth,
+                "approval_required": descriptor.approval_required,
+                "idempotency_mode": descriptor.idempotency_mode,
+                "timeout_seconds": descriptor.timeout_seconds,
+                "retry_class": descriptor.retry_class,
+                "risk_level": descriptor.risk_level,
+                "max_payload_bytes": descriptor.max_payload_bytes,
+                "fingerprint": fingerprint(descriptor),
+            }
+        )
+    return rows
+
+
+def _literal_action(
+    node: ast.AST, kind: str, *, file: str, method: str, receiver: str
+) -> dict[str, Any] | None:
+    if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+        return None
+    if not ACTION_NAME.fullmatch(node.value):
+        # SQL text and other non-action literals are not capability names.
+        return None
+    return {
+        "file": file,
+        "line": node.lineno,
+        "column": node.col_offset,
+        "receiver": receiver,
+        "method": method,
+        "kind": kind,
+        "action": node.value,
+    }
+
+
+def invocation_audit(
+    source_root: Path | None = None,
+    *,
+    registry: CapabilityRegistry | None = None,
+    display_root: Path | None = None,
+) -> dict[str, Any]:
+    """Find literal direct capability calls that bypass the public Registry.
+
+    Identifier-shaped literal action names passed positionally or as ``action=``
+    to ``*.execute(...)`` and ``._execute_capability(..., public_action=...)``
+    are compared with the production Registry regardless of the receiver name,
+    so a renamed handle cannot hide a call. ``execute`` literals must be
+    internal action names and ``public_action`` literals must be public names.
+    Exact database/session/connection/cursor/engine/conn receivers and SQL text
+    are excluded; other expressions are reported using a sanitized receiver
+    label, never the raw source expression.
+    """
+    canonical = registry if registry is not None else build_capability_registry()
+    root = Path(source_root) if source_root is not None else APP_ROOT
+    base = Path(display_root) if display_root is not None else BACKEND_ROOT
+    internal_names = {descriptor.name for descriptor in canonical.list_actions()}
+    public_names = {
+        descriptor.public_name or descriptor.name
+        for descriptor in canonical.list_actions()
+    }
+    files = sorted(
+        path for path in root.rglob("*.py") if "__pycache__" not in path.parts
+    )
+    calls: list[dict[str, Any]] = []
+    for path in files:
+        try:
+            file = path.relative_to(base).as_posix()
+        except ValueError:
+            file = path.as_posix()
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (OSError, SyntaxError, UnicodeDecodeError) as exc:
+            raise ValueError(
+                f"Capability invocation source is not parseable: {file}"
+            ) from exc
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            function = node.func
+            if not isinstance(function, ast.Attribute):
+                continue
+            method = function.attr
+            if method not in EXECUTE_METHODS:
+                continue
+            receiver = _receiver_label(function.value)
+            if method == "execute" and _is_database_receiver(receiver):
+                continue
+            action_nodes = list(node.args[:1])
+            action_nodes.extend(
+                keyword.value for keyword in node.keywords if keyword.arg == "action"
+            )
+            found = [
+                _literal_action(
+                    action_node,
+                    "action",
+                    file=file,
+                    method=method,
+                    receiver=receiver,
+                )
+                for action_node in action_nodes
+            ]
+            if method == "_execute_capability":
+                found.extend(
+                    _literal_action(
+                        keyword.value,
+                        "public_action",
+                        file=file,
+                        method=method,
+                        receiver=receiver,
+                    )
+                    for keyword in node.keywords
+                    if keyword.arg == "public_action"
+                )
+            for call in found:
+                if call is None:
+                    continue
+                valid_names = (
+                    internal_names if call["kind"] == "action" else public_names
+                )
+                calls.append({**call, "registered": call["action"] in valid_names})
+    calls.sort(key=lambda call: (call["file"], call["line"], call["column"]))
+    unregistered = [call for call in calls if not call["registered"]]
+    try:
+        source = root.relative_to(base).as_posix()
+    except ValueError:
+        source = root.as_posix()
+    return {
+        "source_root": source,
+        "scanned_files": len(files),
+        "calls": calls,
+        "unregistered": unregistered,
+    }
 
 
 def _has_required(schema: dict) -> bool:

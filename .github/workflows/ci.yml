@@ -51,15 +51,28 @@ jobs:
 
       - name: Run backend tests
         run: |
-          mkdir -p .runtime/junit
-          uv run --locked pytest --junitxml=.runtime/junit/software.xml
+          mkdir -p .runtime/junit .runtime/capability-contracts
+          uv run --locked pytest -p tests.capabilities.contracts.plugin --capability-contract-gate --capability-contract-report=.runtime/capability-contracts/software-full.json --junitxml=.runtime/junit/software.xml
+
+      - name: Summarize Capability CI gate
+        if: always()
+        run: |
+          uv run --locked python scripts/capability_ci_summary.py \
+            --report .runtime/capability-contracts/software-full.json \
+            --junit .runtime/junit/software.xml \
+            --output .runtime/capability-ci/software-summary.json \
+            --markdown .runtime/capability-ci/software-summary.md \
+            --step-summary "$GITHUB_STEP_SUMMARY"
 
       - name: Upload backend test report
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: backend-software-junit
-          path: backend/.runtime/junit/software.xml
+          path: |
+            backend/.runtime/junit/software.xml
+            backend/.runtime/capability-contracts/software-full.json
+            backend/.runtime/capability-ci/
           if-no-files-found: warn
 
   postgres:
@@ -224,6 +237,16 @@ jobs:
           mkdir -p .runtime/junit
           uv run --locked pytest -p tests.capabilities.contracts.plugin tests/harness tests/acceptance tests/capabilities tests/trace tests/api tests/evaluation -q --capability-contract-gate --capability-contract-report=.runtime/capability-contracts/coverage.json --junitxml=.runtime/junit/harness.xml
 
+      - name: Summarize Capability CI gate
+        if: always()
+        run: |
+          uv run --locked python scripts/capability_ci_summary.py \
+            --report .runtime/capability-contracts/coverage.json \
+            --junit .runtime/junit/harness.xml \
+            --output .runtime/capability-ci/harness-summary.json \
+            --markdown .runtime/capability-ci/harness-summary.md \
+            --step-summary "$GITHUB_STEP_SUMMARY"
+
       - name: Evaluate the shared primary entrypoint
         run: uv run --locked python -m app.evaluation.runner --config evals/config/entrypoint.yaml
 
@@ -239,6 +262,7 @@ jobs:
             backend/.runtime/junit/harness.xml
             backend/.runtime/evaluation/entrypoint.json
             backend/.runtime/capability-contracts/
+            backend/.runtime/capability-ci/
           retention-days: 14
           if-no-files-found: warn
 

@@ -19,6 +19,44 @@ deselected scenarios, skips, and xfails cannot satisfy it. A focused local run
 can omit the gate option. Evidence is uploaded by the Harness job even on failure.
 Remote branch protection remains a repository administrator setting.
 
+## Full CI summary gate
+
+The report is schema version `v2`. In addition to the coverage arithmetic it
+contains the compact production Registry inventory, the executed
+action/scenario-to-test mapping, per-scenario failure reasons (stage and
+exception type, never raw messages), and a static audit of literal direct
+capability calls in `backend/app`.
+
+Both the full `software` job and the focused `harness` job enable the plugin and
+run the following from `backend/` (the CI working directory, or after
+`cd backend`):
+
+```sh
+uv run --locked python scripts/capability_ci_summary.py \
+  --report .runtime/capability-contracts/<gate-report>.json \
+  --junit .runtime/junit/<job>.xml \
+  --output .runtime/capability-ci/<job>-summary.json \
+  --markdown .runtime/capability-ci/<job>-summary.md \
+  --step-summary "$GITHUB_STEP_SUMMARY"
+```
+
+The summary step runs with `if: always()`, so a collection failure or missing
+report still fails the job instead of silently skipping the gate. It exits
+non-zero when any required observation is missing, a contract test fails, a
+literal direct call names an unregistered action, a contract marker names an
+unregistered action/version, JUnit reports failing tests, or the report is
+inconsistent. `repository-quality` continues to require both jobs, so these
+checks block a pull request through the aggregate job.
+
+The static audit resolves identifier-shaped literal action names passed
+positionally or as `action=` to `*.execute(...)` except on exact
+database/session/connection/cursor/engine/conn handles, plus
+`action`/`public_action` literals in
+`._execute_capability(..., public_action=...)`. `execute` literals must be
+internal action names and `public_action` literals must be public names. SQL
+text with spaces and dynamic action variables are not guessed; the Dispatcher
+remains the runtime boundary for those.
+
 To add or change an action:
 
 1. Add a literal `(public_name, version)` case with valid arguments, a nonempty
