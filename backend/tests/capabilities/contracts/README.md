@@ -172,3 +172,20 @@ Process kill/restore, HTTP/JWT behavior, and SQL semantics are certified
 separately by `tests/acceptance/test_schedule_write_kill_restore.py`,
 `tests/api/test_schedule_write_certification.py`, and
 `tests/capabilities/test_schedule_write_semantics.py`.
+
+Media write certification adds nine mandatory scenarios to each public action
+owned by `media` whose production descriptor has `is_side_effect == true`:
+`media_write_error`, `media_write_timeout`, `media_write_isolation`,
+`media_write_serialization`, `media_write_authorization`,
+`media_write_dispatcher`, `media_write_approval`,
+`media_write_idempotency`, and `media_write_recovery`. The current Registry has
+five Media write actions, so this matrix requires 45 additional observations;
+the six Media read scenarios remain separate and unchanged.
+`tests/capabilities/contracts/test_media_write_handlers.py` exercises the
+registered write handlers through the shared Runtime Dispatcher. Omitting the
+handler file, filtering its timeout or recovery scenario, or skipping a required
+observation fails the same execution gate. HTTP/JWT behavior and service/SQL
+semantics are certified separately by
+`tests/api/test_media_write_certification.py`,
+`tests/capabilities/test_media_write_semantics.py`, and
+`tests/services/test_qb_service.py`.

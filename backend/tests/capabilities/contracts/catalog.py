@@ -91,6 +91,17 @@ SCHEDULE_WRITE_SCENARIOS = (
     "schedule_write_idempotency",
     "schedule_write_recovery",
 )
+MEDIA_WRITE_SCENARIOS = (
+    "media_write_error",
+    "media_write_timeout",
+    "media_write_isolation",
+    "media_write_serialization",
+    "media_write_authorization",
+    "media_write_dispatcher",
+    "media_write_approval",
+    "media_write_idempotency",
+    "media_write_recovery",
+)
 
 
 def census(registry: CapabilityRegistry | None = None) -> dict[Key, ActionDescriptor]:
@@ -219,6 +230,10 @@ def expected_observations(
             and descriptor.is_side_effect
         ):
             expected.update((*key, scenario) for scenario in SCHEDULE_WRITE_SCENARIOS)
+        elif (
+            owner is not None and owner[0].name == "media" and descriptor.is_side_effect
+        ):
+            expected.update((*key, scenario) for scenario in MEDIA_WRITE_SCENARIOS)
         if key not in examples:
             continue  # fixture mismatch is a separate fatal diagnostic
         for path in required_paths(descriptor.input_schema, examples[key].arguments):

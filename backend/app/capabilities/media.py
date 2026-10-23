@@ -20,6 +20,12 @@ from app.capabilities.media_read_contracts import (
 )
 
 
+from app.capabilities.media_write_contracts import (
+    WRITE_ACTIONS,
+    WRITE_OUTPUT_SCHEMA,
+    write_input_schema,
+)
+
 logger = get_logger(__name__)
 
 
@@ -57,7 +63,7 @@ def _qb_access_allowed(user_id: int | None) -> bool:
     if (
         config is None
         or not config.ENABLE_QB_PROXY
-        or not isinstance(user_id, int)
+        or type(user_id) is not int
         or user_id <= 0
     ):
         return False
@@ -71,7 +77,7 @@ def _qb_access_allowed(user_id: int | None) -> bool:
         allowed = {int(token) for token in tokens}
     except ValueError:
         return False
-    return bool(allowed) and user_id in allowed
+    return bool(allowed) and all(value > 0 for value in allowed) and user_id in allowed
 
 
 def _provider_configured() -> bool:
@@ -243,6 +249,12 @@ class MediaCapability(BaseCapability):
                 output_schema=output_schema(action.name),
             )
             if action.name in READ_ACTIONS
+            else replace(
+                action,
+                input_schema=write_input_schema(action.input_schema),
+                output_schema=deepcopy(WRITE_OUTPUT_SCHEMA),
+            )
+            if action.name in WRITE_ACTIONS
             else action
             for action in actions
         ]
@@ -267,14 +279,19 @@ class MediaCapability(BaseCapability):
             return await self._execute_read(action, handler, kwargs)
         try:
             return await handler(**kwargs)
-        except ValueError as exc:
-            return CapabilityResult.fail(str(exc), error_type="invalid_args").to_dict()
-        except QBServiceError as exc:
+        except ValueError:
             return CapabilityResult.fail(
-                exc.message, error_type=exc.error_code, retryable=exc.retryable
+                "Invalid media arguments", error_type="invalid_args"
+            ).to_dict()
+        except QBServiceError as exc:
+            from app.services.qb_service import normalize_qb_read_error
+
+            safe = normalize_qb_read_error(exc)
+            return CapabilityResult.fail(
+                safe.message, error_type=safe.error_code, retryable=False
             ).to_dict()
         except Exception:
-            logger.exception("media_capability_failed", extra={"action": action})
+            logger.error("media_capability_failed", extra={"action": action})
             return CapabilityResult.fail(
                 "Media operation failed", error_type="internal"
             ).to_dict()
@@ -407,7 +424,7 @@ class MediaCapability(BaseCapability):
         kwargs: dict[str, Any], *, preserve_unconfigured: bool = False
     ) -> dict[str, Any] | None:
         user_id = kwargs.get("user_id")
-        if not isinstance(user_id, int):
+        if type(user_id) is not int or user_id <= 0:
             if preserve_unconfigured and not _provider_configured():
                 return CapabilityResult.fail(
                     "RSS management is not yet configured", error_type="not_configured"
@@ -428,7 +445,14 @@ class MediaCapability(BaseCapability):
     @staticmethod
     async def _run_write(operation: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
         result = await asyncio.to_thread(operation)
+        operation_result = _safe_operation_result(result)
+        if operation_result.get("status") != "succeeded":
+            return CapabilityResult.fail(
+                "The operation state requires manual verification",
+                error_type="attention_required",
+                retryable=False,
+            ).to_dict()
         return CapabilityResult.ok(
-            operation=_safe_operation_result(result),
+            operation=operation_result,
             idempotency_key=kwargs.get("idempotency_key"),
         ).to_dict()

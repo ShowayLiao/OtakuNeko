@@ -59,6 +59,7 @@ def _safe_qb_operation(operation: Callable[[], Any]) -> dict[str, Any]:
             return result
         return {"status": "succeeded", "message": "Operation completed."}
     except QBServiceError as error:
+        error = normalize_qb_read_error(error)
         return {
             "status": "failed",
             "error_code": error.error_code,

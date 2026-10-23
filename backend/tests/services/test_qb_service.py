@@ -7,7 +7,7 @@ from sqlmodel import SQLModel
 
 from app.harness.persistence.idempotency import SqlIdempotencyStore
 from app.schemas.rss import RssRule
-from app.services.qb_service import QBService, QBServiceError
+from app.services.qb_service import QBService
 
 
 class FakeQBClient:
@@ -87,7 +87,7 @@ def test_upsert_verifies_new_resource_after_remove_and_add() -> None:
 
 def test_upsert_add_failure_attempts_one_compensation_and_records_attention() -> None:
     client = FakeQBClient()
-    client.add_failures = [RuntimeError("downstream add leaked secret")]
+    client.add_failures = [qbittorrentapi.HTTP4XXError("downstream add leaked secret")]
 
     result = _service(client).upsert_rss_feed(
         url="https://new.example/feed", name="feed"
@@ -112,7 +112,7 @@ def test_upsert_add_failure_attempts_one_compensation_and_records_attention() ->
 def test_upsert_compensation_failure_is_queryable_and_not_retried() -> None:
     client = FakeQBClient()
     client.add_failures = [
-        RuntimeError("new add failed"),
+        qbittorrentapi.HTTP4XXError("new add rejected"),
         RuntimeError("old add failed"),
     ]
 
@@ -126,33 +126,32 @@ def test_upsert_compensation_failure_is_queryable_and_not_retried() -> None:
     assert len([name for name, _ in client.calls if name == "rss_add_feed"]) == 2
 
 
-def test_only_connection_errors_are_retryable() -> None:
-    class ConnectionFailure(qbittorrentapi.APIConnectionError):
-        pass
-
+def test_post_write_connection_errors_require_attention() -> None:
     client = FakeQBClient()
-    client.add_failures = [ConnectionFailure("connection detail")]
-
-    with pytest.raises(QBServiceError) as error:
-        _service(client).add_rss_feed(url="https://secret.example/feed", name="feed")
-
-    assert error.value.error_code == "qb_connection_error"
-    assert error.value.retryable is True
-    assert "connection detail" not in error.value.message
+    client.add_failures = [qbittorrentapi.APIConnectionError("connection detail")]
+    result = _service(client).add_rss_feed(
+        url="https://secret.example/feed", name="feed"
+    )
+    assert result["status"] == "attention_required"
+    assert result["error_code"] == "operation_state_unknown"
+    assert result["retryable"] is False
+    assert "connection detail" not in str(result)
+    assert len(client.calls) == 1
 
 
 def test_unknown_qb_error_is_safe_and_not_retryable(caplog) -> None:
     client = FakeQBClient()
     client.add_failures = [RuntimeError("raw provider payload")]
-
-    with pytest.raises(QBServiceError) as error:
-        _service(client).add_rss_feed(url="https://secret.example/feed", name="feed")
-
-    assert error.value.error_code == "qb_operation_failed"
-    assert error.value.retryable is False
-    assert "raw provider payload" not in error.value.message
+    result = _service(client).add_rss_feed(
+        url="https://secret.example/feed", name="feed"
+    )
+    assert result["status"] == "attention_required"
+    assert result["error_code"] == "operation_state_unknown"
+    assert result["retryable"] is False
+    assert "raw provider payload" not in str(result)
     assert "https://secret.example/feed" not in caplog.text
     assert "raw provider payload" not in caplog.text
+    assert len(client.calls) == 1
 
 
 def test_rule_payload_and_url_are_not_logged(caplog) -> None:

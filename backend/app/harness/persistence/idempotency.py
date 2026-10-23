@@ -57,6 +57,16 @@ class SqlIdempotencyStore:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
+    async def lookup_existing(
+        self, scope: str, key: str, payload_hash: str
+    ) -> IdempotencyExecution | None:
+        """Read an older namespace without reserving or running an operation."""
+        run_id = f"idem-{_canonical_hash({'scope': scope, 'key': key})}"
+        existing = await self._session.get(AgentRun, run_id)
+        if existing is None:
+            return None
+        return await self._existing_result(existing, payload_hash)
+
     async def execute_once(
         self,
         scope: str,
@@ -186,6 +196,24 @@ class InMemoryIdempotencyStore:
     def __init__(self) -> None:
         self._records: dict[tuple[str, str], tuple[str, dict[str, Any]]] = {}
         self._locks: dict[tuple[str, str], asyncio.Lock] = {}
+
+    async def lookup_existing(
+        self, scope: str, key: str, payload_hash: str
+    ) -> IdempotencyExecution | None:
+        existing = self._records.get((scope, key))
+        if existing is None:
+            return None
+        previous_hash, result = existing
+        if previous_hash != payload_hash:
+            return IdempotencyExecution(
+                status="conflict",
+                result={
+                    "status": "conflict",
+                    "error_code": "idempotency_conflict",
+                    "retryable": False,
+                },
+            )
+        return IdempotencyExecution(status="replayed", result=result)
 
     async def execute_once(
         self,

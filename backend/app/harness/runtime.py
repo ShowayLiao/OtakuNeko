@@ -245,6 +245,23 @@ def _safe_approval_arguments(value: Any, *, key: str = "", depth: int = 0) -> An
             list_items.append("[TRUNCATED]")
         return list_items
     if isinstance(value, str):
+        # Approval is a public projection, never a transport for URL credentials.
+        if "://" in value:
+            from urllib.parse import parse_qsl, urlsplit
+
+            try:
+                parts = urlsplit(value)
+                fields = parse_qsl(parts.query) + parse_qsl(parts.fragment)
+                if "@" in parts.netloc or any(
+                    any(
+                        part in name.lower()
+                        for part in (*_SENSITIVE_ARGUMENT_PARTS, "passkey", "auth")
+                    )
+                    for name, _ in fields
+                ):
+                    return "[REDACTED URL]"
+            except ValueError:
+                return "[REDACTED URL]"
         return value[:500] + ("..." if len(value) > 500 else "")
     if value is None or isinstance(value, (bool, int, float)):
         return value

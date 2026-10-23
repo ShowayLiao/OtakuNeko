@@ -4,7 +4,7 @@ FINGERPRINTS = {
     (
         "add_rss_feed",
         "v1",
-    ): "8985fb7c64c5a43b486001071b417df64693cec9a343832e6ae12318dc24a120",
+    ): "49cdf2626cdc2020204468f8ea9b8cf97918af2d2e1e8e1ffb61a5586aa050c1",
     (
         "analyse_taste",
         "v1",
@@ -124,11 +124,11 @@ FINGERPRINTS = {
     (
         "remove_rss_feed",
         "v1",
-    ): "b85377bd87717bb05d96d02471ad02421d8c2ec32a4dd7e437a1e10f70e4513c",
+    ): "bba549c62d0fcb03a3893d366382b2f91eedee2d248e1b23b6f6256ccea878e7",
     (
         "remove_rss_rule",
         "v1",
-    ): "79ad97e220840e6d98b92fe96ff2c7fb7ad4ea088674fa00a4d476c5975c5a8f",
+    ): "7ab6cf533b742527bfec8886189deb60e2e2a2154e260dfdbbd487e20bbfa505",
     (
         "search_anime_advanced",
         "v1",
@@ -152,7 +152,7 @@ FINGERPRINTS = {
     (
         "set_rss_rule",
         "v1",
-    ): "907b77b51b82f68f3644533743f8d094df22526b569332703c8192273b07a934",
+    ): "9a0eecd4ccf96b30bce6a0c7b9d62bd5a8a146dd5c48e5be88c076fc2e313636",
     (
         "sync_bangumi_collections",
         "v1",
@@ -180,7 +180,7 @@ FINGERPRINTS = {
     (
         "upsert_rss_feed",
         "v1",
-    ): "0cc2df8dc85fbc28cc4f903d14bc38c24dee575dda8d47de4760a0c9bca6605c",
+    ): "1864249f16ca9b51e156af6e174b3aab97ce1651ee0781c5c006cb6d9d26e1d6",
     (
         "upsert_schedule",
         "v1",

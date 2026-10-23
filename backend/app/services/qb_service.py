@@ -119,7 +119,16 @@ class QBService:
             logger.info("qB RSS add completed")
             return {"status": "succeeded", "message": "RSS feed added."}
         except Exception as error:
-            self._raise_safe(error, "rss add")
+            safe = normalize_qb_read_error(error)
+            logger.error("qB write failed: rss add")
+            if safe.error_code in {"qb_authentication_failed", "qb_request_rejected"}:
+                raise safe from error
+            return self._attention_result(
+                error_code="operation_state_unknown",
+                message="The operation state requires manual verification.",
+                old_resource_id="",
+                retryable=False,
+            )
         raise AssertionError("unreachable")
 
     def upsert_rss_feed(self, url: str, name: Optional[str]) -> dict[str, Any]:
@@ -142,7 +151,18 @@ class QBService:
                 try:
                     client.rss_remove_item(item_path=name)
                 except Exception as error:
-                    self._raise_safe(error, "rss upsert remove")
+                    safe = normalize_qb_read_error(error)
+                    if safe.error_code in {
+                        "qb_authentication_failed",
+                        "qb_request_rejected",
+                    }:
+                        raise safe from error
+                    return self._attention_result(
+                        error_code="operation_state_unknown",
+                        message="The RSS update needs manual verification.",
+                        old_resource_id=old_resource_id,
+                        retryable=False,
+                    )
 
             try:
                 client.rss_add_feed(url=url, item_path=name)
@@ -157,12 +177,12 @@ class QBService:
 
             try:
                 verified = client.rss_items(include_feed_data=True)
-            except Exception as error:
+            except Exception:
                 return self._attention_result(
                     error_code="qb_upsert_verify_failed",
                     message="The RSS update needs manual verification.",
                     old_resource_id=old_resource_id,
-                    retryable=self._classify(error).retryable,
+                    retryable=False,
                 )
             verified_feed = verified.get(name) if isinstance(verified, dict) else None
             if self._field(verified_feed, "url") != url:
@@ -184,7 +204,16 @@ class QBService:
             self.get_client().rss_remove_item(item_path=item_path)
             return {"status": "succeeded", "message": "RSS item removed."}
         except Exception as error:
-            self._raise_safe(error, "rss remove")
+            safe = normalize_qb_read_error(error)
+            logger.error("qB write failed: rss remove")
+            if safe.error_code in {"qb_authentication_failed", "qb_request_rejected"}:
+                raise safe from error
+            return self._attention_result(
+                error_code="operation_state_unknown",
+                message="The operation state requires manual verification.",
+                old_resource_id="",
+                retryable=False,
+            )
         raise AssertionError("unreachable")
 
     def set_rss_rule(self, rule_name: str, rule: RssRule) -> dict[str, Any]:
@@ -196,7 +225,16 @@ class QBService:
             )
             return {"status": "succeeded", "message": "RSS rule set."}
         except Exception as error:
-            self._raise_safe(error, "rss set rule")
+            safe = normalize_qb_read_error(error)
+            logger.error("qB write failed: rss set rule")
+            if safe.error_code in {"qb_authentication_failed", "qb_request_rejected"}:
+                raise safe from error
+            return self._attention_result(
+                error_code="operation_state_unknown",
+                message="The operation state requires manual verification.",
+                old_resource_id="",
+                retryable=False,
+            )
         raise AssertionError("unreachable")
 
     def remove_rss_rule(self, rule_name: str) -> dict[str, Any]:
@@ -204,7 +242,16 @@ class QBService:
             self.get_client().rss_remove_rule(rule_name=rule_name)
             return {"status": "succeeded", "message": "RSS rule removed."}
         except Exception as error:
-            self._raise_safe(error, "rss remove rule")
+            safe = normalize_qb_read_error(error)
+            logger.error("qB write failed: rss remove rule")
+            if safe.error_code in {"qb_authentication_failed", "qb_request_rejected"}:
+                raise safe from error
+            return self._attention_result(
+                error_code="operation_state_unknown",
+                message="The operation state requires manual verification.",
+                old_resource_id="",
+                retryable=False,
+            )
         raise AssertionError("unreachable")
 
     def get_rss_rules(self) -> RssRulesResponse:
@@ -227,7 +274,17 @@ class QBService:
         old_resource_id: str,
         error: Exception,
     ) -> dict[str, Any]:
-        classified = self._classify(error)
+        classified = normalize_qb_read_error(error)
+        if classified.error_code not in {
+            "qb_authentication_failed",
+            "qb_request_rejected",
+        }:
+            return self._attention_result(
+                error_code="operation_state_unknown",
+                message="The RSS update needs manual verification.",
+                old_resource_id=old_resource_id,
+                retryable=False,
+            )
         compensation_status = "not_attempted"
         if old_url:
             try:

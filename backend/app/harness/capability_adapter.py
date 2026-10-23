@@ -129,7 +129,7 @@ class CapabilityAdapter:
                 "result": result,
                 **(
                     {"capability_action": action}
-                    if self._capability.name in {"collections", "schedule"}
+                    if self._capability.name in {"collections", "schedule", "media"}
                     else {}
                 ),
                 **(
@@ -148,14 +148,29 @@ class CapabilityAdapter:
             resource_key = self._resource_key(action, public)
             scope = f"{principal.principal_id}:{self._capability.name}:{resource_key}"
             try:
-                execution = await self._idempotency_store.execute_once(
-                    scope,
-                    str(idempotency_key),
-                    _payload_hash(public),
-                    operation,
-                )
+                execution = None
+                if self._capability.name == "media":
+                    # Preserve historical reservations; never turn a scope privacy
+                    # migration into a second external write for the same key.
+                    lookup = getattr(self._idempotency_store, "lookup_existing", None)
+                    if lookup is None:
+                        return CapabilityResult.fail(
+                            "Legacy idempotency lookup required",
+                            error_type="attention_required",
+                        ).to_dict()
+                    execution = await lookup(
+                        scope, str(idempotency_key), _payload_hash(public)
+                    )
+                    scope = f"{principal.principal_id}:media:sha256:{hashlib.sha256(resource_key.encode()).hexdigest()}"
+                if execution is None:
+                    execution = await self._idempotency_store.execute_once(
+                        scope,
+                        str(idempotency_key),
+                        _payload_hash(public),
+                        operation,
+                    )
             except Exception:
-                if self._capability.name not in {"collections", "schedule"}:
+                if self._capability.name not in {"collections", "schedule", "media"}:
                     raise
                 db = self._trusted_args.get("db")
                 if isinstance(db, AsyncSession):
@@ -171,7 +186,7 @@ class CapabilityAdapter:
                     "The idempotency key was reused with different arguments",
                     error_type="idempotency_conflict",
                 ).to_dict()
-            if self._capability.name in {"collections", "schedule"}:
+            if self._capability.name in {"collections", "schedule", "media"}:
                 recorded_action = execution.result.get("capability_action")
                 if recorded_action is None:
                     # Legacy records cannot prove which action produced the
@@ -184,7 +199,7 @@ class CapabilityAdapter:
                     return CapabilityResult.fail(
                         "The idempotency key belongs to another schedule action"
                         if self._capability.name == "schedule"
-                        else "The idempotency key belongs to another collection action",
+                        else "The idempotency key belongs to another action",
                         error_type="idempotency_conflict",
                     ).to_dict()
             return self._unwrap_idempotency_result(execution.result)

@@ -177,6 +177,15 @@ def pytest_sessionfinish(session, exitstatus):
                 "outside this evidence. HTTP/API and service behavior are "
                 "outside this handler gate's evidence boundary."
             ),
+            "media_write_certification": (
+                "Real registered side-effect Media handlers through the shared "
+                "Runtime Dispatcher with external qB SDK/client calls isolated. "
+                "Nine media_write_* scenarios apply to each of the five current "
+                "Media write actions. REST/JWT and service/SQL behavior are "
+                "certified separately by tests/api/test_media_write_certification.py, "
+                "tests/capabilities/test_media_write_semantics.py, and "
+                "tests/services/test_qb_service.py."
+            ),
             "collections_write_certification": (
                 "Real registered side-effect Collection handlers through the "
                 "shared Runtime Dispatcher with only imported handler dependencies "
