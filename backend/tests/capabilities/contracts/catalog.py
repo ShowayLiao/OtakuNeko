@@ -62,6 +62,14 @@ SCHEDULE_READ_SCENARIOS = (
     "schedule_read_authorization",
     "schedule_read_dispatcher",
 )
+MEDIA_READ_SCENARIOS = (
+    "media_read_error",
+    "media_read_timeout",
+    "media_read_isolation",
+    "media_read_serialization",
+    "media_read_authorization",
+    "media_read_dispatcher",
+)
 COLLECTIONS_WRITE_SCENARIOS = (
     "collections_write_error",
     "collections_write_timeout",
@@ -191,6 +199,12 @@ def expected_observations(
             and not descriptor.is_side_effect
         ):
             expected.update((*key, scenario) for scenario in SCHEDULE_READ_SCENARIOS)
+        elif (
+            owner is not None
+            and owner[0].name == "media"
+            and not descriptor.is_side_effect
+        ):
+            expected.update((*key, scenario) for scenario in MEDIA_READ_SCENARIOS)
         elif (
             owner is not None
             and owner[0].name == "collections"

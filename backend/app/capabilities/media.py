@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
+from dataclasses import replace
 from typing import Any
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.core.logging import get_logger
 from app.schemas.rss import RssRule
+from app.capabilities.media_read_contracts import (
+    READ_ACTIONS,
+    INPUT_SCHEMA,
+    ReadOutputError,
+    output_schema,
+    safe_read_output,
+)
 
 
 logger = get_logger(__name__)
@@ -127,7 +136,7 @@ class MediaCapability(BaseCapability):
             "idempotency_mode": "required",
             "risk_level": "high",
         }
-        return [
+        actions = [
             ActionDescriptor(
                 name="library_status",
                 public_name="library_status",
@@ -227,6 +236,16 @@ class MediaCapability(BaseCapability):
                 **write_common,
             ),
         ]
+        return [
+            replace(
+                action,
+                input_schema=deepcopy(INPUT_SCHEMA),
+                output_schema=output_schema(action.name),
+            )
+            if action.name in READ_ACTIONS
+            else action
+            for action in actions
+        ]
 
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         handlers: dict[str, Any] = {
@@ -244,6 +263,8 @@ class MediaCapability(BaseCapability):
             return CapabilityResult.fail(
                 f"Unknown action: {action}", error_type="invalid_action"
             ).to_dict()
+        if action in READ_ACTIONS:
+            return await self._execute_read(action, handler, kwargs)
         try:
             return await handler(**kwargs)
         except ValueError as exc:
@@ -258,6 +279,55 @@ class MediaCapability(BaseCapability):
                 "Media operation failed", error_type="internal"
             ).to_dict()
 
+    async def _execute_read(
+        self, action: str, handler: Any, kwargs: dict[str, Any]
+    ) -> dict[str, Any]:
+        try:
+            result = await handler(**kwargs)
+            return safe_read_output(action, result) if result.get("success") else result
+        except QBServiceError as exc:
+            from app.services.qb_service import normalize_qb_read_error
+
+            error = normalize_qb_read_error(exc)
+            return CapabilityResult.fail(
+                error.message, error_type=error.error_code, retryable=error.retryable
+            ).to_dict()
+        except Exception as exc:
+            logger.error(
+                "media_read_failed",
+                extra={"action": action, "error_type": type(exc).__name__},
+            )
+            code = (
+                "invalid_output"
+                if isinstance(exc, ReadOutputError)
+                else ("invalid_args" if isinstance(exc, ValueError) else "internal")
+            )
+            return CapabilityResult.fail("Media read failed", error_type=code).to_dict()
+
+    @staticmethod
+    def _require_read_qb(kwargs: dict[str, Any]) -> dict[str, Any] | None:
+        user_id = kwargs.get("user_id")
+        if type(user_id) is not int or user_id <= 0:
+            return CapabilityResult.fail(
+                "Authentication is required", error_type="unauthorized"
+            ).to_dict()
+        config = _settings()
+        if not (
+            config and config.ENABLE_QB_PROXY and config.QB_HOST and config.QB_USERNAME
+        ):
+            return CapabilityResult.fail(
+                "RSS management is not configured", error_type="not_configured"
+            ).to_dict()
+        tokens = [token.strip() for token in config.QB_ALLOWED_USER_IDS.split(",")]
+        valid = all(
+            token.isascii() and token.isdecimal() and int(token) > 0 for token in tokens
+        )
+        if not valid or user_id not in {int(token) for token in tokens}:
+            return CapabilityResult.fail(
+                "qBittorrent access is not authorized", error_type="forbidden"
+            ).to_dict()
+        return None
+
     async def _library_status(self, **kwargs: Any) -> dict[str, Any]:
         configured = _provider_configured()
         return CapabilityResult.ok(
@@ -266,10 +336,7 @@ class MediaCapability(BaseCapability):
         ).to_dict()
 
     async def _list_rss_feeds(self, **kwargs: Any) -> dict[str, Any]:
-        user_id = kwargs.get("user_id")
-        if not isinstance(user_id, int):
-            return CapabilityResult.ok(feeds={}, configured=False).to_dict()
-        access = self._require_qb(kwargs)
+        access = self._require_read_qb(kwargs)
         if access is not None:
             return access
         result = await asyncio.to_thread(lambda: _new_qb().get_rss_items())
@@ -281,7 +348,7 @@ class MediaCapability(BaseCapability):
         ).to_dict()
 
     async def _list_rss_rules(self, **kwargs: Any) -> dict[str, Any]:
-        access = self._require_qb(kwargs)
+        access = self._require_read_qb(kwargs)
         if access is not None:
             return access
         return CapabilityResult.ok(

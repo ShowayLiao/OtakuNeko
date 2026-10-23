@@ -89,10 +89,10 @@ cover real HTTP/JWT requests or SQL behavior; those are separate evidence in
 `tests/api/test_profile_stats_certification.py` and
 `tests/capabilities/test_recommendation_stats_semantics.py`.
 
-Anime, Subjects, Recommendation, Stats, Collections read, and Schedule read
-owner-specific scenarios remain mandatory alongside the six base scenarios.
-Registry and fixture inventory determine the global expected and passed counts;
-no fixed total is used.
+Anime, Subjects, Recommendation, Stats, Collections read, Schedule read, and
+Media read owner-specific scenarios remain mandatory alongside the six base
+scenarios. Registry and fixture inventory determine the global expected and
+passed counts; no fixed total is used.
 
 Collections read certification adds six mandatory scenarios to each public
 action owned by `collections` only when its production descriptor has
@@ -121,6 +121,20 @@ or skipping a required observation fails the execution gate. HTTP/API and
 Service/SQL behavior are covered separately by
 `tests/api/test_schedule_contract.py` and
 `tests/capabilities/test_schedule_read_semantics.py`.
+
+Media read certification adds six mandatory scenarios to each public action
+owned by `media` only when its production descriptor has
+`is_side_effect == false`: `media_read_error`, `media_read_timeout`,
+`media_read_isolation`, `media_read_serialization`,
+`media_read_authorization`, and `media_read_dispatcher`. The frozen read
+allowlist is `library_status`, `list_rss_feeds`, and `list_rss_rules`; the five
+Media write actions are outside this matrix. `library_status` reports local
+configuration and does not test qB connectivity. The matrix covers the
+registered handlers through the shared Runtime Dispatcher, with external qB
+SDK/client access isolated. It does not certify REST routing, service/SQL
+behavior, live qB connectivity, or Media writes. Omitting
+`tests/capabilities/contracts/test_media_read_handlers.py`, filtering its
+timeout scenarios, or skipping a required observation fails the gate.
 
 Collections write certification adds eight mandatory scenarios to every public
 action owned by `collections` whose production descriptor has

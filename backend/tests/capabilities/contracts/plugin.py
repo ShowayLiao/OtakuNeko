@@ -168,6 +168,15 @@ def pytest_sessionfinish(session, exitstatus):
                 "tests/api/test_schedule_contract.py, and "
                 "tests/capabilities/test_schedule_read_semantics.py."
             ),
+            "media_read_certification": (
+                "Real registered non-side-effect Media handlers through the "
+                "shared Runtime Dispatcher with only the external qB SDK/client "
+                "boundary isolated. Six media_read_* scenarios apply to the "
+                "three frozen Media read actions; the local library status "
+                "check does not probe qB connectivity and Media writes are "
+                "outside this evidence. HTTP/API and service behavior are "
+                "outside this handler gate's evidence boundary."
+            ),
             "collections_write_certification": (
                 "Real registered side-effect Collection handlers through the "
                 "shared Runtime Dispatcher with only imported handler dependencies "

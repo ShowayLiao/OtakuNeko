@@ -45,10 +45,10 @@ class TestMediaCapability:
         assert "configured" in result
 
     @pytest.mark.asyncio
-    async def test_list_rss_feeds_returns_not_configured(self, capability):
+    async def test_list_rss_feeds_requires_a_principal(self, capability):
         result = await capability.execute("list_rss_feeds")
-        assert result["success"] is True
-        assert result.get("configured") is False
+        assert result["success"] is False
+        assert result.get("error_type") == "unauthorized"
 
     @pytest.mark.asyncio
     async def test_add_rss_feed_returns_not_configured(self, capability):
@@ -70,9 +70,18 @@ class TestMediaCapability:
 
         monkeypatch.setattr("app.capabilities.media.QBService", FakeQB)
         monkeypatch.setattr(
-            "app.capabilities.media._qb_access_allowed", lambda user_id: True
+            "app.capabilities.media._settings",
+            lambda: type(
+                "Settings",
+                (),
+                {
+                    "ENABLE_QB_PROXY": True,
+                    "QB_ALLOWED_USER_IDS": "1",
+                    "QB_HOST": "https://qb.synthetic.invalid",
+                    "QB_USERNAME": "synthetic",
+                },
+            )(),
         )
-        monkeypatch.setattr("app.capabilities.media._provider_configured", lambda: True)
 
         result = await capability.execute("list_rss_feeds", user_id=1)
 

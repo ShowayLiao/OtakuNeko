@@ -23,7 +23,7 @@ from app.schemas.rss import (
     SetRssRuleRequest,
 )
 from app.schemas.user import UserRead
-from app.services.qb_service import QBService, QBServiceError
+from app.services.qb_service import QBService, QBServiceError, normalize_qb_read_error
 
 
 router = APIRouter(prefix="/rss", tags=["RSS"])
@@ -116,6 +116,7 @@ async def _execute_write(
 
 
 def _read_error(error: QBServiceError) -> JSONResponse:
+    error = normalize_qb_read_error(error)
     return JSONResponse(
         content={
             "error_code": error.error_code,

@@ -33,6 +33,8 @@ SCHEDULE_READ_CONTRACT_TEST = (
     "tests/capabilities/contracts/test_schedule_read_handlers.py"
 )
 SCHEDULE_READ_CONTRACT_TESTS = (SCHEDULE_READ_CONTRACT_TEST,)
+MEDIA_READ_CONTRACT_TEST = "tests/capabilities/contracts/test_media_read_handlers.py"
+MEDIA_READ_CONTRACT_TESTS = (MEDIA_READ_CONTRACT_TEST,)
 COLLECTIONS_WRITE_CONTRACT_TEST = (
     "tests/capabilities/contracts/test_collections_write_handlers.py"
 )
@@ -48,6 +50,7 @@ CONTRACT_TEST_PATHS = (
     *PROFILE_STATS_CONTRACT_TESTS,
     *COLLECTIONS_READ_CONTRACT_TESTS,
     *SCHEDULE_READ_CONTRACT_TESTS,
+    *MEDIA_READ_CONTRACT_TESTS,
     *COLLECTIONS_WRITE_CONTRACT_TESTS,
     *SCHEDULE_WRITE_CONTRACT_TESTS,
 )
@@ -188,6 +191,53 @@ def test_schedule_read_actions_require_full_scenario_matrix():
     assert required_reads <= expected
     assert not (required_writes & expected)
     assert not (write_labels_on_reads & expected)
+
+
+def test_media_read_actions_require_full_scenario_matrix():
+    from tests.capabilities.contracts import catalog
+
+    required = (
+        "media_read_error",
+        "media_read_timeout",
+        "media_read_isolation",
+        "media_read_serialization",
+        "media_read_authorization",
+        "media_read_dispatcher",
+    )
+    assert getattr(catalog, "MEDIA_READ_SCENARIOS", None) == required
+
+    registry = catalog.build_capability_registry()
+    actions = catalog.census()
+    media_reads = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0]))
+        and owner[0].name == "media"
+        and not descriptor.is_side_effect
+    }
+    media_writes = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0]))
+        and owner[0].name == "media"
+        and descriptor.is_side_effect
+    }
+    frozen_reads = {
+        ("library_status", "v1"),
+        ("list_rss_feeds", "v1"),
+        ("list_rss_rules", "v1"),
+    }
+    expected = catalog.expected_observations(actions, catalog.cases())
+    required_reads = {(*key, scenario) for key in media_reads for scenario in required}
+    read_labels_on_writes = {
+        (*key, scenario) for key in media_writes for scenario in required
+    }
+
+    assert media_reads == frozen_reads
+    assert len(media_writes) == 5
+    assert len(required_reads) == 18
+    assert required_reads <= expected
+    assert not (read_labels_on_writes & expected)
 
 
 def test_collections_write_actions_require_full_scenario_matrix():
@@ -542,6 +592,7 @@ def test_gate_rejects_missing_timeout_scenario(tmp_path):
         "stats_timeout",
         "collections_read_timeout",
         "schedule_read_timeout",
+        "media_read_timeout",
         "collections_write_timeout",
         "schedule_write_timeout",
     }
@@ -586,6 +637,7 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
             *SCHEDULE_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
         ),
@@ -619,6 +671,7 @@ def test_gate_rejects_missing_subjects_certification(tmp_path):
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
             *SCHEDULE_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
         ),
@@ -653,6 +706,7 @@ def test_gate_rejects_missing_recommendation_stats_certification(tmp_path):
             *SUBJECTS_CONTRACT_TESTS,
             *SCHEDULE_READ_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
         ),
@@ -687,6 +741,7 @@ def test_gate_rejects_missing_collections_read_certification(tmp_path):
             *SUBJECTS_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
             *SCHEDULE_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
         ),
@@ -725,6 +780,7 @@ def test_gate_rejects_missing_schedule_read_certification(tmp_path):
             *SUBJECTS_CONTRACT_TESTS,
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
         ),
@@ -751,6 +807,35 @@ def test_gate_rejects_missing_schedule_read_certification(tmp_path):
         assert f"{name}@{version}/{scenario}" in output
 
 
+def test_gate_rejects_missing_media_read_certification(tmp_path):
+    contract_test_paths = tuple(
+        path for path in CONTRACT_TEST_PATHS if path not in MEDIA_READ_CONTRACT_TESTS
+    )
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_media_read_certification",
+        tmp_path,
+        contract_test_paths=contract_test_paths,
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    from tests.capabilities.contracts.catalog import MEDIA_READ_SCENARIOS
+
+    expected = _expected_observations()
+    expected_media_read = {row for row in expected if row[2] in MEDIA_READ_SCENARIOS}
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_media_read) == 18
+    assert missing == expected_media_read
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - 18
+    for name, version, scenario in sorted(expected_media_read):
+        assert f"{name}@{version}/{scenario}" in output
+
+
 def test_gate_rejects_missing_collections_write_certification(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "missing_collections_write_certification",
@@ -762,6 +847,7 @@ def test_gate_rejects_missing_collections_write_certification(tmp_path):
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
             *SCHEDULE_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
         ),
     )
@@ -800,6 +886,7 @@ def test_gate_rejects_missing_schedule_write_certification(tmp_path):
             *PROFILE_STATS_CONTRACT_TESTS,
             *COLLECTIONS_READ_CONTRACT_TESTS,
             *SCHEDULE_READ_CONTRACT_TESTS,
+            *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
         ),
     )
@@ -898,6 +985,51 @@ def test_gate_rejects_a_skipped_schedule_read_observation(tmp_path):
     assert target_path.is_file(), output
     skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
     assert skipped == ("list_schedules", "v1", "schedule_read_error")
+    assert skipped in _expected_observations()
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert missing == {skipped}
+    assert (coverage or {}).get("expected") == len(_expected_observations())
+    assert (coverage or {}).get("passed") == len(_expected_observations()) - 1
+    assert (evidence_dir / "probe-target.json").is_file()
+
+
+def test_gate_rejects_a_skipped_media_read_observation(tmp_path):
+    plugin_source = """
+        import json
+        import os
+        from pathlib import Path
+
+        import pytest
+
+
+        @pytest.hookimpl(tryfirst=True)
+        def pytest_collection_modifyitems(items):
+            target = ("library_status", "v1", "media_read_error")
+            for item in items:
+                marker = item.get_closest_marker("capability_contract")
+                if marker is not None and tuple(marker.args) == target:
+                    item.add_marker(pytest.mark.skip(reason="gate self-test skip"))
+                    Path(os.environ["CAPABILITY_GATE_PROBE_TARGET"]).write_text(
+                        json.dumps(list(marker.args)), encoding="utf-8"
+                    )
+                    return
+    """
+    completed, coverage, output, evidence_dir = _run_gate_probe(
+        "skipped_media_read_observation",
+        tmp_path,
+        plugin_source=plugin_source,
+    )
+    assert completed is not None, "gate subprocess exceeded its 120-second timeout"
+    target_path = tmp_path / "probe-target.json"
+    assert target_path.is_file(), output
+    skipped = tuple(json.loads(target_path.read_text(encoding="utf-8")))
+    assert skipped == ("library_status", "v1", "media_read_error")
     assert skipped in _expected_observations()
     _assert_gate_failure(
         completed,

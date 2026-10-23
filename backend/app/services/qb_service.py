@@ -30,6 +30,54 @@ class QBServiceError(RuntimeError):
         self.retryable = retryable
 
 
+def normalize_qb_read_error(error: Exception) -> QBServiceError:
+    """Classify read failures without exposing provider diagnostics.
+
+    HTTP response errors inherit APIConnectionError in the SDK, so classify
+    specific responses first. Initialization can wrap the SDK error once.
+    """
+    if isinstance(error, QBServiceError) and isinstance(error.__cause__, Exception):
+        error = error.__cause__
+    categories = (
+        (
+            qbittorrentapi.LoginFailed,
+            "qb_authentication_failed",
+            "qBittorrent authentication failed.",
+            401,
+            False,
+        ),
+        (
+            qbittorrentapi.HTTP4XXError,
+            "qb_request_rejected",
+            "qBittorrent rejected the request.",
+            502,
+            False,
+        ),
+        (
+            qbittorrentapi.HTTP5XXError,
+            "qb_server_error",
+            "qBittorrent returned a server error.",
+            502,
+            False,
+        ),
+        (
+            qbittorrentapi.APIConnectionError,
+            "qb_connection_error",
+            "qBittorrent is temporarily unavailable.",
+            503,
+            True,
+        ),
+    )
+    for error_type, code, message, status, retryable in categories:
+        if isinstance(error, error_type) or (
+            isinstance(error, QBServiceError) and error.error_code == code
+        ):
+            return QBServiceError(
+                code, message, status_code=status, retryable=retryable
+            )
+    return QBServiceError("qb_operation_failed", "qBittorrent operation failed.")
+
+
 class QBService:
     """qBittorrent RSS adapter with safe errors and bounded compensation."""
 
@@ -57,9 +105,12 @@ class QBService:
     def get_rss_items(self) -> RssItemsResponse:
         try:
             result = self.get_client().rss_items()
-            return RssItemsResponse(items=result if isinstance(result, dict) else {})
+            if not isinstance(result, dict):
+                raise ValueError("Invalid qB RSS items response")
+            return RssItemsResponse(items=result)
         except Exception as error:
-            self._raise_safe(error, "rss list")
+            logger.error("qB read failed: rss list")
+            raise normalize_qb_read_error(error) from error
         raise AssertionError("unreachable")
 
     def add_rss_feed(self, url: str, name: Optional[str] = None) -> dict[str, Any]:
@@ -159,9 +210,12 @@ class QBService:
     def get_rss_rules(self) -> RssRulesResponse:
         try:
             result = self.get_client().rss_rules()
-            return RssRulesResponse(rules=result if isinstance(result, dict) else {})
+            if not isinstance(result, dict):
+                raise ValueError("Invalid qB RSS rules response")
+            return RssRulesResponse(rules=result)
         except Exception as error:
-            self._raise_safe(error, "rss rules list")
+            logger.error("qB read failed: rss rules list")
+            raise normalize_qb_read_error(error) from error
         raise AssertionError("unreachable")
 
     def _compensate_after_add_failure(
