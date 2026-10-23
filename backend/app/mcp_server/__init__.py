@@ -14,6 +14,7 @@ import json
 import sys
 import time
 from typing import Any
+from uuid import uuid4
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
@@ -22,7 +23,7 @@ from app.core.logging import get_logger
 from app.harness.capability_adapter import CapabilityAdapter
 from app.harness.authority import strip_runtime_owned_fields
 from app.harness.authority import reject_runtime_owned_fields
-from app.harness.contracts import AgentDecision, ExecutionContext
+from app.harness.contracts import AgentDecision, ErrorCode, ExecutionContext
 from app.harness.dispatcher import Dispatcher
 from app.harness.persistence.idempotency import InMemoryIdempotencyStore
 from app.harness.policy import Approval, PolicyEngine
@@ -250,6 +251,10 @@ def _argument_error(value: Any, schema: dict[str, Any], path: str) -> str | None
     return None
 
 
+def _error_value(error_code: Any) -> str:
+    return error_code.value if isinstance(error_code, ErrorCode) else str(error_code)
+
+
 def _rpc_error(
     request_id: str | int | None,
     code: int,
@@ -306,7 +311,12 @@ class MCPServer:
             "mcp_tool_denied",
             extra={"tool_name": tool_name, "error_type": error_type},
         )
-        return {"success": False, "error": error, "error_type": error_type}
+        return {
+            "success": False,
+            "data": {},
+            "error": error,
+            "error_type": error_type,
+        }
 
     async def call_tool(
         self,
@@ -317,6 +327,12 @@ class MCPServer:
     ) -> dict[str, Any]:
         ctx = context or MCPContext()
         pol = policy or Policy()
+        if ctx.user_id is not None and (
+            type(ctx.user_id) is not int or ctx.user_id <= 0
+        ):
+            return self._denied(
+                tool_name, "Authentication context is invalid", "unauthorized"
+            )
         resolved = self._resolve_tool(tool_name)
         if resolved is None:
             return self._denied(tool_name, f"Unknown tool: {tool_name}", "not_found")
@@ -421,6 +437,7 @@ class MCPServer:
         context: MCPContext,
         policy: Policy,
     ) -> dict[str, Any]:
+        call_id = uuid4().hex
         async with trace_span(
             TraceEventType.MCP_CALL,
             tool_name,
@@ -439,8 +456,8 @@ class MCPServer:
                 async with self._dependency_scope(context) as dependencies:
                     execution_context = ExecutionContext(
                         principal_id=context.user_id,
-                        run_id=f"mcp:{tool_name}",
-                        trace_id=f"mcp:{tool_name}",
+                        run_id=f"mcp:{tool_name}:{call_id}",
+                        trace_id=f"mcp:{tool_name}:{call_id}",
                         capability_allowlist=frozenset(
                             {capability.name, action_name, tool_name}
                         ),
@@ -462,7 +479,7 @@ class MCPServer:
                             trusted_args=dependencies,
                         ),
                     )
-                    decision_id = f"mcp:{tool_name}:{policy.idempotency_key or 'read'}"
+                    decision_id = f"mcp:{tool_name}:{call_id}"
                     decision = AgentDecision(
                         decision_id=decision_id,
                         run_id=execution_context.run_id,
@@ -494,20 +511,25 @@ class MCPServer:
                     # explicit compatibility projection.  It is derived from
                     # the Dispatcher's normalized model projection and never
                     # exposes raw provider/capability output.
+                    succeeded = invocation.status == "succeeded"
                     result = {
-                        "success": invocation.status == "succeeded",
+                        "success": succeeded,
                         "data": invocation.model_output.get("safe_output", {}),
                     }
                     if invocation.error_code is not None:
-                        result["error_type"] = str(invocation.error_code)
+                        result["error_type"] = _error_value(invocation.error_code)
                         result["error"] = "Tool execution failed"
             except asyncio.TimeoutError:
                 if event is not None:
                     event.status = "timeout"
                     event.data["error_category"] = "timeout"
-                logger.warning("mcp_tool_timeout", extra={"tool_name": tool_name})
+                logger.warning(
+                    "mcp_tool_timeout",
+                    extra={"tool_name": tool_name, "call_id": call_id},
+                )
                 return {
                     "success": False,
+                    "data": {},
                     "error": "Tool execution timed out",
                     "error_type": "timeout",
                 }
@@ -515,10 +537,18 @@ class MCPServer:
                 if event is not None:
                     event.status = "failed"
                     event.data["error_category"] = type(exc).__name__
-                logger.exception("mcp_tool_failed", extra={"tool_name": tool_name})
+                logger.warning(
+                    "mcp_tool_failed",
+                    extra={
+                        "tool_name": tool_name,
+                        "call_id": call_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
                 return {
                     "success": False,
-                    "error": f"Tool execution failed: {type(exc).__name__}",
+                    "data": {},
+                    "error": "Tool execution failed",
                     "error_type": "internal",
                 }
             if event is not None and result.get("success") is False:
@@ -803,8 +833,14 @@ class StdioServer:
                 await self._write_response(response)
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("mcp_request_failed")
+        except Exception as exc:
+            logger.warning(
+                "mcp_request_failed",
+                extra={
+                    "request_id_present": request_id is not None,
+                    "error_type": type(exc).__name__,
+                },
+            )
             await self._write_response(_rpc_error(request_id, -32603, "Internal error"))
         finally:
             if request_id is not None:

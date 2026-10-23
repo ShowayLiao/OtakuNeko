@@ -1743,21 +1743,68 @@ class AgentRuntime:
                             f"{run_id}:specialist:{route.selected_agent}:"
                             f"{specialist_call_index}"
                         )
-                        decision = AgentDecision(
-                            decision_id=decision_id,
-                            run_id=run_id,
-                            action="invoke",
-                            capability=capability,
-                            capability_version="v1",
-                            arguments=arguments,
+                        argument_keys = (
+                            sorted(str(key) for key in arguments)
+                            if isinstance(arguments, dict)
+                            else []
                         )
+                        try:
+                            decision = AgentDecision(
+                                decision_id=decision_id,
+                                run_id=run_id,
+                                action="invoke",
+                                capability=capability,
+                                capability_version="v1",
+                                arguments=arguments,
+                            )
+                        except ValueError:
+                            # The specialist proposal is untrusted at this
+                            # boundary. Count it against the tool budget before
+                            # emitting the correlated denial so a misbehaving
+                            # specialist cannot loop unbounded.
+                            run_budget.check_deadline()
+                            run_budget.consume_tool_call()
+                            await specialist_event_queue.put(
+                                await emit(
+                                    "tool_call_start",
+                                    invocation_id=decision_id,
+                                    capability=capability,
+                                    capability_version="v1",
+                                    argument_keys=argument_keys,
+                                )
+                            )
+                            logger.warning(
+                                "specialist_invocation_rejected",
+                                extra={
+                                    "run_id": run_id,
+                                    "agent": route.selected_agent,
+                                    "error_type": "identity_spoofing",
+                                },
+                            )
+                            await specialist_event_queue.put(
+                                await emit(
+                                    "tool_call_end",
+                                    invocation_id=decision_id,
+                                    capability=capability,
+                                    status="denied",
+                                    error_code="identity_spoofing",
+                                    output={
+                                        "error_type": "identity_spoofing",
+                                        "message": "Invocation arguments were rejected",
+                                    },
+                                )
+                            )
+                            return {
+                                "success": False,
+                                "error_type": "identity_spoofing",
+                            }
                         await specialist_event_queue.put(
                             await emit(
                                 "tool_call_start",
-                                invocation_id=decision.decision_id,
-                                capability=decision.capability,
-                                capability_version=decision.capability_version,
-                                argument_keys=sorted(decision.arguments),
+                                invocation_id=decision_id,
+                                capability=capability,
+                                capability_version="v1",
+                                argument_keys=argument_keys,
                             )
                         )
                         await self._observe_checkpoint_controls(
