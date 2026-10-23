@@ -45,6 +45,8 @@ SCHEDULE_WRITE_CONTRACT_TEST = (
 SCHEDULE_WRITE_CONTRACT_TESTS = (SCHEDULE_WRITE_CONTRACT_TEST,)
 MEDIA_WRITE_CONTRACT_TEST = "tests/capabilities/contracts/test_media_write_handlers.py"
 MEDIA_WRITE_CONTRACT_TESTS = (MEDIA_WRITE_CONTRACT_TEST,)
+SYSTEM_CONTRACT_TEST = "tests/capabilities/contracts/test_system_handlers.py"
+SYSTEM_CONTRACT_TESTS = (SYSTEM_CONTRACT_TEST,)
 CONTRACT_TEST_PATHS = (
     *CORE_CONTRACT_TEST_PATHS,
     *ANIME_CONTRACT_TESTS,
@@ -56,6 +58,7 @@ CONTRACT_TEST_PATHS = (
     *COLLECTIONS_WRITE_CONTRACT_TESTS,
     *SCHEDULE_WRITE_CONTRACT_TESTS,
     *MEDIA_WRITE_CONTRACT_TESTS,
+    *SYSTEM_CONTRACT_TESTS,
 )
 GATE_PLUGIN = "tests.capabilities.contracts.plugin"
 
@@ -356,6 +359,38 @@ def test_media_write_actions_require_full_scenario_matrix():
     assert required_writes <= expected
 
 
+def test_system_action_requires_full_scenario_matrix():
+    from tests.capabilities.contracts import catalog
+
+    required = (
+        "system_error",
+        "system_timeout",
+        "system_isolation",
+        "system_serialization",
+        "system_authorization",
+        "system_dispatcher",
+    )
+    assert getattr(catalog, "SYSTEM_SCENARIOS", None) == required
+
+    registry = catalog.build_capability_registry()
+    actions = catalog.census()
+    system_actions = {
+        key
+        for key, descriptor in actions.items()
+        if (owner := registry.find_action(key[0])) and owner[0].name == "system"
+    }
+    expected = catalog.expected_observations(actions, catalog.cases())
+    required_system = {
+        (*key, scenario) for key in system_actions for scenario in required
+    }
+
+    assert system_actions == {("get_current_time", "v1")}
+    assert all(not actions[key].is_side_effect for key in system_actions)
+    assert all(not actions[key].requires_auth for key in system_actions)
+    assert len(required_system) == 6
+    assert required_system <= expected
+
+
 def test_recommendation_and_stats_actions_require_full_scenario_matrix():
     from tests.capabilities.contracts import catalog
 
@@ -634,6 +669,7 @@ def test_gate_rejects_missing_timeout_scenario(tmp_path):
         "media_write_timeout",
         "collections_write_timeout",
         "schedule_write_timeout",
+        "system_timeout",
     }
     assert missing == expected_timeouts
     assert (coverage or {}).get("passed") == len(expected) - len(expected_timeouts)
@@ -680,6 +716,7 @@ def test_gate_rejects_missing_anime_certification(tmp_path):
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
         pytest_args=ignored_anime_tests,
     )
@@ -715,6 +752,7 @@ def test_gate_rejects_missing_subjects_certification(tmp_path):
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -751,6 +789,7 @@ def test_gate_rejects_missing_recommendation_stats_certification(tmp_path):
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -787,6 +826,7 @@ def test_gate_rejects_missing_collections_read_certification(tmp_path):
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -827,6 +867,7 @@ def test_gate_rejects_missing_schedule_read_certification(tmp_path):
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -909,6 +950,35 @@ def test_gate_rejects_missing_media_write_certification(tmp_path):
         assert f"{name}@{version}/{scenario}" in output
 
 
+def test_gate_rejects_missing_system_certification(tmp_path):
+    contract_test_paths = tuple(
+        path for path in CONTRACT_TEST_PATHS if path not in SYSTEM_CONTRACT_TESTS
+    )
+    completed, coverage, output, _ = _run_gate_probe(
+        "missing_system_certification",
+        tmp_path,
+        contract_test_paths=contract_test_paths,
+    )
+    _assert_gate_failure(
+        completed,
+        coverage,
+        output,
+        "Missing executed contracts:",
+    )
+
+    from tests.capabilities.contracts.catalog import SYSTEM_SCENARIOS
+
+    expected = _expected_observations()
+    expected_system = {row for row in expected if row[2] in SYSTEM_SCENARIOS}
+    missing = {tuple(row) for row in (coverage or {}).get("missing", [])}
+    assert len(expected_system) == 6
+    assert missing == expected_system
+    assert (coverage or {}).get("expected") == len(expected)
+    assert (coverage or {}).get("passed") == len(expected) - 6
+    for name, version, scenario in sorted(expected_system):
+        assert f"{name}@{version}/{scenario}" in output
+
+
 def test_gate_rejects_missing_collections_write_certification(tmp_path):
     completed, coverage, output, _ = _run_gate_probe(
         "missing_collections_write_certification",
@@ -923,6 +993,7 @@ def test_gate_rejects_missing_collections_write_certification(tmp_path):
             *MEDIA_READ_CONTRACT_TESTS,
             *SCHEDULE_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(
@@ -963,6 +1034,7 @@ def test_gate_rejects_missing_schedule_write_certification(tmp_path):
             *MEDIA_READ_CONTRACT_TESTS,
             *COLLECTIONS_WRITE_CONTRACT_TESTS,
             *MEDIA_WRITE_CONTRACT_TESTS,
+            *SYSTEM_CONTRACT_TESTS,
         ),
     )
     _assert_gate_failure(

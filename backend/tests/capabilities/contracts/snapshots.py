@@ -76,7 +76,7 @@ FINGERPRINTS = {
     (
         "get_current_time",
         "v1",
-    ): "e28458c616d4a4d01b94a8a4db2156cc60abc1bfd403c7ae834871e0d7308deb",
+    ): "0ef3f250bc6cd855d06916b3d8d327fc97f47c40f2260c931119915bb4e3409e",
     (
         "get_subject",
         "v1",

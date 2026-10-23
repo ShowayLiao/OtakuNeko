@@ -102,6 +102,14 @@ MEDIA_WRITE_SCENARIOS = (
     "media_write_idempotency",
     "media_write_recovery",
 )
+SYSTEM_SCENARIOS = (
+    "system_error",
+    "system_timeout",
+    "system_isolation",
+    "system_serialization",
+    "system_authorization",
+    "system_dispatcher",
+)
 
 
 def census(registry: CapabilityRegistry | None = None) -> dict[Key, ActionDescriptor]:
@@ -234,6 +242,8 @@ def expected_observations(
             owner is not None and owner[0].name == "media" and descriptor.is_side_effect
         ):
             expected.update((*key, scenario) for scenario in MEDIA_WRITE_SCENARIOS)
+        elif owner is not None and owner[0].name == "system":
+            expected.update((*key, scenario) for scenario in SYSTEM_SCENARIOS)
         if key not in examples:
             continue  # fixture mismatch is a separate fatal diagnostic
         for path in required_paths(descriptor.input_schema, examples[key].arguments):

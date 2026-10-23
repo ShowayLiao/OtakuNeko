@@ -189,3 +189,20 @@ semantics are certified separately by
 `tests/api/test_media_write_certification.py`,
 `tests/capabilities/test_media_write_semantics.py`, and
 `tests/services/test_qb_service.py`.
+
+System certification adds six mandatory scenarios to the single production
+Registry action owned by `system`: `system_error`, `system_timeout`,
+`system_isolation`, `system_serialization`, `system_authorization`, and
+`system_dispatcher`. The current action is `get_current_time@v1`; it is declared
+public and identity-free (`requires_auth == false`), returns no user or tenant
+data, and is not exposed over MCP. `tests/capabilities/contracts/test_system_handlers.py`
+executes the real registered handler through the shared Runtime Dispatcher. It
+replaces the local clock for deterministic success and clock-failure injection,
+wraps `execute` for argument observation in the authorization and dispatcher
+scenarios, replaces it with an infinite blocker for the timeout probe and with
+a raiser for the isolation failure half, and replaces it with unsafe output for
+the serialization boundary probe; `Dispatcher._run_with_controls` is armed only
+for the timeout probe. Omitting that file, filtering a scenario, or skipping a
+required observation fails the gate. HTTP/JWT identity boundaries, structured
+error envelopes, and exception containment are certified separately by
+`tests/api/test_system_certification.py`.

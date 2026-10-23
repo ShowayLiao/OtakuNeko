@@ -25,6 +25,7 @@ from app.schemas.bangumi import (
     StaffInfo,
     SubjectDetail,
 )
+from tests.capabilities.contracts.system_support import FixedSystemDateTime
 from .model import Case, Environment
 
 
@@ -316,11 +317,11 @@ async def _prepare_media(env: Environment) -> None:
 
 
 async def _prepare_system_time(env: Environment) -> None:
-    class FixedDateTime(datetime):
+    class FixedDateTime(FixedSystemDateTime):
         @classmethod
-        def now(cls, tz: Any = None) -> FixedDateTime:
+        def now(cls, tz: Any = None) -> Any:
             env.calls.append("system.datetime.now")
-            return cls(2026, 1, 2, 3, 4, 5, tzinfo=tz)
+            return super().now(tz)
 
     env.monkeypatch.setattr(system_capability, "datetime", FixedDateTime)
 

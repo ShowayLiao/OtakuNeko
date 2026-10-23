@@ -186,6 +186,21 @@ def pytest_sessionfinish(session, exitstatus):
                 "tests/capabilities/test_media_write_semantics.py, and "
                 "tests/services/test_qb_service.py."
             ),
+            "system_certification": (
+                "Real registered System handler through the shared Runtime "
+                "Dispatcher. Six system_* scenarios apply to get_current_time@v1. "
+                "The local clock is replaced for deterministic success and "
+                "clock-failure injection; the registered execute method is "
+                "wrapped for argument observation in the authorization and "
+                "dispatcher scenarios, replaced by an infinite blocker for the "
+                "timeout probe, replaced by a raiser for the isolation failure "
+                "half, and replaced with unsafe output for the serialization "
+                "boundary probe. Dispatcher._run_with_controls is armed only for "
+                "the timeout probe. HTTP/JWT identity boundaries, error envelopes, "
+                "and exception containment are certified separately in "
+                "tests/api/test_system_certification.py. The System action is "
+                "public, identity-free, and not exposed over MCP."
+            ),
             "collections_write_certification": (
                 "Real registered side-effect Collection handlers through the "
                 "shared Runtime Dispatcher with only imported handler dependencies "
