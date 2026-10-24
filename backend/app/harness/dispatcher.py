@@ -238,6 +238,10 @@ class Dispatcher:
                 idempotency_store=self.idempotency_store,
             )
         )
+        if isinstance(adapter, CapabilityAdapter):
+            # Factory-built adapters must receive the same trusted
+            # per-dispatch approval as the default adapter path.
+            adapter = adapter.with_approval(approval or self.approval)
         started = monotonic()
         try:
             raw = await self._run_with_controls(

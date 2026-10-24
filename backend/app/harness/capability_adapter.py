@@ -56,6 +56,11 @@ class CapabilityAdapter:
         self._idempotency_store = idempotency_store
         self._trusted_args = dict(trusted_args or {})
 
+    def with_approval(self, approval: Approval | None) -> "CapabilityAdapter":
+        """Apply the trusted per-dispatch approval to this adapter instance."""
+        self._approval = approval
+        return self
+
     async def execute(
         self,
         context: ExecutionContext | None,
