@@ -1,224 +1,213 @@
 "use client";
 
-import { useState } from 'react';
-import { Languages, Eraser, X } from 'lucide-react';
-import { theme } from 'antd';
-import { ChatInputArea, ChatInputActionBar, TokenTag, ChatSendButton } from '@lobehub/ui/chat';
-import { ActionIcon } from '@lobehub/ui';
-import { Avatar } from '@lobehub/ui';
-import { useAppTheme } from '@/components/providers/LobeProvider';
-import { ModelSelector } from './ModelSelector';
-import { RoleSelector } from './RoleSelector';
-import SearchTrigger, { SearchResultItem } from './SearchBar';
+import { useEffect, useRef, useState } from "react";
+import { Eraser, X } from "lucide-react";
+import { theme } from "antd";
+import { ChatInputArea, ChatSendButton } from "@lobehub/ui/chat";
+import { ActionIcon } from "@lobehub/ui";
+import { useAppTheme } from "@/components/providers/LobeProvider";
+import { ModelSelector } from "./ModelSelector";
+import { RoleSelector } from "./RoleSelector";
+import SearchTrigger, { SearchResultItem } from "./SearchBar";
+import ConnectionStatus from "./ConnectionStatus";
+import ContextPill from "./ContextPill";
 
 interface ChatInputProps {
   onSend: (text: string, contextItems: SearchResultItem[]) => void;
+  onStop: () => void;
   loading: boolean;
+  cancelling?: boolean;
   selectedModel: string;
   selectedProvider: string;
   onModelChange: (modelId: string, provider: string) => void;
   onOpenSettings: () => void;
   selectedRole: string;
   onRoleChange: (roleId: string) => void;
+  connectionStatus?: "connected" | "connecting" | "disconnected";
+  editText?: string | null;
+  onEditCancel?: () => void;
 }
 
 export const ChatInput = ({
   onSend,
+  onStop,
   loading,
+  cancelling = false,
   selectedModel,
   selectedProvider,
   onModelChange,
   onOpenSettings,
   selectedRole,
   onRoleChange,
+  connectionStatus,
+  editText,
+  onEditCancel,
 }: ChatInputProps) => {
   const [isExpand, setIsExpand] = useState(false);
-  const [text, setText] = useState('');
+  const [text, setText] = useState(() => editText ?? "");
   const [contextItems, setContextItems] = useState<SearchResultItem[]>([]);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [toolbarHeight, setToolbarHeight] = useState(32);
+  useEffect(() => {
+    if (!toolbarRef.current) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setToolbarHeight(Math.ceil(entry.contentRect.height));
+    });
+    observer.observe(toolbarRef.current);
+    return () => observer.disconnect();
+  }, []);
+  const extraToolbarHeight = Math.max(0, toolbarHeight - 32);
   const heights = {
-    inputHeight: 160, 
-    minHeight: 128,
-    maxHeight: 600, 
+    inputHeight: 160 + extraToolbarHeight,
+    minHeight: 128 + extraToolbarHeight,
+    maxHeight: 600,
   };
 
   const { token } = theme.useToken();
   const { isDarkMode } = useAppTheme();
 
-  // 处理搜索结果选择
   const handleSearchSelect = (item: SearchResultItem) => {
-    // 去重：检查是否已经存在相同的项
     const isDuplicate = contextItems.some(
-      existingItem => existingItem.id === item.id
+      (existingItem) => existingItem.id === item.id,
     );
-    
     if (!isDuplicate) {
-      setContextItems(prev => [...prev, item]);
+      setContextItems((prev) => [...prev, item]);
     }
   };
 
-  // 处理胶囊删除
   const handleRemoveContextItem = (index: number) => {
-    setContextItems(prev => prev.filter((_, i) => i !== index));
+    setContextItems((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // 处理发送
   const handleSend = () => {
+    if (loading) return;
     if (!text.trim() && contextItems.length === 0) return;
-    
     onSend(text, contextItems);
-    // 清空文本和胶囊
-    setText('');
+    setText("");
     setContextItems([]);
   };
 
-  // 处理清除
   const handleClear = () => {
-    setText('');
+    setText("");
     setContextItems([]);
   };
 
   return (
     <div
       style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: '100%',
-        padding: '0 16px 24px 16px', 
+        position: "relative",
+        flexShrink: 0,
+        width: "100%",
+        padding: "0 16px 24px 16px",
         zIndex: 10,
       }}
     >
-      {/* 胶囊容器 */}
+      {editText && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "6px 0",
+            fontSize: 12,
+            color: isDarkMode ? "#fbbf24" : "#d97706",
+          }}
+        >
+          <span>正在编辑消息</span>
+          <ActionIcon
+            icon={X}
+            size={{ blockSize: 14 }}
+            title="取消编辑"
+            onClick={onEditCancel}
+          />
+        </div>
+      )}
+
+      {cancelling && (
+        <div
+          role="status"
+          style={{
+            padding: "6px 0",
+            fontSize: 12,
+            color: isDarkMode ? "#fbbf24" : "#b45309",
+          }}
+        >
+          Cancelling run… waiting for the cancellation event.
+        </div>
+      )}
+
       {contextItems.length > 0 && (
         <div
           style={{
-            display: 'flex',
+            display: "flex",
             gap: 8,
-            flexWrap: 'wrap',
-            padding: '12px 0',
-            animation: 'fadeIn 0.3s ease-in-out',
+            flexWrap: "wrap",
+            padding: "12px 0",
+            animation: "fadeIn 0.3s ease-in-out",
           }}
         >
           {contextItems.map((item, index) => (
-            <div
+            <ContextPill
               key={item.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '6px 10px',
-                borderRadius: 20,
-                backgroundColor: isDarkMode ? 'rgba(75, 85, 99, 0.5)' : 'rgba(229, 231, 235, 0.8)',
-                border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-                backdropFilter: 'saturate(180%) blur(12px)',
-                transition: 'all 0.2s ease',
-              }}
-            >
-              {/* 封面小图 */}
-              <Avatar
-                size={24}
-                style={{
-                  borderRadius: 4,
-                  objectFit: 'cover',
-                }}
-                avatar={item.cover || '/Icon.png'}
-              />
-              
-              {/* 标题文本 */}
-              <span style={{ fontSize: 12, fontWeight: 500 }}>
-                {item.title}
-              </span>
-              
-              {/* 删除按钮 */}
-              <ActionIcon
-                icon={X}
-                size={{ blockSize: 16 }}
-                onClick={() => handleRemoveContextItem(index)}
-                style={{
-                  cursor: 'pointer',
-                  opacity: 0.7,
-                  transition: 'opacity 0.2s ease'
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.opacity = '1';
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.opacity = '0.7';
-                }}
-              />
-            </div>
+              item={item}
+              darkMode={isDarkMode}
+              onRemove={() => handleRemoveContextItem(index)}
+            />
           ))}
         </div>
       )}
 
-      {/* 输入区域 */}
-      <ChatInputArea 
+      <ChatInputArea
         topAddons={
-            <ChatInputActionBar
-              leftAddons={
-                <div style={{ marginLeft: '20px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <ModelSelector 
-                    value={selectedModel} 
-                    onChange={onModelChange} 
-                    onOpenSettings={onOpenSettings} 
-                  />
-                  <RoleSelector 
-                    value={selectedRole} 
-                    onChange={onRoleChange} 
-                  />
-                  <SearchTrigger onSelect={handleSearchSelect} />
-                  <ActionIcon icon={Eraser} title="清除" onClick={handleClear} style={{ cursor: 'pointer' }} />
-                  <TokenTag maxValue={5000} value={1000} />
-                </div>
-              }
+          <div
+            ref={toolbarRef}
+            style={{
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: 8,
+              minWidth: 0,
+              width: "100%",
+              marginLeft: 0,
+            }}
+          >
+            <ModelSelector
+              value={selectedModel}
+              onChange={onModelChange}
+              onOpenSettings={onOpenSettings}
             />
-          }
-        bottomAddons={<ChatSendButton loading={loading} onSend={handleSend} />}
-        
+            <RoleSelector value={selectedRole} onChange={onRoleChange} />
+            <SearchTrigger onSelect={handleSearchSelect} />
+            <ActionIcon icon={Eraser} title="清除" onClick={handleClear} />
+            {connectionStatus && <ConnectionStatus status={connectionStatus} />}
+          </div>
+        }
+        bottomAddons={
+          <ChatSendButton
+            loading={loading}
+            onSend={handleSend}
+            onStop={onStop}
+          />
+        }
         expand={isExpand}
         setExpand={setIsExpand}
         heights={heights}
         value={text}
         onInput={setText}
-        
         onSend={handleSend}
-        
         placeholder="输入消息..."
-        
         style={{
-          background: isDarkMode 
-            ? 'rgba(30, 30, 30, 0.6)' 
-            : 'rgba(255, 255, 255, 0.6)',
-
-          backdropFilter: 'saturate(180%) blur(12px)',
-          
-          border: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}`,
-          
+          background: isDarkMode
+            ? "rgba(30, 30, 30, 0.6)"
+            : "rgba(255, 255, 255, 0.6)",
+          backdropFilter: "saturate(180%) blur(12px)",
+          border: `1px solid ${isDarkMode ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)"}`,
           boxShadow: isDarkMode
-            ? '0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 0.05)'
-            : '0 8px 32px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.6)',
-          
-          borderRadius: 16,
-          overflow: 'hidden',
+            ? "0 8px 32px 0 rgba(0, 0, 0, 0.3), inset 0 1px 0 0 rgba(255, 255, 255, 0.05)"
+            : "0 8px 32px 0 rgba(0, 0, 0, 0.08), inset 0 1px 0 0 rgba(255, 255, 255, 0.6)",
         }}
-        className="w-full"
       />
-
-      {/* 添加淡入动画样式 */}
-      <style jsx>{`
-        @keyframes fadeIn {
-          from {
-            opacity: 0;
-            transform: translateY(-10px);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
-        }
-      `}</style>
     </div>
   );
 };
-
-export default ChatInput;

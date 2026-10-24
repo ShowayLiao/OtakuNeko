@@ -1,0 +1,106 @@
+name: Frontend QA
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-qa-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mock-e2e:
+    name: Mock E2E
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run deterministic mock E2E tests
+        run: pnpm test:e2e
+
+      - name: Preserve Playwright reports and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-qa-mock-evidence
+          path: frontend/.runtime/frontend-qa
+          retention-days: 7
+          if-no-files-found: warn
+
+  smoke-e2e:
+    name: Isolated Backend Smoke E2E
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+        working-directory: backend
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run isolated backend smoke E2E
+        run: pnpm test:e2e:smoke
+
+      - name: Preserve smoke report and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-qa-smoke-evidence
+          path: frontend/.runtime/frontend-qa
+          retention-days: 7
+          if-no-files-found: warn

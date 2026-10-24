@@ -1,15 +1,20 @@
-import React, { useState, useRef } from 'react';
-import { Modal, Button, Alert } from 'antd';
-import { Upload, CloudUpload, FileText } from 'lucide-react';
-import { Flexbox } from '@lobehub/ui';
+import React, { useState, useRef } from "react";
+import { Modal, Button, Alert } from "antd";
+import { Upload, CloudUpload, FileText } from "lucide-react";
+import { Flexbox } from "@lobehub/ui";
+import type { Role } from "@/store/models";
 
 interface RoleImportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onImport: (roles: any) => void;
+  onImport: (roles: Role[]) => void;
 }
 
-export default function RoleImportModal({ isOpen, onClose, onImport }: RoleImportModalProps) {
+export default function RoleImportModal({
+  isOpen,
+  onClose,
+  onImport,
+}: RoleImportModalProps) {
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -23,9 +28,9 @@ export default function RoleImportModal({ isOpen, onClose, onImport }: RoleImpor
 
   const handleFile = (file: File) => {
     setFileError(null);
-    
-    if (file.type !== 'application/json') {
-      setFileError('请选择JSON格式的文件');
+
+    if (file.type !== "application/json") {
+      setFileError("请选择JSON格式的文件");
       return;
     }
 
@@ -37,11 +42,11 @@ export default function RoleImportModal({ isOpen, onClose, onImport }: RoleImpor
         onImport(roles);
         onClose();
       } catch (error) {
-        setFileError('JSON文件格式错误');
+        setFileError("JSON文件格式错误");
       }
     };
     reader.onerror = () => {
-      setFileError('文件读取失败');
+      setFileError("文件读取失败");
     };
     reader.readAsText(file);
   };
@@ -85,17 +90,17 @@ export default function RoleImportModal({ isOpen, onClose, onImport }: RoleImpor
         type="file"
         accept=".json"
         onChange={handleFileChange}
-        style={{ display: 'none' }}
+        style={{ display: "none" }}
       />
-      
+
       <div
-        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${dragging ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-300 dark:border-gray-700'}`}
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${dragging ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-300 dark:border-gray-700"}`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={handleClick}
       >
-        <Flexbox direction="column" align="center" gap={4}>
+        <Flexbox direction="vertical" align="center" gap={4}>
           <CloudUpload size={48} className="text-gray-400" />
           <div>
             <p className="text-lg font-medium">点击或拖拽文件到此处</p>

@@ -1,11 +1,12 @@
-import { request } from './client';
+/* eslint-disable @typescript-eslint/no-explicit-any -- upstream metadata is extensible JSON. */
+import { request } from "./client";
 
 // 观看类型枚举
 export enum WatchType {
-  MEAL = 1,      // 饭点
-  LEISURE = 2,   // 闲暇
+  MEAL = 1, // 饭点
+  LEISURE = 2, // 闲暇
   LONG_GRASS = 3, // 长草
-  NEW = 4        // 新番
+  NEW = 4, // 新番
 }
 
 // 收藏信息接口
@@ -85,28 +86,30 @@ interface BangumiCalendarDay {
 export const getBangumiCalendar = async (): Promise<BangumiItem[]> => {
   try {
     // 调用后端 API，后端返回的是 BangumiCalendarDay[] 格式
-    const response = await request<BangumiCalendarDay[]>('/bangumi/calendar');
-    
+    const response = await request<BangumiCalendarDay[]>("/bangumi/calendar");
+
     // 转换数据格式，确保符合前端组件的要求
     const items: BangumiItem[] = [];
-    
+
     // 遍历每天的数据
-    response.forEach(day => {
+    response.forEach((day) => {
       // 遍历当天的所有番剧
       day.items.forEach((item, index) => {
         // 计算星期几（后端返回的是 1-7，转换为 0-6，0=周一，1=周二，...，6=周日）
         const day_of_week = (day.weekday.id - 1) % 7;
-        
+
         // 提取时间信息
-        let watch_time = '';
+        let watch_time = "";
         if (item.air_date) {
           // 尝试从 air_date 中提取时间
-          const timeMatch = item.air_date.match(/\d{4}-\d{2}-\d{2}\s+(\d{2}:\d{2})/);
+          const timeMatch = item.air_date.match(
+            /\d{4}-\d{2}-\d{2}\s+(\d{2}:\d{2})/,
+          );
           if (timeMatch) {
             watch_time = timeMatch[1];
           }
         }
-        
+
         // 创建前端需要的 BangumiItem
         items.push({
           collection: null,
@@ -115,27 +118,27 @@ export const getBangumiCalendar = async (): Promise<BangumiItem[]> => {
             name: item.name,
             name_cn: item.name_cn || item.name,
             type: 2, // 默认动画类型
-            source: 'bangumi',
+            source: "bangumi",
             source_id: item.id.toString(),
             images: {
-              common: '',
-              large: '',
-              medium: '',
-              small: ''
+              common: "",
+              large: "",
+              medium: "",
+              small: "",
             },
-            air_weekday: item.air_weekday
+            air_weekday: item.air_weekday,
           },
           watch_day: day_of_week,
           watch_time: watch_time,
           watch_type: WatchType.NEW,
-          duration: 1
+          duration: 1,
         });
       });
     });
-    
+
     return items;
   } catch (error) {
-    console.error('获取 Bangumi 日历数据失败:', error);
+    console.error("获取 Bangumi 日历数据失败:", error);
     throw error;
   }
 };
@@ -198,52 +201,58 @@ interface SyncBangumiResponse {
 export const syncBangumiCalendar = async (): Promise<BangumiItem[]> => {
   try {
     // 调用后端 API，后端返回的是 UnifiedList 格式，使用 POST 方法
-    const response = await request<SyncBangumiResponse>('/schedules/sync-bangumi', {
-      method: 'POST'
-    });
-    
+    const response = await request<SyncBangumiResponse>(
+      "/schedules/sync-bangumi",
+      {
+        method: "POST",
+      },
+    );
+
     // 转换数据格式，确保符合前端组件的要求
     const items: BangumiItem[] = [];
-    
+
     // 遍历所有番剧
     response.items.forEach((item, index) => {
       // 确保 subject 存在
       if (!item.subject) return;
-      
+
       const subject = item.subject;
-      
+
       // 当 air_time 或 air_weekday 为 null 时跳过该 item
       if (subject.air_time === null || subject.air_weekday === null) {
         return;
       }
-      
+
       // 提取时间信息并转换为客户端时区
-      let watch_time = '';
+      let watch_time = "";
       // 默认先用后端给的 air_weekday 兜底 (转换为 0-6，0=周一，1=周二，...，6=周日)
       let watch_day = subject.air_weekday ? (subject.air_weekday - 1) % 7 : 0;
 
       if (subject.air_time) {
         try {
           // 补齐 'Z'，确保浏览器将其解析为 UTC 时间
-          const timeStr = subject.air_time.endsWith('Z')
+          const timeStr = subject.air_time.endsWith("Z")
             ? subject.air_time
             : `${subject.air_time}Z`;
-            
+
           const utcDate = new Date(timeStr);
 
           // 确保日期解析成功，不是 Invalid Date
           if (!isNaN(utcDate.getTime())) {
             // getHours() 和 getMinutes() 自动转换到本地时区
-            const localHour = utcDate.getHours().toString().padStart(2, '0');
-            const localMinute = utcDate.getMinutes().toString().padStart(2, '0');
+            const localHour = utcDate.getHours().toString().padStart(2, "0");
+            const localMinute = utcDate
+              .getMinutes()
+              .toString()
+              .padStart(2, "0");
             watch_time = `${localHour}:${localMinute}`;
-            
+
             // ✨ 核心修改：利用本地化后的 Date 对象直接获取星期几，覆盖后端的 weekday
-          // 将 getDay() 的结果（0=周日，1=周一，...，6=周六）转换为 0=周一，1=周二，...，6=周日的格式
-          watch_day = (utcDate.getDay() + 6) % 7;
+            // 将 getDay() 的结果（0=周日，1=周一，...，6=周六）转换为 0=周一，1=周二，...，6=周日的格式
+            watch_day = (utcDate.getDay() + 6) % 7;
           }
         } catch (error) {
-          console.error('时间解析失败:', subject.air_time, error);
+          console.error("时间解析失败:", subject.air_time, error);
         }
       }
 
@@ -274,18 +283,18 @@ export const syncBangumiCalendar = async (): Promise<BangumiItem[]> => {
           nsfw: subject.nsfw,
           air_time: subject.air_time,
           air_weekday: subject.air_weekday,
-          last_sync: subject.last_sync
+          last_sync: subject.last_sync,
         },
-        watch_day: watch_day,   // watch_day 也同步更新
+        watch_day: watch_day, // watch_day 也同步更新
         watch_type: WatchType.NEW,
-        watch_time: watch_time,   // watch_time 也同步更新
-        duration: 1
+        watch_time: watch_time, // watch_time 也同步更新
+        duration: 1,
       });
     });
-    
+
     return items;
   } catch (error) {
-    console.error('同步 Bangumi 日历数据失败:', error);
+    console.error("同步 Bangumi 日历数据失败:", error);
     throw error;
   }
 };

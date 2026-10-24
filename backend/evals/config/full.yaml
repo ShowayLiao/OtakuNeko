@@ -1,0 +1,38 @@
+name: full
+dataset: evals/datasets/v1-full.jsonl
+tags: null
+report_path: .runtime/evaluation/full.json
+baseline: evals/baselines/v1-full.json
+target_factory: app.evaluation.adapter:create_production_target
+judge_factory: app.evaluation.judge:create_openai_judge
+agent:
+  name: injectable-runtime
+  model: gpt-4o-mini
+  provider: openai-compatible
+thresholds:
+  pass_rate:
+    direction: min
+    value: 0.95
+  routing_accuracy:
+    direction: min
+    value: 0.95
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  latency_ms:
+    direction: max
+    value: 5000.0
+  judge_cost_usd:
+    direction: max
+    value: 5.0
+judge:
+  enabled: true
+  required: true
+  model: gpt-4o-mini
+  provider: openai-compatible
+  timeout_seconds: 30
+  max_concurrency: 5
+  max_cost_usd: 5.0
+  max_cost_per_call_usd: 0.5
+  input_cost_per_million: 0.15
+  output_cost_per_million: 0.60

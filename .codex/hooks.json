@@ -1,0 +1,58 @@
+{
+  "description": "Repository lifecycle hooks.",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/task_log.py\" start",
+            "commandWindows": "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; python \\\"$root/.codex/hooks/task_log.py\\\" start\"",
+            "timeout": 10,
+            "statusMessage": "Recording AI task context"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/task_log.py\" tool",
+            "commandWindows": "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; python \\\"$root/.codex/hooks/task_log.py\\\" tool\"",
+            "timeout": 10,
+            "statusMessage": "Recording AI task context"
+          }
+        ],
+        "matcher": "^Bash$"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/task_log.py\" stop",
+            "commandWindows": "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; python \\\"$root/.codex/hooks/task_log.py\\\" stop\"",
+            "timeout": 10,
+            "statusMessage": "Recording AI task log"
+          }
+        ]
+      }
+    ],
+    "Interrupt": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/task_log.py\" interrupt",
+            "commandWindows": "powershell -NoProfile -Command \"$root = git rev-parse --show-toplevel; python \\\"$root/.codex/hooks/task_log.py\\\" interrupt\"",
+            "timeout": 3,
+            "statusMessage": "Recording AI task log"
+          }
+        ]
+      }
+    ]
+  }
+}

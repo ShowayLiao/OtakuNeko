@@ -1,0 +1,452 @@
+name: CI
+
+on:
+  # Every pull request runs the gates regardless of its base branch: the
+  # repository's default branch is release-1.0 while integration work happens on
+  # feature-* branches, so a `main`-only filter meant CI never ran at all.
+  pull_request:
+  push:
+    branches: [main, release-1.0]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  software:
+    name: software
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run backend lint
+        run: uv run --locked ruff check app tests alembic scripts __init__.py
+
+      - name: Enforce business-layer import boundaries
+        run: uv run --locked ruff check --select TID251 app/services app/models app/repositories app/schemas
+
+      # Fresh test-only key; never use a production credential in PR tests.
+      - name: Set up isolated test environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEBUG=false" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+
+      - name: Run backend tests
+        run: |
+          mkdir -p .runtime/junit .runtime/capability-contracts
+          uv run --locked pytest -p tests.capabilities.contracts.plugin --capability-contract-gate --capability-contract-report=.runtime/capability-contracts/software-full.json --junitxml=.runtime/junit/software.xml
+
+      - name: Summarize Capability CI gate
+        if: always()
+        run: |
+          uv run --locked python scripts/capability_ci_summary.py \
+            --report .runtime/capability-contracts/software-full.json \
+            --junit .runtime/junit/software.xml \
+            --output .runtime/capability-ci/software-summary.json \
+            --markdown .runtime/capability-ci/software-summary.md \
+            --step-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload backend test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-software-junit
+          path: |
+            backend/.runtime/junit/software.xml
+            backend/.runtime/capability-contracts/software-full.json
+            backend/.runtime/capability-ci/
+          if-no-files-found: warn
+
+  postgres:
+    name: postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: otakuneko_test
+          POSTGRES_USER: otakuneko_test
+          POSTGRES_PASSWORD: otakuneko_test_only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U otakuneko_test -d otakuneko_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Set up isolated test environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEBUG=false" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+
+      - name: Run PostgreSQL tests
+        env:
+          TEST_POSTGRES_URL: postgresql+asyncpg://otakuneko_test:otakuneko_test_only@localhost:5432/otakuneko_test
+        run: |
+          mkdir -p .runtime/junit
+          uv run --locked pytest --run-postgres -m postgres --junitxml=.runtime/junit/postgres.xml
+
+      - name: Upload PostgreSQL test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-postgres-junit
+          path: backend/.runtime/junit/postgres.xml
+          if-no-files-found: warn
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20.19.0
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Check frontend formatting
+        run: pnpm format:check
+        working-directory: frontend
+
+      - name: Run frontend lint
+        run: pnpm lint
+        working-directory: frontend
+
+      - name: Run frontend typecheck
+        run: pnpm typecheck
+        working-directory: frontend
+
+      - name: Run frontend tests
+        run: pnpm test
+        working-directory: frontend
+
+      - name: Build frontend
+        run: pnpm build
+        working-directory: frontend
+
+  backend-quality-baseline:
+    name: backend-quality-baseline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Typecheck all backend source and tests against audited debt
+        run: uv run --locked python scripts/check_type_baseline.py
+
+      - name: Check backend dependency declarations
+        run: uv run --locked deptry .
+
+      - name: Check formatting across all backend Python code
+        run: uv run --locked ruff format --check app tests alembic scripts __init__.py
+
+  harness:
+    name: harness
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      # API imports require JWT configuration even during test collection.
+      - name: Set up isolated test environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+
+      - name: Run deterministic Harness regression
+        run: |
+          mkdir -p .runtime/junit
+          uv run --locked pytest -p tests.capabilities.contracts.plugin tests/harness tests/acceptance tests/capabilities tests/trace tests/api tests/evaluation -q --capability-contract-gate --capability-contract-report=.runtime/capability-contracts/coverage.json --junitxml=.runtime/junit/harness.xml
+
+      - name: Summarize Capability CI gate
+        if: always()
+        run: |
+          uv run --locked python scripts/capability_ci_summary.py \
+            --report .runtime/capability-contracts/coverage.json \
+            --junit .runtime/junit/harness.xml \
+            --output .runtime/capability-ci/harness-summary.json \
+            --markdown .runtime/capability-ci/harness-summary.md \
+            --step-summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Evaluate the shared primary entrypoint
+        run: uv run --locked python -m app.evaluation.runner --config evals/config/entrypoint.yaml
+
+      - name: Lint Harness boundaries
+        run: uv run --locked ruff check app/harness app/capabilities app/trace app/evaluation app/api/v1/agent.py tests/harness tests/acceptance tests/capabilities tests/trace tests/api tests/evaluation
+
+      - name: Preserve Harness and entrypoint failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-harness-entrypoint-evidence
+          path: |
+            backend/.runtime/junit/harness.xml
+            backend/.runtime/evaluation/entrypoint.json
+            backend/.runtime/capability-contracts/
+            backend/.runtime/capability-ci/
+          retention-days: 14
+          if-no-files-found: warn
+
+  agent_gate:
+    name: agent-fake-llm-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      # Force the fake-LLM gate offline: no provider key, qB, scheduler or
+      # external write path is enabled for this job.
+      - name: Set up isolated fake-LLM environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEBUG=false" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+          echo "ENABLE_PROACTIVE_SCHEDULER=false" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=" >> "$GITHUB_ENV"
+
+      - name: Verify offline gate environment
+        run: |
+          test -z "${OPENAI_API_KEY:-}"
+          test "${ENABLE_QB_PROXY}" = "false"
+          test "${ENABLE_PROACTIVE_SCHEDULER}" = "false"
+
+      - name: Run Fake-LLM Agent gate
+        run: |
+          mkdir -p .runtime/junit .runtime/evaluation
+          uv run --locked pytest \
+            tests/harness/test_scripted_llm.py \
+            tests/evaluation/test_entrypoint.py \
+            tests/acceptance/test_scripted_llm_observation_path.py \
+            tests/acceptance/test_runtime_multi_step_replay.py \
+            tests/acceptance/test_runtime_failure_paths.py \
+            tests/acceptance/test_persistence_event_trace_replay.py \
+            tests/test_agent_gate_workflow.py \
+            -q -p no:warnings --junitxml=.runtime/junit/agent-gate.xml
+
+      - name: Run offline entrypoint Eval
+        run: |
+          uv run --locked python -m app.evaluation.runner \
+            --config evals/config/entrypoint.yaml \
+            --report .runtime/evaluation/agent-gate-entrypoint.json
+
+      # Acceptance: a failed gate must still publish downloadable evidence.
+      - name: Preserve Fake-LLM Agent gate failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-agent-fake-llm-gate
+          path: |
+            backend/.runtime/junit/agent-gate.xml
+            backend/.runtime/evaluation/agent-gate-entrypoint.json
+          retention-days: 14
+          if-no-files-found: warn
+
+  benchmark:
+    name: benchmark
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Run offline fast evaluation
+        run: uv run --locked python -m app.evaluation.runner --config evals/config/fast.yaml
+
+      - name: Upload offline evaluation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-fast-evaluation-report
+          path: backend/.runtime/evaluation/fast.json
+          if-no-files-found: error
+
+  configuration:
+    name: configuration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+        working-directory: backend
+
+      - name: Install verified actionlint 1.7.12
+        env:
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl --fail --silent --show-error --location \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$archive"
+          echo "$ACTIONLINT_SHA256  $archive" | sha256sum --check
+          mkdir -p "$RUNNER_TEMP/actionlint-bin"
+          tar -xzf "$archive" -C "$RUNNER_TEMP/actionlint-bin" actionlint
+          echo "$RUNNER_TEMP/actionlint-bin" >> "$GITHUB_PATH"
+
+      - name: Record configuration validator versions
+        run: |
+          actionlint -version
+          docker compose version
+
+      - name: Validate configuration and tool rejection probes
+        run: uv run --locked --directory backend python scripts/check_configuration_coverage.py --probe-tools
+
+      - name: Verify configuration failure regressions
+        run: uv run --locked --directory backend pytest tests/test_configuration.py tests/test_configuration_coverage.py -q
+
+      - name: Upload configuration coverage and exit codes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: configuration-coverage
+          path: backend/.runtime/quality/configuration-coverage.json
+          if-no-files-found: error
+
+  repository-quality:
+    name: repository-quality
+    needs: [software, postgres, frontend, backend-quality-baseline, harness, agent_gate, benchmark, configuration]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Summarize required gates
+        env:
+          SOFTWARE_RESULT: ${{ needs.software.result }}
+          POSTGRES_RESULT: ${{ needs.postgres.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          BACKEND_QUALITY_RESULT: ${{ needs.backend-quality-baseline.result }}
+          HARNESS_RESULT: ${{ needs.harness.result }}
+          AGENT_GATE_RESULT: ${{ needs.agent_gate.result }}
+          BENCHMARK_RESULT: ${{ needs.benchmark.result }}
+          CONFIGURATION_RESULT: ${{ needs.configuration.result }}
+        run: |
+          {
+            echo '| Gate | Result |'
+            echo '| --- | --- |'
+            echo "| software | $SOFTWARE_RESULT |"
+            echo "| postgres | $POSTGRES_RESULT |"
+            echo "| frontend | $FRONTEND_RESULT |"
+            echo "| backend-quality-baseline | $BACKEND_QUALITY_RESULT |"
+            echo "| harness | $HARNESS_RESULT |"
+            echo "| agent-fake-llm-gate | $AGENT_GATE_RESULT |"
+            echo "| benchmark | $BENCHMARK_RESULT |"
+            echo "| configuration | $CONFIGURATION_RESULT |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for result in "$SOFTWARE_RESULT" "$POSTGRES_RESULT" "$FRONTEND_RESULT" "$BACKEND_QUALITY_RESULT" "$HARNESS_RESULT" "$AGENT_GATE_RESULT" "$BENCHMARK_RESULT" "$CONFIGURATION_RESULT"; do
+            if [[ "$result" != success ]]; then
+              echo "A required gate did not succeed: $result" >&2
+              exit 1
+            fi
+          done

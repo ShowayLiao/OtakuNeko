@@ -1,7 +1,7 @@
-import React from 'react';
-import { Select, Avatar } from '@lobehub/ui';
-import { useRoleStore } from '@/store/useRoleStore';
-import presetRoles from '@/store/presetRoles';
+import React from "react";
+import { Select, Avatar } from "@lobehub/ui";
+import { useRoleStore } from "@/store/useRoleStore";
+import presetRoles from "@/store/presetRoles";
 
 interface RoleSelectorProps {
   value: string; // 当前选中的角色ID
@@ -22,7 +22,9 @@ export const RoleSelector = ({ value, onChange }: RoleSelectorProps) => {
         <Avatar avatar={role.avatar} size={16} shape="square" />
         <span className="flex-1 min-w-0 truncate">{role.name}</span>
         {role.isPreset && (
-          <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">预设</span>
+          <span className="text-xs text-gray-400 ml-2 whitespace-nowrap">
+            预设
+          </span>
         )}
       </div>
     ),
@@ -35,7 +37,7 @@ export const RoleSelector = ({ value, onChange }: RoleSelectorProps) => {
       options={availableOptions}
       onChange={onChange}
       // 样式微调，让它看起来像个胶囊
-      variant="borderless" 
+      variant="borderless"
       style={{ width: 180 }}
       className="truncate hover:bg-gray-50"
     />
