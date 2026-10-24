@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 import json
 import time
-from typing import Any, cast
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -20,12 +20,12 @@ from app.evaluation.adapter import (
     classify_route,
     normalize_events,
 )
-from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent
+from app.evaluation.scripted_llm import ScriptedLLM, ScriptedObservationError
+from app.evaluation.types import EvalCase, ExecutionResult
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.contracts import ExecutionContext
 from app.harness.execution import build_runtime
 from app.harness.model_gateway import ModelGateway
-from app.harness.model_types import ModelCallResult
 from app.harness.task import AgentTask
 from app.schemas.user import UserRead
 from app.trace.sql_store import SqlTraceStore
@@ -116,77 +116,6 @@ class _EntrypointEchoCapability(BaseCapability):
         return {"success": True, "value": "synthetic-result"}
 
 
-class _FixtureDecisionGateway:
-    """Turn case fixtures into structured model decisions, never Runtime events."""
-
-    def __init__(self, events: list[ScriptEvent]) -> None:
-        self._events = list(events)
-        self._index = 0
-
-    async def infer(
-        self,
-        *,
-        goal: str,
-        messages: list[dict[str, Any]],
-        context: dict[str, Any] | None = None,
-        run_id: str | None = None,
-        trace_id: str | None = None,
-        **_kwargs: Any,
-    ) -> ModelCallResult:
-        del goal, messages, context
-        if self._index >= len(self._events):
-            event = ScriptEvent(type="provider_error", code="permanent")
-        else:
-            event = self._events[self._index]
-        self._index += 1
-
-        common: dict[str, Any] = {
-            "provider": "entrypoint-fixture",
-            "model": "entrypoint-fixture-v1",
-            "operation": "primary_decision",
-            "trace_id": trace_id,
-        }
-        if event.type == "provider_error":
-            return ModelCallResult(
-                **common,
-                status="failed",
-                error_code="permanent",
-            )
-
-        fixture_decision_id = event.invocation_id or f"fixture-decision-{self._index}"
-        decision_id = f"{run_id or 'eval'}-{fixture_decision_id}"
-        if event.type == "tool_call_start":
-            decision = {
-                "schema_version": "v1",
-                "decision_id": decision_id,
-                "run_id": run_id,
-                "action": "invoke",
-                "capability": event.name,
-                "capability_version": "v1",
-                "arguments": event.arguments or {},
-            }
-        elif event.type == "message_chunk":
-            decision = {
-                "schema_version": "v1",
-                "decision_id": decision_id,
-                "run_id": run_id,
-                "action": "respond",
-                "content": event.content or "",
-            }
-        else:
-            return ModelCallResult(
-                **common,
-                status="failed",
-                error_code="invalid_request",
-            )
-
-        return ModelCallResult(
-            **common,
-            status="completed",
-            decision=decision,
-        )
-
-
 async def run_headless_case(
     case: EvalCase,
     *,
@@ -195,6 +124,7 @@ async def run_headless_case(
     model: str,
     fail_on_run_failure: bool,
     fail_on_tool_failure: bool = False,
+    observation_failure_source: Callable[[], Sequence[str]] | None = None,
 ) -> tuple[ExecutionResult, list[dict[str, Any]]]:
     """Execute one case with durable Runtime stores backed by isolated SQL."""
     run_id = f"eval-{case.id}"
@@ -251,6 +181,17 @@ async def run_headless_case(
             ]
         except Exception as exc:
             raise RuntimeError("headless Runtime execution failed") from exc
+
+        observation_failures = (
+            tuple(observation_failure_source())
+            if observation_failure_source is not None
+            else ()
+        )
+        if observation_failures:
+            # Observation failures must surface before the canonical/trace
+            # validators, which may otherwise mask a first-call failure with a
+            # generic "trace incomplete" error.
+            raise ScriptedObservationError("; ".join(observation_failures))
 
         result = normalize_events(
             events,
@@ -366,15 +307,15 @@ class DecisionEntrypointTarget:
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
         registry = CapabilityRegistry()
         registry.register(_EntrypointEchoCapability())
+        gateway = ScriptedLLM.from_script_events(case.fixtures.events)
         result, _events = await run_headless_case(
             case,
             registry=registry,
-            model_gateway=cast(
-                ModelGateway, _FixtureDecisionGateway(case.fixtures.events)
-            ),
+            model_gateway=gateway,
             model="entrypoint-fixture-v1",
             fail_on_run_failure=True,
             fail_on_tool_failure=True,
+            observation_failure_source=lambda: gateway.observation_failures,
         )
         return result
 

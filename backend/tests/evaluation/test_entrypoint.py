@@ -10,6 +10,12 @@ from app.evaluation.adapter import normalize_events
 from app.evaluation.config import load_config
 from app.evaluation.dataset import load_dataset
 from app.evaluation.runner import build_component, run_evaluation
+from app.evaluation.scripted_llm import (
+    ObservationExpectation,
+    ScriptedLLM,
+    ScriptedObservationError,
+    ScriptedStep,
+)
 from app.evaluation.types import EvalCase
 from app.trace import TraceEventType
 from app.trace.sql_store import SqlTraceStore
@@ -314,8 +320,15 @@ async def test_production_target_uses_shared_headless_and_sql_trace(monkeypatch)
         ],
     )
 
-    class Gateway(entrypoint._FixtureDecisionGateway):
+    class Gateway(ScriptedLLM):
         closed = False
+
+        def __init__(self, events):
+            super().__init__(
+                ScriptedLLM.script_steps(events),
+                provider="entrypoint-fixture",
+                model="entrypoint-fixture-v1",
+            )
 
         async def close(self):
             self.closed = True
@@ -333,3 +346,381 @@ async def test_production_target_uses_shared_headless_and_sql_trace(monkeypatch)
     assert gateway.closed
     assert len(traces) == 1 and traces[0] is not None
     assert traces[0].trace_id == result.run_id
+
+
+def _echo_registry():
+    from app.capabilities.registry import CapabilityRegistry
+
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    registry = CapabilityRegistry()
+    registry.register(entrypoint._EntrypointEchoCapability())
+    return registry
+
+
+def _read_events() -> list[dict]:
+    return [
+        {
+            "type": "tool_call_start",
+            "name": "entrypoint.echo",
+            "arguments": {"text": "fixture input"},
+        },
+        {"type": "message_chunk", "content": "synthetic-result"},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_read_observes_real_tool_feedback() -> None:
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    case = _entrypoint_case("headless-observes-feedback", _read_events())
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    result, _events = await entrypoint.run_headless_case(
+        case,
+        registry=_echo_registry(),
+        model_gateway=gateway,
+        model="entrypoint-fixture-v1",
+        fail_on_run_failure=True,
+        observation_failure_source=lambda: gateway.observation_failures,
+    )
+
+    assert result.run_status == "completed"
+    assert len(gateway.calls) == 2
+    observation = gateway.calls[1]
+    assert len(observation.tool_results) == 1
+    payload = observation.tool_results[0]
+    assert payload["safe_output"]["value"] == "synthetic-result"
+    assert payload["provenance"]["trust"] == "untrusted"
+    assert observation.context is not None
+    assert observation.context["run_id"] == result.run_id
+    assert observation.context["trace_id"] == result.run_id
+    assert gateway.observation_summary() == {
+        "calls": 2,
+        "history_messages": 1 + 3,
+        "tool_results": 1,
+        "context_snapshots": 2,
+        "expectations_verified": 2,
+        "observation_failures": 0,
+    }
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_target_fails_closed_when_feedback_is_missing(
+    monkeypatch,
+) -> None:
+    from app.harness import runtime as runtime_module
+
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    monkeypatch.setattr(
+        runtime_module,
+        "_tool_feedback_message",
+        lambda _invocation: {
+            "role": "user",
+            "content": "capability feedback was not delivered",
+        },
+    )
+    target = entrypoint.DecisionEntrypointTarget()
+    case = _entrypoint_case("headless-missing-feedback", _read_events())
+
+    with pytest.raises(ScriptedObservationError, match="expected 1 tool result"):
+        await target.evaluate(case)
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_target_fails_closed_when_feedback_is_wrong(
+    monkeypatch,
+) -> None:
+    from app.harness import runtime as runtime_module
+
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    original = runtime_module._tool_feedback_message
+
+    def wrong_feedback(invocation):
+        message = original(invocation)
+        message["content"] = message["content"].replace(
+            "synthetic-result",
+            "tampered-result",
+        )
+        return message
+
+    monkeypatch.setattr(
+        runtime_module,
+        "_tool_feedback_message",
+        wrong_feedback,
+    )
+    target = entrypoint.DecisionEntrypointTarget()
+    case = _entrypoint_case(
+        "headless-wrong-feedback",
+        [
+            {
+                "type": "tool_call_start",
+                "name": "entrypoint.echo",
+                "arguments": {"text": "fixture input"},
+                "output": {"value": "synthetic-result"},
+            },
+            {"type": "message_chunk", "content": "synthetic-result"},
+        ],
+    )
+
+    with pytest.raises(ScriptedObservationError, match="safe_output.value"):
+        await target.evaluate(case)
+
+
+@pytest.mark.asyncio
+async def test_run_headless_case_records_missing_feedback_failure(
+    monkeypatch,
+) -> None:
+    from app.harness import runtime as runtime_module
+
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    monkeypatch.setattr(
+        runtime_module,
+        "_tool_feedback_message",
+        lambda _invocation: {
+            "role": "user",
+            "content": "capability feedback was not delivered",
+        },
+    )
+    case = _entrypoint_case("headless-record-missing-feedback", _read_events())
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    with pytest.raises(ScriptedObservationError, match="expected 1 tool result"):
+        await entrypoint.run_headless_case(
+            case,
+            registry=_echo_registry(),
+            model_gateway=gateway,
+            model="entrypoint-fixture-v1",
+            fail_on_run_failure=False,
+            observation_failure_source=lambda: gateway.observation_failures,
+        )
+
+    assert any(
+        "expected 1 tool result" in failure for failure in gateway.observation_failures
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_headless_case_records_wrong_feedback_failure(
+    monkeypatch,
+) -> None:
+    from app.harness import runtime as runtime_module
+
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    original = runtime_module._tool_feedback_message
+
+    def wrong_feedback(invocation):
+        message = original(invocation)
+        message["content"] = message["content"].replace(
+            "synthetic-result",
+            "tampered-result",
+        )
+        return message
+
+    monkeypatch.setattr(
+        runtime_module,
+        "_tool_feedback_message",
+        wrong_feedback,
+    )
+    case = _entrypoint_case(
+        "headless-record-wrong-feedback",
+        [
+            {
+                "type": "tool_call_start",
+                "name": "entrypoint.echo",
+                "arguments": {"text": "fixture input"},
+                "output": {"value": "synthetic-result"},
+            },
+            {"type": "message_chunk", "content": "synthetic-result"},
+        ],
+    )
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    with pytest.raises(ScriptedObservationError, match="safe_output.value"):
+        await entrypoint.run_headless_case(
+            case,
+            registry=_echo_registry(),
+            model_gateway=gateway,
+            model="entrypoint-fixture-v1",
+            fail_on_run_failure=False,
+            observation_failure_source=lambda: gateway.observation_failures,
+        )
+
+    assert any(
+        "safe_output.value" in failure for failure in gateway.observation_failures
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_headless_case_records_wrong_expected_feedback() -> None:
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    case = _entrypoint_case("headless-explicit-wrong-feedback", _read_events())
+    run_id = f"eval-{case.id}"
+    gateway = ScriptedLLM(
+        [
+            ScriptedStep(
+                decision={
+                    "schema_version": "v1",
+                    "decision_id": "explicit-invoke",
+                    "run_id": run_id,
+                    "action": "invoke",
+                    "capability": "entrypoint.echo",
+                    "capability_version": "v1",
+                    "arguments": {"text": "fixture input"},
+                }
+            ),
+            ScriptedStep(
+                decision={
+                    "schema_version": "v1",
+                    "decision_id": "explicit-respond",
+                    "run_id": run_id,
+                    "action": "respond",
+                    "content": "done",
+                },
+                expect=ObservationExpectation(
+                    tool_results=1,
+                    last_tool_result={
+                        "safe_output": {"value": "not-the-real-output"},
+                    },
+                ),
+            ),
+        ]
+    )
+
+    with pytest.raises(
+        ScriptedObservationError,
+        match=r"last tool result\.safe_output\.value",
+    ):
+        await entrypoint.run_headless_case(
+            case,
+            registry=_echo_registry(),
+            model_gateway=gateway,
+            model="scripted-v1",
+            fail_on_run_failure=False,
+            observation_failure_source=lambda: gateway.observation_failures,
+        )
+
+    assert any(
+        "last tool result.safe_output.value" in failure
+        for failure in gateway.observation_failures
+    )
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_accepts_declared_tool_output() -> None:
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    case = _entrypoint_case(
+        "headless-declared-output",
+        [
+            {
+                "type": "tool_call_start",
+                "name": "entrypoint.echo",
+                "arguments": {"text": "fixture input"},
+            },
+            {
+                "type": "tool_call_end",
+                "name": "entrypoint.echo",
+                "output": {"value": "synthetic-result"},
+                "status": "succeeded",
+            },
+            {"type": "message_chunk", "content": "synthetic-result"},
+        ],
+    )
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    result, _events = await entrypoint.run_headless_case(
+        case,
+        registry=_echo_registry(),
+        model_gateway=gateway,
+        model="entrypoint-fixture-v1",
+        fail_on_run_failure=True,
+        observation_failure_source=lambda: gateway.observation_failures,
+    )
+
+    assert result.run_status == "completed"
+    assert result.text == "synthetic-result"
+    assert gateway.observation_failures == []
+    assert gateway.observation_summary()["expectations_verified"] == 2
+    assert gateway.calls[1].tool_results[0]["safe_output"] == {
+        "value": "synthetic-result"
+    }
+
+
+@pytest.mark.asyncio
+async def test_entrypoint_rejects_mismatched_declared_tool_output() -> None:
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    case = _entrypoint_case(
+        "headless-mismatched-output",
+        [
+            {
+                "type": "tool_call_start",
+                "name": "entrypoint.echo",
+                "arguments": {"text": "fixture input"},
+            },
+            {
+                "type": "tool_call_end",
+                "name": "entrypoint.echo",
+                "output": {"value": "not-the-real-output"},
+                "status": "succeeded",
+            },
+            {"type": "message_chunk", "content": "synthetic-result"},
+        ],
+    )
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    with pytest.raises(
+        ScriptedObservationError,
+        match=r"last tool result\.safe_output\.value",
+    ):
+        await entrypoint.run_headless_case(
+            case,
+            registry=_echo_registry(),
+            model_gateway=gateway,
+            model="entrypoint-fixture-v1",
+            fail_on_run_failure=False,
+            observation_failure_source=lambda: gateway.observation_failures,
+        )
+
+    assert any(
+        "last tool result.safe_output.value" in failure
+        for failure in gateway.observation_failures
+    )
+
+
+@pytest.mark.asyncio
+async def test_first_call_observation_failure_is_not_masked_by_trace_validation() -> (
+    None
+):
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    case = _entrypoint_case("headless-first-call-failure", _read_events())
+    run_id = f"eval-{case.id}"
+    gateway = ScriptedLLM(
+        [
+            ScriptedStep(
+                decision={
+                    "schema_version": "v1",
+                    "decision_id": "first-call-invoke",
+                    "run_id": run_id,
+                    "action": "invoke",
+                    "capability": "entrypoint.echo",
+                    "capability_version": "v1",
+                    "arguments": {"text": "fixture input"},
+                },
+                expect=ObservationExpectation(
+                    context={"run_state": "completed"},
+                ),
+            )
+        ]
+    )
+
+    with pytest.raises(ScriptedObservationError, match="context.run_state"):
+        await entrypoint.run_headless_case(
+            case,
+            registry=_echo_registry(),
+            model_gateway=gateway,
+            model="scripted-v1",
+            fail_on_run_failure=False,
+            observation_failure_source=lambda: gateway.observation_failures,
+        )
+
+    assert any(
+        "context.run_state" in failure for failure in gateway.observation_failures
+    )

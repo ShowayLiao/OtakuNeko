@@ -23,6 +23,18 @@ case, and checks the persisted trace and terminal run result before returning
 evaluation metrics. It does not use `DATABASE_URL`, provider credentials, or
 network access.
 
+The entrypoint model double
+(`app.evaluation.scripted_llm.ScriptedLLM`) is observation-aware: after N
+invoke fixture events, the next model call must see exactly N untrusted
+capability feedback messages, and the model-safe context must carry the same
+run/trace identity. An invoke event, or a following `tool_call_end`, may set
+`output` to the expected normalized capability data; the following step then
+checks it against `safe_output`. Feedback must carry the Runtime envelope
+(`safe_output` and `provenance`); a user message that only copies the marker is
+rejected. Missing, malformed, or tampered feedback fails the case with
+`ScriptedObservationError` instead of replaying the script by index. Fixtures
+without `output` remain valid.
+
 HTTP debugging uses the same primary execution composition: submit a chat to
 `POST /api/v1/chat`, take its `run_id` from SSE, then query
 `GET /api/v1/runs/{run_id}`, `GET /api/v1/runs/{run_id}/events`, and
