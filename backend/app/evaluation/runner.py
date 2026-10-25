@@ -134,6 +134,7 @@ async def run_case(
             metrics=metrics,
             judge=judge_outcome,
             run_id=execution.run_id,
+            trace_id=execution.trace_id,
             observability=observability_snapshot(execution),
             tool_argument_keys=execution.tool_argument_keys,
             providers=execution.providers,

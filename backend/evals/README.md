@@ -93,6 +93,50 @@ Each `CaseResult` carries `deterministic` (per-dimension pass/detail and
 `task_success`); execution exceptions still produce a failed deterministic
 score so the failed dimensions remain visible in the report.
 
+## Versioned L5 scenario dataset
+
+`evals/datasets/v1-l5-scenarios.jsonl` is the versioned behavior dataset. It
+contains four fixed synthetic questions with unique fixture users (920–923),
+isolated in-memory SQL per case, and deterministic expectations:
+
+| Case | Behavior |
+| --- | --- |
+| `l5-scenario-single-step` | one model decision, no tools |
+| `l5-scenario-multi-step` | two read invocations, then respond |
+| `l5-scenario-error-recovery` | one `read_failure`, read retry, completed |
+| `l5-scenario-write-approval` | approval pause, one approved write, respond |
+
+Write cases declare `approvals: [{"action": "write"}]`. The trusted principal is
+always the isolated fixture user; approval IDs come from the Runtime pause event,
+never from model arguments. Approval cases use a discarded per-case SQLite
+checkpoint so the paused Run can resume. A completed Run with observed tool
+failures is recorded as recovered; cases that allow error codes are not treated
+as hard execution failures. Run the dataset through the same Runtime entrypoint:
+
+```bash
+uv run python -m app.evaluation.runner --config evals/config/l5-scenarios.yaml
+```
+
+## L5 PR benchmark gate
+
+The PR gate runs both L5 configurations through the real Runtime entrypoint,
+enforces their thresholds, and compares per-case outcomes with the committed
+baseline:
+
+```bash
+uv run python -m app.evaluation.l5_gate \
+  --report .runtime/evaluation/l5-gate.json \
+  --diff .runtime/evaluation/l5-gate-diff.json
+```
+
+The gate exits non-zero on a failed case, a threshold failure, or baseline
+drift (regression, added case without baseline, or a baseline case missing from
+the report). `l5-gate.json` records each case with `case_id`, `run_id`,
+`trace_id`, terminal/route facts and failed dimension details, so a failure is
+localized without reading raw provider payloads. `l5-gate-diff.json` is the
+machine-readable baseline diff. CI job `l5-pr-benchmark-gate` runs it offline
+and uploads the JUnit file and both reports; `repository-quality` depends on it.
+
 ## Offline loop certification
 
 Run the seven synthetic loop scenarios through the same `build_runtime` factory

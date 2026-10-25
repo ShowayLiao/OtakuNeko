@@ -114,6 +114,7 @@ class ExecutionResult(StrictModel):
     latency_ms: float = Field(default=0, ge=0)
     call_count: int = Field(default=0, ge=0)
     run_id: str | None = None
+    trace_id: str | None = None
     run_status: Literal["completed", "failed", "cancelled", "timeout"] = "completed"
     tool_call_count: int = Field(default=0, ge=0)
     tool_success_count: int = Field(default=0, ge=0)
@@ -194,6 +195,12 @@ class AnswerQualitySpec(StrictModel):
     required: bool = False
 
 
+class ApprovalFixture(StrictModel):
+    """Trusted test approval; the principal always comes from the fixture user."""
+
+    action: str = Field(min_length=1)
+
+
 class EvalCase(StrictModel):
     id: str = Field(min_length=1)
     category: Category
@@ -209,6 +216,7 @@ class EvalCase(StrictModel):
     tags: list[str] = Field(default_factory=list)
     deterministic: DeterministicCaseSpec | None = None
     answer_quality: AnswerQualitySpec | None = None
+    approvals: list[ApprovalFixture] = Field(default_factory=list)
 
 
 class DatasetManifest(StrictModel):
@@ -267,6 +275,7 @@ class CaseResult(StrictModel):
     judge: JudgeOutcome = Field(default_factory=JudgeOutcome)
     error: str | None = None
     run_id: str | None = None
+    trace_id: str | None = None
     observability: dict[str, float] = Field(default_factory=dict)
     tool_argument_keys: list[str] = Field(default_factory=list)
     providers: list[str] = Field(default_factory=list)

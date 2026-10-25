@@ -342,6 +342,73 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
+  l5_benchmark_gate:
+    name: l5-pr-benchmark-gate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      # The L5 benchmark is deterministic and offline: no provider key, qB,
+      # scheduler or external write path is enabled for this job.
+      - name: Set up isolated deterministic environment
+        run: |
+          echo "JWT_SECRET_KEY=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+          echo "DEBUG=false" >> "$GITHUB_ENV"
+          echo "ENABLE_QB_PROXY=false" >> "$GITHUB_ENV"
+          echo "ENABLE_PROACTIVE_SCHEDULER=false" >> "$GITHUB_ENV"
+          echo "OPENAI_API_KEY=" >> "$GITHUB_ENV"
+
+      - name: Verify deterministic benchmark environment
+        run: |
+          test -z "${OPENAI_API_KEY:-}"
+          test "${ENABLE_QB_PROXY}" = "false"
+          test "${ENABLE_PROACTIVE_SCHEDULER}" = "false"
+
+      - name: Run L5 deterministic benchmark tests
+        run: |
+          mkdir -p .runtime/junit .runtime/evaluation
+          uv run --locked pytest \
+            tests/evaluation/test_scoring.py \
+            tests/evaluation/test_l5_scenarios.py \
+            tests/evaluation/test_l5_gate.py \
+            tests/test_l5_gate_workflow.py \
+            --offline-agent-gate -q -p no:warnings --junitxml=.runtime/junit/l5-benchmark.xml
+
+      # Threshold and per-case baseline comparison block the PR. The gate also
+      # writes per-case run_id/trace_id evidence and a machine-readable diff.
+      - name: Run L5 PR benchmark gate
+        run: |
+          uv run --locked python -m app.evaluation.l5_gate \
+            --report .runtime/evaluation/l5-gate.json \
+            --diff .runtime/evaluation/l5-gate-diff.json
+
+      # Acceptance: a failed gate must still publish downloadable evidence.
+      - name: Preserve L5 benchmark failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-l5-pr-benchmark-gate
+          path: |
+            backend/.runtime/junit/l5-benchmark.xml
+            backend/.runtime/evaluation/l5-gate.json
+            backend/.runtime/evaluation/l5-gate-diff.json
+          retention-days: 14
+          if-no-files-found: warn
+
   benchmark:
     name: benchmark
     runs-on: ubuntu-latest
@@ -425,7 +492,7 @@ jobs:
 
   repository-quality:
     name: repository-quality
-    needs: [software, postgres, frontend, backend-quality-baseline, harness, agent_gate, benchmark, configuration]
+    needs: [software, postgres, frontend, backend-quality-baseline, harness, agent_gate, l5_benchmark_gate, benchmark, configuration]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -437,6 +504,7 @@ jobs:
           BACKEND_QUALITY_RESULT: ${{ needs.backend-quality-baseline.result }}
           HARNESS_RESULT: ${{ needs.harness.result }}
           AGENT_GATE_RESULT: ${{ needs.agent_gate.result }}
+          L5_BENCHMARK_RESULT: ${{ needs.l5_benchmark_gate.result }}
           BENCHMARK_RESULT: ${{ needs.benchmark.result }}
           CONFIGURATION_RESULT: ${{ needs.configuration.result }}
         run: |
@@ -449,11 +517,12 @@ jobs:
             echo "| backend-quality-baseline | $BACKEND_QUALITY_RESULT |"
             echo "| harness | $HARNESS_RESULT |"
             echo "| agent-fake-llm-gate | $AGENT_GATE_RESULT |"
+            echo "| l5-pr-benchmark-gate | $L5_BENCHMARK_RESULT |"
             echo "| benchmark | $BENCHMARK_RESULT |"
             echo "| configuration | $CONFIGURATION_RESULT |"
           } >> "$GITHUB_STEP_SUMMARY"
 
-          for result in "$SOFTWARE_RESULT" "$POSTGRES_RESULT" "$FRONTEND_RESULT" "$BACKEND_QUALITY_RESULT" "$HARNESS_RESULT" "$AGENT_GATE_RESULT" "$BENCHMARK_RESULT" "$CONFIGURATION_RESULT"; do
+          for result in "$SOFTWARE_RESULT" "$POSTGRES_RESULT" "$FRONTEND_RESULT" "$BACKEND_QUALITY_RESULT" "$HARNESS_RESULT" "$AGENT_GATE_RESULT" "$L5_BENCHMARK_RESULT" "$BENCHMARK_RESULT" "$CONFIGURATION_RESULT"; do
             if [[ "$result" != success ]]; then
               echo "A required gate did not succeed: $result" >&2
               exit 1

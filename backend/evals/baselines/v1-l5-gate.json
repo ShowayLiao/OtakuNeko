@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "cases": {
+    "l5-contract-respond": {"passed": true, "task_success": true},
+    "l5-contract-tool": {"passed": true, "task_success": true},
+    "l5-scenario-single-step": {"passed": true, "task_success": true},
+    "l5-scenario-multi-step": {"passed": true, "task_success": true},
+    "l5-scenario-error-recovery": {"passed": true, "task_success": true},
+    "l5-scenario-write-approval": {"passed": true, "task_success": true}
+  }
+}

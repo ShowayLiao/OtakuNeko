@@ -224,6 +224,12 @@ def normalize_events(
     if open_tools:
         tool_failure_count += len(open_tools)
 
+    # Observational recovery: a completed Run that previously observed tool
+    # failures demonstrates recovery even when the Runtime emits no explicit
+    # recovery event. An explicit recovery event still wins when present.
+    if run_status == "completed" and tool_failure_count:
+        recovered = True
+
     text = "".join(text_parts)
     return ExecutionResult(
         route=route,

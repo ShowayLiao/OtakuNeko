@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 import json
+from pathlib import Path
+import tempfile
 import time
 from typing import Any
 
@@ -14,18 +16,20 @@ from sqlmodel import SQLModel
 
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
-from app.capabilities.types import ActionDescriptor
+from app.capabilities.types import ActionDescriptor, CapabilityResult
 from app.evaluation.adapter import (
     FixtureMemory,
     classify_route,
     normalize_events,
 )
 from app.evaluation.scripted_llm import ScriptedLLM, ScriptedObservationError
-from app.evaluation.types import EvalCase, ExecutionResult
+from app.evaluation.types import ApprovalFixture, EvalCase, ExecutionResult
 from app.harness.budget import CancellationToken, RunBudget
+from app.harness.checkpoint import SqliteCheckpointStore
 from app.harness.contracts import ExecutionContext
 from app.harness.execution import build_runtime
 from app.harness.model_gateway import ModelGateway
+from app.harness.policy import Approval
 from app.harness.task import AgentTask
 from app.schemas.user import UserRead
 from app.trace.sql_store import SqlTraceStore
@@ -79,41 +83,93 @@ async def isolated_headless_session(
 
 
 class _EntrypointEchoCapability(BaseCapability):
+    def __init__(self) -> None:
+        self.flaky_calls = 0
+        self.writes: list[str] = []
+
     @property
     def name(self) -> str:
         return "entrypoint"
 
     @property
     def description(self) -> str:
-        return "A deterministic read-only capability for the entrypoint eval."
+        return "Deterministic read and approved-write eval capability."
 
     def actions(self) -> list[ActionDescriptor]:
+        read_schema = {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        }
+        read_output = {
+            "type": "object",
+            "properties": {"value": {"type": "string"}},
+            "required": ["value"],
+            "additionalProperties": False,
+        }
         return [
             ActionDescriptor(
                 name="echo",
                 public_name="entrypoint.echo",
                 description="Return the fixed synthetic evaluation value.",
+                input_schema=read_schema,
+                output_schema=read_output,
+                requires_auth=True,
+                is_side_effect=False,
+                retry_class="read_only",
+            ),
+            ActionDescriptor(
+                name="flaky",
+                public_name="entrypoint.flaky",
+                description="Fail the first synthetic read, then succeed.",
+                input_schema=read_schema,
+                output_schema=read_output,
+                requires_auth=True,
+                is_side_effect=False,
+                retry_class="read_only",
+            ),
+            ActionDescriptor(
+                name="write",
+                public_name="entrypoint.write",
+                description="Record one approved synthetic side effect.",
                 input_schema={
                     "type": "object",
-                    "properties": {"text": {"type": "string"}},
-                    "required": ["text"],
+                    "properties": {
+                        "value": {"type": "string"},
+                        "idempotency_key": {"type": "string"},
+                    },
+                    "required": ["value", "idempotency_key"],
                     "additionalProperties": False,
                 },
                 output_schema={
                     "type": "object",
-                    "properties": {"value": {"type": "string"}},
-                    "required": ["value"],
-                    "additionalProperties": False,
+                    "properties": {"appended": {"type": "string"}},
+                    "required": ["appended"],
                 },
                 requires_auth=True,
-                is_side_effect=False,
-            )
+                is_side_effect=True,
+                approval_required=True,
+                idempotency_mode="required",
+            ),
         ]
 
-    async def execute(self, action: str, **_kwargs: Any) -> dict[str, Any]:
-        if action != "echo":
-            return {"success": False, "error_type": "invalid_action"}
-        return {"success": True, "value": "synthetic-result"}
+    async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
+        if action == "echo":
+            return {"success": True, "value": "synthetic-result"}
+        if action == "flaky":
+            self.flaky_calls += 1
+            if self.flaky_calls == 1:
+                return CapabilityResult.fail(
+                    "Synthetic read failure",
+                    error_type="read_failure",
+                ).to_dict()
+            return {"success": True, "value": "recovered-result"}
+        if action == "write":
+            value = str(kwargs.get("value") or "")
+            self.writes.append(value)
+            return {"success": True, "appended": value}
+        return {"success": False, "error_type": "invalid_action"}
 
 
 async def run_headless_case(
@@ -125,10 +181,21 @@ async def run_headless_case(
     fail_on_run_failure: bool,
     fail_on_tool_failure: bool = False,
     observation_failure_source: Callable[[], Sequence[str]] | None = None,
+    approvals: Sequence[ApprovalFixture] = (),
 ) -> tuple[ExecutionResult, list[dict[str, Any]]]:
-    """Execute one case with durable Runtime stores backed by isolated SQL."""
+    """Execute one case with durable Runtime stores backed by isolated SQL.
+
+    Declared approvals are trusted server-side fixtures: the principal always
+    comes from the isolated fixture user, never from model arguments.
+    """
     run_id = f"eval-{case.id}"
     started = time.perf_counter()
+    checkpoint_context = tempfile.TemporaryDirectory() if approvals else None
+    checkpoint_store = (
+        SqliteCheckpointStore(str(Path(checkpoint_context.name) / "checkpoint.db"))
+        if checkpoint_context is not None
+        else None
+    )
     async with isolated_headless_session(case.user_fixture.user_id) as (
         session,
         user,
@@ -145,7 +212,8 @@ async def run_headless_case(
             model_gateway=model_gateway,
             trace_store=trace_store,
             durable=True,
-            allow_side_effects=False,
+            allow_side_effects=bool(approvals),
+            checkpoint_store=checkpoint_store,
             memory_context=memory_context,
         )
         context = ExecutionContext(
@@ -155,7 +223,9 @@ async def run_headless_case(
             thread_id=run_id,
             capability_allowlist=frozenset(
                 definition.public_name
-                for definition in registry.allowed_public_definitions()
+                for definition in registry.allowed_public_definitions(
+                    include_side_effects=bool(approvals)
+                )
             ),
         )
         task = AgentTask(
@@ -170,15 +240,37 @@ async def run_headless_case(
             },
         )
         try:
-            events = [
-                event
-                async for event in runtime.stream_decision(
-                    task,
-                    context=context,
-                    budget=RunBudget(),
-                    cancellation=CancellationToken(),
+            approval_queue = list(approvals)
+            pending_approval: Approval | None = None
+            events: list[dict[str, Any]] = []
+            while True:
+                batch = [
+                    event
+                    async for event in runtime.stream_decision(
+                        task,
+                        context=context,
+                        budget=RunBudget(),
+                        cancellation=CancellationToken(),
+                        approval=pending_approval,
+                    )
+                ]
+                events.extend(batch)
+                required = next(
+                    (
+                        event
+                        for event in batch
+                        if event.get("type") == "approval_required"
+                    ),
+                    None,
                 )
-            ]
+                if required is None or not approval_queue:
+                    break
+                fixture = approval_queue.pop(0)
+                pending_approval = Approval(
+                    approval_id=str(required.get("approval_id") or ""),
+                    principal_id=user.id,
+                    action=fixture.action,
+                )
         except Exception as exc:
             raise RuntimeError("headless Runtime execution failed") from exc
 
@@ -212,11 +304,15 @@ async def run_headless_case(
         if fail_on_tool_failure and result.tool_failure_count:
             raise RuntimeError("headless Runtime invocation failed")
 
+    if checkpoint_context is not None:
+        checkpoint_context.cleanup()
+
     duration_ms = (time.perf_counter() - started) * 1000
     result = result.model_copy(
         update={
             "route": classify_route(events, result.capabilities, result.text),
             "latency_ms": duration_ms,
+            "trace_id": run_id,
         }
     )
     return result, events
@@ -308,14 +404,21 @@ class DecisionEntrypointTarget:
         registry = CapabilityRegistry()
         registry.register(_EntrypointEchoCapability())
         gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+        # A case that explicitly allows tool error codes is exercising recovery,
+        # so the target must not turn the observed failure into a hard exception.
+        allows_tool_errors = bool(
+            case.deterministic is not None
+            and case.deterministic.tool_errors.allowed_error_codes
+        )
         result, _events = await run_headless_case(
             case,
             registry=registry,
             model_gateway=gateway,
             model="entrypoint-fixture-v1",
             fail_on_run_failure=True,
-            fail_on_tool_failure=True,
+            fail_on_tool_failure=not allows_tool_errors,
             observation_failure_source=lambda: gateway.observation_failures,
+            approvals=case.approvals,
         )
         return result
 
