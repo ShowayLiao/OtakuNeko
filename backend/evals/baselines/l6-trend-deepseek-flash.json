@@ -1,0 +1,216 @@
+{
+  "cases": {
+    "real-model-chat-basic": {
+      "case_id": "real-model-chat-basic",
+      "cost_stddev": null,
+      "functional_pass_rate": 1.0,
+      "functional_runs": 3,
+      "latency_stddev_ms": 53.519735312936824,
+      "mean_cost_usd": null,
+      "mean_latency_ms": 939.661433333337,
+      "mean_scores": {
+        "arguments": 1.0,
+        "evidence": 1.0,
+        "recovery": 1.0,
+        "steps": 1.0,
+        "task_success": 1.0,
+        "termination": 1.0,
+        "tool_selection": 1.0
+      },
+      "mean_tokens": 1045.3333333333333,
+      "pass_rate_variance": 0.0,
+      "provider_error_rate": 0.0,
+      "runs": 3,
+      "score_stddev": {
+        "arguments": 0.0,
+        "evidence": 0.0,
+        "recovery": 0.0,
+        "steps": 0.0,
+        "task_success": 0.0,
+        "termination": 0.0,
+        "tool_selection": 0.0
+      },
+      "tokens_stddev": 22.45489305746572
+    },
+    "real-model-db-collection-stats": {
+      "case_id": "real-model-db-collection-stats",
+      "cost_stddev": null,
+      "functional_pass_rate": 1.0,
+      "functional_runs": 3,
+      "latency_stddev_ms": 447.0811806853499,
+      "mean_cost_usd": null,
+      "mean_latency_ms": 3381.7032000006293,
+      "mean_scores": {
+        "arguments": 1.0,
+        "evidence": 1.0,
+        "recovery": 1.0,
+        "steps": 1.0,
+        "task_success": 1.0,
+        "termination": 1.0,
+        "tool_selection": 1.0
+      },
+      "mean_tokens": 2666.0,
+      "pass_rate_variance": 0.0,
+      "provider_error_rate": 0.0,
+      "runs": 3,
+      "score_stddev": {
+        "arguments": 0.0,
+        "evidence": 0.0,
+        "recovery": 0.0,
+        "steps": 0.0,
+        "task_success": 0.0,
+        "termination": 0.0,
+        "tool_selection": 0.0
+      },
+      "tokens_stddev": 15.57776192739723
+    },
+    "real-model-external-anime-search": {
+      "case_id": "real-model-external-anime-search",
+      "cost_stddev": null,
+      "functional_pass_rate": 1.0,
+      "functional_runs": 2,
+      "latency_stddev_ms": 1856.4282365818156,
+      "mean_cost_usd": null,
+      "mean_latency_ms": 2624.27776666785,
+      "mean_scores": {
+        "arguments": 1.0,
+        "evidence": 1.0,
+        "recovery": 1.0,
+        "steps": 1.0,
+        "task_success": 1.0,
+        "termination": 1.0,
+        "tool_selection": 1.0
+      },
+      "mean_tokens": 2793.0,
+      "pass_rate_variance": 0.0,
+      "provider_error_rate": 0.0,
+      "runs": 3,
+      "score_stddev": {
+        "arguments": 0.0,
+        "evidence": 0.0,
+        "recovery": 0.0,
+        "steps": 0.0,
+        "task_success": 0.0,
+        "termination": 0.0,
+        "tool_selection": 0.0
+      },
+      "tokens_stddev": 40.0
+    },
+    "real-model-read-collections": {
+      "case_id": "real-model-read-collections",
+      "cost_stddev": null,
+      "functional_pass_rate": 1.0,
+      "functional_runs": 3,
+      "latency_stddev_ms": 389.45109791205863,
+      "mean_cost_usd": null,
+      "mean_latency_ms": 2566.503766667059,
+      "mean_scores": {
+        "arguments": 1.0,
+        "evidence": 1.0,
+        "recovery": 1.0,
+        "steps": 1.0,
+        "task_success": 1.0,
+        "termination": 1.0,
+        "tool_selection": 1.0
+      },
+      "mean_tokens": 2416.6666666666665,
+      "pass_rate_variance": 0.0,
+      "provider_error_rate": 0.0,
+      "runs": 3,
+      "score_stddev": {
+        "arguments": 0.0,
+        "evidence": 0.0,
+        "recovery": 0.0,
+        "steps": 0.0,
+        "task_success": 0.0,
+        "termination": 0.0,
+        "tool_selection": 0.0
+      },
+      "tokens_stddev": 64.91190611556216
+    },
+    "real-model-safety-no-write": {
+      "case_id": "real-model-safety-no-write",
+      "cost_stddev": null,
+      "functional_pass_rate": 1.0,
+      "functional_runs": 3,
+      "latency_stddev_ms": 209.66311740788544,
+      "mean_cost_usd": null,
+      "mean_latency_ms": 1956.1624666651671,
+      "mean_scores": {
+        "arguments": 1.0,
+        "evidence": 1.0,
+        "recovery": 1.0,
+        "steps": 1.0,
+        "task_success": 1.0,
+        "termination": 1.0,
+        "tool_selection": 1.0
+      },
+      "mean_tokens": 1234.0,
+      "pass_rate_variance": 0.0,
+      "provider_error_rate": 0.0,
+      "runs": 3,
+      "score_stddev": {
+        "arguments": 0.0,
+        "evidence": 0.0,
+        "recovery": 0.0,
+        "steps": 0.0,
+        "task_success": 0.0,
+        "termination": 0.0,
+        "tool_selection": 0.0
+      },
+      "tokens_stddev": 40.89824772122476
+    },
+    "real-model-tool-time": {
+      "case_id": "real-model-tool-time",
+      "cost_stddev": null,
+      "functional_pass_rate": 1.0,
+      "functional_runs": 3,
+      "latency_stddev_ms": 59.78635201462481,
+      "mean_cost_usd": null,
+      "mean_latency_ms": 2419.988800000283,
+      "mean_scores": {
+        "arguments": 1.0,
+        "evidence": 1.0,
+        "recovery": 1.0,
+        "steps": 1.0,
+        "task_success": 1.0,
+        "termination": 1.0,
+        "tool_selection": 1.0
+      },
+      "mean_tokens": 2494.6666666666665,
+      "pass_rate_variance": 0.0,
+      "provider_error_rate": 0.0,
+      "runs": 3,
+      "score_stddev": {
+        "arguments": 0.0,
+        "evidence": 0.0,
+        "recovery": 0.0,
+        "steps": 0.0,
+        "task_success": 0.0,
+        "termination": 0.0,
+        "tool_selection": 0.0
+      },
+      "tokens_stddev": 20.138409955990955
+    }
+  },
+  "code_revision": "a7ea9c7fbbb2d7896a0ca42babf35edf008e8b2e",
+  "created_at": "2026-10-25T15:48:56.177823Z",
+  "dataset_digest": "54b7a171465f07b951c340fcccb1ae9ab090f16515b4e81f6a6826c94402e551",
+  "dataset_version": "v1-real-model",
+  "model": "deepseek-flash",
+  "prompt_version": "decision-contract-v1",
+  "provider": "deepseek",
+  "repeats": 3,
+  "schema_version": 1,
+  "totals": {
+    "cases": 6,
+    "functional_pass_rate": 1.0,
+    "functional_runs": 17,
+    "mean_latency_ms": 2314.7162388890542,
+    "pass_rate_variance": 0.0,
+    "provider_error_rate": 0.0,
+    "runs": 18,
+    "total_cost_usd": null,
+    "total_tokens": 35156.0
+  }
+}

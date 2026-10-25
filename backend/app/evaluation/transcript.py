@@ -238,6 +238,11 @@ def _file_name(case_id: str) -> str:
     return f"{re.sub(r'[^A-Za-z0-9._-]', '_', case_id)}.json"
 
 
+def transcript_path(directory: str | Path, case_id: str) -> Path:
+    """Stable per-case transcript path used by reports and review queues."""
+    return Path(directory) / _file_name(case_id)
+
+
 def write_transcript(
     directory: str | Path,
     case_id: str,
@@ -245,7 +250,7 @@ def write_transcript(
 ) -> Path:
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
-    target = root / _file_name(case_id)
+    target = transcript_path(root, case_id)
     temporary = target.with_suffix(target.suffix + ".tmp")
     temporary.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),

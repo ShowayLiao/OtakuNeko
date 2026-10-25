@@ -5,9 +5,14 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, AsyncIterator, Literal, Protocol
+from typing import Any, AsyncIterator, Literal, Protocol, Sequence
 
 from app.capabilities.factory import build_capability_registry
+from app.evaluation.controlled import (
+    controlled_allowed_capabilities,
+    controlled_external_responses,
+    validate_controlled_capabilities,
+)
 from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent, ToolErrorSample
 from app.agents.provider_endpoint import (
     ProviderEndpointPolicy,
@@ -84,7 +89,11 @@ def normalize_events(
     reconnect_count = 0
     model_call_count = 0
     model_tokens = 0
+    model_prompt_tokens = 0
+    model_completion_tokens = 0
     has_model_tokens = False
+    has_prompt_tokens = False
+    has_completion_tokens = False
     step_count = 0
     terminal_error_code: str | None = None
     termination_reason: str | None = None
@@ -118,6 +127,16 @@ def normalize_events(
         if isinstance(input_tokens, int) and isinstance(output_tokens, int):
             return input_tokens + output_tokens
         return None
+
+    def usage_parts(usage: Any) -> tuple[int | None, int | None]:
+        if not isinstance(usage, dict):
+            return None, None
+        prompt = usage.get("prompt_tokens", usage.get("input_tokens"))
+        completion = usage.get("completion_tokens", usage.get("output_tokens"))
+        return (
+            prompt if isinstance(prompt, int) and prompt >= 0 else None,
+            completion if isinstance(completion, int) and completion >= 0 else None,
+        )
 
     for index, event in enumerate(events):
         event_type = event.get("type")
@@ -213,6 +232,13 @@ def normalize_events(
             if tokens is not None:
                 model_tokens += tokens
                 has_model_tokens = True
+            prompt_tokens, completion_tokens = usage_parts(event.get("usage"))
+            if prompt_tokens is not None:
+                model_prompt_tokens += prompt_tokens
+                has_prompt_tokens = True
+            if completion_tokens is not None:
+                model_completion_tokens += completion_tokens
+                has_completion_tokens = True
             cost = event.get("estimated_cost_usd")
             if isinstance(cost, (int, float)):
                 estimated_cost_usd += float(cost)
@@ -258,6 +284,8 @@ def normalize_events(
         reconnect_count=reconnect_count,
         model_call_count=model_call_count,
         model_tokens=model_tokens if has_model_tokens else None,
+        prompt_tokens=model_prompt_tokens if has_prompt_tokens else None,
+        completion_tokens=(model_completion_tokens if has_completion_tokens else None),
         estimated_cost_usd=(
             estimated_cost_usd
             if model_call_count and estimated_cost_unknown_count == 0
@@ -386,18 +414,39 @@ class ProductionRuntimeTarget:
         api_key: str | None = None,
         transcript_dir: str | Path | None = None,
         temperature: float = 0,
+        allowed_public_names: Sequence[str] | None = None,
+        external_fixtures: str | None = None,
+        deepseek_options: dict[str, Any] | None = None,
     ) -> None:
         self._api_key = _configured_api_key(api_key)
         self._endpoint_policy = _provider_endpoint_policy()
         self._base_url = resolve_provider_base_url(
-            base_url or os.getenv("OPENAI_BASE_URL"),
+            _configured_base_url(base_url),
             policy=self._endpoint_policy,
         )
         self._model = model or config.agent.model
         self._temperature = temperature
+        self._deepseek_options = deepseek_options
         self._transcript_dir = (
             transcript_dir if transcript_dir is not None else config.transcript_dir
         )
+        self._external_fixtures = external_fixtures
+        self._allowed_public_names: frozenset[str] | None
+        if external_fixtures is not None:
+            if allowed_public_names is None:
+                allowed_public_names = sorted(
+                    controlled_allowed_capabilities(external_fixtures)
+                )
+            self._allowed_public_names = validate_controlled_capabilities(
+                external_fixtures,
+                allowed_public_names,
+            )
+        else:
+            self._allowed_public_names = (
+                frozenset(allowed_public_names)
+                if allowed_public_names is not None
+                else None
+            )
         if not self._api_key and not _local_endpoint_without_key(self._base_url):
             raise ProviderCredentialsUnavailable(
                 "production target credentials unavailable"
@@ -411,17 +460,20 @@ class ProductionRuntimeTarget:
             base_url=self._base_url,
             model=self._model,
             temperature=self._temperature,
+            deepseek_options=self._deepseek_options,
             endpoint_policy=self._endpoint_policy,
         )
         try:
-            result, _events = await run_headless_case(
-                case,
-                registry=build_capability_registry(),
-                model_gateway=gateway,
-                model=self._model,
-                fail_on_run_failure=False,
-                transcript_dir=self._transcript_dir,
-            )
+            with controlled_external_responses(self._external_fixtures):
+                result, _events = await run_headless_case(
+                    case,
+                    registry=build_capability_registry(),
+                    model_gateway=gateway,
+                    model=self._model,
+                    fail_on_run_failure=False,
+                    transcript_dir=self._transcript_dir,
+                    allowed_public_names=self._allowed_public_names,
+                )
         finally:
             await gateway.close()
         return result
@@ -457,6 +509,18 @@ def _configured_api_key(explicit: str | None) -> str | None:
     from app.core.config import settings
 
     return settings.OPENAI_API_KEY or None
+
+
+def _configured_base_url(explicit: str | None) -> str | None:
+    """Resolve the provider endpoint with the same env-over-dotenv precedence."""
+    if explicit:
+        return explicit
+    env_value = os.getenv("OPENAI_BASE_URL")
+    if env_value is not None:
+        return env_value or None
+    from app.core.config import settings
+
+    return settings.OPENAI_BASE_URL or None
 
 
 def _local_endpoint_without_key(base_url: str) -> bool:
@@ -547,4 +611,17 @@ def classify_route(
 
 
 def create_production_target(config) -> ProductionRuntimeTarget:
-    return ProductionRuntimeTarget(config)
+    controlled = getattr(config, "controlled", None)
+    deepseek = getattr(config, "deepseek", None)
+    return ProductionRuntimeTarget(
+        config,
+        allowed_public_names=(
+            controlled.allowed_capabilities if controlled is not None else None
+        ),
+        external_fixtures=(
+            controlled.external_fixtures if controlled is not None else None
+        ),
+        deepseek_options=(
+            deepseek.model_dump(mode="json") if deepseek is not None else None
+        ),
+    )

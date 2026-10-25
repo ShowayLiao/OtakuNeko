@@ -65,19 +65,37 @@ uv run python -m app.evaluation.real_model --config evals/config/real-model.yaml
 ```
 
 `--model`, `--base-url`, `--case`, and `--limit` narrow one run. Credentials
-come from `OPENAI_API_KEY` in the process environment, or from `backend/.env`
-through application settings when that variable is unset (an explicitly empty
-value disables the dotenv fallback). `OPENAI_BASE_URL` is read from the process
-environment. A local endpoint may run without a key only in `DEPLOY_MODE=local`.
-Missing credentials or an endpoint rejected by the provider egress policy fail
-closed before any case starts, and there is no fixture fallback. Each case is
-delegated to the same `ProductionRuntimeTarget` used by `full.yaml`, which calls
-the backend headless case runner (`app.evaluation.entrypoint.run_headless_case`);
-that runner composes `build_runtime` with the production `CapabilityRegistry`,
-`Dispatcher`, `CapabilityAdapter`, isolated SQL Run/Event/Trace stores, and a
-synthetic fixture user. The entry does not implement an independent execution
-loop. The headless runner supplies case-scoped fixture memory, not the production
-memory service. Side-effecting actions stay outside the model catalog because no
+and the provider endpoint come from the process environment or from
+`backend/.env` through application settings when that variable is unset (an
+explicitly empty value disables the dotenv fallback). For DeepSeek:
+
+```text
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.deepseek.com
+```
+
+then run with `--model deepseek-flash` (or another model id available to
+your account). A `/v1` suffix on the DeepSeek endpoint is normalized to
+`https://api.deepseek.com`. To enable DeepSeek thinking mode at maximum effort,
+add:
+
+```yaml
+deepseek:
+  thinking: true
+  reasoning_effort: max
+```
+
+The same options are sent to the Judge when `judge.provider: deepseek`. A local
+endpoint may run without a key only in `DEPLOY_MODE=local`. Missing credentials
+or an endpoint rejected by the provider egress policy fail closed before any
+case starts, and there is no fixture fallback. Each case is delegated to the
+same `ProductionRuntimeTarget` used by `full.yaml`, which calls the backend
+headless case runner (`app.evaluation.entrypoint.run_headless_case`); that runner
+composes `build_runtime` with the production `CapabilityRegistry`, `Dispatcher`,
+`CapabilityAdapter`, isolated SQL Run/Event/Trace stores, and a synthetic
+fixture user. The entry does not implement an independent execution loop. The
+headless runner supplies case-scoped fixture memory, not the production memory
+service. Side-effecting actions stay outside the model catalog because no
 approvals are declared; read actions may still reach the external services they
 normally use in production.
 
@@ -90,6 +108,156 @@ authority. `real-model.yaml` currently has no committed baseline.
 
 Published datasets, baselines, and threshold configuration are append-only.
 Create a new version instead of overwriting an approved version.
+
+## Multi-run trend and cost baseline
+
+The live trend entry repeats every selected case independently and aggregates
+the resulting Runs:
+
+```bash
+uv run python -m app.evaluation.trend \
+  --config evals/config/real-model.yaml \
+  --repeats 3 \
+  --baseline evals/baselines/l6-trend-deepseek-flash.json \
+  --update-baseline
+```
+
+Each repetition gets a unique case id (`<case>__rN`), isolated SQL database,
+Run/Trace and transcript. The entry writes `report.json`,
+`current-baseline.json`, `trend-diff.json` (when comparing), and appends a
+history line to `.runtime/evaluation/l6-trend/history.jsonl`. Baselines record
+per-case pass rate/variance, L6 dimension means/stddev, latency/token/cost
+means/stddev, provider-error rate, dataset digest, repeats, model, prompt
+version and code revision. The diff reports pass-rate/score/latency/token/cost
+regressions and provider-error increases.
+
+`.github/workflows/l6-trend.yml` runs only on `workflow_dispatch` or a weekly
+schedule. It is intentionally not part of `repository-quality`, so ordinary PRs
+are never blocked by live-model cost or variance. It uploads the run directory,
+baseline and history as `ci-l6-live-trend`.
+
+Cost is estimated only when `cost.input_cost_per_million` and
+`cost.output_cost_per_million` are configured and the provider returns
+prompt/completion usage; otherwise it stays `null` and the cost trend omits the
+percentage instead of inventing a value. The trend cost covers agent model
+usage; Judge cost remains separately reported as `judge_cost_usd`.
+
+On Windows, `scripts/l6-trend.ps1` wraps the commands:
+
+```powershell
+.\scripts\l6-trend.ps1 -Mode smoke       # one cheap live case
+.\scripts\l6-trend.ps1 -Mode baseline    # writes the baseline (review before commit)
+.\scripts\l6-trend.ps1 -Mode compare     # compares against the committed baseline
+```
+
+The script reads credentials from `backend/.env` or the process environment and
+never accepts or prints an API key.
+
+## Per-run artifacts and usage
+
+Each `CaseResult` records `run_id`, `trace_id`, terminal status/error,
+`termination_reason`, prompt/provider/model identity, and a `usage` block:
+model calls, total model tokens (unknown stays `null`), latency, estimated cost
+(unknown stays `null`) and unknown-cost count. A redacted transcript keeps the
+conversation, Decisions, invocations, persisted events, Trace and terminal
+facts.
+
+`EvalReport.run_index` links every case to its run, trace, transcript path,
+message count, provider/model, usage and error, so a report can jump directly
+to one run. Reports also carry `prompt_version`, `dataset_version`/digest,
+`code_revision` and an `environment` block (Python, platform, runner, decision
+contract). Live runs write these under the run-scoped artifact directory.
+
+## L6 functional correctness scoring
+
+Each `CaseResult` carries `outcome` and an `l6` score derived from the
+deterministic contract:
+
+| Dimension | Metric |
+| --- | --- |
+| task success | `l6_task_success_rate` |
+| tool selection | `l6_tool_selection_accuracy` |
+| argument keys/values | `l6_argument_accuracy` |
+| evidence/citation | `l6_evidence_accuracy` |
+| termination | `l6_termination_accuracy` |
+| recovery | `l6_recovery_accuracy` |
+| step determinism | `l6_step_determinism_rate` |
+
+`outcome` is one of `passed`, `functional_failure`, `provider_error`,
+`execution_error` or `cancelled`. Provider and execution failures carry no
+functional scores, so `l6_functional_pass_rate` only uses cases that were
+actually evaluated. `l6_provider_error_count`/`_rate` and
+`l6_execution_error_count`/`_rate` report infrastructure failures separately.
+An expected failed/cancelled terminal state still counts as `passed` when it
+satisfies the case contract. The legacy `pass_rate` remains end-to-end.
+
+## Judge and human review
+
+Judge results are recorded independently of the functional gate. Each
+`JudgeOutcome` carries `rubric_version`, a SHA-256 `rubric_digest`,
+`quality_passed`, score, model and provider. The rubric comes from
+`judge.rubric` / `judge.rubric_version` in the config; changing either changes
+the digest and the Judge cache key.
+
+`real-model-quality.yaml` enables the Judge, points at
+`evals/reviews/v1-real-model.json`, and keeps `judge.required: false`. Judge
+quality never changes `l6_*` or `deterministic.task_success`; it only affects
+`quality_pass_rate`, `judge_score` and the case `passed` field.
+
+Human conclusions use a versioned file:
+
+```json
+{
+  "schema_version": 1,
+  "dataset_version": "v1-real-model",
+  "cases": {
+    "real-model-tool-time": {
+      "reviewer": "reviewer-1",
+      "verdict": "accept",
+      "rubric_version": "answer-quality-v1",
+      "notes": "Functionally correct; quality score disputed."
+    }
+  }
+}
+```
+
+Verdicts are `accept`, `reject` or `needs_discussion`. The runner attaches them
+as `CaseResult.human_review` and builds `EvalReport.review_queue` for missing
+Judge results, quality failures without review, human/Judge disagreements and
+rubric-version mismatches. A live run writes `review-queue.json` next to
+`report.json`; each entry points at the case's redacted transcript. Reviewer
+notes must not contain credentials or raw provider payloads.
+
+## Controlled live fixtures
+
+`real-model.yaml` declares a `controlled` block. The live target keeps the real
+Runtime, Dispatcher and capability implementations, but limits the model catalog
+to `get_current_time`, `list_collections`, `get_collection_statistics` and
+`search_anime_advanced`. Write actions never enter the catalog because no
+approvals are declared, and any capability outside this allowlist is denied by
+the Dispatcher before execution.
+
+External responses are fixed in-process: `app.evaluation.controlled` replaces
+the Bangumi search service call with a deterministic fixture for
+`search_anime_advanced`. Each case still gets a fresh in-memory SQL database,
+a synthetic fixture user and case-scoped memory; no production database or
+service is touched. The allowlist and fixture profile are validated against the
+production registry by `scripts/check_configuration.py`, and an unlisted action
+fails closed.
+
+With `run_scoped_artifacts: true`, every live run writes only under
+`.runtime/evaluation/real-model/runs/<run-id>/`:
+
+```text
+report.json
+run-manifest.json       # run id, dataset digest, model, code, controlled profile
+transcripts/<case>.json
+```
+
+The default run id contains a UTC timestamp plus a random suffix; `--run-id`
+reuses a fixed id only while its directory does not already exist, so evidence
+is never silently overwritten. Delete a run directory to remove all of its
+artifacts; no files are written outside it.
 
 ## Deterministic case and scoring contract
 

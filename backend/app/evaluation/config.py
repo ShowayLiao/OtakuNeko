@@ -24,10 +24,33 @@ class JudgeConfig(BaseModel):
     required: bool = False
     model: str = ""
     provider: str = ""
+    rubric_version: str = "answer-quality-v1"
+    rubric: dict[str, str] = Field(
+        default_factory=lambda: {"quality": "Score response quality from 0 to 1"}
+    )
     timeout_seconds: float = Field(default=30, gt=0)
     max_concurrency: int = Field(default=1, ge=1)
     max_cost_usd: float = Field(default=0, ge=0)
     max_cost_per_call_usd: float = Field(default=0, ge=0)
+    input_cost_per_million: float = Field(default=0, ge=0)
+    output_cost_per_million: float = Field(default=0, ge=0)
+
+
+class ControlledEvaluationConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    allowed_capabilities: list[str] = Field(min_length=1)
+    external_fixtures: Literal["controlled-v1"] | None = None
+    run_scoped_artifacts: bool = False
+
+
+class DeepSeekOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    thinking: bool = True
+    reasoning_effort: Literal["high", "max"] = "high"
+
+
+class AgentCostConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     input_cost_per_million: float = Field(default=0, ge=0)
     output_cost_per_million: float = Field(default=0, ge=0)
 
@@ -43,6 +66,10 @@ class EvaluationConfig(BaseModel):
     transcript_dir: str | None = None
     target_factory: str | None = None
     judge_factory: str | None = None
+    human_reviews: str | None = None
+    controlled: ControlledEvaluationConfig | None = None
+    deepseek: DeepSeekOptions | None = None
+    cost: AgentCostConfig | None = None
     agent: AgentMetadata = Field(
         default_factory=lambda: AgentMetadata(name="deterministic-runtime")
     )

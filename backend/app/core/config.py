@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     JWT_SECRET_KEY: str = ""
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003"
     OPENAI_API_KEY: Optional[str] = None
+    OPENAI_BASE_URL: Optional[str] = None
 
     # 1. 读取模式开关
     DEPLOY_MODE: str = "local"

@@ -23,6 +23,7 @@ class JudgeRequest(_StrictModel):
     input_text: str
     response_text: str
     rubric: dict[str, str]
+    rubric_version: str = "answer-quality-v1"
     model: str
     provider: str
     config: dict[str, Any] = Field(default_factory=dict)
@@ -33,6 +34,17 @@ class JudgeScore(_StrictModel):
     dimensions: dict[str, float] = Field(default_factory=dict)
     explanation: str = ""
     cost_usd: float = Field(default=0, ge=0)
+
+
+def rubric_digest(rubric: dict[str, str], rubric_version: str) -> str:
+    """Stable identity for the rubric content and its declared version."""
+    payload = json.dumps(
+        {"rubric": rubric, "rubric_version": rubric_version},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 class Judge(Protocol):
@@ -105,14 +117,27 @@ class OpenAICompatibleJudge:
         base_url: str | None,
         input_cost_per_million: float,
         output_cost_per_million: float,
+        deepseek_options: dict[str, Any] | None = None,
     ) -> None:
         from openai import AsyncOpenAI
 
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
         self._input_rate = input_cost_per_million
         self._output_rate = output_cost_per_million
+        self._deepseek_options = deepseek_options
 
     async def evaluate(self, request: JudgeRequest) -> JudgeScore:
+        request_kwargs: dict[str, Any] = {}
+        if self._deepseek_options is not None:
+            thinking_enabled = bool(self._deepseek_options.get("thinking", True))
+            request_kwargs["extra_body"] = {
+                "thinking": {"type": "enabled" if thinking_enabled else "disabled"}
+            }
+            if thinking_enabled:
+                effort = self._deepseek_options.get("reasoning_effort", "high")
+                request_kwargs["reasoning_effort"] = (
+                    effort if effort in {"high", "max"} else "high"
+                )
         response = await self._client.chat.completions.create(
             model=request.model,
             response_format={"type": "json_object"},
@@ -131,11 +156,13 @@ class OpenAICompatibleJudge:
                             "input": request.input_text,
                             "response": request.response_text,
                             "rubric": request.rubric,
+                            "rubric_version": request.rubric_version,
                         },
                         ensure_ascii=False,
                     ),
                 },
             ],
+            **request_kwargs,
         )
         content = response.choices[0].message.content or "{}"
         data = json.loads(content)
@@ -153,15 +180,30 @@ class OpenAICompatibleJudge:
         )
 
 
+def _configured_value(name: str) -> str | None:
+    """Process environment wins; an explicitly empty value disables dotenv."""
+    env_value = os.getenv(name)
+    if env_value is not None:
+        return env_value or None
+    from app.core.config import settings
+
+    return getattr(settings, name, None) or None
+
+
 def create_openai_judge(config) -> Judge | None:
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = _configured_value("OPENAI_API_KEY")
     if not api_key:
         return None
     judge = OpenAICompatibleJudge(
         api_key=api_key,
-        base_url=os.getenv("OPENAI_BASE_URL"),
+        base_url=_configured_value("OPENAI_BASE_URL"),
         input_cost_per_million=config.judge.input_cost_per_million,
         output_cost_per_million=config.judge.output_cost_per_million,
+        deepseek_options=(
+            config.deepseek.model_dump(mode="json")
+            if config.judge.provider == "deepseek" and config.deepseek is not None
+            else None
+        ),
     )
     return BudgetedJudge(
         judge,
@@ -186,15 +228,24 @@ async def evaluate_judge(
                 dimensions=cached.dimensions,
                 explanation=cached.explanation,
                 cost_usd=cached.cost_usd,
+                rubric_version=request.rubric_version,
+                rubric_digest=rubric_digest(request.rubric, request.rubric_version),
             )
     try:
         score = await asyncio.wait_for(judge.evaluate(request), timeout=timeout)
     except TimeoutError:
-        return JudgeOutcome(status="unavailable", error="judge timeout")
+        return JudgeOutcome(
+            status="unavailable",
+            error="judge timeout",
+            rubric_version=request.rubric_version,
+            rubric_digest=rubric_digest(request.rubric, request.rubric_version),
+        )
     except Exception as exc:
         return JudgeOutcome(
             status="unavailable",
             error=safe_error(exc, "judge_failed"),
+            rubric_version=request.rubric_version,
+            rubric_digest=rubric_digest(request.rubric, request.rubric_version),
         )
     if cache is not None:
         cache.put(request, score)
@@ -204,6 +255,8 @@ async def evaluate_judge(
         dimensions=score.dimensions,
         explanation=score.explanation,
         cost_usd=score.cost_usd,
+        rubric_version=request.rubric_version,
+        rubric_digest=rubric_digest(request.rubric, request.rubric_version),
     )
 
 

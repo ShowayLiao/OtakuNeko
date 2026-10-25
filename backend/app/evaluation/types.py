@@ -132,6 +132,8 @@ class ExecutionResult(StrictModel):
     reconnect_count: int = Field(default=0, ge=0)
     model_call_count: int = Field(default=0, ge=0)
     model_tokens: int | None = Field(default=None, ge=0)
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
     estimated_cost_usd: float | None = Field(default=None, ge=0)
     estimated_cost_unknown_count: int = Field(default=0, ge=0)
     artifact_error: str | None = None
@@ -259,6 +261,63 @@ class JudgeOutcome(StrictModel):
     explanation: str = ""
     error: str = ""
     cost_usd: float = Field(default=0, ge=0)
+    rubric_version: str | None = None
+    rubric_digest: str | None = None
+    quality_passed: bool | None = None
+
+
+class HumanReview(StrictModel):
+    """Human conclusion for one case; never feeds the functional gate."""
+
+    schema_version: Literal[1] = 1
+    reviewer: str = Field(min_length=1, max_length=100)
+    verdict: Literal["accept", "reject", "needs_discussion"]
+    rubric_version: str = Field(min_length=1)
+    notes: str = Field(default="", max_length=2000)
+    reviewed_at: datetime | None = None
+
+
+class ReviewQueueEntry(StrictModel):
+    """One disputed or unresolved case, pointing at its redacted transcript."""
+
+    case_id: str
+    run_id: str | None = None
+    trace_id: str | None = None
+    outcome: str | None = None
+    judge_status: str = "not_requested"
+    judge_score: float | None = None
+    quality_passed: bool | None = None
+    human_verdict: str | None = None
+    reason: str
+    transcript: str | None = None
+
+
+class RunUsage(StrictModel):
+    """Per-run usage facts, with unknown cost/tokens kept distinguishable."""
+
+    model_calls: int = Field(default=0, ge=0)
+    model_tokens: int | None = Field(default=None, ge=0)
+    prompt_tokens: int | None = Field(default=None, ge=0)
+    completion_tokens: int | None = Field(default=None, ge=0)
+    latency_ms: float = Field(default=0, ge=0)
+    estimated_cost_usd: float | None = Field(default=None, ge=0)
+    estimated_cost_unknown_count: int = Field(default=0, ge=0)
+
+
+class RunIndexEntry(StrictModel):
+    """Report-level pointer to one persisted Run and its transcript."""
+
+    case_id: str
+    run_id: str | None = None
+    trace_id: str | None = None
+    transcript_path: str | None = None
+    message_count: int = Field(default=0, ge=0)
+    run_status: str | None = None
+    outcome: str | None = None
+    provider: str | None = None
+    model: str | None = None
+    usage: RunUsage = Field(default_factory=RunUsage)
+    error: str | None = None
 
 
 class DimensionScore(StrictModel):
@@ -278,6 +337,31 @@ class DeterministicScore(StrictModel):
     answer_quality_excluded: Literal[True] = True
 
 
+L6Outcome = Literal[
+    "passed",
+    "functional_failure",
+    "provider_error",
+    "execution_error",
+    "cancelled",
+]
+
+
+class L6CaseScore(StrictModel):
+    """Functional correctness score derived from one normalized Runtime result.
+
+    Provider and execution failures carry an outcome but no functional scores,
+    so they never enter the functional denominator.
+    """
+
+    schema_version: Literal[1] = 1
+    case_id: str
+    outcome: L6Outcome
+    terminal_error_code: str | None = None
+    task_success: bool | None = None
+    scores: dict[str, float] = Field(default_factory=dict)
+    dimensions: list[DimensionScore] = Field(default_factory=list)
+
+
 class CaseResult(StrictModel):
     case_id: str
     category: str
@@ -290,6 +374,8 @@ class CaseResult(StrictModel):
     run_id: str | None = None
     trace_id: str | None = None
     run_status: str | None = None
+    terminal_error_code: str | None = None
+    outcome: L6Outcome | None = None
     step_count: int | None = None
     tool_failure_count: int | None = None
     recovered: bool | None = None
@@ -300,6 +386,11 @@ class CaseResult(StrictModel):
     providers: list[str] = Field(default_factory=list)
     models: list[str] = Field(default_factory=list)
     deterministic: DeterministicScore | None = None
+    l6: L6CaseScore | None = None
+    human_review: HumanReview | None = None
+    usage: RunUsage = Field(default_factory=RunUsage)
+    termination_reason: str | None = None
+    transcript_path: str | None = None
 
 
 class AgentMetadata(StrictModel):
@@ -320,6 +411,10 @@ class EvalReport(StrictModel):
     completed_at: datetime | None = None
     cases: list[CaseResult] = Field(default_factory=list)
     aggregates: dict[str, float] = Field(default_factory=dict)
+    review_queue: list[ReviewQueueEntry] = Field(default_factory=list)
+    run_index: list[RunIndexEntry] = Field(default_factory=list)
+    prompt_version: str = ""
+    environment: dict[str, str] = Field(default_factory=dict)
     gate_failures: list[str] = Field(default_factory=list)
     baseline_failures: list[str] = Field(default_factory=list)
     evaluation_budget: dict[str, Any] = Field(default_factory=dict)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Callable, Collection, Sequence
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -229,11 +229,16 @@ async def run_headless_case(
     argument_samples_source: Callable[[], Sequence[ArgumentSample]] | None = None,
     approvals: Sequence[ApprovalFixture] = (),
     transcript_dir: str | Path | None = None,
+    allowed_public_names: Collection[str] | None = None,
 ) -> tuple[ExecutionResult, list[dict[str, Any]]]:
     """Execute one case with durable Runtime stores backed by isolated SQL.
 
     Declared approvals are trusted server-side fixtures: the principal always
     comes from the isolated fixture user, never from model arguments.
+
+    ``allowed_public_names`` narrows the model's capability catalog and the
+    dispatcher allowlist. Unknown or side-effecting names fail closed before
+    the Run starts.
     """
     run_id = f"eval-{case.id}"
     started = time.perf_counter()
@@ -263,17 +268,28 @@ async def run_headless_case(
             checkpoint_store=checkpoint_store,
             memory_context=memory_context,
         )
+        available_public_names = {
+            definition.public_name
+            for definition in registry.allowed_public_definitions(
+                include_side_effects=bool(approvals)
+            )
+        }
+        if allowed_public_names is None:
+            capability_allowlist = frozenset(available_public_names)
+        else:
+            capability_allowlist = frozenset(allowed_public_names)
+            unsupported = sorted(capability_allowlist - available_public_names)
+            if unsupported:
+                raise ValueError(
+                    "unknown or side-effecting evaluation capability: "
+                    + ", ".join(unsupported)
+                )
         context = ExecutionContext(
             principal_id=user.id,
             run_id=run_id,
             trace_id=run_id,
             thread_id=run_id,
-            capability_allowlist=frozenset(
-                definition.public_name
-                for definition in registry.allowed_public_definitions(
-                    include_side_effects=bool(approvals)
-                )
-            ),
+            capability_allowlist=capability_allowlist,
         )
         task = AgentTask(
             user_id=user.id,
@@ -535,7 +551,10 @@ async def _validate_runtime_result(
     ):
         raise RuntimeError("headless Runtime trace correlation missing")
     trace_types = {event.event_type.value for event in trace_events}
-    if "model_call" not in trace_types:
+    provider_terminal = normalized_status in {"failed", "timeout"} and terminal.get(
+        "error_code"
+    ) in {"provider_error", "timeout"}
+    if "model_call" not in trace_types and not provider_terminal:
         raise RuntimeError("headless Runtime trace incomplete")
     if result.tool_call_count and not {
         "tool_call_start",

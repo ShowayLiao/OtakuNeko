@@ -31,6 +31,7 @@ CHECKED_PATHS = (
     "backend/evals/config/full.yaml",
     "backend/evals/config/entrypoint.yaml",
     "backend/evals/config/real-model.yaml",
+    "backend/evals/config/real-model-quality.yaml",
     "backend/evals/baselines/v1-fast.json",
     "backend/evals/baselines/v1-full.json",
     "backend/typecheck-baseline.json",
@@ -305,6 +306,33 @@ def check_eval(root: Path, relative: str) -> None:
             set(config.tags) & set(case.tags) for case in dataset.cases
         ):
             raise ValueError("dataset tags select no cases")
+        if config.human_reviews:
+            from app.evaluation.human_review import load_human_reviews
+
+            review_path = root / "backend" / config.human_reviews
+            if root / "backend" not in review_path.resolve().parents:
+                raise ValueError("human review file outside backend")
+            load_human_reviews(review_path, dataset.dataset_version)
+        if config.judge.enabled and (
+            not config.judge.rubric or not config.judge.rubric_version.strip()
+        ):
+            raise ValueError("judge rubric missing")
+        if config.controlled is not None:
+            from app.capabilities.factory import build_capability_registry
+            from app.evaluation.controlled import validate_controlled_capabilities
+
+            available = {
+                definition.public_name
+                for definition in build_capability_registry().allowed_public_definitions()
+            }
+            unknown = set(config.controlled.allowed_capabilities) - available
+            if unknown:
+                raise ValueError("unknown controlled capability")
+            if config.controlled.external_fixtures:
+                validate_controlled_capabilities(
+                    config.controlled.external_fixtures,
+                    config.controlled.allowed_capabilities,
+                )
         if config.baseline:
             baseline_path = root / "backend" / config.baseline
             if root / "backend" not in baseline_path.resolve().parents:
@@ -328,6 +356,20 @@ def check_eval(root: Path, relative: str) -> None:
         )
         metrics.update(aggregate_observability([]))
         metrics.add("safety_pass_rate")
+        from app.evaluation.l6_scoring import L6_COUNT_METRICS
+
+        metrics.update(L6_COUNT_METRICS)
+        metrics.update(
+            {
+                "quality_pass_rate",
+                "human_review_count",
+                "human_accept_count",
+                "human_reject_count",
+                "human_needs_discussion_count",
+                "review_queue_count",
+                "quality_human_disagreement_count",
+            }
+        )
         if config.judge.enabled:
             metrics.update({"judge_score", "judge_cost_usd"})
         if config.baseline and baseline is not None:
@@ -400,6 +442,9 @@ def run(root: Path) -> dict:
         ),
         "backend/evals/config/real-model.yaml": lambda: check_eval(
             root, "backend/evals/config/real-model.yaml"
+        ),
+        "backend/evals/config/real-model-quality.yaml": lambda: check_eval(
+            root, "backend/evals/config/real-model-quality.yaml"
         ),
         "backend/evals/baselines/v1-fast.json": lambda: check_baseline(
             root, "backend/evals/baselines/v1-fast.json"

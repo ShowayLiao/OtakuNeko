@@ -15,6 +15,7 @@ WORKFLOWS = (
     ".github/workflows/ci.yml",
     ".github/workflows/evaluation.yml",
     ".github/workflows/frontend-qa.yml",
+    ".github/workflows/l6-trend.yml",
 )
 COMPOSE = "docker-compose.yml"
 
