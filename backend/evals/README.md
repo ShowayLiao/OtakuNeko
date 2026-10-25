@@ -95,9 +95,10 @@ score so the failed dimensions remain visible in the report.
 
 ## Versioned L5 scenario dataset
 
-`evals/datasets/v1-l5-scenarios.jsonl` is the versioned behavior dataset. It
-contains four fixed synthetic questions with unique fixture users (920–923),
-isolated in-memory SQL per case, and deterministic expectations:
+`evals/datasets/v2-l5-scenarios.jsonl` is the current versioned behavior
+dataset. It contains five fixed synthetic questions with unique fixture users
+(920–924), isolated in-memory SQL per case, and deterministic expectations.
+`v1-l5-scenarios.jsonl` remains as the approved previous version.
 
 | Case | Behavior |
 | --- | --- |
@@ -105,6 +106,7 @@ isolated in-memory SQL per case, and deterministic expectations:
 | `l5-scenario-multi-step` | two read invocations, then respond |
 | `l5-scenario-error-recovery` | one `read_failure`, read retry, completed |
 | `l5-scenario-write-approval` | approval pause, one approved write, respond |
+| `l5-scenario-evidence` | one read invocation with a required evidence marker |
 
 Write cases declare `approvals: [{"action": "write"}]`. The trusted principal is
 always the isolated fixture user; approval IDs come from the Runtime pause event,
@@ -129,25 +131,32 @@ uv run python -m app.evaluation.l5_gate \
   --diff .runtime/evaluation/l5-gate-diff.json
 ```
 
-The gate exits non-zero on a failed case, a threshold failure, or baseline
-drift (regression, added case without baseline, or a baseline case missing from
-the report). `l5-gate.json` records each case with `case_id`, `run_id`,
-`trace_id`, terminal/route facts and failed dimension details, so a failure is
-localized without reading raw provider payloads. `l5-gate-diff.json` is the
-machine-readable baseline diff. CI job `l5-pr-benchmark-gate` runs it offline
-and uploads the JUnit file and both reports; `repository-quality` depends on it.
+The gate exits non-zero on a failed case, a threshold failure, baseline drift
+(regression, added case without baseline, or a baseline case missing from the
+report), or missing/mismatched dataset, model or prompt version metadata,
+including dataset content digests, against the baseline. `l5-gate.json` records
+each case with `case_id`, `run_id`, `trace_id`, terminal/route facts and failed
+dimension details, so a failure is localized without reading raw provider
+payloads. `l5-gate-diff.json` is the machine-readable baseline diff; it records
+case/behavior drift and a `version_failures` list when version or digest
+metadata differs. CI job `l5-pr-benchmark-gate` runs it offline under the same
+process-local network guard as the loop gate and uploads the JUnit file and both
+reports; `repository-quality` depends on it.
 
 ## Behavior baseline and thresholds
 
 `evals/baselines/v1-l5-gate.json` (`schema_version = 2`) stores:
 
-- `versions`: dataset per config, model, prompt contract
-  (`decision-contract-v1`), code revision and environment (Python, platform,
-  provider, runner);
+- `versions`: dataset version and content digest per config, model, prompt
+  contract (`decision-contract-v1`), code revision and environment (Python,
+  platform, provider, runner); code revision and environment are recorded but
+  not compared, because they change per commit and per CI machine;
 - `thresholds`: allowed increases for steps, tokens and tool errors, plus
   termination/recovery matching;
 - per-case `behavior`: success, tool accuracy, argument accuracy, steps, tokens,
-  tool errors, termination and recovery.
+  tool errors, termination and recovery. The offline model double reports one
+  prompt and one completion unit per scripted call, so `tokens` measures model
+  calls deterministically instead of staying at zero without provider usage.
 
 A case that still passes but degrades behavior is reported and blocks:
 `l5-gate-diff.json` gets a `behavior_regressions` entry and the report gets a
@@ -158,7 +167,13 @@ the baseline explicitly after an intended behavior change:
 uv run python -m app.evaluation.l5_gate --update-baseline
 ```
 
-The update command only writes when the current gate itself passes.
+The update command only writes when the current gate itself passes, and it
+preserves the approved `thresholds` from the existing baseline instead of
+resetting them to defaults. If the existing baseline cannot be read, it is
+rewritten with the default thresholds so a corrupt file cannot block the
+documented refresh path. Baselines written before dataset digests were enforced
+are rejected as missing version metadata; refresh them once with
+`--update-baseline`.
 
 ## Per-case transcripts
 
@@ -177,7 +192,9 @@ Secret keys and chain-of-thought fields are removed, strings/collections are
 bounded, raw argument values and provider payloads are never exported, and the
 Trace projection uses the stricter trace redaction policy. The CI
 `l5-pr-benchmark-gate` job uploads `backend/.runtime/evaluation/transcripts/`
-even when the gate fails.
+even when the gate fails. A transcript write failure is logged without payloads
+and never changes an already-completed case result; the Run/Event stores remain
+authoritative.
 
 ## Offline loop certification
 

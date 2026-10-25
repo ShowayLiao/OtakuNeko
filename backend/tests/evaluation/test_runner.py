@@ -398,3 +398,6 @@ async def test_execution_errors_are_sanitized_in_report():
     assert error is not None
     assert "sk-secret" not in error
     assert error == "RuntimeError: execution_failed"
+    failed = report.cases[0]
+    assert failed.run_id == f"eval-{failed.case_id}"
+    assert failed.trace_id == failed.run_id

@@ -227,6 +227,7 @@ class DatasetManifest(StrictModel):
 class EvalDataset(StrictModel):
     dataset_version: str
     schema_version: int
+    content_digest: str = ""
     cases: list[EvalCase]
 
 
@@ -297,6 +298,7 @@ class EvalReport(StrictModel):
     schema_version: int = 1
     task: str = "EVAL-001"
     dataset_version: str
+    dataset_digest: str = ""
     config_name: str
     code_revision: str
     agent: AgentMetadata

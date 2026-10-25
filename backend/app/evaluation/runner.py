@@ -158,12 +158,19 @@ async def run_case(
             # An exception means no valid Runtime result exists, so the verdict
             # is failed even if the case expected a failed terminal status.
             failed_score = failed_score.model_copy(update={"task_success": False})
+        # The entrypoint target derives both identities from the case id (see
+        # entrypoint.run_headless_case). The exception path has no result to
+        # read them from, so this best-effort identity localizes the failure;
+        # other targets may not persist a trace under it.
+        failed_run_id = f"eval-{case.id}"
         return CaseResult(
             case_id=case.id,
             category=case.category.value,
             passed=False,
             metrics=metrics,
             error=safe_error(exc, "execution_failed"),
+            run_id=failed_run_id,
+            trace_id=failed_run_id,
             observability=failed_observability,
             deterministic=failed_score,
         )
@@ -268,6 +275,7 @@ async def run_evaluation(
 
     return EvalReport(
         dataset_version=dataset.dataset_version,
+        dataset_digest=dataset.content_digest,
         config_name=config.name,
         code_revision=_git_revision(),
         agent=config.agent,

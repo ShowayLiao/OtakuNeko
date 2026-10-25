@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -11,26 +12,29 @@ from pydantic import ValidationError
 from app.evaluation.types import DatasetManifest, EvalCase, EvalDataset
 
 
-def _objects(path: Path) -> list[tuple[int, dict[str, Any]]]:
+def _objects(path: Path, text: str) -> list[tuple[int, dict[str, Any]]]:
     objects: list[tuple[int, dict[str, Any]]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line_number, raw in enumerate(handle, 1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            try:
-                value = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
-            if not isinstance(value, dict):
-                raise ValueError(f"{path}:{line_number}: expected a JSON object")
-            objects.append((line_number, value))
+    for line_number, raw in enumerate(text.split("\n"), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path}:{line_number}: invalid JSON: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ValueError(f"{path}:{line_number}: expected a JSON object")
+        objects.append((line_number, value))
     return objects
 
 
 def load_dataset(path: str | Path) -> EvalDataset:
     dataset_path = Path(path)
-    objects = _objects(dataset_path)
+    # Read once so the parsed cases and the digest come from the same bytes.
+    # Text mode normalizes CRLF/CR to LF, keeping the digest stable across
+    # Windows/Linux checkouts (core.autocrlf may rewrite line endings).
+    content = dataset_path.read_text(encoding="utf-8")
+    objects = _objects(dataset_path, content)
     if not objects:
         raise ValueError(f"{dataset_path}: missing dataset manifest")
 
@@ -58,8 +62,11 @@ def load_dataset(path: str | Path) -> EvalDataset:
         seen.add(case.id)
         cases.append(case)
 
+    content_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+
     return EvalDataset(
         dataset_version=manifest.dataset_version,
         schema_version=manifest.schema_version,
+        content_digest=content_digest,
         cases=cases,
     )

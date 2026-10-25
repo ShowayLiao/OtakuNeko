@@ -173,3 +173,19 @@ async def test_transcript_dir_is_optional() -> None:
 
     assert result.run_status == "completed"
     assert events
+
+
+@pytest.mark.asyncio
+async def test_transcript_write_failure_does_not_fail_successful_case(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("app.evaluation.entrypoint.write_transcript", boom)
+    target = DecisionEntrypointTarget(transcript_dir=tmp_path)
+
+    result = await target.evaluate(_case(case_id="transcript-write-failure"))
+
+    assert result.run_status == "completed"

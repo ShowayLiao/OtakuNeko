@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Sequence
 from contextlib import asynccontextmanager
 import json
+import logging
 from pathlib import Path
 import tempfile
 import time
@@ -43,6 +44,8 @@ _TERMINAL_EVENTS = {
     "run_cancelled": ("cancelled", "cancelled", "run.cancelled"),
     "run_timeout": ("timeout", "failed", "run.failed"),
 }
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -109,6 +112,15 @@ class _EntrypointEchoCapability(BaseCapability):
             "required": ["value"],
             "additionalProperties": False,
         }
+        evidence_output = {
+            "type": "object",
+            "properties": {
+                "value": {"type": "string"},
+                "evidence": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["value", "evidence"],
+            "additionalProperties": False,
+        }
         return [
             ActionDescriptor(
                 name="echo",
@@ -116,6 +128,16 @@ class _EntrypointEchoCapability(BaseCapability):
                 description="Return the fixed synthetic evaluation value.",
                 input_schema=read_schema,
                 output_schema=read_output,
+                requires_auth=True,
+                is_side_effect=False,
+                retry_class="read_only",
+            ),
+            ActionDescriptor(
+                name="evidence",
+                public_name="entrypoint.evidence",
+                description="Return a fixed synthetic value with an evidence marker.",
+                input_schema=read_schema,
+                output_schema=evidence_output,
                 requires_auth=True,
                 is_side_effect=False,
                 retry_class="read_only",
@@ -158,6 +180,12 @@ class _EntrypointEchoCapability(BaseCapability):
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
         if action == "echo":
             return {"success": True, "value": "synthetic-result"}
+        if action == "evidence":
+            return {
+                "success": True,
+                "value": "synthetic-evidence",
+                "evidence": ["synthetic-evidence"],
+            }
         if action == "flaky":
             self.flaky_calls += 1
             if self.flaky_calls == 1:
@@ -373,7 +401,16 @@ async def run_headless_case(
             except Exception:
                 pass
             raise
-        await _export_transcript(result=result)
+        try:
+            await _export_transcript(result=result)
+        except Exception as exc:
+            # The transcript is review evidence, not the Run result. A disk or
+            # serialization failure must not turn a completed Run into a failed
+            # case; the failure paths above already swallow export errors.
+            logger.warning(
+                "evaluation transcript export failed",
+                extra={"case_id": case.id, "error_type": type(exc).__name__},
+            )
 
     if checkpoint_context is not None:
         checkpoint_context.cleanup()

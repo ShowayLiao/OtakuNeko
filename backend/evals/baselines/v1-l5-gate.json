@@ -7,7 +7,7 @@
         "steps": 1,
         "success": true,
         "termination": "completed",
-        "tokens": 0,
+        "tokens": 2,
         "tool_accuracy": 1.0,
         "tool_errors": 0
       },
@@ -21,7 +21,7 @@
         "steps": 2,
         "success": true,
         "termination": "completed",
-        "tokens": 0,
+        "tokens": 4,
         "tool_accuracy": 1.0,
         "tool_errors": 0
       },
@@ -35,9 +35,23 @@
         "steps": 3,
         "success": true,
         "termination": "completed",
-        "tokens": 0,
+        "tokens": 6,
         "tool_accuracy": 1.0,
         "tool_errors": 1
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-scenario-evidence": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": false,
+        "steps": 2,
+        "success": true,
+        "termination": "completed",
+        "tokens": 4,
+        "tool_accuracy": 1.0,
+        "tool_errors": 0
       },
       "passed": true,
       "task_success": true
@@ -49,7 +63,7 @@
         "steps": 3,
         "success": true,
         "termination": "completed",
-        "tokens": 0,
+        "tokens": 6,
         "tool_accuracy": 1.0,
         "tool_errors": 0
       },
@@ -63,7 +77,7 @@
         "steps": 1,
         "success": true,
         "termination": "completed",
-        "tokens": 0,
+        "tokens": 2,
         "tool_accuracy": 1.0,
         "tool_errors": 0
       },
@@ -77,7 +91,7 @@
         "steps": 2,
         "success": true,
         "termination": "completed",
-        "tokens": 0,
+        "tokens": 4,
         "tool_accuracy": 1.0,
         "tool_errors": 1
       },
@@ -97,7 +111,11 @@
     "code": "0364e01ebc1eb575aa0a3f81cd7dff6f05818c0b",
     "dataset": {
       "l5-contract": "v1-l5-contract",
-      "l5-scenarios": "v1-l5-scenarios"
+      "l5-scenarios": "v2-l5-scenarios"
+    },
+    "digest": {
+      "l5-contract": "562f338bbd0775411dc5a003f722b8e468418358aa37b8d5073efcb6d5ebbc9c",
+      "l5-scenarios": "760babc0e7d2489d9cdb93cc2867a08d3aa9252adf7d29b93641b7f2924cd582"
     },
     "environment": {
       "platform": "win32",

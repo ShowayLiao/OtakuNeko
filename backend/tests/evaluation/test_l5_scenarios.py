@@ -23,13 +23,14 @@ from app.evaluation.runner import (
 )
 from app.evaluation.scripted_llm import ScriptedLLM
 
-DATASET = "evals/datasets/v1-l5-scenarios.jsonl"
+DATASET = "evals/datasets/v2-l5-scenarios.jsonl"
 CONFIG = "evals/config/l5-scenarios.yaml"
 EXPECTED_IDS = [
     "l5-scenario-single-step",
     "l5-scenario-multi-step",
     "l5-scenario-error-recovery",
     "l5-scenario-write-approval",
+    "l5-scenario-evidence",
 ]
 SECRET_MARKERS = (
     "api_key",
@@ -50,7 +51,7 @@ def _dataset():
 def test_scenario_dataset_is_versioned_and_isolated() -> None:
     dataset = _dataset()
 
-    assert dataset.dataset_version == "v1-l5-scenarios"
+    assert dataset.dataset_version == "v2-l5-scenarios"
     assert [case.id for case in dataset.cases] == EXPECTED_IDS
     user_ids = [case.user_fixture.user_id for case in dataset.cases]
     assert len(set(user_ids)) == len(user_ids)
@@ -147,5 +148,45 @@ def test_scenario_file_is_valid_jsonl_with_manifest() -> None:
         for line in Path(DATASET).read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
-    assert lines[0] == {"dataset_version": "v1-l5-scenarios", "schema_version": 1}
+    assert lines[0] == {"dataset_version": "v2-l5-scenarios", "schema_version": 1}
     assert len(lines) == len(EXPECTED_IDS) + 1
+
+
+@pytest.mark.asyncio
+async def test_scenario_dataset_exercises_evidence_dimension() -> None:
+    case = next(item for item in _dataset().cases if item.id == "l5-scenario-evidence")
+    assert case.deterministic is not None
+    assert case.deterministic.evidence.required == ["synthetic-evidence"]
+
+    result = await run_case(case, DecisionEntrypointTarget())
+
+    assert result.passed is True
+    assert result.deterministic is not None
+    assert result.deterministic.task_success is True
+    evidence = next(
+        item for item in result.deterministic.dimensions if item.dimension == "evidence"
+    )
+    assert evidence.passed is True
+
+
+@pytest.mark.asyncio
+async def test_scripted_model_usage_is_deterministic_and_positive() -> None:
+    case = next(
+        item for item in _dataset().cases if item.id == "l5-scenario-multi-step"
+    )
+    capability = _EntrypointEchoCapability()
+    registry = CapabilityRegistry()
+    registry.register(capability)
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    result, _events = await run_headless_case(
+        case,
+        registry=registry,
+        model_gateway=gateway,
+        model="entrypoint-fixture-v1",
+        fail_on_run_failure=True,
+        observation_failure_source=lambda: gateway.observation_failures,
+    )
+
+    assert result.model_tokens == 2 * result.step_count
+    assert result.model_tokens == 6

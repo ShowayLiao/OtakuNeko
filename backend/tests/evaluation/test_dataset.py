@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from pathlib import Path
 
 import pytest
 
@@ -53,6 +55,27 @@ def test_loads_explicit_dataset_version_and_fixtures(tmp_path):
     assert dataset.schema_version == 1
     assert dataset.cases[0].user_fixture.user_id == 1
     assert dataset.cases[0].fixtures.events[0].route == "chat"
+
+
+def test_dataset_content_digest_matches_normalized_text():
+    path = Path("evals/datasets/v2-l5-scenarios.jsonl")
+    dataset = load_dataset(path)
+
+    expected = hashlib.sha256(path.read_text(encoding="utf-8").encode("utf-8"))
+    assert dataset.content_digest == expected.hexdigest()
+    assert len(dataset.content_digest) == 64
+
+
+def test_dataset_content_digest_normalizes_newlines(tmp_path):
+    payload = Path("evals/datasets/v2-l5-scenarios.jsonl").read_text(encoding="utf-8")
+    lf_path = tmp_path / "lf.jsonl"
+    crlf_path = tmp_path / "crlf.jsonl"
+    lf_path.write_text(payload, encoding="utf-8", newline="\n")
+    crlf_path.write_text(payload, encoding="utf-8", newline="\r\n")
+
+    assert load_dataset(lf_path).content_digest == load_dataset(
+        crlf_path
+    ).content_digest
 
 
 def test_duplicate_case_ids_fail(tmp_path):

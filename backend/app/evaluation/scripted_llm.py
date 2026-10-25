@@ -21,6 +21,7 @@ from app.harness.model_gateway import ModelGateway
 from app.harness.model_types import (
     ModelCallResult,
     ModelStreamEvent,
+    ModelUsage,
     ProviderErrorCode,
 )
 from app.harness.runtime import TOOL_FEEDBACK_PREFIX
@@ -48,6 +49,16 @@ class ScriptedObservationError(RuntimeError):
 def _bounded(value: Any, limit: int = _DISPLAY_LIMIT) -> str:
     rendered = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
     return rendered if len(rendered) <= limit else f"{rendered[:limit]}..."
+
+
+def _scripted_usage() -> ModelUsage:
+    """Deterministic token proxy for the offline benchmark.
+
+    Each scripted model call accounts for one prompt and one completion unit.
+    The token metric therefore tracks model-call count without pretending to
+    know provider billing, and stays repeatable across runs.
+    """
+    return ModelUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2)
 
 
 def _kind(value: Any) -> str:
@@ -627,6 +638,7 @@ class ScriptedLLM(ModelGateway):
             status="completed",
             text=text,
             decision=decision,
+            usage=_scripted_usage(),
             trace_id=trace_id,
             **call_fields,
         )

@@ -19,6 +19,7 @@ from typing import Any
 from app.evaluation.adapter import RuntimeEvaluationTarget
 from app.evaluation.config import load_config
 from app.evaluation.dataset import load_dataset
+from app.evaluation.offline import offline_network
 from app.evaluation.runner import build_component, run_evaluation
 from app.evaluation.types import EvalReport
 from app.harness.contracts import CONTRACT_VERSION
@@ -81,6 +82,7 @@ def _versions(reports: dict[str, EvalReport]) -> dict[str, Any]:
     first = next(iter(reports.values()))
     return {
         "dataset": {name: report.dataset_version for name, report in reports.items()},
+        "digest": {name: report.dataset_digest for name, report in reports.items()},
         "model": {name: report.agent.model for name, report in reports.items()},
         "prompt": f"decision-contract-{CONTRACT_VERSION}",
         "code": first.code_revision,
@@ -149,11 +151,17 @@ def build_gate_report(reports: dict[str, EvalReport]) -> dict[str, Any]:
     }
 
 
-def baseline_from_report(report: dict[str, Any]) -> dict[str, Any]:
+def baseline_from_report(
+    report: dict[str, Any],
+    *,
+    thresholds: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "versions": report["versions"],
-        "thresholds": dict(DEFAULT_THRESHOLDS),
+        # Preserve approved tolerances when refreshing behavior data. Falling
+        # back to defaults would silently tighten or loosen drift detection.
+        "thresholds": {**DEFAULT_THRESHOLDS, **(thresholds or {})},
         "cases": {
             case["case_id"]: {
                 "passed": case["passed"],
@@ -182,8 +190,18 @@ def load_baseline(path: str | Path) -> dict[str, Any] | None:
         raise ValueError("invalid L5 gate baseline")
     if not isinstance(data.get("versions"), dict):
         raise ValueError("invalid L5 gate baseline")
-    if not isinstance(data.get("thresholds"), dict):
+    thresholds = data.get("thresholds")
+    if not isinstance(thresholds, dict):
         raise ValueError("invalid L5 gate baseline")
+    for key in ("max_step_increase", "max_token_increase", "max_tool_error_increase"):
+        if key not in thresholds:
+            continue
+        value = thresholds[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("invalid L5 gate baseline")
+    for key in ("require_termination_match", "require_recovery_match"):
+        if key in thresholds and not isinstance(thresholds[key], bool):
+            raise ValueError("invalid L5 gate baseline")
     return data
 
 
@@ -282,6 +300,65 @@ def build_diff(
     }
 
 
+def _version_failures(
+    report: dict[str, Any],
+    baseline: dict[str, Any],
+) -> list[str]:
+    """Reject a baseline recorded against different dataset/model/prompt versions.
+
+    Only configs present in both sides are compared: case-level drift is already
+    handled by ``build_diff`` (added/missing cases). Code revision and
+    environment are recorded for traceability but intentionally not compared,
+    because they change on every commit and across CI machines.
+    """
+    current = report.get("versions") or {}
+    expected = baseline.get("versions") or {}
+    failures: list[str] = []
+
+    for field in ("dataset", "model"):
+        current_map = current.get(field)
+        expected_map = expected.get(field)
+        if not isinstance(expected_map, dict) or not expected_map:
+            failures.append(f"baseline version metadata missing: {field}")
+            continue
+        if not isinstance(current_map, dict) or not current_map:
+            failures.append(f"current version metadata missing: {field}")
+            continue
+        for name in sorted(set(expected_map) & set(current_map)):
+            if expected_map[name] != current_map[name]:
+                failures.append(
+                    f"{field} version mismatch: {name} "
+                    f"baseline={expected_map[name]} current={current_map[name]}"
+                )
+
+    expected_prompt = expected.get("prompt")
+    if not expected_prompt:
+        failures.append("baseline version metadata missing: prompt")
+    elif expected_prompt != current.get("prompt"):
+        failures.append(
+            f"prompt version mismatch: baseline={expected_prompt} "
+            f"current={current.get('prompt')}"
+        )
+
+    expected_digest = expected.get("digest")
+    current_digest = current.get("digest")
+    if not isinstance(expected_digest, dict) or not expected_digest:
+        failures.append("baseline version metadata missing: digest")
+    elif not isinstance(current_digest, dict) or not current_digest:
+        failures.append("current version metadata missing: digest")
+    else:
+        for name in sorted(set(expected_digest) & set(current_digest)):
+            digest = expected_digest[name]
+            if not digest:
+                failures.append(f"baseline dataset digest missing: {name}")
+            elif current_digest.get(name) != digest:
+                failures.append(
+                    f"dataset digest mismatch: {name} "
+                    f"baseline={digest} current={current_digest.get(name)}"
+                )
+    return failures
+
+
 def _write_json(path: str | Path, payload: dict[str, Any]) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -299,6 +376,29 @@ def _target_factory(config):
 
 
 async def run_gate(
+    config_paths: tuple[str, ...],
+    *,
+    baseline_path: str | Path = DEFAULT_BASELINE,
+    report_path: str | Path = DEFAULT_REPORT,
+    diff_path: str | Path = DEFAULT_DIFF,
+    update_baseline: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Run the gate with outbound network access disabled.
+
+    The guard lives here, not only in ``main``, so programmatic callers share
+    the offline contract with the CLI and the loop gate.
+    """
+    with offline_network():
+        return await _run_gate(
+            config_paths,
+            baseline_path=baseline_path,
+            report_path=report_path,
+            diff_path=diff_path,
+            update_baseline=update_baseline,
+        )
+
+
+async def _run_gate(
     config_paths: tuple[str, ...],
     *,
     baseline_path: str | Path = DEFAULT_BASELINE,
@@ -329,7 +429,19 @@ async def run_gate(
     }
     if update_baseline:
         if report["passed"]:
-            _write_json(baseline_path, baseline_from_report(report))
+            try:
+                existing = load_baseline(baseline_path)
+            except ValueError:
+                # A corrupt or older-schema baseline must not block the
+                # documented refresh path; rewrite it with default thresholds.
+                existing = None
+            existing_thresholds = (
+                existing.get("thresholds") if existing is not None else None
+            )
+            _write_json(
+                baseline_path,
+                baseline_from_report(report, thresholds=existing_thresholds),
+            )
         else:
             report["baseline_failures"] = ["cannot update baseline: gate did not pass"]
     else:
@@ -343,7 +455,13 @@ async def run_gate(
             report["baseline_failures"] = [f"missing baseline: {baseline_path}"]
         else:
             diff = build_diff(report, baseline)
+            version_failures = _version_failures(report, baseline)
+            if version_failures:
+                # Version/digest drift is a baseline difference too: keep the
+                # machine-readable diff consistent with the gate verdict.
+                diff = {**diff, "version_failures": version_failures, "changed": True}
             report["baseline_failures"] = [
+                *version_failures,
                 *(f"regression: {case_id}" for case_id in diff["regressions"]),
                 *(
                     "behavior regression: "
