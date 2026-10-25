@@ -53,7 +53,7 @@ from app.agents.provider_endpoint import (
     is_local_endpoint,
     make_provider_endpoint_policy,
     parse_provider_allowlists,
-    validate_provider_endpoint,
+    resolve_provider_base_url,
 )
 from app.core.config import settings
 
@@ -382,13 +382,9 @@ def _provider_endpoint_policy() -> ProviderEndpointPolicy:
 def _resolve_provider_base_url(value: Optional[str]) -> str:
     policy = _provider_endpoint_policy()
     try:
-        base_url = validate_provider_endpoint(
-            value or "https://api.openai.com/v1",
-            allow_local=policy.allow_local,
-            resolve_dns=policy.resolve_dns,
-            allowed_hosts=policy.allowed_hosts or None,
-            allowed_ports=policy.allowed_ports or None,
-            allowed_schemes=policy.allowed_schemes,
+        return resolve_provider_base_url(
+            value,
+            policy=policy,
         )
     except ProviderEndpointError as exc:
         detail = (
@@ -397,10 +393,6 @@ def _resolve_provider_base_url(value: Optional[str]) -> str:
             else "Provider endpoint is not allowed"
         )
         raise HTTPException(status_code=422, detail=detail) from exc
-    assert base_url is not None
-    if base_url.rstrip("/") == "https://api.deepseek.com/v1":
-        return "https://api.deepseek.com"
-    return base_url
 
 
 def _consume_model_check_rate_limit(user: UserRead) -> bool:

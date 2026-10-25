@@ -232,6 +232,27 @@ def validate_provider_endpoint(
     return value.strip().rstrip("/")
 
 
+def resolve_provider_base_url(
+    value: str | None,
+    *,
+    policy: ProviderEndpointPolicy,
+    default: str = "https://api.openai.com/v1",
+) -> str:
+    """Validate and normalize one provider base URL under a shared policy."""
+    validated = validate_provider_endpoint(
+        value or default,
+        allow_local=policy.allow_local,
+        resolve_dns=policy.resolve_dns,
+        allowed_hosts=policy.allowed_hosts or None,
+        allowed_ports=policy.allowed_ports or None,
+        allowed_schemes=policy.allowed_schemes,
+    )
+    assert validated is not None
+    if validated.rstrip("/") == "https://api.deepseek.com/v1":
+        return "https://api.deepseek.com"
+    return validated
+
+
 def validate_provider_redirect(
     value: str | None,
     *,

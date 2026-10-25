@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any, AsyncIterator, Literal, Protocol
 
 from app.capabilities.factory import build_capability_registry
 from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent, ToolErrorSample
 from app.agents.provider_endpoint import (
     ProviderEndpointPolicy,
+    is_local_endpoint,
     make_provider_endpoint_policy,
     parse_provider_allowlists,
+    resolve_provider_base_url,
 )
 from app.harness.model_gateway import OpenAIModelGateway
 from app.harness.runtime import AgentRuntime
@@ -22,6 +25,10 @@ from app.memory.interfaces import MemoryContext
 
 class EvaluationTarget(Protocol):
     async def evaluate(self, case: EvalCase) -> ExecutionResult: ...
+
+
+class ProviderCredentialsUnavailable(RuntimeError):
+    """The live provider cannot be used without a trusted credential."""
 
 
 class ScriptedProviderWorkflow:
@@ -361,18 +368,40 @@ class FixtureMemory:
 
 
 class ProductionRuntimeTarget:
-    """Network-backed target using the Runtime-owned Decision loop."""
+    """Network-backed target using the Runtime-owned Decision loop.
 
-    def __init__(self, config) -> None:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("production target credentials unavailable")
-        self._api_key = api_key
-        self._base_url = os.getenv(
-            "OPENAI_BASE_URL",
-            "https://api.openai.com/v1",
+    Each case goes through the shared headless entrypoint
+    (``run_headless_case``), which composes ``build_runtime`` with the
+    production CapabilityRegistry, Dispatcher and SQL Run/Event/Trace stores.
+    This class only selects the live model gateway; it never executes
+    Decisions or capabilities itself.
+    """
+
+    def __init__(
+        self,
+        config,
+        *,
+        model: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        transcript_dir: str | Path | None = None,
+        temperature: float = 0,
+    ) -> None:
+        self._api_key = _configured_api_key(api_key)
+        self._endpoint_policy = _provider_endpoint_policy()
+        self._base_url = resolve_provider_base_url(
+            base_url or os.getenv("OPENAI_BASE_URL"),
+            policy=self._endpoint_policy,
         )
-        self._model = config.agent.model
+        self._model = model or config.agent.model
+        self._temperature = temperature
+        self._transcript_dir = (
+            transcript_dir if transcript_dir is not None else config.transcript_dir
+        )
+        if not self._api_key and not _local_endpoint_without_key(self._base_url):
+            raise ProviderCredentialsUnavailable(
+                "production target credentials unavailable"
+            )
 
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
         from app.evaluation.entrypoint import run_headless_case
@@ -381,8 +410,8 @@ class ProductionRuntimeTarget:
             api_key=self._api_key,
             base_url=self._base_url,
             model=self._model,
-            temperature=0,
-            endpoint_policy=_provider_endpoint_policy(),
+            temperature=self._temperature,
+            endpoint_policy=self._endpoint_policy,
         )
         try:
             result, _events = await run_headless_case(
@@ -391,6 +420,7 @@ class ProductionRuntimeTarget:
                 model_gateway=gateway,
                 model=self._model,
                 fail_on_run_failure=False,
+                transcript_dir=self._transcript_dir,
             )
         finally:
             await gateway.close()
@@ -410,6 +440,29 @@ def _provider_endpoint_policy() -> ProviderEndpointPolicy:
         allowed_hosts=allowed_hosts,
         allowed_ports=allowed_ports,
     )
+
+
+def _configured_api_key(explicit: str | None) -> str | None:
+    """Resolve the live provider key without accepting it as a model argument.
+
+    Explicit callers win. A process variable, when present, also wins over the
+    application's dotenv settings: an explicitly empty value means "no key" so
+    tests and CI cannot silently pick up a developer's local ``backend/.env``.
+    """
+    if explicit is not None:
+        return explicit or None
+    env_value = os.getenv("OPENAI_API_KEY")
+    if env_value is not None:
+        return env_value or None
+    from app.core.config import settings
+
+    return settings.OPENAI_API_KEY or None
+
+
+def _local_endpoint_without_key(base_url: str) -> bool:
+    from app.core.config import settings
+
+    return settings.DEPLOY_MODE == "local" and is_local_endpoint(base_url)
 
 
 def normalize_production_result(

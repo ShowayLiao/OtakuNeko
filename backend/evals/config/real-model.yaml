@@ -1,0 +1,26 @@
+name: real-model
+dataset: evals/datasets/v1-real-model.jsonl
+tags: [real-model]
+report_path: .runtime/evaluation/real-model.json
+transcript_dir: .runtime/evaluation/real-model/transcripts
+target_factory: app.evaluation.adapter:create_production_target
+agent:
+  name: live-runtime
+  model: gpt-4o-mini
+  provider: openai-compatible
+thresholds:
+  pass_rate:
+    direction: min
+    value: 0.5
+  routing_accuracy:
+    direction: min
+    value: 0.5
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  latency_ms:
+    direction: max
+    value: 60000.0
+judge:
+  enabled: false
+  required: false

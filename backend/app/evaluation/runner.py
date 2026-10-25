@@ -48,6 +48,7 @@ __all__ = [
     "build_component",
     "evaluate_gate",
     "main",
+    "print_report",
     "run_case",
     "run_evaluation",
 ]
@@ -174,6 +175,7 @@ async def run_case(
             error=safe_error(exc, "execution_failed"),
             run_id=failed_run_id,
             trace_id=failed_run_id,
+            run_status="failed",
             observability=failed_observability,
             deterministic=failed_score,
         )
@@ -317,7 +319,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _print_report(report: EvalReport, report_path: Path) -> None:
+def print_report(report: EvalReport, report_path: Path) -> None:
     print("\n" + "=" * 50)
     print(f"EVAL Report: {report.config_name}")
     print(f"  Dataset:   {report.dataset_version}")
@@ -363,7 +365,7 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         print(safe_error(exc, "configuration_invalid"), file=sys.stderr)
         return 2
-    _print_report(report, report_path)
+    print_report(report, report_path)
     return 1 if report.gate_failures or report.baseline_failures else 0
 
 

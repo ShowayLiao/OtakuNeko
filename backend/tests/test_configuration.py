@@ -21,6 +21,10 @@ def test_shared_entrypoint_config_is_covered():
     assert "backend/evals/config/entrypoint.yaml" in CHECKED_PATHS
 
 
+def test_real_model_entry_config_is_covered():
+    assert "backend/evals/config/real-model.yaml" in CHECKED_PATHS
+
+
 @pytest.fixture
 def configuration_root(tmp_path: Path) -> Path:
     for relative in (
@@ -29,6 +33,7 @@ def configuration_root(tmp_path: Path) -> Path:
         "backend/evals/datasets/v1-full.jsonl",
         "backend/evals/datasets/v1-observability.jsonl",
         "backend/evals/datasets/v1-entrypoint.jsonl",
+        "backend/evals/datasets/v1-real-model.jsonl",
         "backend/app/evaluation/adapter.py",
         "backend/app/evaluation/entrypoint.py",
         "backend/app/evaluation/judge.py",

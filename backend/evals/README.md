@@ -56,6 +56,38 @@ credentials, runs sequentially within the configured concurrency ceiling, and
 enforces both a per-call cost reservation and a total Judge budget. Provider
 responses and credentials are never copied into reports.
 
+`evals/config/real-model.yaml` is the live-model entry for a manual,
+evidence-preserving run. It is narrower than `full.yaml`: no Judge, no committed
+baseline, four smoke cases, and an explicit case/model selector. Run it with:
+
+```bash
+uv run python -m app.evaluation.real_model --config evals/config/real-model.yaml
+```
+
+`--model`, `--base-url`, `--case`, and `--limit` narrow one run. Credentials
+come from `OPENAI_API_KEY` in the process environment, or from `backend/.env`
+through application settings when that variable is unset (an explicitly empty
+value disables the dotenv fallback). `OPENAI_BASE_URL` is read from the process
+environment. A local endpoint may run without a key only in `DEPLOY_MODE=local`.
+Missing credentials or an endpoint rejected by the provider egress policy fail
+closed before any case starts, and there is no fixture fallback. Each case is
+delegated to the same `ProductionRuntimeTarget` used by `full.yaml`, which calls
+the backend headless case runner (`app.evaluation.entrypoint.run_headless_case`);
+that runner composes `build_runtime` with the production `CapabilityRegistry`,
+`Dispatcher`, `CapabilityAdapter`, isolated SQL Run/Event/Trace stores, and a
+synthetic fixture user. The entry does not implement an independent execution
+loop. The headless runner supplies case-scoped fixture memory, not the production
+memory service. Side-effecting actions stay outside the model catalog because no
+approvals are declared; read actions may still reach the external services they
+normally use in production.
+
+Live runs write `.runtime/evaluation/real-model.json` plus one redacted
+transcript per case. Provider failures and non-compliant model behavior remain
+failed cases with a `run_id`/`trace_id` and a transcript instead of aborting the
+report. Live results are nondeterministic and require provider spend, so they
+are opt-in and are not part of CI; the deterministic L5 gate remains the merge
+authority. `real-model.yaml` currently has no committed baseline.
+
 Published datasets, baselines, and threshold configuration are append-only.
 Create a new version instead of overwriting an approved version.
 
