@@ -94,6 +94,14 @@ class ExecutionFixture(StrictModel):
     events: list[ScriptEvent] = Field(min_length=1)
 
 
+class ToolErrorSample(StrictModel):
+    """One failed tool invocation observed on the Runtime event path."""
+
+    capability: str = "unknown"
+    error_code: str | None = None
+    status: str = "failed"
+
+
 class ExecutionResult(StrictModel):
     """Normalized result derived from actual orchestration events."""
 
@@ -121,6 +129,69 @@ class ExecutionResult(StrictModel):
     tool_argument_keys: list[str] = Field(default_factory=list)
     providers: list[str] = Field(default_factory=list)
     models: list[str] = Field(default_factory=list)
+    terminal_error_code: str | None = None
+    termination_reason: str | None = None
+    step_count: int = Field(default=0, ge=0)
+    tool_errors: list[ToolErrorSample] = Field(default_factory=list)
+
+
+class ToolExpectation(StrictModel):
+    required: list[str] = Field(default_factory=list)
+    forbidden: list[str] = Field(default_factory=list)
+
+
+class ArgumentExpectation(StrictModel):
+    """Only argument key names are observed; raw values never enter scoring."""
+
+    required_keys: list[str] = Field(default_factory=list)
+    forbidden_keys: list[str] = Field(default_factory=list)
+
+
+class TerminationExpectation(StrictModel):
+    status: Literal["completed", "failed", "cancelled", "timeout"] = "completed"
+    error_code: str | None = None
+    termination_reason: str | None = None
+
+
+class EvidenceExpectation(StrictModel):
+    required: list[str] = Field(default_factory=list)
+    forbidden: list[str] = Field(default_factory=list)
+
+
+class RecoveryExpectation(StrictModel):
+    required: bool = False
+
+
+class StepExpectation(StrictModel):
+    min_steps: int = Field(default=0, ge=0)
+    max_steps: int = Field(default=1000, ge=0)
+
+
+class ToolErrorExpectation(StrictModel):
+    max_failures: int = Field(default=0, ge=0)
+    allowed_error_codes: list[str] = Field(default_factory=list)
+    required_error_codes: list[str] = Field(default_factory=list)
+
+
+class DeterministicCaseSpec(StrictModel):
+    """Versioned, deterministic expectation bound to one evaluation case."""
+
+    schema_version: Literal[1] = 1
+    tools: ToolExpectation = Field(default_factory=ToolExpectation)
+    arguments: ArgumentExpectation = Field(default_factory=ArgumentExpectation)
+    termination: TerminationExpectation = Field(default_factory=TerminationExpectation)
+    evidence: EvidenceExpectation = Field(default_factory=EvidenceExpectation)
+    recovery: RecoveryExpectation = Field(default_factory=RecoveryExpectation)
+    steps: StepExpectation = Field(default_factory=StepExpectation)
+    tool_errors: ToolErrorExpectation = Field(default_factory=ToolErrorExpectation)
+
+
+class AnswerQualitySpec(StrictModel):
+    """Non-deterministic answer rubric; a Judge scores it separately."""
+
+    rubric: str = ""
+    min_score: float = Field(default=0.0, ge=0, le=1)
+    required: bool = False
 
 
 class EvalCase(StrictModel):
@@ -136,6 +207,8 @@ class EvalCase(StrictModel):
     assertions: CaseAssertions
     fixtures: ExecutionFixture
     tags: list[str] = Field(default_factory=list)
+    deterministic: DeterministicCaseSpec | None = None
+    answer_quality: AnswerQualitySpec | None = None
 
 
 class DatasetManifest(StrictModel):
@@ -167,6 +240,23 @@ class JudgeOutcome(StrictModel):
     cost_usd: float = Field(default=0, ge=0)
 
 
+class DimensionScore(StrictModel):
+    dimension: str
+    passed: bool
+    score: float = Field(ge=0, le=1)
+    detail: str = ""
+
+
+class DeterministicScore(StrictModel):
+    """Deterministic verdict. Answer quality is never part of this result."""
+
+    schema_version: Literal[1] = 1
+    case_id: str
+    task_success: bool
+    dimensions: list[DimensionScore] = Field(default_factory=list)
+    answer_quality_excluded: Literal[True] = True
+
+
 class CaseResult(StrictModel):
     case_id: str
     category: str
@@ -181,6 +271,7 @@ class CaseResult(StrictModel):
     tool_argument_keys: list[str] = Field(default_factory=list)
     providers: list[str] = Field(default_factory=list)
     models: list[str] = Field(default_factory=list)
+    deterministic: DeterministicScore | None = None
 
 
 class AgentMetadata(StrictModel):

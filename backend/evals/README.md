@@ -59,6 +59,40 @@ responses and credentials are never copied into reports.
 Published datasets, baselines, and threshold configuration are append-only.
 Create a new version instead of overwriting an approved version.
 
+## Deterministic case and scoring contract
+
+`evals/datasets/v1-l5-contract.jsonl` adds an optional, versioned
+`deterministic` block to an `EvalCase`. It is scored by
+`app.evaluation.scoring.score_deterministic`, a pure function of the case spec
+and the normalized Runtime result:
+
+| Dimension | Observable |
+| --- | --- |
+| `termination` | terminal status, optional `error_code` / `termination_reason` |
+| `required_tools` / `forbidden_tools` | invoked capability names |
+| `arguments` | required/forbidden argument **key names**; values are never read |
+| `evidence` | required/forbidden evidence markers |
+| `recovery` | whether the Runtime recovered |
+| `steps` | `model_decision` count within explicit min/max |
+| `tool_errors` | failure count, allowed and required error codes |
+
+`task_success` is the rollup of those dimensions. `answer_quality` is a
+separate `AnswerQualitySpec`: only a Judge scores it, and its outcome never
+changes `DeterministicScore`. `required` only controls whether an unavailable
+Judge fails the case; an available score below `min_score` always fails. Cases
+without a `deterministic` block keep the pre-existing metric behavior and are
+not scored.
+
+Run the contract gate through the same Runtime entrypoint used by HTTP chat:
+
+```bash
+uv run python -m app.evaluation.runner --config evals/config/l5-contract.yaml
+```
+
+Each `CaseResult` carries `deterministic` (per-dimension pass/detail and
+`task_success`); execution exceptions still produce a failed deterministic
+score so the failed dimensions remain visible in the report.
+
 ## Offline loop certification
 
 Run the seven synthetic loop scenarios through the same `build_runtime` factory

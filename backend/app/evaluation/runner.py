@@ -33,6 +33,7 @@ from app.evaluation.metrics import (
     observability_snapshot,
 )
 from app.evaluation.reporting import write_report
+from app.evaluation.scoring import answer_quality_passed, score_deterministic
 from app.evaluation.types import (
     CaseResult,
     EvalCase,
@@ -85,6 +86,7 @@ async def run_case(
     try:
         execution = await target.evaluate(case)
         metrics = compute_case_metrics(case, execution)
+        deterministic = score_deterministic(case, execution)
         judge_outcome = JudgeOutcome()
         if config is not None and config.judge.enabled:
             if judge is None:
@@ -118,10 +120,15 @@ async def run_case(
                     "provider": config.judge.provider,
                 }
             )
+        quality_passed = answer_quality_passed(case.answer_quality, judge_outcome)
         return CaseResult(
             case_id=case.id,
             category=case.category.value,
-            passed=case_passed(metrics),
+            passed=(
+                case_passed(metrics)
+                and (deterministic is None or deterministic.task_success)
+                and quality_passed is not False
+            ),
             actual_route=execution.route,
             capabilities=execution.capabilities,
             metrics=metrics,
@@ -131,16 +138,21 @@ async def run_case(
             tool_argument_keys=execution.tool_argument_keys,
             providers=execution.providers,
             models=execution.models,
+            deterministic=deterministic,
         )
     except Exception as exc:
         metrics = failure_metrics(case)
-        failed_observability = observability_snapshot(
-            ExecutionResult(
-                route="",
-                schema_valid=False,
-                run_status="failed",
-            )
+        failed_execution = ExecutionResult(
+            route="",
+            schema_valid=False,
+            run_status="failed",
         )
+        failed_observability = observability_snapshot(failed_execution)
+        failed_score = score_deterministic(case, failed_execution)
+        if failed_score is not None:
+            # An exception means no valid Runtime result exists, so the verdict
+            # is failed even if the case expected a failed terminal status.
+            failed_score = failed_score.model_copy(update={"task_success": False})
         return CaseResult(
             case_id=case.id,
             category=case.category.value,
@@ -148,6 +160,7 @@ async def run_case(
             metrics=metrics,
             error=safe_error(exc, "execution_failed"),
             observability=failed_observability,
+            deterministic=failed_score,
         )
 
 

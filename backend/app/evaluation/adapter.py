@@ -7,7 +7,7 @@ import os
 from typing import Any, AsyncIterator, Literal, Protocol
 
 from app.capabilities.factory import build_capability_registry
-from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent
+from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent, ToolErrorSample
 from app.agents.provider_endpoint import (
     ProviderEndpointPolicy,
     make_provider_endpoint_policy,
@@ -45,6 +45,15 @@ def _schema_valid(schema: str, text: str, structured: Any) -> bool:
     return structured is not None
 
 
+def _terminal_metadata(event: dict[str, Any]) -> tuple[str | None, str | None]:
+    error_code = event.get("error_code")
+    reason = event.get("termination_reason")
+    return (
+        str(error_code) if error_code is not None else None,
+        str(reason) if reason is not None else None,
+    )
+
+
 def normalize_events(
     events: list[dict[str, Any]],
     *,
@@ -69,6 +78,10 @@ def normalize_events(
     model_call_count = 0
     model_tokens = 0
     has_model_tokens = False
+    step_count = 0
+    terminal_error_code: str | None = None
+    termination_reason: str | None = None
+    tool_errors: list[ToolErrorSample] = []
     estimated_cost_usd = 0.0
     estimated_cost_unknown_count = 0
     tool_argument_keys: set[str] = set()
@@ -129,6 +142,19 @@ def normalize_events(
                 tool_failure_count += 1
                 if status in {"denied", "policy_denied"}:
                     policy_denied_count += 1
+                raw_error = event.get("error_code")
+                raw_output = event.get("output")
+                if raw_error is None and isinstance(raw_output, dict):
+                    raw_error = raw_output.get("error_type") or raw_output.get(
+                        "error_code"
+                    )
+                tool_errors.append(
+                    ToolErrorSample(
+                        capability=str(name or "unknown"),
+                        error_code=(str(raw_error) if raw_error is not None else None),
+                        status=status,
+                    )
+                )
             latency_ms += float(event.get("duration_ms") or 0)
             arguments = event.get("arguments", event.get("inputs"))
             if isinstance(arguments, dict):
@@ -155,16 +181,23 @@ def normalize_events(
             reconnect_count += 1
         elif event_type == "provider_error":
             run_status = "failed"
+            terminal_error_code = event.get("code")
         elif event_type == "run_completed":
             run_status = "completed"
+            terminal_error_code, termination_reason = _terminal_metadata(event)
         elif event_type == "run_failed":
             run_status = "failed"
+            terminal_error_code, termination_reason = _terminal_metadata(event)
         elif event_type == "run_cancelled":
             cancelled_count += 1
             run_status = "cancelled"
+            terminal_error_code, termination_reason = _terminal_metadata(event)
         elif event_type == "run_timeout":
             run_status = "timeout"
             latency_ms += float(event.get("duration_ms") or 0)
+            terminal_error_code, termination_reason = _terminal_metadata(event)
+        elif event_type == "model_decision":
+            step_count += 1
         elif event_type == "model_call":
             model_call_count += 1
             append_unique(providers, event.get("provider"))
@@ -221,6 +254,10 @@ def normalize_events(
         tool_argument_keys=sorted(tool_argument_keys),
         providers=providers,
         models=models,
+        terminal_error_code=terminal_error_code,
+        termination_reason=termination_reason,
+        step_count=step_count,
+        tool_errors=tool_errors,
     )
 
 
