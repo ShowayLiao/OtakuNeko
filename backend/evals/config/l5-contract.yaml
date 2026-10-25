@@ -2,6 +2,7 @@ name: l5-contract
 dataset: evals/datasets/v1-l5-contract.jsonl
 tags: [l5]
 report_path: .runtime/evaluation/l5-contract.json
+transcript_dir: .runtime/evaluation/transcripts
 target_factory: app.evaluation.entrypoint:create_entrypoint_target
 agent:
   name: runtime-entrypoint

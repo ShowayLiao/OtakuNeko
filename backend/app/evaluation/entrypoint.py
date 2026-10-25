@@ -23,6 +23,7 @@ from app.evaluation.adapter import (
     normalize_events,
 )
 from app.evaluation.scripted_llm import ScriptedLLM, ScriptedObservationError
+from app.evaluation.transcript import build_transcript, write_transcript
 from app.evaluation.types import ApprovalFixture, EvalCase, ExecutionResult
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.checkpoint import SqliteCheckpointStore
@@ -182,6 +183,7 @@ async def run_headless_case(
     fail_on_tool_failure: bool = False,
     observation_failure_source: Callable[[], Sequence[str]] | None = None,
     approvals: Sequence[ApprovalFixture] = (),
+    transcript_dir: str | Path | None = None,
 ) -> tuple[ExecutionResult, list[dict[str, Any]]]:
     """Execute one case with durable Runtime stores backed by isolated SQL.
 
@@ -239,10 +241,59 @@ async def run_headless_case(
                 "trace_id": run_id,
             },
         )
+        events: list[dict[str, Any]] = []
+
+        async def _export_transcript(
+            *,
+            result: ExecutionResult | None = None,
+            error: BaseException | None = None,
+        ) -> None:
+            if transcript_dir is None:
+                return
+            persisted: list[dict[str, Any]] = []
+            trace_payload: dict[str, Any] | None = None
+            if runtime.event_store is not None:
+                try:
+                    rows = await runtime.event_store.list_after(run_id)
+                except Exception:
+                    rows = []
+                for row in rows:
+                    try:
+                        payload = json.loads(row.payload_json or "{}")
+                    except json.JSONDecodeError:
+                        payload = {}
+                    persisted.append(
+                        {
+                            "sequence": row.sequence,
+                            "event_type": row.event_type,
+                            "invocation_id": row.invocation_id,
+                            "payload": payload,
+                        }
+                    )
+            try:
+                trace = await trace_store.query(run_id, user_id=user.id)
+            except Exception:
+                trace = None
+            if trace is not None:
+                trace_payload = trace.model_dump(mode="json")
+            write_transcript(
+                transcript_dir,
+                case.id,
+                build_transcript(
+                    case=case,
+                    run_id=run_id,
+                    trace_id=run_id,
+                    events=events,
+                    persisted_events=persisted,
+                    trace=trace_payload,
+                    result=result,
+                    error=error,
+                ),
+            )
+
         try:
             approval_queue = list(approvals)
             pending_approval: Approval | None = None
-            events: list[dict[str, Any]] = []
             while True:
                 batch = [
                     event
@@ -272,6 +323,10 @@ async def run_headless_case(
                     action=fixture.action,
                 )
         except Exception as exc:
+            try:
+                await _export_transcript(error=exc)
+            except Exception:
+                pass
             raise RuntimeError("headless Runtime execution failed") from exc
 
         observation_failures = (
@@ -283,26 +338,42 @@ async def run_headless_case(
             # Observation failures must surface before the canonical/trace
             # validators, which may otherwise mask a first-call failure with a
             # generic "trace incomplete" error.
-            raise ScriptedObservationError("; ".join(observation_failures))
+            observation_error = ScriptedObservationError(
+                "; ".join(observation_failures)
+            )
+            try:
+                await _export_transcript(error=observation_error)
+            except Exception:
+                pass
+            raise observation_error
 
-        result = normalize_events(
-            events,
-            response_schema=case.assertions.response_schema,
-            run_id=run_id,
-        )
-        await _validate_runtime_result(
-            events,
-            result,
-            run_id=run_id,
-            user_id=user.id,
-            runtime=runtime,
-            trace_store=trace_store,
-        )
+        result: ExecutionResult | None = None
+        try:
+            result = normalize_events(
+                events,
+                response_schema=case.assertions.response_schema,
+                run_id=run_id,
+            )
+            await _validate_runtime_result(
+                events,
+                result,
+                run_id=run_id,
+                user_id=user.id,
+                runtime=runtime,
+                trace_store=trace_store,
+            )
 
-        if fail_on_run_failure and result.run_status != "completed":
-            raise RuntimeError("headless Runtime run failed")
-        if fail_on_tool_failure and result.tool_failure_count:
-            raise RuntimeError("headless Runtime invocation failed")
+            if fail_on_run_failure and result.run_status != "completed":
+                raise RuntimeError("headless Runtime run failed")
+            if fail_on_tool_failure and result.tool_failure_count:
+                raise RuntimeError("headless Runtime invocation failed")
+        except Exception as exc:
+            try:
+                await _export_transcript(result=result, error=exc)
+            except Exception:
+                pass
+            raise
+        await _export_transcript(result=result)
 
     if checkpoint_context is not None:
         checkpoint_context.cleanup()
@@ -400,6 +471,9 @@ async def _validate_runtime_result(
 class DecisionEntrypointTarget:
     """Offline target exercising the Runtime-owned Decision and Dispatcher path."""
 
+    def __init__(self, transcript_dir: str | Path | None = None) -> None:
+        self.transcript_dir = Path(transcript_dir) if transcript_dir else None
+
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
         registry = CapabilityRegistry()
         registry.register(_EntrypointEchoCapability())
@@ -419,9 +493,17 @@ class DecisionEntrypointTarget:
             fail_on_tool_failure=not allows_tool_errors,
             observation_failure_source=lambda: gateway.observation_failures,
             approvals=case.approvals,
+            transcript_dir=self.transcript_dir,
         )
         return result
 
 
-def create_entrypoint_target(_config=None) -> DecisionEntrypointTarget:
-    return DecisionEntrypointTarget()
+def create_entrypoint_target(config=None) -> DecisionEntrypointTarget:
+    transcript_dir = getattr(config, "transcript_dir", None)
+    config_name = getattr(config, "name", None)
+    root = (
+        Path(transcript_dir) / config_name
+        if transcript_dir and config_name
+        else transcript_dir
+    )
+    return DecisionEntrypointTarget(transcript_dir=root)

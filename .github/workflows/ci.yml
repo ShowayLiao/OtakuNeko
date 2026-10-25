@@ -406,6 +406,7 @@ jobs:
             backend/.runtime/junit/l5-benchmark.xml
             backend/.runtime/evaluation/l5-gate.json
             backend/.runtime/evaluation/l5-gate-diff.json
+            backend/.runtime/evaluation/transcripts/
           retention-days: 14
           if-no-files-found: warn
 

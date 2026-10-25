@@ -40,6 +40,7 @@ class EvaluationConfig(BaseModel):
     thresholds: dict[str, Threshold] = Field(default_factory=dict)
     report_path: str = ".runtime/evaluation/report.json"
     baseline: str | None = None
+    transcript_dir: str | None = None
     target_factory: str | None = None
     judge_factory: str | None = None
     agent: AgentMetadata = Field(

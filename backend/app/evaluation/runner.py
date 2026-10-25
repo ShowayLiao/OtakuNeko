@@ -293,6 +293,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--dataset", help="Override configured dataset path")
     parser.add_argument("--tags", nargs="*", help="Override configured tags")
     parser.add_argument("--report", help="Override JSON report path")
+    parser.add_argument(
+        "--transcript-dir",
+        help="Write per-case redacted transcript artifacts under this directory",
+    )
     parser.add_argument("--target-factory", help="module:function target factory")
     parser.add_argument("--judge-factory", help="module:function judge factory")
     return parser.parse_args(argv)
@@ -325,6 +329,8 @@ def main(argv: list[str] | None = None) -> int:
             config.dataset = args.dataset
         if args.tags is not None:
             config.tags = args.tags
+        if args.transcript_dir:
+            config.transcript_dir = args.transcript_dir
         dataset = load_dataset(config.dataset)
         target_factory = args.target_factory or config.target_factory
         target = (

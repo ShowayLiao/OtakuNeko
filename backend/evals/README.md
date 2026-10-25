@@ -137,6 +137,25 @@ localized without reading raw provider payloads. `l5-gate-diff.json` is the
 machine-readable baseline diff. CI job `l5-pr-benchmark-gate` runs it offline
 and uploads the JUnit file and both reports; `repository-quality` depends on it.
 
+## Per-case transcripts
+
+Configs with `transcript_dir` (the L5 configs use
+`.runtime/evaluation/transcripts`) write one redacted JSON artifact per case
+under `transcript_dir/<config-name>/<case-id>.json`. The artifact is written on
+both success and failure and contains:
+
+- the fixed synthetic input messages and memory fixtures;
+- Decisions (argument **keys** only) and Invocations with their observations;
+- normalized Result, ordered stream events, persisted Run events, Trace
+  projection, terminal state and a safe error category;
+- `case_id`, `run_id` and `trace_id` at the top level for correlation.
+
+Secret keys and chain-of-thought fields are removed, strings/collections are
+bounded, raw argument values and provider payloads are never exported, and the
+Trace projection uses the stricter trace redaction policy. The CI
+`l5-pr-benchmark-gate` job uploads `backend/.runtime/evaluation/transcripts/`
+even when the gate fails.
+
 ## Offline loop certification
 
 Run the seven synthetic loop scenarios through the same `build_runtime` factory

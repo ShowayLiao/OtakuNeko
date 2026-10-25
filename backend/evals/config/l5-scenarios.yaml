@@ -2,6 +2,7 @@ name: l5-scenarios
 dataset: evals/datasets/v1-l5-scenarios.jsonl
 tags: [l5-scenarios]
 report_path: .runtime/evaluation/l5-scenarios.json
+transcript_dir: .runtime/evaluation/transcripts
 target_factory: app.evaluation.entrypoint:create_entrypoint_target
 agent:
   name: runtime-entrypoint

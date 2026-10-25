@@ -50,6 +50,7 @@ def test_l5_benchmark_gate_is_required_offline_and_uploads_evidence() -> None:
     assert "backend/.runtime/junit/l5-benchmark.xml" in uploaded
     assert "backend/.runtime/evaluation/l5-gate.json" in uploaded
     assert "backend/.runtime/evaluation/l5-gate-diff.json" in uploaded
+    assert "backend/.runtime/evaluation/transcripts/" in uploaded
 
 
 def test_repository_quality_summarizes_the_l5_gate() -> None:
