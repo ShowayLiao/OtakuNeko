@@ -137,6 +137,29 @@ localized without reading raw provider payloads. `l5-gate-diff.json` is the
 machine-readable baseline diff. CI job `l5-pr-benchmark-gate` runs it offline
 and uploads the JUnit file and both reports; `repository-quality` depends on it.
 
+## Behavior baseline and thresholds
+
+`evals/baselines/v1-l5-gate.json` (`schema_version = 2`) stores:
+
+- `versions`: dataset per config, model, prompt contract
+  (`decision-contract-v1`), code revision and environment (Python, platform,
+  provider, runner);
+- `thresholds`: allowed increases for steps, tokens and tool errors, plus
+  termination/recovery matching;
+- per-case `behavior`: success, tool accuracy, argument accuracy, steps, tokens,
+  tool errors, termination and recovery.
+
+A case that still passes but degrades behavior is reported and blocks:
+`l5-gate-diff.json` gets a `behavior_regressions` entry and the report gets a
+`behavior regression: <case> <metric> baseline=... current=...` failure. Update
+the baseline explicitly after an intended behavior change:
+
+```bash
+uv run python -m app.evaluation.l5_gate --update-baseline
+```
+
+The update command only writes when the current gate itself passes.
+
 ## Per-case transcripts
 
 Configs with `transcript_dir` (the L5 configs use

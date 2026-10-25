@@ -276,6 +276,10 @@ class CaseResult(StrictModel):
     error: str | None = None
     run_id: str | None = None
     trace_id: str | None = None
+    run_status: str | None = None
+    step_count: int | None = None
+    tool_failure_count: int | None = None
+    recovered: bool | None = None
     observability: dict[str, float] = Field(default_factory=dict)
     tool_argument_keys: list[str] = Field(default_factory=list)
     providers: list[str] = Field(default_factory=list)
