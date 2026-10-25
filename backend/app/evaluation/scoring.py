@@ -99,12 +99,29 @@ def _score_arguments(
     observed = set(result.tool_argument_keys)
     missing = sorted(set(expected.required_keys) - observed)
     forbidden = sorted(set(expected.forbidden_keys) & observed)
-    passed = not missing and not forbidden
+    invocation_failures: list[str] = []
+    if expected.invocations is not None:
+        actual = result.tool_arguments
+        if len(actual) != len(expected.invocations):
+            invocation_failures.append(
+                f"execution count expected={len(expected.invocations)} actual={len(actual)}"
+            )
+        for index, (wanted, sample) in enumerate(zip(expected.invocations, actual)):
+            if wanted.capability != sample.capability:
+                invocation_failures.append(
+                    f"execution {index + 1}: capability mismatch"
+                )
+            if wanted.arguments_digest != sample.arguments_digest:
+                invocation_failures.append(
+                    f"execution {index + 1}: argument values mismatch"
+                )
+    passed = not missing and not forbidden and not invocation_failures
     return _dimension(
         "arguments",
         passed,
         f"required={expected.required_keys} missing={missing} "
-        f"forbidden={expected.forbidden_keys} observed={forbidden}",
+        f"forbidden={expected.forbidden_keys} observed={forbidden} "
+        f"executions={invocation_failures}",
     )
 
 
@@ -115,12 +132,20 @@ def _score_evidence(
     observed = set(result.evidence)
     missing = sorted(set(expected.required) - observed)
     forbidden = sorted(set(expected.forbidden) & observed)
-    passed = not missing and not forbidden
+    # A marker in tool output proves retrieval; a bracketed marker in the
+    # answer proves citation. Both are required for grounded citation coverage.
+    missing_citations = [
+        marker
+        for marker in expected.required_citations
+        if marker not in observed or f"[{marker}]" not in result.text
+    ]
+    passed = not missing and not forbidden and not missing_citations
     return _dimension(
         "evidence",
         passed,
         f"required={expected.required} missing={missing} "
-        f"forbidden={expected.forbidden} observed={forbidden}",
+        f"forbidden={expected.forbidden} observed={forbidden} "
+        f"missing_citations={missing_citations}",
     )
 
 

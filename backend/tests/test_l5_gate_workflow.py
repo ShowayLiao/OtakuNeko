@@ -12,6 +12,9 @@ WORKFLOW = ROOT / ".github/workflows/ci.yml"
 _GATE_TESTS = (
     "tests/evaluation/test_scoring.py",
     "tests/evaluation/test_l5_scenarios.py",
+    "tests/evaluation/test_behavior_contract.py",
+    "tests/evaluation/test_transcript.py",
+    "tests/evaluation/test_artifact_gate.py",
     "tests/evaluation/test_l5_gate.py",
     "tests/test_l5_gate_workflow.py",
 )

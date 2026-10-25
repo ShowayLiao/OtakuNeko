@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from app.capabilities.registry import CapabilityRegistry
 from app.evaluation.entrypoint import DecisionEntrypointTarget, run_headless_case
+from app.evaluation.runner import run_case
 from app.evaluation.scripted_llm import ScriptedLLM
 from app.evaluation.transcript import _safe, build_transcript, write_transcript
 from app.evaluation.types import EvalCase, ExecutionResult
@@ -49,7 +51,7 @@ def test_safe_redacts_secrets_and_chain_of_thought() -> None:
 
 
 def test_build_transcript_includes_contract_sections_and_errors() -> None:
-    events = [
+    events: list[dict[str, Any]] = [
         {
             "type": "model_decision",
             "decision_id": "d1",
@@ -176,7 +178,7 @@ async def test_transcript_dir_is_optional() -> None:
 
 
 @pytest.mark.asyncio
-async def test_transcript_write_failure_does_not_fail_successful_case(
+async def test_transcript_write_failure_fails_eval_but_preserves_runtime_status(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -185,7 +187,15 @@ async def test_transcript_write_failure_does_not_fail_successful_case(
 
     monkeypatch.setattr("app.evaluation.entrypoint.write_transcript", boom)
     target = DecisionEntrypointTarget(transcript_dir=tmp_path)
+    case = _case(case_id="transcript-write-failure")
 
-    result = await target.evaluate(_case(case_id="transcript-write-failure"))
+    result = await target.evaluate(case)
 
     assert result.run_status == "completed"
+    assert result.artifact_error == "transcript_export_failed"
+
+    case_result = await run_case(case, target)
+
+    assert case_result.passed is False
+    assert case_result.run_status == "completed"
+    assert case_result.artifact_error == "transcript_export_failed"

@@ -25,10 +25,10 @@ from app.evaluation.types import EvalReport
 from app.harness.contracts import CONTRACT_VERSION
 
 DEFAULT_CONFIGS = (
-    "evals/config/l5-contract.yaml",
-    "evals/config/l5-scenarios.yaml",
+    "evals/config/l5-contract-v2.yaml",
+    "evals/config/l5-scenarios-v3.yaml",
 )
-DEFAULT_BASELINE = "evals/baselines/v1-l5-gate.json"
+DEFAULT_BASELINE = "evals/baselines/v2-l5-gate.json"
 DEFAULT_REPORT = ".runtime/evaluation/l5-gate.json"
 DEFAULT_DIFF = ".runtime/evaluation/l5-gate-diff.json"
 SCHEMA_VERSION = 2
@@ -113,6 +113,7 @@ def _case_record(config_name: str, case: Any) -> dict[str, Any]:
         "trace_id": case.trace_id,
         "failed_dimensions": failed_dimensions,
         "error": case.error,
+        "artifact_error": case.artifact_error,
         "actual_route": case.actual_route,
         "capabilities": case.capabilities,
         "behavior": _behavior(case),
@@ -418,7 +419,7 @@ async def _run_gate(
         reports[config.name] = await run_evaluation(config, dataset, target)
 
     report = build_gate_report(reports)
-    diff = {
+    diff: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "regressions": [],
         "behavior_regressions": [],

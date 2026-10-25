@@ -90,6 +90,7 @@ def test_scenario_dataset_contains_no_secret_or_real_user_data() -> None:
 async def test_scenario_gate_passes_through_real_runtime_path() -> None:
     config = load_config(CONFIG)
     dataset = load_dataset(config.dataset)
+    assert config.target_factory is not None
     target = build_component(config.target_factory, config)
 
     report = await run_evaluation(config, dataset, target)

@@ -70,8 +70,8 @@ and the normalized Runtime result:
 | --- | --- |
 | `termination` | terminal status, optional `error_code` / `termination_reason` |
 | `required_tools` / `forbidden_tools` | invoked capability names |
-| `arguments` | required/forbidden argument **key names**; values are never read |
-| `evidence` | required/forbidden evidence markers |
+| `arguments` | required/forbidden key names, plus optional ordered synthetic execution digests |
+| `evidence` | required/forbidden output markers and optional grounded answer citations |
 | `recovery` | whether the Runtime recovered |
 | `steps` | `model_decision` count within explicit min/max |
 | `tool_errors` | failure count, allowed and required error codes |
@@ -86,7 +86,7 @@ not scored.
 Run the contract gate through the same Runtime entrypoint used by HTTP chat:
 
 ```bash
-uv run python -m app.evaluation.runner --config evals/config/l5-contract.yaml
+uv run python -m app.evaluation.runner --config evals/config/l5-contract-v2.yaml
 ```
 
 Each `CaseResult` carries `deterministic` (per-dimension pass/detail and
@@ -95,10 +95,11 @@ score so the failed dimensions remain visible in the report.
 
 ## Versioned L5 scenario dataset
 
-`evals/datasets/v2-l5-scenarios.jsonl` is the current versioned behavior
+`evals/datasets/v3-l5-scenarios.jsonl` is the current versioned behavior
 dataset. It contains five fixed synthetic questions with unique fixture users
 (920–924), isolated in-memory SQL per case, and deterministic expectations.
-`v1-l5-scenarios.jsonl` remains as the approved previous version.
+`v1-l5-scenarios.jsonl` and `v2-l5-scenarios.jsonl` remain as previous versions.
+The contract gate now uses `v2-l5-contract.jsonl`; `v1-l5-contract.jsonl` remains unchanged.
 
 | Case | Behavior |
 | --- | --- |
@@ -116,7 +117,7 @@ failures is recorded as recovered; cases that allow error codes are not treated
 as hard execution failures. Run the dataset through the same Runtime entrypoint:
 
 ```bash
-uv run python -m app.evaluation.runner --config evals/config/l5-scenarios.yaml
+uv run python -m app.evaluation.runner --config evals/config/l5-scenarios-v3.yaml
 ```
 
 ## L5 PR benchmark gate
@@ -145,7 +146,7 @@ reports; `repository-quality` depends on it.
 
 ## Behavior baseline and thresholds
 
-`evals/baselines/v1-l5-gate.json` (`schema_version = 2`) stores:
+`evals/baselines/v2-l5-gate.json` (`schema_version = 2`) stores:
 
 - `versions`: dataset version and content digest per config, model, prompt
   contract (`decision-contract-v1`), code revision and environment (Python,
@@ -192,9 +193,33 @@ Secret keys and chain-of-thought fields are removed, strings/collections are
 bounded, raw argument values and provider payloads are never exported, and the
 Trace projection uses the stricter trace redaction policy. The CI
 `l5-pr-benchmark-gate` job uploads `backend/.runtime/evaluation/transcripts/`
-even when the gate fails. A transcript write failure is logged without payloads
-and never changes an already-completed case result; the Run/Event stores remain
-authoritative.
+even when the gate fails. A transcript write failure, unavailable persisted events or missing Trace marks
+`artifact_error=transcript_export_failed` and fails evaluation acceptance. The
+Runtime terminal status stays unchanged. PR reports expose the artifact error
+alongside case/run/trace identity; the per-case database is discarded afterward.
+
+## Value and citation regression checks
+
+The new L5 configs preserve legacy key checks and declare an ordered
+`arguments.invocations` list of `{capability, arguments_digest}`. The synthetic
+capability records each actual execution after Dispatcher authorization; denied
+attempts and idempotency cache hits are not executions. Digests are SHA-256 of
+canonical JSON (sorted keys, UTF-8, compact separators). Trusted `user_id` is
+excluded. Expected digests are independent dataset expectations; wrong values,
+wrong capability, reordering, missing and extra executions fail the arguments
+dimension. Raw values are never retained in evaluation results. This observer is
+limited to synthetic fixtures; hashing is not a privacy mechanism for production
+user data or credentials.
+
+`evidence.required` continues to check retrieved output markers.
+`evidence.required_citations` additionally requires each marker in both observed
+evidence and the final answer as `[marker]`. Merely returning an evidence marker
+from a tool no longer satisfies the current evidence scenario. This checks
+citation linkage; it does not establish semantic entailment or answer quality.
+
+Old datasets and configs retain their existing opt-in behavior. The PR gate uses
+`l5-contract-v2.yaml`, `l5-scenarios-v3.yaml` and the new v2 baseline. The prior v1
+baseline and published datasets/configs are retained unchanged.
 
 ## Offline loop certification
 

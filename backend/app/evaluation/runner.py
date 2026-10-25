@@ -128,6 +128,7 @@ async def run_case(
                 case_passed(metrics)
                 and (deterministic is None or deterministic.task_success)
                 and quality_passed is not False
+                and execution.artifact_error is None
             ),
             actual_route=execution.route,
             capabilities=execution.capabilities,
@@ -140,6 +141,8 @@ async def run_case(
             tool_failure_count=execution.tool_failure_count,
             recovered=execution.recovered,
             observability=observability_snapshot(execution),
+            artifact_error=execution.artifact_error,
+            tool_arguments=execution.tool_arguments,
             tool_argument_keys=execution.tool_argument_keys,
             providers=execution.providers,
             models=execution.models,

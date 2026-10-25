@@ -287,6 +287,7 @@ def test_contract_dataset_declares_versioned_specs() -> None:
 async def test_l5_contract_config_passes_through_runtime_gate() -> None:
     config = load_config("evals/config/l5-contract.yaml")
     dataset = load_dataset(config.dataset)
+    assert config.target_factory is not None
     target = build_component(config.target_factory, config)
 
     report = await run_evaluation(config, dataset, target)

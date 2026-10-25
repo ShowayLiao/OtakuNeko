@@ -102,6 +102,13 @@ class ToolErrorSample(StrictModel):
     status: str = "failed"
 
 
+class ArgumentSample(StrictModel):
+    """Ordered synthetic capability execution; no raw values are retained."""
+
+    capability: str
+    arguments_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ExecutionResult(StrictModel):
     """Normalized result derived from actual orchestration events."""
 
@@ -127,6 +134,8 @@ class ExecutionResult(StrictModel):
     model_tokens: int | None = Field(default=None, ge=0)
     estimated_cost_usd: float | None = Field(default=None, ge=0)
     estimated_cost_unknown_count: int = Field(default=0, ge=0)
+    artifact_error: str | None = None
+    tool_arguments: list[ArgumentSample] = Field(default_factory=list)
     tool_argument_keys: list[str] = Field(default_factory=list)
     providers: list[str] = Field(default_factory=list)
     models: list[str] = Field(default_factory=list)
@@ -142,7 +151,9 @@ class ToolExpectation(StrictModel):
 
 
 class ArgumentExpectation(StrictModel):
-    """Only argument key names are observed; raw values never enter scoring."""
+    """Legacy key checks plus optional ordered synthetic execution digests."""
+
+    invocations: list[ArgumentSample] | None = None
 
     required_keys: list[str] = Field(default_factory=list)
     forbidden_keys: list[str] = Field(default_factory=list)
@@ -155,6 +166,7 @@ class TerminationExpectation(StrictModel):
 
 
 class EvidenceExpectation(StrictModel):
+    required_citations: list[str] = Field(default_factory=list)
     required: list[str] = Field(default_factory=list)
     forbidden: list[str] = Field(default_factory=list)
 
@@ -282,6 +294,8 @@ class CaseResult(StrictModel):
     tool_failure_count: int | None = None
     recovered: bool | None = None
     observability: dict[str, float] = Field(default_factory=dict)
+    artifact_error: str | None = None
+    tool_arguments: list[ArgumentSample] = Field(default_factory=list)
     tool_argument_keys: list[str] = Field(default_factory=list)
     providers: list[str] = Field(default_factory=list)
     models: list[str] = Field(default_factory=list)

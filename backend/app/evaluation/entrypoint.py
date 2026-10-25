@@ -18,6 +18,7 @@ from sqlmodel import SQLModel
 from app.capabilities.base import BaseCapability
 from app.capabilities.registry import CapabilityRegistry
 from app.capabilities.types import ActionDescriptor, CapabilityResult
+from app.evaluation.arguments import argument_digest
 from app.evaluation.adapter import (
     FixtureMemory,
     classify_route,
@@ -25,7 +26,12 @@ from app.evaluation.adapter import (
 )
 from app.evaluation.scripted_llm import ScriptedLLM, ScriptedObservationError
 from app.evaluation.transcript import build_transcript, write_transcript
-from app.evaluation.types import ApprovalFixture, EvalCase, ExecutionResult
+from app.evaluation.types import (
+    ApprovalFixture,
+    ArgumentSample,
+    EvalCase,
+    ExecutionResult,
+)
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.checkpoint import SqliteCheckpointStore
 from app.harness.contracts import ExecutionContext
@@ -88,6 +94,7 @@ async def isolated_headless_session(
 
 class _EntrypointEchoCapability(BaseCapability):
     def __init__(self) -> None:
+        self.argument_samples: list[ArgumentSample] = []
         self.flaky_calls = 0
         self.writes: list[str] = []
 
@@ -178,6 +185,15 @@ class _EntrypointEchoCapability(BaseCapability):
         ]
 
     async def execute(self, action: str, **kwargs: Any) -> dict[str, Any]:
+        # This observer only sees the isolated synthetic capability's actual
+        # execution. The adapter adds trusted user_id; it is not a model arg.
+        public = {key: value for key, value in kwargs.items() if key != "user_id"}
+        self.argument_samples.append(
+            ArgumentSample(
+                capability=f"entrypoint.{action}",
+                arguments_digest=argument_digest(public),
+            )
+        )
         if action == "echo":
             return {"success": True, "value": "synthetic-result"}
         if action == "evidence":
@@ -210,6 +226,7 @@ async def run_headless_case(
     fail_on_run_failure: bool,
     fail_on_tool_failure: bool = False,
     observation_failure_source: Callable[[], Sequence[str]] | None = None,
+    argument_samples_source: Callable[[], Sequence[ArgumentSample]] | None = None,
     approvals: Sequence[ApprovalFixture] = (),
     transcript_dir: str | Path | None = None,
 ) -> tuple[ExecutionResult, list[dict[str, Any]]]:
@@ -278,31 +295,39 @@ async def run_headless_case(
         ) -> None:
             if transcript_dir is None:
                 return
-            persisted: list[dict[str, Any]] = []
-            trace_payload: dict[str, Any] | None = None
-            if runtime.event_store is not None:
+            artifact_data_complete = True
+            rows = []
+            if runtime.event_store is None:
+                artifact_data_complete = False
+            else:
                 try:
                     rows = await runtime.event_store.list_after(run_id)
                 except Exception:
-                    rows = []
-                for row in rows:
-                    try:
-                        payload = json.loads(row.payload_json or "{}")
-                    except json.JSONDecodeError:
-                        payload = {}
-                    persisted.append(
-                        {
-                            "sequence": row.sequence,
-                            "event_type": row.event_type,
-                            "invocation_id": row.invocation_id,
-                            "payload": payload,
-                        }
-                    )
+                    artifact_data_complete = False
+            if not rows:
+                artifact_data_complete = False
+            persisted: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    payload = json.loads(row.payload_json or "{}")
+                except json.JSONDecodeError:
+                    payload = {}
+                persisted.append(
+                    {
+                        "sequence": row.sequence,
+                        "event_type": row.event_type,
+                        "invocation_id": row.invocation_id,
+                        "payload": payload,
+                    }
+                )
             try:
                 trace = await trace_store.query(run_id, user_id=user.id)
             except Exception:
                 trace = None
-            if trace is not None:
+            if trace is None:
+                artifact_data_complete = False
+                trace_payload = None
+            else:
                 trace_payload = trace.model_dump(mode="json")
             write_transcript(
                 transcript_dir,
@@ -314,26 +339,33 @@ async def run_headless_case(
                     events=events,
                     persisted_events=persisted,
                     trace=trace_payload,
-                    result=result,
+                    result=(
+                        result.model_copy(
+                            update={"artifact_error": "transcript_export_failed"}
+                        )
+                        if result is not None and not artifact_data_complete
+                        else result
+                    ),
                     error=error,
                 ),
             )
+            if not artifact_data_complete:
+                raise RuntimeError("evaluation transcript evidence incomplete")
 
         try:
             approval_queue = list(approvals)
             pending_approval: Approval | None = None
             while True:
-                batch = [
-                    event
-                    async for event in runtime.stream_decision(
-                        task,
-                        context=context,
-                        budget=RunBudget(),
-                        cancellation=CancellationToken(),
-                        approval=pending_approval,
-                    )
-                ]
-                events.extend(batch)
+                batch: list[dict[str, Any]] = []
+                async for event in runtime.stream_decision(
+                    task,
+                    context=context,
+                    budget=RunBudget(),
+                    cancellation=CancellationToken(),
+                    approval=pending_approval,
+                ):
+                    batch.append(event)
+                    events.append(event)
                 required = next(
                     (
                         event
@@ -382,6 +414,10 @@ async def run_headless_case(
                 response_schema=case.assertions.response_schema,
                 run_id=run_id,
             )
+            if argument_samples_source is not None:
+                result = result.model_copy(
+                    update={"tool_arguments": list(argument_samples_source())}
+                )
             await _validate_runtime_result(
                 events,
                 result,
@@ -404,12 +440,15 @@ async def run_headless_case(
         try:
             await _export_transcript(result=result)
         except Exception as exc:
-            # The transcript is review evidence, not the Run result. A disk or
-            # serialization failure must not turn a completed Run into a failed
-            # case; the failure paths above already swallow export errors.
+            # Transcript failures block evaluation acceptance while preserving
+            # the Runtime terminal status; execution failures above are already
+            # reported as failed cases.
             logger.warning(
                 "evaluation transcript export failed",
                 extra={"case_id": case.id, "error_type": type(exc).__name__},
+            )
+            result = result.model_copy(
+                update={"artifact_error": "transcript_export_failed"}
             )
 
     if checkpoint_context is not None:
@@ -513,7 +552,8 @@ class DecisionEntrypointTarget:
 
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
         registry = CapabilityRegistry()
-        registry.register(_EntrypointEchoCapability())
+        capability = _EntrypointEchoCapability()
+        registry.register(capability)
         gateway = ScriptedLLM.from_script_events(case.fixtures.events)
         # A case that explicitly allows tool error codes is exercising recovery,
         # so the target must not turn the observed failure into a hard exception.
@@ -531,6 +571,7 @@ class DecisionEntrypointTarget:
             observation_failure_source=lambda: gateway.observation_failures,
             approvals=case.approvals,
             transcript_dir=self.transcript_dir,
+            argument_samples_source=lambda: capability.argument_samples,
         )
         return result
 
