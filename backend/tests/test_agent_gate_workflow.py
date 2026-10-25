@@ -17,6 +17,10 @@ _GATE_TESTS = (
     "tests/acceptance/test_runtime_failure_paths.py",
     "tests/acceptance/test_persistence_event_trace_replay.py",
     "tests/test_agent_gate_workflow.py",
+    "tests/harness/test_recovery_policy.py",
+    "tests/evaluation/test_offline.py",
+    "tests/evaluation/test_loop_gate.py",
+    "tests/api/test_chat_recovery.py",
 )
 
 
@@ -38,6 +42,14 @@ def test_agent_gate_is_required_offline_and_uploads_failures() -> None:
     assert "ENABLE_QB_PROXY=false" in scripts
     assert "ENABLE_PROACTIVE_SCHEDULER=false" in scripts
     assert "secrets." not in yaml.safe_dump(gate)
+    assert "--offline-agent-gate" in scripts
+    assert "app.evaluation.loop_gate --output .runtime/agent-gate" in normalized
+    certification = [
+        step
+        for step in steps
+        if "app.evaluation.loop_gate --output" in str(step.get("run", ""))
+    ]
+    assert len(certification) == 1 and certification[0]["if"] == "always()"
 
     uploads = [
         step for step in steps if step.get("uses") == "actions/upload-artifact@v4"
@@ -48,3 +60,4 @@ def test_agent_gate_is_required_offline_and_uploads_failures() -> None:
     uploaded = str(upload["with"]["path"])
     assert "backend/.runtime/junit/agent-gate.xml" in uploaded
     assert "backend/.runtime/evaluation/agent-gate-entrypoint.json" in uploaded
+    assert "backend/.runtime/agent-gate/" in uploaded

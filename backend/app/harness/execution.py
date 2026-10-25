@@ -20,6 +20,7 @@ from app.harness.persistence.idempotency import SqlIdempotencyStore
 from app.harness.persistence.run_store import RunStore
 from app.harness.policy import Approval, PolicyEngine
 from app.harness.runtime import AgentRuntime
+from app.harness.recovery import RecoveryPolicy
 from app.schemas.user import UserRead
 from app.trace.store import TraceStore
 
@@ -60,6 +61,7 @@ def build_runtime(
     durable: bool = True,
     allow_side_effects: bool = False,
     approval: Approval | None = None,
+    recovery_policy: RecoveryPolicy = RecoveryPolicy(read_only_errors=True),
     **runtime_options: Any,
 ) -> AgentRuntime:
     """Use one dependency graph, with headless writes disabled by default."""
@@ -81,6 +83,7 @@ def build_runtime(
         ),
     )
     return AgentRuntime(
+        recovery_policy=recovery_policy,
         model_gateway=model_gateway,
         dispatcher=dispatcher,
         trace_store=trace_store,

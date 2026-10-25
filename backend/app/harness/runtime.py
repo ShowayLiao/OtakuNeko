@@ -36,6 +36,11 @@ from app.harness.budget import (
 from app.harness.authority import RUNTIME_OWNED_FIELDS
 from app.harness.coordinator import RunCoordinator
 from app.harness.context_manager import ContextManager
+from app.harness.recovery import (
+    RecoveryPolicy,
+    action_fingerprint,
+    recoverable_read_failure,
+)
 from app.harness.contracts import (
     AgentDecision,
     ErrorCode,
@@ -357,8 +362,10 @@ class AgentRuntime:
         memory_service: Any | None = None,
         checkpoint_lease_seconds: int = 3600,
         worker_id: str | None = None,
+        recovery_policy: RecoveryPolicy | None = None,
     ):
         self.adapter = adapter
+        self.recovery_policy = recovery_policy
         self.checkpoint_store = checkpoint_store
         self.trace_store = trace_store
         self.model_gateway = model_gateway
@@ -1223,7 +1230,12 @@ class AgentRuntime:
             )
         run_budget = budget or self._build_run_budget(task, {})
         run_cancellation = cancellation or CancellationToken()
-        continue_on_read_only_error = _read_only_error_continuation_enabled(task)
+        continue_on_read_only_error = (
+            self.recovery_policy.read_only_errors
+            if self.recovery_policy is not None
+            else _read_only_error_continuation_enabled(task)
+        )
+        failed_actions: dict[str, int] = {}
         parser = DecisionParser()
         messages = list(task.metadata.get("messages") or [])
         parse_recovery_attempted = False
@@ -1299,6 +1311,17 @@ class AgentRuntime:
                     )
 
                 messages.append(_assistant_continuation_message(model_result))
+                fingerprint = action_fingerprint(decision)
+                if (
+                    failed_actions.get(fingerprint, 0)
+                    >= (self.recovery_policy or RecoveryPolicy()).max_repeated_failures
+                ):
+                    return RunResult(
+                        run_id=run_id,
+                        status="failed",
+                        error_code=ErrorCode.TOOL_ERROR,
+                        termination_reason="repeated_failed_action",
+                    )
                 invocation = await self.dispatcher.dispatch(
                     decision,
                     trusted_context,
@@ -1318,11 +1341,16 @@ class AgentRuntime:
                         else None
                     )
                     if (
-                        invocation.status == "failed"
+                        recoverable_read_failure(
+                            invocation, legacy=self.recovery_policy is None
+                        )
                         and continue_on_read_only_error
                         and descriptor is not None
                         and not bool(getattr(descriptor, "is_side_effect", True))
                     ):
+                        failed_actions[fingerprint] = (
+                            failed_actions.get(fingerprint, 0) + 1
+                        )
                         messages.append(_tool_failure_feedback_message(invocation))
                         continue
                     status = (
@@ -1544,7 +1572,11 @@ class AgentRuntime:
 
         run_budget = budget or self._build_run_budget(task, {})
         run_cancellation = cancellation or CancellationToken()
-        continue_on_read_only_error = _read_only_error_continuation_enabled(task)
+        continue_on_read_only_error = (
+            self.recovery_policy.read_only_errors
+            if self.recovery_policy is not None
+            else _read_only_error_continuation_enabled(task)
+        )
         parser = DecisionParser()
         messages = list(task.metadata.get("messages") or [])
         model_context = (
@@ -2200,6 +2232,25 @@ class AgentRuntime:
                     yield await emit("run_completed", content=content)
                     return
 
+                fingerprint = action_fingerprint(decision)
+                failed_actions = state.context.setdefault("failed_read_actions", {})
+                if (
+                    failed_actions.get(fingerprint, 0)
+                    >= (self.recovery_policy or RecoveryPolicy()).max_repeated_failures
+                ):
+                    state.status = "failed"
+                    state.terminal_result = RunResult(
+                        run_id=run_id,
+                        status="failed",
+                        error_code=ErrorCode.TOOL_ERROR,
+                        termination_reason="repeated_failed_action",
+                    )
+                    await save_checkpoint()
+                    yield await emit(
+                        "run_failed", error_code=ErrorCode.TOOL_ERROR.value
+                    )
+                    return
+
                 if not pending_invocation_started:
                     yield await emit(
                         "tool_call_start",
@@ -2274,11 +2325,16 @@ class AgentRuntime:
                         else str(error_code or "")
                     )
                     if (
-                        invocation.status == "failed"
+                        recoverable_read_failure(
+                            invocation, legacy=self.recovery_policy is None
+                        )
                         and continue_on_read_only_error
                         and owner_descriptor is not None
                         and not bool(getattr(owner_descriptor, "is_side_effect", True))
                     ):
+                        failed_actions[fingerprint] = (
+                            failed_actions.get(fingerprint, 0) + 1
+                        )
                         # A read-only failure is evidence for the next Decision,
                         # not a terminal side-effect outcome. Side-effect and
                         # policy/cancel/timeout failures remain fail-closed below.

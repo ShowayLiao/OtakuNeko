@@ -45,6 +45,11 @@ pytest_plugins = ["tests.matrix_plugin"]
 
 def pytest_addoption(parser):
     parser.addoption(
+        "--offline-agent-gate",
+        action="store_true",
+        help="Block network/DNS during offline gate setup, test and teardown",
+    )
+    parser.addoption(
         "--run-postgres",
         action="store_true",
         help="Enable local dedicated PostgreSQL test database",
@@ -59,6 +64,17 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     if config.getoption("--run-postgres"):
         validate_postgres_url(os.environ.get("TEST_POSTGRES_URL", ""))
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_protocol(item, nextitem):
+    if item.config.getoption("--offline-agent-gate"):
+        from app.evaluation.offline import offline_network
+
+        with offline_network():
+            yield
+    else:
+        yield
 
 
 @pytest.hookimpl(trylast=True)

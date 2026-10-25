@@ -312,8 +312,16 @@ jobs:
             tests/acceptance/test_runtime_multi_step_replay.py \
             tests/acceptance/test_runtime_failure_paths.py \
             tests/acceptance/test_persistence_event_trace_replay.py \
+            tests/harness/test_recovery_policy.py \
+            tests/evaluation/test_offline.py \
+            tests/evaluation/test_loop_gate.py \
+            tests/api/test_chat_recovery.py \
             tests/test_agent_gate_workflow.py \
-            -q -p no:warnings --junitxml=.runtime/junit/agent-gate.xml
+            --offline-agent-gate -q -p no:warnings --junitxml=.runtime/junit/agent-gate.xml
+
+      - name: Certify loop metrics and export safe replay bundles
+        if: always()
+        run: uv run --locked python -m app.evaluation.loop_gate --output .runtime/agent-gate
 
       - name: Run offline entrypoint Eval
         run: |
@@ -330,6 +338,7 @@ jobs:
           path: |
             backend/.runtime/junit/agent-gate.xml
             backend/.runtime/evaluation/agent-gate-entrypoint.json
+            backend/.runtime/agent-gate/
           retention-days: 14
           if-no-files-found: warn
 
