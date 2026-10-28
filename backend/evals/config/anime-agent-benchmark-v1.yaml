@@ -1,0 +1,38 @@
+name: anime-agent-benchmark-v1
+dataset: ../otakuneko-benchmark-v1/cases/anime_benchmark_v1.jsonl
+report_path: .runtime/evaluation/anime-agent-benchmark-v1/report.json
+target_factory: app.evaluation.adapter:create_production_target
+routing:
+  enabled: true
+  version: model-v1
+controlled:
+  allowed_capabilities:
+    - get_current_time
+    - list_collections
+    - get_collection_statistics
+    - search_anime_advanced
+    - generate_user_profile_tool
+    - update_collection
+  external_fixtures: controlled-task-v1
+  run_scoped_artifacts: true
+runtime_budget:
+  max_steps: 24
+  max_tool_calls: 24
+  max_model_calls: 6
+  deadline_seconds: 120
+  max_total_tokens: 50000
+  max_cost_usd: 1.00
+agent:
+  name: anime-agent-live-runtime
+  model: deepseek-flash
+  provider: deepseek
+deepseek:
+  thinking: true
+  reasoning_effort: max
+thresholds:
+  loop_success_rate: {direction: min, value: 0.50}
+  router_accuracy: {direction: min, value: 0.75}
+  latency_ms: {direction: max, value: 120000}
+judge:
+  enabled: false
+  required: false

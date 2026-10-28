@@ -1,0 +1,26 @@
+name: l5-scenarios
+dataset: evals/datasets/v3-l5-scenarios.jsonl
+tags: [l5-scenarios]
+report_path: .runtime/evaluation/l5-scenarios.json
+transcript_dir: .runtime/evaluation/transcripts
+target_factory: app.evaluation.entrypoint:create_entrypoint_target
+agent:
+  name: runtime-entrypoint
+  model: entrypoint-fixture-v1
+  provider: fixture
+thresholds:
+  pass_rate:
+    direction: min
+    value: 1.0
+  routing_accuracy:
+    direction: min
+    value: 1.0
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  latency_ms:
+    direction: max
+    value: 5000.0
+judge:
+  enabled: false
+  required: false

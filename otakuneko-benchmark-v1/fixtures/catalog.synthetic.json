@@ -1,0 +1,481 @@
+{
+  "schema_version": 1,
+  "synthetic": true,
+  "disclaimer": "全部作品及元数据均为虚构，仅用于可重复的 Harness 测试，不是动漫事实数据库。",
+  "anime": [
+    {
+      "id": "AC001",
+      "title": "星尘档案",
+      "tags": [
+        "悬疑",
+        "科幻"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC002",
+      "title": "都市迷踪线",
+      "tags": [
+        "推理",
+        "群像"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC003",
+      "title": "纸灯森林",
+      "tags": [
+        "幻想",
+        "冒险"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC004",
+      "title": "月球邮局",
+      "tags": [
+        "治愈",
+        "科幻"
+      ],
+      "episodes": 13,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC005",
+      "title": "晴空食堂",
+      "tags": [
+        "日常",
+        "治愈"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC006",
+      "title": "深海献祭",
+      "tags": [
+        "恐怖",
+        "悬疑"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 3,
+      "horror": true,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC007",
+      "title": "镜中列车",
+      "tags": [
+        "悬疑",
+        "科幻"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 1,
+      "horror": false,
+      "aliases": [],
+      "status": "released",
+      "franchise": "镜中列车",
+      "story_order": 2
+    },
+    {
+      "id": "AC008",
+      "title": "远行的旅人",
+      "tags": [
+        "旅行",
+        "治愈"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC009",
+      "title": "幽影剧场",
+      "tags": [
+        "悬疑",
+        "恐怖"
+      ],
+      "episodes": 24,
+      "minutes_per_episode": 24,
+      "gore_level": 2,
+      "horror": true,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC010",
+      "title": "玻璃花园",
+      "tags": [
+        "悬疑",
+        "幻想"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC011",
+      "title": "灯塔回声",
+      "tags": [
+        "悬疑",
+        "群像"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC012",
+      "title": "时间修补师",
+      "tags": [
+        "悬疑",
+        "科幻"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC013",
+      "title": "猫与十三号街",
+      "tags": [
+        "推理",
+        "群像"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC014",
+      "title": "雨天观测站",
+      "tags": [
+        "治愈",
+        "科幻"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC015",
+      "title": "夜班电车",
+      "tags": [
+        "悬疑",
+        "群像"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 1,
+      "horror": false,
+      "aliases": [
+        "夜车",
+        "夜间电车"
+      ],
+      "status": "released"
+    },
+    {
+      "id": "AC016",
+      "title": "零点广播",
+      "tags": [
+        "推理",
+        "科幻"
+      ],
+      "episodes": 24,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC017",
+      "title": "旧城追迹",
+      "tags": [
+        "悬疑",
+        "推理"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 1,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC018",
+      "title": "无声天文馆",
+      "tags": [
+        "科幻",
+        "群像"
+      ],
+      "episodes": 10,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC019",
+      "title": "夏日留声机",
+      "tags": [
+        "日常",
+        "音乐"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC020",
+      "title": "空白地图",
+      "tags": [
+        "冒险",
+        "悬疑"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC021",
+      "title": "遗忘海岸",
+      "tags": [
+        "悬疑",
+        "心理"
+      ],
+      "episodes": 24,
+      "minutes_per_episode": 24,
+      "gore_level": 2,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC022",
+      "title": "季风代理人",
+      "tags": [
+        "悬疑",
+        "群像"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC023",
+      "title": "蓝色纸鹤",
+      "tags": [
+        "治愈",
+        "校园"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC024",
+      "title": "群星诊疗室",
+      "tags": [
+        "科幻",
+        "推理"
+      ],
+      "episodes": 11,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC025",
+      "title": "风铃的谎言",
+      "tags": [
+        "推理",
+        "校园"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC026",
+      "title": "赤火终焉",
+      "tags": [
+        "动作",
+        "恐怖"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 3,
+      "horror": true,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC027",
+      "title": "百日天象",
+      "tags": [
+        "冒险",
+        "科幻"
+      ],
+      "episodes": 26,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC028",
+      "title": "曙光小屋",
+      "tags": [
+        "日常",
+        "治愈"
+      ],
+      "episodes": 8,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC029",
+      "title": "双城来信",
+      "tags": [
+        "悬疑",
+        "推理"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC030",
+      "title": "蜃楼调查局",
+      "tags": [
+        "悬疑",
+        "科幻"
+      ],
+      "episodes": 12,
+      "minutes_per_episode": 24,
+      "gore_level": 1,
+      "horror": false,
+      "aliases": [],
+      "status": "released"
+    },
+    {
+      "id": "AC031",
+      "title": "镜中列车：起点",
+      "tags": [
+        "悬疑",
+        "科幻"
+      ],
+      "episodes": 6,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released",
+      "franchise": "镜中列车",
+      "story_order": 1
+    },
+    {
+      "id": "AC032",
+      "title": "镜中列车：终章",
+      "tags": [
+        "悬疑",
+        "科幻"
+      ],
+      "episodes": 8,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [],
+      "status": "released",
+      "franchise": "镜中列车",
+      "story_order": 3
+    },
+    {
+      "id": "AC033",
+      "title": "夜行电车",
+      "tags": [
+        "恋爱",
+        "都市"
+      ],
+      "episodes": 24,
+      "minutes_per_episode": 24,
+      "gore_level": 0,
+      "horror": false,
+      "aliases": [
+        "夜车",
+        "午夜电车"
+      ],
+      "status": "released"
+    }
+  ]
+}

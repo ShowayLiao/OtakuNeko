@@ -1,0 +1,135 @@
+{
+  "cases": {
+    "l5-contract-respond": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": false,
+        "steps": 1,
+        "success": true,
+        "termination": "completed",
+        "tokens": 2,
+        "tool_accuracy": 1.0,
+        "tool_errors": 0
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-contract-tool": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": false,
+        "steps": 2,
+        "success": true,
+        "termination": "completed",
+        "tokens": 4,
+        "tool_accuracy": 1.0,
+        "tool_errors": 0
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-scenario-error-recovery": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": true,
+        "steps": 3,
+        "success": true,
+        "termination": "completed",
+        "tokens": 6,
+        "tool_accuracy": 1.0,
+        "tool_errors": 1
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-scenario-evidence": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": false,
+        "steps": 2,
+        "success": true,
+        "termination": "completed",
+        "tokens": 4,
+        "tool_accuracy": 1.0,
+        "tool_errors": 0
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-scenario-multi-step": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": false,
+        "steps": 3,
+        "success": true,
+        "termination": "completed",
+        "tokens": 6,
+        "tool_accuracy": 1.0,
+        "tool_errors": 0
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-scenario-single-step": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": false,
+        "steps": 1,
+        "success": true,
+        "termination": "completed",
+        "tokens": 2,
+        "tool_accuracy": 1.0,
+        "tool_errors": 0
+      },
+      "passed": true,
+      "task_success": true
+    },
+    "l5-scenario-write-approval": {
+      "behavior": {
+        "argument_accuracy": 1.0,
+        "recovery": true,
+        "steps": 2,
+        "success": true,
+        "termination": "completed",
+        "tokens": 4,
+        "tool_accuracy": 1.0,
+        "tool_errors": 1
+      },
+      "passed": true,
+      "task_success": true
+    }
+  },
+  "schema_version": 2,
+  "thresholds": {
+    "max_step_increase": 0,
+    "max_token_increase": 0,
+    "max_tool_error_increase": 0,
+    "require_recovery_match": true,
+    "require_termination_match": true
+  },
+  "versions": {
+    "code": "0364e01ebc1eb575aa0a3f81cd7dff6f05818c0b",
+    "dataset": {
+      "l5-contract": "v1-l5-contract",
+      "l5-scenarios": "v2-l5-scenarios"
+    },
+    "digest": {
+      "l5-contract": "562f338bbd0775411dc5a003f722b8e468418358aa37b8d5073efcb6d5ebbc9c",
+      "l5-scenarios": "760babc0e7d2489d9cdb93cc2867a08d3aa9252adf7d29b93641b7f2924cd582"
+    },
+    "environment": {
+      "platform": "win32",
+      "providers": {
+        "l5-contract": "fixture",
+        "l5-scenarios": "fixture"
+      },
+      "python": "3.11.15",
+      "runner": "app.evaluation.l5_gate"
+    },
+    "model": {
+      "l5-contract": "entrypoint-fixture-v1",
+      "l5-scenarios": "entrypoint-fixture-v1"
+    },
+    "prompt": "decision-contract-v1"
+  }
+}

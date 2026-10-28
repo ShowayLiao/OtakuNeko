@@ -103,4 +103,3 @@ export interface SetRssRuleRequest {
   rule_name: string;
   rule: RssRule;
 }
-

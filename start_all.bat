@@ -58,16 +58,20 @@ echo.
 :: ============================================================
 :: Step 1: Sync backend dependencies
 :: ============================================================
-echo [1/4] Syncing backend deps (uv sync)...
+echo [1/4] Checking backend deps...
 if exist "%OTK_BACKEND%\pyproject.toml" (
-    cd /d "%OTK_BACKEND%"
-    call uv sync
-    if !errorlevel! neq 0 (
-        echo   [ERROR] Backend deps install failed. Check network or run: cd backend ^&^& uv sync
-        pause
-        exit /b 1
+    if exist "%OTK_BACKEND%\.venv" if not defined OTK_SYNC_DEPS (
+        echo   [OK] Backend deps already present (set OTK_SYNC_DEPS=1 to sync)
+    ) else (
+        cd /d "%OTK_BACKEND%"
+        call uv sync
+        if !errorlevel! neq 0 (
+            echo   [ERROR] Backend deps install failed. Check network or run: cd backend ^&^& uv sync
+            pause
+            exit /b 1
+        )
+        echo   [OK] Backend deps ready
     )
-    echo   [OK] Backend deps ready
 
     :: Auto-init .env config (required for first run)
     if not exist "%OTK_BACKEND%\.env" (
@@ -90,10 +94,8 @@ echo.
 :: ============================================================
 :: Step 2: Sync frontend dependencies
 :: ============================================================
-echo [2/4] Syncing frontend deps (pnpm install)...
+echo [2/4] Checking frontend deps...
 if exist "%OTK_FRONTEND%\package.json" (
-    cd /d "%OTK_FRONTEND%"
-
     :: Auto-create .npmrc (fix legacy Taobao registry CERT_HAS_EXPIRED issue)
     if not exist "%OTK_FRONTEND%\.npmrc" (
         echo   [INFO] .npmrc not found, writing new registry mirror...
@@ -101,13 +103,17 @@ if exist "%OTK_FRONTEND%\package.json" (
         echo   [OK] npmmirror registry configured
     )
 
-    call pnpm install
-    if !errorlevel! neq 0 (
-        echo   [ERROR] Frontend deps install failed. Check network or run: pnpm install
-        pause
-        exit /b 1
+    if exist "%OTK_FRONTEND%\node_modules" if not defined OTK_SYNC_DEPS (
+        echo   [OK] Frontend deps already present (set OTK_SYNC_DEPS=1 to sync)
+    ) else (
+        call pnpm --dir "%OTK_FRONTEND%" install
+        if !errorlevel! neq 0 (
+            echo   [ERROR] Frontend deps install failed. Check network or run: pnpm install
+            pause
+            exit /b 1
+        )
+        echo   [OK] Frontend deps ready
     )
-    echo   [OK] Frontend deps ready
 ) else (
     echo   [WARN] frontend directory not found, skipping
 )
@@ -136,8 +142,18 @@ echo --------------------------------------------------------
 echo.
 
 if exist "%OTK_FRONTEND%\package.json" (
-    cd /d "%OTK_FRONTEND%"
-    call pnpm dev
+    pushd "%OTK_FRONTEND%"
+    if /I not "!CD!"=="%OTK_FRONTEND%" (
+        echo [ERROR] Failed to enter frontend directory: %OTK_FRONTEND%
+        popd
+        pause
+        exit /b 1
+    )
+    echo   [INFO] Frontend working directory: !CD!
+    call pnpm --dir "%OTK_FRONTEND%" dev
+    set "FRONTEND_EXIT=!errorlevel!"
+    popd
+    exit /b !FRONTEND_EXIT!
 ) else (
     echo [ERROR] Frontend directory not found: %OTK_FRONTEND%
     pause

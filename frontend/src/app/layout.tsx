@@ -10,7 +10,11 @@ export const metadata: Metadata = {
     icon: "/Icon.png",
   },
 };
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     // 关键：html 和 body 必须设为 h-full (height: 100%)
     <html lang="en" className="h-full" suppressHydrationWarning>

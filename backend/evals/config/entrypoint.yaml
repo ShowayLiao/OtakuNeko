@@ -1,0 +1,25 @@
+name: entrypoint
+dataset: evals/datasets/v1-entrypoint.jsonl
+tags: [entrypoint, fast]
+report_path: .runtime/evaluation/entrypoint.json
+target_factory: app.evaluation.entrypoint:create_entrypoint_target
+agent:
+  name: runtime-entrypoint
+  model: entrypoint-fixture-v1
+  provider: fixture
+thresholds:
+  pass_rate:
+    direction: min
+    value: 1.0
+  routing_accuracy:
+    direction: min
+    value: 1.0
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  latency_ms:
+    direction: max
+    value: 5000.0
+judge:
+  enabled: false
+  required: false

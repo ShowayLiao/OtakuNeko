@@ -4,6 +4,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
 
 # Virtual environments
 venv/
@@ -14,6 +20,8 @@ env/
 # uv (Python manager)
 # 注意：uv.lock 必须提交，所以不要写在这里
 .uv/
+.uv-cache/
+.uv-cache*/
 
 # ==========================
 # 2. Node.js & Frontend
@@ -24,7 +32,11 @@ node_modules/
 # 我们只用 pnpm，所以忽略其他包管理器的锁文件，防止混乱
 package-lock.json
 yarn.lock
-# 注意：pnpm-lock.yaml 必须提交，所以不要写在这里！
+# 前端依赖锁 frontend/pnpm-lock.yaml 必须提交。
+
+# Root dependency lock and locally generated frontend registry settings
+/pnpm-lock.yaml
+/frontend/.npmrc
 
 # Next.js
 .next/
@@ -54,9 +66,18 @@ lobe-ui/
 # ==========================
 # 4. Database & Migrations
 # ==========================
+*.sqlite
 *.sqlite3
+*.sqlite3-journal
+*.sqlite3-shm
+*.sqlite3-wal
+*.sqlite-journal
+*.sqlite-shm
+*.sqlite-wal
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
 
 # !!! 关键修正：保留 alembic/versions/ 
 # 这里只忽略 alembic 产生的缓存，不要忽略 versions 文件夹
@@ -74,6 +95,7 @@ data/
 .trae/
 .vscode/
 .idea/
+.claude/settings.local.json
 *.suo
 *.ntvs*
 *.njsproj
@@ -83,7 +105,6 @@ data/
 # ==========================
 # 6. Docker & Deployment
 # ==========================
-.dockerignore
 Dockerfile.local
 # 如果你的 .pem 证书是部署用的，千万别传
 *.pem
@@ -118,14 +139,62 @@ lerna-debug.log*
 # System
 Thumbs.db
 .DS_Store
-
-
-.runtime/
-
+# Literal Windows environment-variable cache directory
+/%SystemDrive%/
 
 #=====================
 # 9. 文档
 # ==========================
-docs/goal/
+# Publish only durable architecture documents and the changelog.
+# Audits, task plans, execution records, screenshots and raw evidence stay local.
+/docs/*
+!/docs/architecture/
+!/docs/changelog/
+!/docs/frontend-qa/
+/docs/frontend-qa/*
+!/docs/frontend-qa/feature-inventory.md
+!/docs/frontend-qa/acceptance-matrix.md
+!/docs/frontend-qa/audit-report.md
+
+# Historical verification records are not architecture documentation.
+/docs/architecture/a-l1-01-test-matrix-plan.md
+/docs/architecture/a-l1-01-test-matrix-report.md
 
 backend/spec/
+
+.superpowers/
+# Local documentation/tooling scratch output
+.docs/
+.worktrees/
+
+# ==========================
+# 10. Local reports, exports & diagnostics
+# ==========================
+/.ticktickbind
+/architecture_report.*
+/lint-current.json
+/frontend/lint-current.json
+/.agents/*
+!/.agents/skills/
+/.agents/skills/*
+!/.agents/skills/frontend-qa/
+/.claude
+
+# Raw API responses, personal imports and local qBittorrent exports
+/bangumi_*.json
+/calendar.json
+/collection.json
+/collection_subject.json
+/qb.json
+/subject_characters.json
+/tofu*.json
+
+# One-off scripts belong in backend/scripts/; collected tests belong in backend/tests/
+/check_*.py
+/test_*.py
+/backend/test_*.py
+
+# ai-task-log:begin
+# Keep all local AI task logs and hook state out of Git.
+/.ai/
+# ai-task-log:end

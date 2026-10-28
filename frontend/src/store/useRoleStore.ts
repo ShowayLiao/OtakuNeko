@@ -1,6 +1,6 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { Role } from './models';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import { Role } from "./models";
 
 interface RoleStore {
   customRoles: Role[];
@@ -26,20 +26,20 @@ export const useRoleStore = create<RoleStore>()(
       updateCustomRole: (id, role) =>
         set((state) => ({
           customRoles: state.customRoles.map((r) =>
-            r.id === id ? { ...r, ...role } : r
+            r.id === id ? { ...r, ...role } : r,
           ),
         })),
       exportRoles: () => {
-        const state = window.localStorage.getItem('otakuneko-roles-storage');
+        const state = window.localStorage.getItem("otakuneko-roles-storage");
         if (state) {
           const parsedState = JSON.parse(state);
           const roles = parsedState.state.customRoles;
           const dataStr = JSON.stringify(roles, null, 2);
-          const dataBlob = new Blob([dataStr], { type: 'application/json' });
+          const dataBlob = new Blob([dataStr], { type: "application/json" });
           const url = URL.createObjectURL(dataBlob);
-          const link = document.createElement('a');
+          const link = document.createElement("a");
           link.href = url;
-          link.download = 'otakuneko-roles.json';
+          link.download = "otakuneko-roles.json";
           link.click();
           URL.revokeObjectURL(url);
         }
@@ -49,7 +49,7 @@ export const useRoleStore = create<RoleStore>()(
       },
     }),
     {
-      name: 'otakuneko-roles-storage',
-    }
-  )
+      name: "otakuneko-roles-storage",
+    },
+  ),
 );

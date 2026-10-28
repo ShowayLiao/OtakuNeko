@@ -1,0 +1,25 @@
+name: fast
+dataset: evals/datasets/v1.jsonl
+tags: [fast]
+report_path: .runtime/evaluation/fast.json
+baseline: evals/baselines/v1-fast.json
+agent:
+  name: deterministic-runtime
+  model: offline-fixture-v1
+  provider: fixture
+thresholds:
+  pass_rate:
+    direction: min
+    value: 1.0
+  routing_accuracy:
+    direction: min
+    value: 1.0
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  latency_ms:
+    direction: max
+    value: 100.0
+judge:
+  enabled: false
+  required: false

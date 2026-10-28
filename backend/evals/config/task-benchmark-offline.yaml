@@ -1,0 +1,14 @@
+name: task-benchmark-offline
+dataset: evals/datasets/v1-task-benchmark-offline.jsonl
+tags: [task-benchmark]
+report_path: .runtime/evaluation/task-benchmark-offline.json
+transcript_dir: .runtime/evaluation/transcripts
+target_factory: app.evaluation.entrypoint:create_entrypoint_target
+agent:
+  name: task-benchmark-scripted
+  model: entrypoint-fixture-v1
+  provider: fixture
+thresholds:
+  pass_rate: {direction: min, value: 1.0}
+judge:
+  enabled: false

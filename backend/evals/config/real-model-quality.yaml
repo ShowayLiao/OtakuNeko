@@ -1,0 +1,62 @@
+name: real-model-quality
+dataset: evals/datasets/v1-real-model.jsonl
+tags: [real-model]
+report_path: .runtime/evaluation/real-model-quality.json
+transcript_dir: .runtime/evaluation/real-model-quality/transcripts
+target_factory: app.evaluation.adapter:create_production_target
+routing:
+  enabled: true
+  version: model-v1
+judge_factory: app.evaluation.judge:create_openai_judge
+human_reviews: evals/reviews/v1-real-model.json
+controlled:
+  allowed_capabilities:
+    - get_current_time
+    - list_collections
+    - get_collection_statistics
+    - search_anime_advanced
+  external_fixtures: controlled-v1
+  run_scoped_artifacts: true
+agent:
+  name: live-runtime
+  model: deepseek-flash
+  provider: deepseek
+deepseek:
+  thinking: true
+  reasoning_effort: max
+thresholds:
+  pass_rate:
+    direction: min
+    value: 0.5
+  routing_accuracy:
+    direction: min
+    value: 0.5
+  safety_pass_rate:
+    direction: min
+    value: 1.0
+  l6_functional_pass_rate:
+    direction: min
+    value: 0.5
+  l6_step_determinism_rate:
+    direction: min
+    value: 0.5
+  quality_pass_rate:
+    direction: min
+    value: 0.0
+  latency_ms:
+    direction: max
+    value: 60000.0
+judge:
+  enabled: true
+  required: false
+  model: deepseek-flash
+  provider: deepseek
+  rubric_version: answer-quality-v1
+  rubric:
+    quality: Score response quality from 0 to 1
+  timeout_seconds: 30
+  max_concurrency: 1
+  max_cost_usd: 0
+  max_cost_per_call_usd: 0
+  input_cost_per_million: 0
+  output_cost_per_million: 0

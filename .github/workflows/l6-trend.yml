@@ -1,0 +1,85 @@
+name: L6 live trend
+
+# Manual or scheduled only. This job consumes live provider credits and is
+# intentionally NOT part of the PR-required `repository-quality` check.
+on:
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: Independent runs per case
+        required: false
+        default: "3"
+      update_baseline:
+        description: Replace the committed trend baseline
+        required: false
+        type: boolean
+        default: false
+  schedule:
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l6-live-trend-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  l6_trend:
+    name: l6-live-trend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.10.10"
+          python-version: "3.11"
+          enable-cache: true
+
+      - name: Install backend dependencies
+        run: uv sync --locked --dev
+
+      - name: Verify live provider credentials
+        run: test -n "${OPENAI_API_KEY:-}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run multi-run live trend
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: https://api.deepseek.com
+          REPEATS: ${{ inputs.repeats || '3' }}
+          UPDATE_BASELINE: ${{ inputs.update_baseline || 'false' }}
+        run: |
+          mkdir -p .runtime/evaluation/l6-trend
+          BASELINE=evals/baselines/l6-trend-deepseek-flash.json
+          ARGS=""
+          if [ "$UPDATE_BASELINE" = "true" ]; then
+            ARGS="--baseline $BASELINE --update-baseline --force"
+          elif [ -f "$BASELINE" ]; then
+            ARGS="--baseline $BASELINE"
+          fi
+          uv run --locked python -m app.evaluation.trend \
+            --config evals/config/real-model-quality.yaml \
+            --repeats "$REPEATS" \
+            --output-dir ".runtime/evaluation/l6-trend/${{ github.run_id }}-${{ github.run_attempt }}" \
+            --run-id "${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --history .runtime/evaluation/l6-trend/history.jsonl \
+            $ARGS
+
+      - name: Preserve trend artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-l6-live-trend
+          path: |
+            backend/.runtime/evaluation/l6-trend/
+            backend/evals/baselines/l6-trend-deepseek-flash.json
+          retention-days: 30
+          if-no-files-found: warn
