@@ -14,13 +14,60 @@ ProviderErrorCode = Literal[
     "rate_limited",
     "timeout",
     "invalid_request",
+    "not_found",
+    "server_error",
     "transient",
+    "network_blocked",
     "permanent",
     "cancelled",
     "dns",
     "ssrf",
 ]
 ModelCallStatus = Literal["completed", "degraded", "failed", "cancelled"]
+
+ProviderErrorCategory = Literal[
+    "authentication",
+    "invalid_request",
+    "not_found",
+    "rate_limit",
+    "server_error",
+    "timeout",
+    "network",
+    "network_blocked",
+    "dns",
+    "endpoint_policy",
+    "cancelled",
+    "other",
+]
+ProviderCallStage = Literal[
+    "connection_check",
+    "request",
+    "stream_iteration",
+    "response_normalization",
+    "gateway_stream",
+    "unknown",
+]
+
+
+class ProviderFailureDetails(BaseModel):
+    """Safe diagnostic projection of one Provider exception.
+
+    Raw exception text, headers, prompts, and response messages are deliberately
+    excluded. ``response_detail`` only contains allow-listed code/type/param
+    identifiers projected by the Provider adapter.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    category: ProviderErrorCategory
+    provider_error_code: ProviderErrorCode
+    exception_type: str | None = None
+    exception_chain: list[str] = Field(default_factory=list, max_length=12)
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    call_stage: ProviderCallStage = "unknown"
+    os_error_number: int | None = Field(default=None, ge=0, le=65535)
+    os_error_windows_code: int | None = Field(default=None, ge=0, le=65535)
+    response_detail: dict[str, str] = Field(default_factory=dict)
 
 
 class ModelUsage(BaseModel):
@@ -69,6 +116,7 @@ class ModelCallResult(BaseModel):
     finish_reason: str | None = None
     error_code: ProviderErrorCode | None = None
     retryable: bool = False
+    provider_failure: ProviderFailureDetails | None = None
 
 
 class ModelStreamEvent(BaseModel):

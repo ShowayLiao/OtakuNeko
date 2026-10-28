@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import json
+from pathlib import Path
 
 import pytest
 
@@ -16,7 +18,8 @@ from app.evaluation.scripted_llm import (
     ScriptedObservationError,
     ScriptedStep,
 )
-from app.evaluation.types import EvalCase
+from app.evaluation.types import EvalCase, HardCheckResult
+from app.harness.persistence.event_store import EventStore
 from app.trace import TraceEventType
 from app.trace.sql_store import SqlTraceStore
 
@@ -83,6 +86,36 @@ def test_normalizer_counts_denied_runtime_invocation_as_failure() -> None:
     assert result.policy_denied_count == 1
 
 
+def test_normalizer_preserves_safe_provider_failure_details():
+    provider_failure = {
+        "category": "not_found",
+        "provider_error_code": "not_found",
+        "exception_type": "APIStatusError",
+        "exception_chain": ["APIStatusError"],
+        "http_status": 404,
+        "call_stage": "request",
+        "response_detail": {"type": "not_found_error", "code": "model_not_found"},
+    }
+    result = normalize_events(
+        [
+            {
+                "type": "model_call",
+                "provider": "deepseek",
+                "model": "deepseek-flash",
+                "status": "failed",
+                "error_code": "not_found",
+                "provider_failure": provider_failure,
+            },
+            {"type": "run_failed", "error_code": "provider_error"},
+        ],
+        response_schema="text",
+        run_id="eval-provider-failure",
+    )
+
+    assert result.terminal_error_code == "provider_error"
+    assert result.provider_failure == provider_failure
+
+
 def _entrypoint_case(case_id: str, events: list[dict]) -> EvalCase:
     return EvalCase.model_validate(
         {
@@ -143,6 +176,66 @@ async def test_entrypoint_read_runs_through_runtime_dispatcher_and_sql_trace(
     assert TraceEventType.MODEL_CALL in trace_types
     assert TraceEventType.TOOL_CALL_START in trace_types
     assert TraceEventType.TOOL_CALL_END in trace_types
+
+
+@pytest.mark.asyncio
+async def test_headless_pages_all_durable_events_before_validation_and_export(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    original = EventStore.list_after
+    page_calls = 0
+
+    async def two_event_pages(self, run_id, after_sequence=0, *, limit=500):
+        nonlocal page_calls
+        page_calls += 1
+        return await original(self, run_id, after_sequence, limit=2)
+
+    monkeypatch.setattr(EventStore, "list_after", two_event_pages)
+    target = entrypoint.DecisionEntrypointTarget(transcript_dir=tmp_path)
+    case = _entrypoint_case(
+        "headless-paged-events",
+        [{"type": "message_chunk", "content": "synthetic result"}],
+    )
+
+    result = await target.evaluate(case)
+
+    transcript = json.loads(
+        (tmp_path / "headless-paged-events.json").read_text(encoding="utf-8")
+    )
+    assert result.run_status == "completed"
+    assert page_calls > 2
+    assert transcript["persisted_events"][-1]["event_type"] == "run.succeeded"
+
+
+@pytest.mark.asyncio
+async def test_ungraded_hard_check_blocks_functional_success() -> None:
+    entrypoint = importlib.import_module("app.evaluation.entrypoint")
+    case = _entrypoint_case(
+        "headless-ungraded-hard-check",
+        [{"type": "message_chunk", "content": "synthetic result"}],
+    )
+    gateway = ScriptedLLM.from_script_events(case.fixtures.events)
+
+    async def observer(*_args):
+        return [
+            HardCheckResult(rule="state_assertion", status="PASS"),
+            HardCheckResult(rule="quality_judge", status="UNGRADED"),
+        ]
+
+    result, _events = await entrypoint.run_headless_case(
+        case,
+        registry=_echo_registry(),
+        model_gateway=gateway,
+        model="entrypoint-fixture-v1",
+        fail_on_run_failure=False,
+        case_observer=observer,
+    )
+
+    assert result.task_success is None
+    assert result.benchmark_status == "UNGRADED"
+    assert [check.status for check in result.hard_checks] == ["PASS", "UNGRADED"]
 
 
 @pytest.mark.asyncio

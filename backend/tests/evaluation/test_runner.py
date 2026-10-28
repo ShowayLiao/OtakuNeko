@@ -19,8 +19,10 @@ from app.evaluation.runner import (
     RuntimeEvaluationTarget,
     build_component,
     evaluate_gate,
+    run_case,
     run_evaluation,
 )
+from app.evaluation.types import ExecutionResult
 
 
 def test_fast_config_is_strict_and_loads_thresholds():
@@ -226,6 +228,13 @@ async def test_observability_dataset_runs_through_fake_runtime_end_to_end():
     report = await run_evaluation(config, dataset, target)
 
     assert report.dataset_version == "v1-observability"
+    cases_by_id = {case.case_id: case for case in report.cases}
+    assert cases_by_id["observability-budget"].run_status == "failed"
+    assert cases_by_id["observability-budget"].benchmark_status == "PASS"
+    assert cases_by_id["observability-timeout"].run_status == "timeout"
+    assert cases_by_id["observability-timeout"].benchmark_status == "PASS"
+    assert cases_by_id["observability-cancel"].run_status == "cancelled"
+    assert cases_by_id["observability-cancel"].benchmark_status == "PASS"
     assert report.failed_count == 0
     assert report.aggregates["policy_denied_count"] == 3.0
     assert report.aggregates["budget_exceeded_count"] == 1.0
@@ -266,6 +275,30 @@ async def test_one_case_failure_does_not_abort_report():
     assert report.aggregates["pass_rate"] == (report.total - 1) / report.total
     assert report.aggregates["routing_accuracy"] < 1.0
     assert any(result.error for result in report.cases)
+
+
+@pytest.mark.asyncio
+async def test_failed_runtime_cannot_keep_a_successful_case_verdict():
+    config = load_config("evals/config/fast.yaml")
+    case = load_dataset(config.dataset).cases[0]
+
+    class FailedAfterWriteTarget:
+        async def evaluate(self, _case):
+            return ExecutionResult(
+                route="tool",
+                text="The isolated update completed.",
+                run_status="failed",
+                terminal_error_code="provider_error",
+                task_success=True,
+                benchmark_status="PASS",
+            )
+
+    result = await run_case(case, FailedAfterWriteTarget(), config=config)
+
+    assert result.benchmark_status == "ERROR"
+    assert result.functional_passed is None
+    assert result.functional_status == "EXECUTION_FAILED"
+    assert result.passed is False
 
 
 def test_gate_uses_threshold_direction_and_missing_required_metrics():

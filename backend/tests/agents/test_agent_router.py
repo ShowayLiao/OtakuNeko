@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import pytest
 
@@ -124,3 +125,39 @@ class TestClassifierFallback:
         assert second.selected_agent == "fallback"
         assert elapsed < 0.1
         assert classifier.calls == 1
+
+
+class TestModelRouting:
+    def test_model_output_selects_only_a_registered_agent(self, router):
+        decision, status = router.route_from_model_output(
+            json.dumps({"selected_agent": "recommendation", "confidence": 0.91})
+        )
+
+        assert decision.intent == RouteIntent.RECOMMENDATION
+        assert decision.selected_agent == "recommendation"
+        assert decision.confidence == 0.91
+        assert status == "selected"
+
+    def test_low_confidence_model_output_abstains_to_fallback(self, router):
+        decision, status = router.route_from_model_output(
+            json.dumps({"selected_agent": "recommendation", "confidence": 0.2})
+        )
+
+        assert decision.intent == RouteIntent.UNKNOWN
+        assert decision.selected_agent == "fallback"
+        assert status == "abstained"
+
+    def test_model_cannot_route_to_unregistered_agent(self, router):
+        decision, status = router.route_from_model_output(
+            json.dumps({"selected_agent": "admin", "confidence": 1.0})
+        )
+
+        assert decision.intent == RouteIntent.UNKNOWN
+        assert decision.selected_agent == "fallback"
+        assert status == "invalid_output"
+
+    def test_malformed_model_output_abstains_safely(self, router):
+        decision, status = router.route_from_model_output("not json")
+
+        assert decision.selected_agent == "fallback"
+        assert status == "invalid_output"

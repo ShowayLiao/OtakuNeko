@@ -39,7 +39,7 @@ class JudgeConfig(BaseModel):
 class ControlledEvaluationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     allowed_capabilities: list[str] = Field(min_length=1)
-    external_fixtures: Literal["controlled-v1"] | None = None
+    external_fixtures: Literal["controlled-v1", "controlled-task-v1"] | None = None
     run_scoped_artifacts: bool = False
 
 
@@ -49,10 +49,26 @@ class DeepSeekOptions(BaseModel):
     reasoning_effort: Literal["high", "max"] = "high"
 
 
+class EvaluationRoutingConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    enabled: bool = False
+    version: Literal["keyword-v1", "model-v1"] = "keyword-v1"
+
+
 class AgentCostConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
     input_cost_per_million: float = Field(default=0, ge=0)
     output_cost_per_million: float = Field(default=0, ge=0)
+
+
+class RuntimeBudgetConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    max_steps: int = Field(default=24, ge=0)
+    max_tool_calls: int = Field(default=16, ge=0)
+    max_model_calls: int = Field(default=8, ge=0)
+    deadline_seconds: float = Field(default=120, gt=0)
+    max_total_tokens: int = Field(default=100_000, ge=0)
+    max_cost_usd: float = Field(default=10, ge=0)
 
 
 class EvaluationConfig(BaseModel):
@@ -69,6 +85,8 @@ class EvaluationConfig(BaseModel):
     human_reviews: str | None = None
     controlled: ControlledEvaluationConfig | None = None
     deepseek: DeepSeekOptions | None = None
+    routing: EvaluationRoutingConfig = Field(default_factory=EvaluationRoutingConfig)
+    runtime_budget: RuntimeBudgetConfig | None = None
     cost: AgentCostConfig | None = None
     agent: AgentMetadata = Field(
         default_factory=lambda: AgentMetadata(name="deterministic-runtime")

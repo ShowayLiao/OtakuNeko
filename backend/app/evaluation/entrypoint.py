@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Collection, Sequence
+from collections.abc import AsyncIterator, Awaitable, Callable, Collection, Sequence
 from contextlib import asynccontextmanager
 import json
 import logging
@@ -23,24 +23,27 @@ from app.evaluation.adapter import (
     FixtureMemory,
     classify_route,
     normalize_events,
+    route_agent_evidence,
 )
 from app.evaluation.scripted_llm import ScriptedLLM, ScriptedObservationError
-from app.evaluation.transcript import build_transcript, write_transcript
+from app.evaluation.transcript import build_transcript, write_trace, write_transcript
 from app.evaluation.types import (
     ApprovalFixture,
     ArgumentSample,
     EvalCase,
     ExecutionResult,
+    HardCheckResult,
 )
 from app.harness.budget import CancellationToken, RunBudget
 from app.harness.checkpoint import SqliteCheckpointStore
 from app.harness.contracts import ExecutionContext
-from app.harness.execution import build_runtime
+from app.harness.execution import build_runtime, build_specialist_router
 from app.harness.model_gateway import ModelGateway
 from app.harness.policy import Approval
 from app.harness.task import AgentTask
 from app.schemas.user import UserRead
 from app.trace.sql_store import SqlTraceStore
+from app.trace import TraceEventType
 from app.models import User
 
 
@@ -51,7 +54,30 @@ _TERMINAL_EVENTS = {
     "run_timeout": ("timeout", "failed", "run.failed"),
 }
 
+SessionSetup = Callable[[AsyncSession, int], Awaitable[Any]]
+CaseObserver = Callable[
+    [AsyncSession, int, Any, ExecutionResult, Sequence[dict[str, Any]]],
+    Awaitable[Sequence[HardCheckResult]],
+]
+
 logger = logging.getLogger(__name__)
+
+
+async def _list_all_run_events(event_store, run_id: str) -> list[Any]:
+    """Read every durable Run event, including terminals beyond one page."""
+    events: list[Any] = []
+    after_sequence = 0
+    while page := await event_store.list_after(
+        run_id,
+        after_sequence=after_sequence,
+        limit=1000,
+    ):
+        events.extend(page)
+        next_sequence = int(page[-1].sequence)
+        if next_sequence <= after_sequence:
+            raise RuntimeError("headless Runtime event pagination stalled")
+        after_sequence = next_sequence
+    return events
 
 
 @asynccontextmanager
@@ -230,6 +256,12 @@ async def run_headless_case(
     approvals: Sequence[ApprovalFixture] = (),
     transcript_dir: str | Path | None = None,
     allowed_public_names: Collection[str] | None = None,
+    routing_enabled: bool = False,
+    routing_version: str = "keyword-v1",
+    session_setup: SessionSetup | None = None,
+    case_observer: CaseObserver | None = None,
+    run_budget: RunBudget | None = None,
+    run_id: str | None = None,
 ) -> tuple[ExecutionResult, list[dict[str, Any]]]:
     """Execute one case with durable Runtime stores backed by isolated SQL.
 
@@ -240,7 +272,7 @@ async def run_headless_case(
     dispatcher allowlist. Unknown or side-effecting names fail closed before
     the Run starts.
     """
-    run_id = f"eval-{case.id}"
+    run_id = run_id or f"eval-{case.id}"
     started = time.perf_counter()
     checkpoint_context = tempfile.TemporaryDirectory() if approvals else None
     checkpoint_store = (
@@ -252,10 +284,20 @@ async def run_headless_case(
         session,
         user,
     ):
+        fixture_state = (
+            await session_setup(session, user.id) if session_setup is not None else None
+        )
         trace_store = SqlTraceStore(session)
-        memory_context = await FixtureMemory(case).retrieve_context(
+        fixture_memory = FixtureMemory(case)
+        memory_context = await fixture_memory.retrieve_context(
             run_id,
             case.input_messages[-1].content,
+        )
+        specialist_router = build_specialist_router(
+            registry,
+            memory_service=fixture_memory,
+            enabled=routing_enabled,
+            version=routing_version,
         )
         runtime = build_runtime(
             session=session,
@@ -267,6 +309,8 @@ async def run_headless_case(
             allow_side_effects=bool(approvals),
             checkpoint_store=checkpoint_store,
             memory_context=memory_context,
+            memory_service=fixture_memory,
+            specialist_router=specialist_router,
         )
         available_public_names = {
             definition.public_name
@@ -317,7 +361,7 @@ async def run_headless_case(
                 artifact_data_complete = False
             else:
                 try:
-                    rows = await runtime.event_store.list_after(run_id)
+                    rows = await _list_all_run_events(runtime.event_store, run_id)
                 except Exception:
                     artifact_data_complete = False
             if not rows:
@@ -345,6 +389,7 @@ async def run_headless_case(
                 trace_payload = None
             else:
                 trace_payload = trace.model_dump(mode="json")
+                write_trace(transcript_dir, case.id, trace_payload)
             write_transcript(
                 transcript_dir,
                 case.id,
@@ -376,7 +421,7 @@ async def run_headless_case(
                 async for event in runtime.stream_decision(
                     task,
                     context=context,
-                    budget=RunBudget(),
+                    budget=run_budget or RunBudget(),
                     cancellation=CancellationToken(),
                     approval=pending_approval,
                 ):
@@ -430,6 +475,14 @@ async def run_headless_case(
                 response_schema=case.assertions.response_schema,
                 run_id=run_id,
             )
+            route_agent, route_observed = route_agent_evidence(events)
+            result = result.model_copy(
+                update={
+                    "route": classify_route(events, result.capabilities, result.text),
+                    "route_agent": route_agent,
+                    "route_observed": route_observed,
+                }
+            )
             if argument_samples_source is not None:
                 result = result.model_copy(
                     update={"tool_arguments": list(argument_samples_source())}
@@ -442,6 +495,39 @@ async def run_headless_case(
                 runtime=runtime,
                 trace_store=trace_store,
             )
+
+            if case_observer is not None:
+                hard_checks = list(
+                    await case_observer(
+                        session,
+                        user.id,
+                        fixture_state,
+                        result,
+                        events,
+                    )
+                )
+                check_statuses = {check.status for check in hard_checks}
+                if "UNSUPPORTED" in check_statuses:
+                    task_success = None
+                    benchmark_status = "UNSUPPORTED"
+                elif "FAIL" in check_statuses:
+                    task_success = False
+                    benchmark_status = "FAIL"
+                elif "UNGRADED" in check_statuses:
+                    task_success = None
+                    benchmark_status = "UNGRADED"
+                else:
+                    task_success = bool(hard_checks) and all(
+                        check.status == "PASS" for check in hard_checks
+                    )
+                    benchmark_status = "PASS" if task_success else "FAIL"
+                result = result.model_copy(
+                    update={
+                        "task_success": task_success,
+                        "benchmark_status": benchmark_status,
+                        "hard_checks": hard_checks,
+                    }
+                )
 
             if fail_on_run_failure and result.run_status != "completed":
                 raise RuntimeError("headless Runtime run failed")
@@ -473,7 +559,6 @@ async def run_headless_case(
     duration_ms = (time.perf_counter() - started) * 1000
     result = result.model_copy(
         update={
-            "route": classify_route(events, result.capabilities, result.text),
             "latency_ms": duration_ms,
             "trace_id": run_id,
         }
@@ -514,7 +599,7 @@ async def _validate_runtime_result(
     stored_run = await runtime.run_store.get(run_id, user_id=user_id)
     if stored_run is None or stored_run.status != stored_status:
         raise RuntimeError("headless Runtime canonical result mismatch")
-    stored_events = await runtime.event_store.list_after(run_id)
+    stored_events = await _list_all_run_events(runtime.event_store, run_id)
     stored_terminals = [
         event
         for event in stored_events
@@ -551,10 +636,50 @@ async def _validate_runtime_result(
     ):
         raise RuntimeError("headless Runtime trace correlation missing")
     trace_types = {event.event_type.value for event in trace_events}
+    route_event = next(
+        (event for event in events if event.get("type") == "route_decision"),
+        None,
+    )
+    route_agent = route_event.get("agent") if route_event is not None else None
+    specialist_event = next(
+        (
+            event
+            for event in events
+            if event.get("type") == "agent_result" and event.get("agent") == route_agent
+        ),
+        None,
+    )
+    # The projection deliberately omits agent payloads. A specialist's
+    # ``agent_result`` and the terminal result both map to AGENT_RESULT, so
+    # require both events while correlating the Runtime result to its route.
+    specialist_trace = any(
+        event.event_type == TraceEventType.AGENT_RESULT
+        and event.data.get("agent") == route_agent
+        and event.data.get("name") == route_agent
+        and event.data.get("kind") == "subagent"
+        for event in trace_events
+    )
+    routing_trace = route_event is not None and any(
+        event.event_type == TraceEventType.ROUTING_DECISION
+        and event.data.get("agent") == route_agent
+        and event.data.get("route") == route_event.get("route")
+        for event in trace_events
+    )
+    no_model_specialist = (
+        route_event is not None
+        and route_agent != "fallback"
+        and specialist_event is not None
+        and specialist_trace
+        and routing_trace
+    )
     provider_terminal = normalized_status in {"failed", "timeout"} and terminal.get(
         "error_code"
     ) in {"provider_error", "timeout"}
-    if "model_call" not in trace_types and not provider_terminal:
+    if (
+        "model_call" not in trace_types
+        and not provider_terminal
+        and not no_model_specialist
+    ):
         raise RuntimeError("headless Runtime trace incomplete")
     if result.tool_call_count and not {
         "tool_call_start",

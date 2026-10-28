@@ -113,6 +113,201 @@ def test_build_transcript_includes_contract_sections_and_errors() -> None:
     assert payload["redaction"]["argument_values"] == "omitted (keys only)"
 
 
+def test_thinking_chunks_are_omitted_without_evicting_later_events() -> None:
+    thinking_count = 564
+    events: list[dict[str, Any]] = [
+        {"type": "message_chunk", "content": "visible answer"},
+        {
+            "type": "tool_call_start",
+            "invocation_id": "call-1",
+            "capability": "demo.read",
+        },
+        {
+            "type": "tool_call_end",
+            "invocation_id": "call-1",
+            "capability": "demo.read",
+            "status": "succeeded",
+        },
+        *[
+            {"type": "thinking_chunk", "content": f"private thought {index}"}
+            for index in range(thinking_count)
+        ],
+        {"type": "model_call", "provider": "fake", "finish_reason": "stop"},
+        {
+            "type": "run_failed",
+            "error_code": "provider_error",
+            "decision_failure_reason_code": "invalid_decision",
+            "decision_failure_fields": ["action"],
+        },
+    ]
+    persisted_events = [
+        {
+            "sequence": 1,
+            "event_type": "message_chunk",
+            "payload": {"content": "visible answer"},
+        },
+        {
+            "sequence": 2,
+            "event_type": "tool_call_start",
+            "invocation_id": "call-1",
+            "payload": {"capability": "demo.read"},
+        },
+        {
+            "sequence": 3,
+            "event_type": "tool_call_end",
+            "invocation_id": "call-1",
+            "payload": {"status": "succeeded"},
+        },
+        *[
+            {
+                "sequence": index + 4,
+                "event_type": "thinking_chunk",
+                "payload": {
+                    "type": "thinking_chunk",
+                    "content": f"private thought {index}",
+                },
+            }
+            for index in range(thinking_count)
+        ],
+        {
+            "sequence": thinking_count + 4,
+            "event_type": "model_call",
+            "payload": {"provider": "fake", "finish_reason": "stop"},
+        },
+        {
+            "sequence": thinking_count + 5,
+            "event_type": "run.failed",
+            "payload": {
+                "error_code": "provider_error",
+                "decision_failure_reason_code": "invalid_decision",
+                "decision_failure_fields": ["action"],
+            },
+        },
+    ]
+
+    payload = build_transcript(
+        case=_case(),
+        run_id="eval-thinking-chunks",
+        trace_id="eval-thinking-chunks",
+        events=events,
+        persisted_events=persisted_events,
+        trace=None,
+        result=None,
+        error=None,
+    )
+
+    assert [event["type"] for event in payload["events"]] == [
+        "message_chunk",
+        "tool_call_start",
+        "tool_call_end",
+        "model_call",
+        "run_failed",
+    ]
+    assert payload["events"][0]["content"] == "visible answer"
+    assert [event["event_type"] for event in payload["persisted_events"]] == [
+        "message_chunk",
+        "tool_call_start",
+        "tool_call_end",
+        "model_call",
+        "run.failed",
+    ]
+    assert payload["persisted_events"][0]["payload"]["content"] == "visible answer"
+    assert "private thought" not in json.dumps(payload["events"])
+    assert "private thought" not in json.dumps(payload["persisted_events"])
+    assert payload["terminal"]["status"] == "failed"
+    assert payload["terminal"]["decision_failure_reason_code"] == "invalid_decision"
+    assert payload["terminal"]["decision_failure_fields"] == ["action"]
+    assert payload["terminal"]["finish_reason"] == "stop"
+    assert payload["redaction"]["thinking_chunk_events_omitted"] == {
+        "events": thinking_count,
+        "persisted_events": thinking_count,
+    }
+
+
+def test_non_thinking_event_collection_remains_bounded() -> None:
+    payload = build_transcript(
+        case=_case(),
+        run_id="eval-bounded-events",
+        trace_id="eval-bounded-events",
+        events=[{"type": "model_call", "index": index} for index in range(205)],
+        persisted_events=[],
+        trace=None,
+        result=None,
+        error=None,
+    )
+
+    assert len(payload["events"]) == 200
+    assert payload["redaction"]["thinking_chunk_events_omitted"] == {
+        "events": 0,
+        "persisted_events": 0,
+    }
+
+
+def test_transcript_records_safe_provider_failure_diagnostics() -> None:
+    provider_failure = {
+        "category": "server_error",
+        "provider_error_code": "server_error",
+        "exception_type": "APIStatusError",
+        "exception_chain": ["APIStatusError"],
+        "http_status": 503,
+        "call_stage": "request",
+        "response_detail": {
+            "code": "overloaded_error",
+            "type": "server_error",
+            "param": "model",
+            "message": "raw provider body with token-DO-NOT-STORE",
+        },
+        "raw_body": "raw provider body with token-DO-NOT-STORE",
+    }
+    payload = build_transcript(
+        case=_case(),
+        run_id="provider-diagnostics",
+        trace_id="provider-diagnostics",
+        events=[
+            {
+                "type": "model_call",
+                "provider": "deepseek",
+                "status": "failed",
+                "error_code": "server_error",
+                "finish_reason": None,
+                "provider_failure": provider_failure,
+            },
+            {"type": "run_failed", "error_code": "provider_error"},
+        ],
+        persisted_events=[
+            {
+                "sequence": 1,
+                "event_type": "model_call",
+                "payload": {
+                    "provider": "deepseek",
+                    "provider_failure": provider_failure,
+                },
+            }
+        ],
+        trace=None,
+        result=None,
+        error=None,
+    )
+
+    expected = {
+        "category": "server_error",
+        "provider_error_code": "server_error",
+        "exception_type": "APIStatusError",
+        "exception_chain": ["APIStatusError"],
+        "http_status": 503,
+        "call_stage": "request",
+        "response_detail": {
+            "code": "overloaded_error",
+            "type": "server_error",
+            "param": "model",
+        },
+    }
+    assert payload["events"][0]["provider_failure"] == expected
+    assert payload["persisted_events"][0]["payload"]["provider_failure"] == expected
+    assert payload["terminal"]["provider_failure"] == expected
+    assert "token-DO-NOT-STORE" not in json.dumps(payload)
+
+
 def test_write_transcript_uses_case_id_file_name(tmp_path: Path) -> None:
     written = write_transcript(tmp_path, "case/with space", {"schema_version": 1})
 

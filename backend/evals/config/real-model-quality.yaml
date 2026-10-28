@@ -4,6 +4,9 @@ tags: [real-model]
 report_path: .runtime/evaluation/real-model-quality.json
 transcript_dir: .runtime/evaluation/real-model-quality/transcripts
 target_factory: app.evaluation.adapter:create_production_target
+routing:
+  enabled: true
+  version: model-v1
 judge_factory: app.evaluation.judge:create_openai_judge
 human_reviews: evals/reviews/v1-real-model.json
 controlled:

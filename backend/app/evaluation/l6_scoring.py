@@ -156,7 +156,10 @@ def score_l6_case(
             "provider_error",
             terminal_error_code=result.terminal_error_code or "provider_error",
         )
-    if result.terminal_error_code in _EXECUTION_ERROR_CODES:
+    if (
+        result.run_status == "failed"
+        or result.terminal_error_code in _EXECUTION_ERROR_CODES
+    ):
         return _empty_score(
             case.id,
             "execution_error",

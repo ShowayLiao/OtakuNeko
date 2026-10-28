@@ -30,6 +30,52 @@ _SAFE_PROVIDER_CODES = frozenset(
         "ssrf",
     }
 )
+_SAFE_DECISION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "decision_id",
+        "run_id",
+        "action",
+        "capability",
+        "capability_version",
+        "arguments",
+        "content",
+    }
+)
+_DECISION_FAILURE_REASONS = frozenset(
+    {
+        "invalid_model_result",
+        "model_cancelled",
+        "provider_failure",
+        "invalid_decision_shape",
+        "schema_version_mismatch",
+        "run_identity_mismatch",
+        "authority_field_rejected",
+        "decision_schema_invalid",
+        "missing_capability",
+        "missing_capability_version",
+        "capability_version_mismatch",
+        "invalid_arguments",
+        "arguments_too_large",
+        "multiple_tool_proposals",
+        "invalid_tool_arguments",
+        "empty_model_output",
+        "invalid_json",
+        "invalid_decision",
+    }
+)
+
+
+def _safe_field_paths(locations: list[tuple[Any, ...]]) -> tuple[str, ...]:
+    """Project validation locations to fixed public Decision field names."""
+    fields: set[str] = set()
+    for location in locations:
+        root = location[0] if location else None
+        field = (
+            root if isinstance(root, str) and root in _SAFE_DECISION_FIELDS else "other"
+        )
+        fields.add(field)
+    return tuple(sorted(fields))
 
 
 class DecisionParseError(ValueError):
@@ -41,9 +87,21 @@ class DecisionParseError(ValueError):
         message: str = "Invalid model decision",
         *,
         retryable: bool = False,
+        reason_code: str = "invalid_decision",
+        field_paths: tuple[str, ...] = (),
     ) -> None:
         self.error_code = error_code
         self.retryable = retryable
+        self.reason_code = (
+            reason_code
+            if reason_code in _DECISION_FAILURE_REASONS
+            else "invalid_decision"
+        )
+        self.field_paths = (
+            _safe_field_paths([(field,) for field in field_paths])
+            if field_paths
+            else ()
+        )
         super().__init__(message)
 
 
@@ -90,10 +148,16 @@ class DecisionParser:
         expected_run_id: str | None = None,
     ) -> AgentDecision:
         if not isinstance(result, ModelCallResult):
-            raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
+            raise DecisionParseError(
+                ErrorCode.INVALID_REQUEST,
+                retryable=True,
+                reason_code="invalid_model_result",
+            )
         if result.status == "cancelled" or result.error_code == "cancelled":
             raise DecisionParseError(
-                ErrorCode.CANCELLED, "Model decision was cancelled"
+                ErrorCode.CANCELLED,
+                "Model decision was cancelled",
+                reason_code="model_cancelled",
             )
         if result.status == "failed":
             code = (
@@ -104,23 +168,34 @@ class DecisionParser:
             mapped = (
                 ErrorCode.CANCELLED if code == "cancelled" else ErrorCode.PROVIDER_ERROR
             )
-            raise DecisionParseError(mapped, "Model decision failed")
+            raise DecisionParseError(
+                mapped, "Model decision failed", reason_code="provider_failure"
+            )
 
         payload = self._payload(result)
         if not isinstance(payload, dict):
-            raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
+            raise DecisionParseError(
+                ErrorCode.INVALID_REQUEST,
+                retryable=True,
+                reason_code="invalid_decision_shape",
+            )
         if payload.get("schema_version", self.schema_version) != self.schema_version:
             raise DecisionParseError(
                 ErrorCode.INVALID_REQUEST,
                 "Unknown decision schema version",
                 retryable=True,
+                reason_code="schema_version_mismatch",
+                field_paths=("schema_version",),
             )
 
         if expected_run_id is not None:
             proposed_run_id = payload.get("run_id")
             if proposed_run_id not in {None, expected_run_id}:
                 raise DecisionParseError(
-                    ErrorCode.INVALID_REQUEST, "Run identity mismatch"
+                    ErrorCode.INVALID_REQUEST,
+                    "Run identity mismatch",
+                    reason_code="run_identity_mismatch",
+                    field_paths=("run_id",),
                 )
             payload = {**payload, "run_id": expected_run_id}
 
@@ -138,24 +213,73 @@ class DecisionParser:
                 raise DecisionParseError(
                     ErrorCode.INVALID_REQUEST,
                     "Authority fields are runtime-owned",
+                    reason_code="authority_field_rejected",
+                    field_paths=("arguments",),
                 )
+            if not payload.get("capability"):
+                raise DecisionParseError(
+                    ErrorCode.INVALID_REQUEST,
+                    retryable=True,
+                    reason_code="missing_capability",
+                    field_paths=("capability",),
+                )
+            if not payload.get("capability_version"):
+                raise DecisionParseError(
+                    ErrorCode.INVALID_REQUEST,
+                    retryable=True,
+                    reason_code="missing_capability_version",
+                    field_paths=("capability_version",),
+                )
+        validation_field_paths: tuple[str, ...] | None = None
         try:
             decision = AgentDecision.model_validate(payload)
         except ValidationError as exc:
-            raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True) from exc
+            locations = [
+                tuple(error.get("loc", ()))
+                for error in exc.errors(
+                    include_input=False, include_context=False, include_url=False
+                )
+            ]
+            validation_field_paths = _safe_field_paths(locations)
+
+        if validation_field_paths is not None:
+            raise DecisionParseError(
+                ErrorCode.INVALID_REQUEST,
+                retryable=True,
+                reason_code="decision_schema_invalid",
+                field_paths=validation_field_paths,
+            )
 
         if decision.action == "invoke":
             if not decision.capability or not decision.capability_version:
-                raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
+                raise DecisionParseError(
+                    ErrorCode.INVALID_REQUEST,
+                    retryable=True,
+                    reason_code=(
+                        "missing_capability"
+                        if not decision.capability
+                        else "missing_capability_version"
+                    ),
+                    field_paths=(
+                        "capability"
+                        if not decision.capability
+                        else "capability_version",
+                    ),
+                )
             if decision.capability_version != self.schema_version:
                 raise DecisionParseError(
                     ErrorCode.INVALID_REQUEST,
                     "Unknown capability contract version",
                     retryable=True,
+                    reason_code="capability_version_mismatch",
+                    field_paths=("capability_version",),
                 )
             if _contains_authority(decision.arguments):
                 raise DecisionParseError(
-                    ErrorCode.UNAUTHORIZED, "Authority fields are runtime-owned"
+                    ErrorCode.UNAUTHORIZED,
+                    "Authority fields are runtime-owned",
+                    reason_code="authority_field_rejected",
+                    field_paths=("arguments",),
                 )
             try:
                 encoded = json.dumps(
@@ -166,13 +290,18 @@ class DecisionParser:
                 ).encode("utf-8")
             except (TypeError, ValueError) as exc:
                 raise DecisionParseError(
-                    ErrorCode.INVALID_REQUEST, retryable=True
+                    ErrorCode.INVALID_REQUEST,
+                    retryable=True,
+                    reason_code="invalid_arguments",
+                    field_paths=("arguments",),
                 ) from exc
             if len(encoded) > self.max_arguments_bytes:
                 raise DecisionParseError(
                     ErrorCode.INVALID_REQUEST,
                     "Decision arguments exceed the public limit",
                     retryable=True,
+                    reason_code="arguments_too_large",
+                    field_paths=("arguments",),
                 )
         return decision
 
@@ -185,17 +314,25 @@ class DecisionParser:
                     ErrorCode.INVALID_REQUEST,
                     "Exactly one tool proposal is required",
                     retryable=True,
+                    reason_code="multiple_tool_proposals",
                 )
             call = result.tool_calls[0]
             if not isinstance(call, dict):
-                raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
+                raise DecisionParseError(
+                    ErrorCode.INVALID_REQUEST,
+                    retryable=True,
+                    reason_code="invalid_decision_shape",
+                )
             arguments = call.get("arguments", {})
             if isinstance(arguments, str):
                 try:
                     arguments = json.loads(arguments or "{}")
                 except json.JSONDecodeError as exc:
                     raise DecisionParseError(
-                        ErrorCode.INVALID_REQUEST, retryable=True
+                        ErrorCode.INVALID_REQUEST,
+                        retryable=True,
+                        reason_code="invalid_tool_arguments",
+                        field_paths=("arguments",),
                     ) from exc
             return {
                 "schema_version": call.get("schema_version", self.schema_version),
@@ -208,11 +345,19 @@ class DecisionParser:
                 "arguments": arguments,
             }
         if not result.text:
-            raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
+            raise DecisionParseError(
+                ErrorCode.INVALID_REQUEST,
+                retryable=True,
+                reason_code="empty_model_output",
+            )
         try:
             return _decode_json_object(result.text)
         except (TypeError, json.JSONDecodeError) as exc:
-            raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True) from exc
+            raise DecisionParseError(
+                ErrorCode.INVALID_REQUEST,
+                retryable=True,
+                reason_code="invalid_json",
+            ) from exc
 
     def _canonicalize_invoke(self, payload: dict[str, Any]) -> dict[str, Any]:
         if "arguments" not in payload and "public_arguments" in payload:
@@ -236,7 +381,12 @@ class DecisionParser:
         if decision.action != "invoke":
             return None
         if not decision.capability or not decision.capability_version:
-            raise DecisionParseError(ErrorCode.INVALID_REQUEST, retryable=True)
+            raise DecisionParseError(
+                ErrorCode.INVALID_REQUEST,
+                retryable=True,
+                reason_code="missing_capability",
+                field_paths=("capability",),
+            )
         return InvocationRequest(
             invocation_id=decision.decision_id,
             run_id=decision.run_id,

@@ -32,6 +32,8 @@ CHECKED_PATHS = (
     "backend/evals/config/entrypoint.yaml",
     "backend/evals/config/real-model.yaml",
     "backend/evals/config/real-model-quality.yaml",
+    "backend/evals/config/task-benchmark.yaml",
+    "backend/evals/config/task-benchmark-offline.yaml",
     "backend/evals/baselines/v1-fast.json",
     "backend/evals/baselines/v1-full.json",
     "backend/typecheck-baseline.json",
@@ -361,6 +363,10 @@ def check_eval(root: Path, relative: str) -> None:
         metrics.update(L6_COUNT_METRICS)
         metrics.update(
             {
+                "loop_success_rate",
+                "loop_success_count",
+                "loop_run_count",
+                "router_accuracy",
                 "quality_pass_rate",
                 "human_review_count",
                 "human_accept_count",
@@ -445,6 +451,12 @@ def run(root: Path) -> dict:
         ),
         "backend/evals/config/real-model-quality.yaml": lambda: check_eval(
             root, "backend/evals/config/real-model-quality.yaml"
+        ),
+        "backend/evals/config/task-benchmark.yaml": lambda: check_eval(
+            root, "backend/evals/config/task-benchmark.yaml"
+        ),
+        "backend/evals/config/task-benchmark-offline.yaml": lambda: check_eval(
+            root, "backend/evals/config/task-benchmark-offline.yaml"
         ),
         "backend/evals/baselines/v1-fast.json": lambda: check_baseline(
             root, "backend/evals/baselines/v1-fast.json"

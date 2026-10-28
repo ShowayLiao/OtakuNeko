@@ -4,6 +4,7 @@ from app.evaluation.metrics import (
     aggregate_metrics,
     aggregate_observability,
     compute_case_metrics,
+    observability_snapshot,
 )
 from app.evaluation.types import (
     CaseAssertions,
@@ -169,3 +170,25 @@ def test_unknown_cost_counts_each_model_call():
     )
 
     assert aggregates["estimated_cost_unknown_count"] == 2.0
+
+
+def test_zero_tool_calls_have_unknown_success_rate_not_perfect_rate():
+    result = _result(
+        tool_call_count=0,
+        tool_success_count=0,
+        tool_failure_count=0,
+        run_status="failed",
+    )
+
+    snapshot = observability_snapshot(result)
+    aggregates = aggregate_observability([result])
+
+    assert snapshot["tool_success_rate"] is None
+    assert aggregates["tool_success_rate"] is None
+
+
+def test_empty_observability_population_has_unknown_rates():
+    aggregates = aggregate_observability([])
+
+    assert aggregates["run_success_rate"] is None
+    assert aggregates["tool_success_rate"] is None

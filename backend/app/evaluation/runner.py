@@ -42,7 +42,7 @@ from app.evaluation.metrics import (
 )
 from app.evaluation.reporting import write_report
 from app.evaluation.scoring import answer_quality_passed, score_deterministic
-from app.evaluation.transcript import transcript_path
+from app.evaluation.transcript import trace_artifact_path, transcript_path
 from app.evaluation.types import (
     CaseResult,
     EvalCase,
@@ -154,17 +154,56 @@ async def run_case(
                     ),
                 }
             )
-        passed = (
-            case_passed(metrics)
-            and (deterministic is None or deterministic.task_success)
-            and quality_passed is not False
-            and execution.artifact_error is None
+        benchmark_status = execution.benchmark_status
+        expected_noncompleted_run = (
+            deterministic is not None
+            and deterministic.task_success
+            and any(
+                dimension.dimension == "termination" and dimension.passed
+                for dimension in deterministic.dimensions
+            )
         )
-        l6 = score_l6_case(
-            case,
-            execution,
-            deterministic,
-            passed=passed,
+        if execution.run_status != "completed":
+            if expected_noncompleted_run:
+                if benchmark_status is None:
+                    benchmark_status = "PASS"
+            elif benchmark_status not in {"SKIP", "UNSUPPORTED", "UNGRADED"}:
+                benchmark_status = "ERROR"
+        non_scored_status = benchmark_status in {
+            "SKIP",
+            "UNSUPPORTED",
+            "UNGRADED",
+        }
+        execution_failed = (
+            execution.run_status != "completed" and not expected_noncompleted_run
+        ) or benchmark_status == "ERROR"
+        functional_passed = (
+            None
+            if non_scored_status or execution_failed
+            else False
+            if benchmark_status == "FAIL"
+            else execution.task_success
+            if execution.task_success is not None
+            else case_passed(metrics)
+            and (deterministic is None or deterministic.task_success)
+        )
+        passed = bool(functional_passed) and execution.artifact_error is None
+        quality_status = (
+            "GRADED"
+            if judge_outcome.status == "available"
+            else "UNGRADED"
+            if case.answer_quality is not None
+            else "NOT_REQUESTED"
+        )
+        l6 = (
+            None
+            if non_scored_status
+            else score_l6_case(
+                case,
+                execution,
+                deterministic,
+                passed=passed,
+            )
         )
         estimated_cost = execution.estimated_cost_usd
         cost_unknown_count = execution.estimated_cost_unknown_count
@@ -184,7 +223,24 @@ async def run_case(
             case_id=case.id,
             category=case.category.value,
             passed=passed,
+            functional_passed=functional_passed,
+            functional_status=(
+                "NOT_RUN"
+                if non_scored_status
+                else "EXECUTION_FAILED"
+                if execution_failed
+                else "NOT_RUN"
+                if functional_passed is None
+                else "PASSED"
+                if functional_passed
+                else "ASSERTION_FAILED"
+            ),
+            quality_status=quality_status,
+            benchmark_status=benchmark_status or ("PASS" if passed else "FAIL"),
+            hard_checks=execution.hard_checks,
             actual_route=execution.route,
+            route_agent=execution.route_agent,
+            route_observed=execution.route_observed,
             capabilities=execution.capabilities,
             metrics=metrics,
             judge=judge_outcome,
@@ -192,8 +248,9 @@ async def run_case(
             trace_id=execution.trace_id,
             run_status=execution.run_status,
             terminal_error_code=execution.terminal_error_code,
+            provider_failure=execution.provider_failure,
             termination_reason=execution.termination_reason,
-            outcome=l6.outcome,
+            outcome=l6.outcome if l6 is not None else None,
             step_count=execution.step_count,
             tool_failure_count=execution.tool_failure_count,
             recovered=execution.recovered,
@@ -239,6 +296,12 @@ async def run_case(
             case_id=case.id,
             category=case.category.value,
             passed=False,
+            functional_passed=None,
+            functional_status="EXECUTION_FAILED",
+            quality_status=(
+                "UNGRADED" if case.answer_quality is not None else "NOT_REQUESTED"
+            ),
+            benchmark_status="ERROR",
             metrics=metrics,
             error=safe_error(exc, "execution_failed"),
             run_id=failed_run_id,
@@ -254,11 +317,11 @@ async def run_case(
 
 def evaluate_gate(
     config: EvaluationConfig,
-    aggregates: dict[str, float],
+    aggregates: dict[str, float | None],
 ) -> list[str]:
     failures: list[str] = []
     for name, threshold in config.thresholds.items():
-        if name not in aggregates:
+        if name not in aggregates or aggregates[name] is None:
             if threshold.required:
                 failures.append(f"missing required metric: {name}")
             continue
@@ -330,12 +393,27 @@ def _attach_transcript_paths(
     directory = Path(config.transcript_dir)
     attached: list[CaseResult] = []
     for result in results:
-        path = transcript_path(directory, result.case_id)
-        attached.append(
-            result.model_copy(update={"transcript_path": str(path)})
-            if path.is_file()
-            else result
+        if (
+            config.target_factory
+            == "app.evaluation.entrypoint:create_entrypoint_target"
+        ):
+            candidate_paths = [transcript_path(directory / config.name, result.case_id)]
+        else:
+            candidate_paths = [transcript_path(directory, result.case_id)]
+        path = next(
+            (candidate for candidate in candidate_paths if candidate.is_file()), None
         )
+        trace = (
+            trace_artifact_path(path.parent, result.case_id)
+            if path is not None
+            else None
+        )
+        updates = {}
+        if path is not None:
+            updates["transcript_path"] = str(path)
+        if trace is not None and trace.is_file():
+            updates["trace_path"] = str(trace)
+        attached.append(result.model_copy(update=updates) if updates else result)
     return attached
 
 
@@ -352,6 +430,7 @@ def _build_run_index(
                 case_id=result.case_id,
                 run_id=result.run_id,
                 trace_id=result.trace_id,
+                trace_path=result.trace_path,
                 transcript_path=result.transcript_path,
                 message_count=len(case.input_messages) if case is not None else 0,
                 run_status=result.run_status,
@@ -417,6 +496,9 @@ async def run_evaluation(
     aggregates["pass_rate"] = (
         sum(result.passed for result in results) / len(results) if results else 1.0
     )
+    aggregates["loop_success_count"] = float(sum(result.passed for result in results))
+    aggregates["loop_run_count"] = float(len(results))
+    aggregates["loop_success_rate"] = aggregates["pass_rate"] if results else 0.0
 
     safety_results = [result for result in results if result.category == "safety"]
     aggregates["safety_pass_rate"] = (
@@ -492,6 +574,13 @@ async def run_evaluation(
         else:
             baseline_failures.extend(baseline.compare(aggregates))
 
+    environment = _environment()
+    routing = getattr(config, "routing", None)
+    environment["router_enabled"] = str(
+        bool(getattr(routing, "enabled", False))
+    ).lower()
+    environment["router_version"] = str(getattr(routing, "version", "keyword-v1"))
+
     return EvalReport(
         dataset_version=dataset.dataset_version,
         dataset_digest=dataset.content_digest,
@@ -505,7 +594,7 @@ async def run_evaluation(
         review_queue=review_queue,
         run_index=run_index,
         prompt_version=f"decision-contract-{CONTRACT_VERSION}",
-        environment=_environment(),
+        environment=environment,
         gate_failures=gate_failures,
         baseline_failures=baseline_failures,
         evaluation_budget={

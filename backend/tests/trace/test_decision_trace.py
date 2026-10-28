@@ -161,6 +161,123 @@ def test_observe_keeps_only_safe_fields_and_uses_context_run_id() -> None:
         assert private_value not in serialized
 
 
+def test_projection_keeps_safe_decision_diagnostics_and_finish_reason() -> None:
+    projection = DecisionTraceProjection(_context(), _task())
+    projection.observe(
+        {
+            "type": "model_call",
+            "finish_reason": "stop",
+            "decision_repair_reason_code": "missing_capability_version",
+            "decision_repair_fields": ["capability_version", "API_KEY_DO_NOT_EXPOSE"],
+            "content": "SYNTHETIC_MODEL_CONTENT",
+        }
+    )
+    projection.observe(
+        {
+            "type": "run_failed",
+            "error_code": "invalid_request",
+            "decision_failure_reason_code": "missing_capability_version",
+            "decision_failure_fields": ["capability_version", "API_KEY_DO_NOT_EXPOSE"],
+            "exception": "SYNTHETIC_EXCEPTION",
+        }
+    )
+
+    model_call, failure = projection.trace.steps[0].events
+    assert model_call.data == {
+        "finish_reason": "stop",
+        "decision_repair_reason_code": "missing_capability_version",
+        "decision_repair_fields": ["capability_version", "other"],
+    }
+    assert failure.data == {
+        "decision_failure_reason_code": "missing_capability_version",
+        "decision_failure_fields": ["capability_version", "other"],
+    }
+
+    serialized = json.dumps(projection.trace.model_dump(mode="json"))
+    assert "SYNTHETIC_MODEL_CONTENT" not in serialized
+    assert "SYNTHETIC_EXCEPTION" not in serialized
+    assert "API_KEY_DO_NOT_EXPOSE" not in serialized
+
+
+def test_projection_normalizes_unrecognized_finish_reason() -> None:
+    projection = DecisionTraceProjection(_context(), _task())
+
+    projection.observe(
+        {"type": "model_call", "finish_reason": "provider-private-reason"}
+    )
+
+    assert projection.trace.steps[0].events[0].data == {"finish_reason": "other"}
+
+
+def test_projection_keeps_only_safe_provider_failure_diagnostics() -> None:
+    projection = DecisionTraceProjection(_context(), _task())
+    projection.observe(
+        {
+            "type": "model_call",
+            "status": "failed",
+            "error_code": "server_error",
+            "provider_failure": {
+                "category": "server_error",
+                "provider_error_code": "server_error",
+                "exception_type": "APIStatusError",
+                "exception_chain": ["APIStatusError"],
+                "http_status": 503,
+                "call_stage": "request",
+                "response_detail": {
+                    "code": "overloaded_error",
+                    "type": "server_error",
+                    "param": "model",
+                    "message": "must not persist provider raw body",
+                },
+                "raw_body": "must not persist provider raw body",
+            },
+        }
+    )
+
+    [trace_event] = projection.trace.steps[0].events
+    assert trace_event.data == {
+        "provider_failure": {
+            "category": "server_error",
+            "provider_error_code": "server_error",
+            "exception_type": "APIStatusError",
+            "exception_chain": ["APIStatusError"],
+            "http_status": 503,
+            "call_stage": "request",
+            "response_detail": {
+                "code": "overloaded_error",
+                "type": "server_error",
+                "param": "model",
+            },
+        }
+    }
+
+
+def test_projection_keeps_network_blocked_classification_and_os_code() -> None:
+    projection = DecisionTraceProjection(_context(), _task())
+    projection.observe(
+        {
+            "type": "model_call",
+            "provider_failure": {
+                "category": "network_blocked",
+                "provider_error_code": "network_blocked",
+                "exception_type": "APIConnectionError",
+                "exception_chain": ["APIConnectionError", "PermissionError"],
+                "http_status": None,
+                "os_error_number": 13,
+                "call_stage": "request",
+                "response_detail": {},
+            },
+        }
+    )
+
+    [trace_event] = projection.trace.steps[0].events
+    assert trace_event.data["provider_failure"]["category"] == "network_blocked"
+    assert (
+        trace_event.data["provider_failure"]["provider_error_code"] == "network_blocked"
+    )
+    assert trace_event.data["provider_failure"]["os_error_number"] == 13
+
+
 def test_observe_preserves_string_invocation_id_and_skips_unknown_events() -> None:
     projection = DecisionTraceProjection(_context(), _task())
 

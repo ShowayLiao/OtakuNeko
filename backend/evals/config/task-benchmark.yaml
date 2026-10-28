@@ -1,0 +1,30 @@
+name: task-benchmark
+dataset: evals/datasets/v1-task-benchmark.jsonl
+tags: [task-benchmark]
+report_path: .runtime/evaluation/task-benchmark.json
+transcript_dir: .runtime/evaluation/task-benchmark/transcripts
+target_factory: app.evaluation.adapter:create_production_target
+routing:
+  enabled: true
+  version: model-v1
+controlled:
+  allowed_capabilities:
+    - get_current_time
+    - list_collections
+    - get_collection_statistics
+    - search_anime_advanced
+    - generate_user_profile_tool
+  external_fixtures: controlled-task-v1
+  run_scoped_artifacts: true
+agent:
+  name: task-benchmark-live
+  model: deepseek-flash
+  provider: deepseek
+deepseek:
+  thinking: true
+  reasoning_effort: max
+thresholds:
+  pass_rate: {direction: min, value: 1.0}
+  router_accuracy: {direction: min, value: 1.0}
+judge:
+  enabled: false

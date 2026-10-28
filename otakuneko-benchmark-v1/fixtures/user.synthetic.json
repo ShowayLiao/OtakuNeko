@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "user_id": "bm-user-001",
+  "timezone": "Asia/Shanghai",
+  "profile": {
+    "likes": [
+      "悬疑",
+      "推理",
+      "科幻",
+      "群像"
+    ],
+    "dislikes": [
+      "重度血腥"
+    ],
+    "preferences": {
+      "max_gore_level": 1
+    }
+  },
+  "collection": [
+    {
+      "anime_id": "AC001",
+      "status": "complete",
+      "rating": 9,
+      "episodes_watched": 12
+    },
+    {
+      "anime_id": "AC002",
+      "status": "complete",
+      "rating": 9,
+      "episodes_watched": 12
+    },
+    {
+      "anime_id": "AC003",
+      "status": "complete",
+      "rating": 8,
+      "episodes_watched": 12
+    },
+    {
+      "anime_id": "AC004",
+      "status": "complete",
+      "rating": 7,
+      "episodes_watched": 13
+    },
+    {
+      "anime_id": "AC005",
+      "status": "complete",
+      "rating": 7,
+      "episodes_watched": 12
+    },
+    {
+      "anime_id": "AC006",
+      "status": "dropped",
+      "rating": 2,
+      "episodes_watched": 0
+    },
+    {
+      "anime_id": "AC007",
+      "status": "watching",
+      "rating": 8,
+      "episodes_watched": 4
+    },
+    {
+      "anime_id": "AC008",
+      "status": "planned",
+      "rating": null,
+      "episodes_watched": 0
+    },
+    {
+      "anime_id": "AC009",
+      "status": "complete",
+      "rating": 6,
+      "episodes_watched": 24
+    },
+    {
+      "anime_id": "AC010",
+      "status": "watching",
+      "rating": 7,
+      "episodes_watched": 6
+    },
+    {
+      "anime_id": "AC011",
+      "status": "complete",
+      "rating": 9,
+      "episodes_watched": 12
+    }
+  ],
+  "memory": []
+}

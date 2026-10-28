@@ -118,6 +118,23 @@ def test_provider_error_has_no_functional_scores() -> None:
     assert l6.dimensions == []
 
 
+def test_unexpected_failed_runtime_is_an_execution_error() -> None:
+    case = _case()
+    l6, deterministic = _score(
+        case,
+        _result(
+            capabilities=[],
+            run_status="failed",
+            terminal_error_code="tool_error",
+        ),
+    )
+
+    assert deterministic is not None and not deterministic.task_success
+    assert l6.outcome == "execution_error"
+    assert l6.task_success is None
+    assert l6.scores == {}
+
+
 def test_timeout_is_provider_error() -> None:
     case = _case()
     l6, _ = _score(

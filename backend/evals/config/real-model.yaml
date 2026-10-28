@@ -4,6 +4,9 @@ tags: [real-model]
 report_path: .runtime/evaluation/real-model.json
 transcript_dir: .runtime/evaluation/real-model/transcripts
 target_factory: app.evaluation.adapter:create_production_target
+routing:
+  enabled: true
+  version: model-v1
 controlled:
   allowed_capabilities:
     - get_current_time

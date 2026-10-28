@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal, Protocol, Sequence
+from uuid import uuid4
 
 from app.capabilities.factory import build_capability_registry
 from app.evaluation.controlled import (
@@ -14,6 +16,7 @@ from app.evaluation.controlled import (
     validate_controlled_capabilities,
 )
 from app.evaluation.types import EvalCase, ExecutionResult, ScriptEvent, ToolErrorSample
+from app.evaluation.transcript import transcript_path
 from app.agents.provider_endpoint import (
     ProviderEndpointPolicy,
     is_local_endpoint,
@@ -66,6 +69,53 @@ def _terminal_metadata(event: dict[str, Any]) -> tuple[str | None, str | None]:
     )
 
 
+def _partial_result_from_transcript(
+    case: EvalCase,
+    transcript_dir: str | Path | None,
+) -> ExecutionResult | None:
+    """Recover measured Runtime evidence when validation fails after execution.
+
+    The headless entrypoint writes a redacted transcript before propagating a
+    post-Run validation error. Preserve its observed route, calls, usage, and
+    latency while ensuring an incomplete evaluation can never pass.
+    """
+    if transcript_dir is None:
+        return None
+    path = transcript_path(transcript_dir, case.id)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or payload.get("case_id") != case.id:
+            return None
+        raw_result = payload.get("result")
+        if not isinstance(raw_result, dict):
+            return None
+        result = ExecutionResult.model_validate(raw_result)
+    except (OSError, TypeError, ValueError):
+        return None
+
+    trace = payload.get("trace")
+    trace_duration = trace.get("total_duration_ms") if isinstance(trace, dict) else None
+    latency_ms = result.latency_ms
+    if (
+        latency_ms <= 0
+        and isinstance(trace_duration, (int, float))
+        and math.isfinite(float(trace_duration))
+        and trace_duration >= 0
+    ):
+        latency_ms = float(trace_duration)
+    return result.model_copy(
+        update={
+            "run_id": result.run_id or payload.get("run_id"),
+            "trace_id": result.trace_id or payload.get("trace_id") or result.run_id,
+            "run_status": "failed",
+            "terminal_error_code": result.terminal_error_code or "evaluation_error",
+            "benchmark_status": "ERROR",
+            "task_success": False,
+            "latency_ms": latency_ms,
+        }
+    )
+
+
 def normalize_events(
     events: list[dict[str, Any]],
     *,
@@ -96,6 +146,7 @@ def normalize_events(
     has_completion_tokens = False
     step_count = 0
     terminal_error_code: str | None = None
+    provider_failure: dict[str, Any] | None = None
     termination_reason: str | None = None
     tool_errors: list[ToolErrorSample] = []
     estimated_cost_usd = 0.0
@@ -226,6 +277,9 @@ def normalize_events(
             step_count += 1
         elif event_type == "model_call":
             model_call_count += 1
+            raw_provider_failure = event.get("provider_failure")
+            if isinstance(raw_provider_failure, dict):
+                provider_failure = raw_provider_failure
             append_unique(providers, event.get("provider"))
             append_unique(models, event.get("model"))
             tokens = usage_tokens(event.get("usage"))
@@ -296,6 +350,7 @@ def normalize_events(
         providers=providers,
         models=models,
         terminal_error_code=terminal_error_code,
+        provider_failure=provider_failure,
         termination_reason=termination_reason,
         step_count=step_count,
         tool_errors=tool_errors,
@@ -417,7 +472,18 @@ class ProductionRuntimeTarget:
         allowed_public_names: Sequence[str] | None = None,
         external_fixtures: str | None = None,
         deepseek_options: dict[str, Any] | None = None,
+        anime_benchmark_suite: Any | None = None,
     ) -> None:
+        routing = getattr(config, "routing", None)
+        self._routing_enabled = bool(getattr(routing, "enabled", False))
+        self._routing_version = str(getattr(routing, "version", "keyword-v1"))
+        if self._routing_enabled and self._routing_version not in {
+            "keyword-v1",
+            "model-v1",
+        }:
+            raise ValueError(
+                f"unsupported specialist router version: {self._routing_version}"
+            )
         self._api_key = _configured_api_key(api_key)
         self._endpoint_policy = _provider_endpoint_policy()
         self._base_url = resolve_provider_base_url(
@@ -431,6 +497,8 @@ class ProductionRuntimeTarget:
             transcript_dir if transcript_dir is not None else config.transcript_dir
         )
         self._external_fixtures = external_fixtures
+        self._anime_benchmark_suite = anime_benchmark_suite
+        self._runtime_budget = getattr(config, "runtime_budget", None)
         self._allowed_public_names: frozenset[str] | None
         if external_fixtures is not None:
             if allowed_public_names is None:
@@ -454,7 +522,9 @@ class ProductionRuntimeTarget:
 
     async def evaluate(self, case: EvalCase) -> ExecutionResult:
         from app.evaluation.entrypoint import run_headless_case
+        from app.harness.budget import RunBudget
 
+        registry = build_capability_registry()
         gateway = OpenAIModelGateway(
             api_key=self._api_key,
             base_url=self._base_url,
@@ -464,16 +534,107 @@ class ProductionRuntimeTarget:
             endpoint_policy=self._endpoint_policy,
         )
         try:
-            with controlled_external_responses(self._external_fixtures):
-                result, _events = await run_headless_case(
-                    case,
-                    registry=build_capability_registry(),
-                    model_gateway=gateway,
-                    model=self._model,
-                    fail_on_run_failure=False,
-                    transcript_dir=self._transcript_dir,
-                    allowed_public_names=self._allowed_public_names,
-                )
+            scenario = (
+                self._anime_benchmark_suite.case_by_id(case.id.split("__r", 1)[0])
+                if self._anime_benchmark_suite is not None
+                else None
+            )
+            with controlled_external_responses(
+                self._external_fixtures,
+                anime_fixture_set=(
+                    self._anime_benchmark_suite.fixture_set
+                    if scenario is not None
+                    else None
+                ),
+                tool_faults=(scenario.tool_faults if scenario is not None else ()),
+            ) as controlled_search:
+                session_setup = None
+                case_observer = None
+                if scenario is not None:
+                    from app.evaluation.anime_scoring import (
+                        evaluate_anime_hard_checks,
+                        seed_and_snapshot,
+                    )
+
+                    fixture_set = self._anime_benchmark_suite.fixture_set
+
+                    async def _setup(session, user_id):
+                        return await seed_and_snapshot(session, user_id, fixture_set)
+
+                    async def _observe(
+                        session,
+                        user_id,
+                        before,
+                        result,
+                        events,
+                    ):
+                        return await evaluate_anime_hard_checks(
+                            session,
+                            user_id,
+                            before,
+                            result,
+                            events,
+                            scenario=scenario,
+                            fixture_set=fixture_set,
+                            allowed_public_names=(self._allowed_public_names or ()),
+                            triggered_faults=(
+                                controlled_search.triggered_faults
+                                if controlled_search is not None
+                                else ()
+                            ),
+                            successful_search_subject_ids_after_fault=(
+                                controlled_search.successful_search_subject_ids_after_fault
+                                if controlled_search is not None
+                                else ()
+                            ),
+                        )
+
+                    session_setup = _setup
+                    case_observer = _observe
+
+                allowed_public_names = self._allowed_public_names
+                if allowed_public_names is not None:
+                    available = {
+                        definition.public_name
+                        for definition in registry.allowed_public_definitions(
+                            include_side_effects=bool(case.approvals)
+                        )
+                    }
+                    allowed_public_names = allowed_public_names & available
+                run_budget = None
+                if self._runtime_budget is not None:
+                    budget_values = self._runtime_budget.model_dump(mode="python")
+                    budget_values["max_tool_calls"] = min(
+                        int(budget_values["max_tool_calls"]),
+                        case.assertions.max_calls,
+                    )
+                    run_budget = RunBudget(**budget_values)
+                try:
+                    result, _events = await run_headless_case(
+                        case,
+                        registry=registry,
+                        model_gateway=gateway,
+                        model=self._model,
+                        fail_on_run_failure=False,
+                        transcript_dir=self._transcript_dir,
+                        allowed_public_names=allowed_public_names,
+                        routing_enabled=self._routing_enabled,
+                        routing_version=self._routing_version,
+                        session_setup=session_setup,
+                        case_observer=case_observer,
+                        approvals=case.approvals,
+                        run_budget=run_budget,
+                        run_id=(
+                            f"anime-{uuid4().hex}" if scenario is not None else None
+                        ),
+                    )
+                except Exception:
+                    result = _partial_result_from_transcript(
+                        case,
+                        self._transcript_dir,
+                    )
+                    if result is None:
+                        raise
         finally:
             await gateway.close()
         return result
@@ -544,6 +705,7 @@ def normalize_production_result(
         capabilities,
         raw["text"],
     )
+    route_agent, route_observed = route_agent_evidence(raw["all_events"])
     evidence: list[str] = []
     for call in raw["tool_calls"]:
         output = call.get("output")
@@ -552,6 +714,8 @@ def normalize_production_result(
     had_error = any(event.get("type") == "error" for event in raw["all_events"])
     return ExecutionResult(
         route=route,
+        route_agent=route_agent,
+        route_observed=route_observed,
         capabilities=capabilities,
         text=raw["text"],
         evidence=evidence,
@@ -571,6 +735,15 @@ def classify_route(
     capabilities: list[str],
     response_text: str,
 ) -> str:
+    route_decision = next(
+        (event for event in events if event.get("type") == "route_decision"),
+        None,
+    )
+    if route_decision is not None:
+        if route_decision.get("agent") == "fallback":
+            return "chat"
+        if route_decision.get("route"):
+            return str(route_decision["route"])
     explicit = next(
         (
             event.get("route")
@@ -608,6 +781,18 @@ def classify_route(
     if not capabilities and any(marker in lowered for marker in refusal_markers):
         return "refusal"
     return "chat"
+
+
+def route_agent_evidence(events: list[dict[str, Any]]) -> tuple[str | None, bool]:
+    """Return the selected agent only when a Runtime route event was observed."""
+    route_decision = next(
+        (event for event in events if event.get("type") == "route_decision"),
+        None,
+    )
+    if route_decision is None:
+        return None, False
+    agent = route_decision.get("agent")
+    return (str(agent) if isinstance(agent, str) and agent else None, True)
 
 
 def create_production_target(config) -> ProductionRuntimeTarget:

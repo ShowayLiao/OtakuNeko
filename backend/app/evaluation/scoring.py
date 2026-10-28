@@ -9,6 +9,9 @@ change ``DeterministicScore.task_success``.
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 from app.evaluation.types import (
     AnswerQualitySpec,
     DeterministicCaseSpec,
@@ -211,6 +214,43 @@ _DIMENSION_SCORERS = {
 }
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    value: dict[str, Any] = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
+
+
+def _score_final_answer(
+    spec: DeterministicCaseSpec, result: ExecutionResult
+) -> DimensionScore:
+    expected = spec.final_answer
+    assert expected is not None
+    failures = []
+    if any(text not in result.text for text in expected.required_text):
+        failures.append("required final text missing")
+    if any(text in result.text for text in expected.forbidden_text):
+        failures.append("forbidden final text present")
+    if expected.expected_json is not None:
+        try:
+            actual = json.loads(result.text, object_pairs_hook=_unique_json_object)
+            # Canonical serialized equality keeps bool distinct from int and
+            # rejects NaN/Infinity, without retaining the answer in diagnostics.
+            actual_json = json.dumps(actual, sort_keys=True, allow_nan=False)
+            expected_json = json.dumps(
+                expected.expected_json, sort_keys=True, allow_nan=False
+            )
+            if actual_json != expected_json:
+                failures.append("final JSON mismatch")
+        except (ValueError, TypeError):
+            failures.append("final answer is not valid JSON")
+    return _dimension(
+        "final_answer", not failures, "; ".join(failures) or "final answer accepted"
+    )
+
+
 def score_deterministic(
     case: EvalCase,
     result: ExecutionResult,
@@ -227,6 +267,8 @@ def score_deterministic(
     dimensions = [
         _DIMENSION_SCORERS[name](spec, result) for name in DETERMINISTIC_DIMENSIONS
     ]
+    if spec.final_answer is not None:
+        dimensions.append(_score_final_answer(spec, result))
     return DeterministicScore(
         case_id=case.id,
         task_success=all(dimension.passed for dimension in dimensions),

@@ -35,6 +35,8 @@ def configuration_root(tmp_path: Path) -> Path:
         "backend/evals/datasets/v1-observability.jsonl",
         "backend/evals/datasets/v1-entrypoint.jsonl",
         "backend/evals/datasets/v1-real-model.jsonl",
+        "backend/evals/datasets/v1-task-benchmark.jsonl",
+        "backend/evals/datasets/v1-task-benchmark-offline.jsonl",
         "backend/evals/reviews/v1-real-model.json",
         "backend/app/evaluation/adapter.py",
         "backend/app/evaluation/entrypoint.py",

@@ -8,6 +8,8 @@ executed in routing.
 
 from __future__ import annotations
 
+import json
+import math
 import re
 import queue
 import threading
@@ -47,12 +49,21 @@ class AgentRouter:
         registry: AgentRegistry,
         classifier: Any | None = None,
         classifier_timeout_seconds: float = 0.5,
+        version: str = "keyword-v1",
     ) -> None:
+        if version not in {"keyword-v1", "model-v1"}:
+            raise ValueError(f"unsupported specialist router version: {version}")
         self._registry = registry
         self._classifier = classifier  # optional LLM-based classifier
         self._classifier_timeout_seconds = classifier_timeout_seconds
         self._classifier_lock = threading.Lock()
         self._classifier_inflight = False
+        self.version = version
+
+    @property
+    def candidate_agent_names(self) -> list[str]:
+        """Return the registered route choices plus the safe fallback name."""
+        return [*sorted(self._registry.list_agents()), _FALLBACK_AGENT]
 
     def route(
         self, goal: str, messages: list[dict[str, Any]] | None = None
@@ -62,6 +73,14 @@ class AgentRouter:
         Tries deterministic patterns first.  Falls back to classifier
         when no pattern matches.
         """
+        if self.version == "model-v1":
+            return RouteDecision(
+                intent=RouteIntent.UNKNOWN,
+                selected_agent=_FALLBACK_AGENT,
+                confidence=0.0,
+                rationale="model_route_required",
+            )
+
         # 1. Deterministic patterns
         decision = self._deterministic_route(goal)
         if decision.intent != RouteIntent.UNKNOWN:
@@ -87,6 +106,79 @@ class AgentRouter:
             confidence=0.0,
             rationale="No deterministic or confident route found",
         )
+
+    def route_from_model_output(self, output: str) -> tuple[RouteDecision, str]:
+        """Validate a data-only model route and fall back on invalid/weak output."""
+        try:
+            payload = json.loads(output)
+        except (TypeError, json.JSONDecodeError):
+            return self._model_fallback(
+                "model_classifier_invalid_output"
+            ), "invalid_output"
+
+        if not isinstance(payload, dict) or set(payload) != {
+            "selected_agent",
+            "confidence",
+        }:
+            return self._model_fallback(
+                "model_classifier_invalid_output"
+            ), "invalid_output"
+
+        selected_agent = payload.get("selected_agent")
+        confidence = payload.get("confidence")
+        if (
+            not isinstance(selected_agent, str)
+            or selected_agent not in self.candidate_agent_names
+            or isinstance(confidence, bool)
+            or not isinstance(confidence, (int, float))
+            or not math.isfinite(float(confidence))
+            or not 0.0 <= float(confidence) <= 1.0
+        ):
+            return self._model_fallback(
+                "model_classifier_invalid_output"
+            ), "invalid_output"
+
+        confidence_value = float(confidence)
+        if selected_agent == _FALLBACK_AGENT:
+            return (
+                RouteDecision(
+                    intent=RouteIntent.UNKNOWN,
+                    selected_agent=_FALLBACK_AGENT,
+                    confidence=confidence_value,
+                    rationale="model_classifier_selected_fallback",
+                ),
+                "selected",
+            )
+        if confidence_value < 0.5:
+            return self._model_fallback("model_classifier_low_confidence"), "abstained"
+
+        try:
+            intent = RouteIntent(selected_agent)
+        except ValueError:
+            intent = RouteIntent.UNKNOWN
+        return (
+            RouteDecision(
+                intent=intent,
+                selected_agent=selected_agent,
+                confidence=confidence_value,
+                rationale="model_classifier_selected_agent",
+            ),
+            "selected",
+        )
+
+    def route_provider_failure(
+        self, status: str = "provider_error"
+    ) -> tuple[RouteDecision, str]:
+        """Return a safe route with a bounded terminal classifier status."""
+        reasons = {
+            "provider_error": "model_classifier_provider_error",
+            "timeout": "model_classifier_timeout",
+            "cancelled": "model_classifier_cancelled",
+            "gateway_unavailable": "model_classifier_gateway_unavailable",
+        }
+        if status not in reasons:
+            raise ValueError(f"unsupported model router terminal status: {status}")
+        return self._model_fallback(reasons[status]), status
 
     def _classify_with_timeout(
         self, goal: str, messages: list[dict[str, Any]]
@@ -153,3 +245,12 @@ class AgentRouter:
 
     def _registry_has(self, name: str) -> bool:
         return name in self._registry.list_agents()
+
+    @staticmethod
+    def _model_fallback(reason: str) -> RouteDecision:
+        return RouteDecision(
+            intent=RouteIntent.UNKNOWN,
+            selected_agent=_FALLBACK_AGENT,
+            confidence=0.0,
+            rationale=reason,
+        )

@@ -13,14 +13,40 @@ from app.evaluation.dataset import load_dataset
 from app.evaluation.runner import run_evaluation
 from app.evaluation.scripted_llm import ScriptedLLM
 from app.evaluation.types import ExecutionResult
+from app.harness.model_types import ModelCallResult, ModelUsage
 
 
 class _Gateway(ScriptedLLM):
+    async def classify_route(self, **kwargs) -> ModelCallResult:
+        return ModelCallResult(
+            provider=self.provider,
+            model=self.model,
+            operation="route",
+            trace_id=kwargs.get("trace_id"),
+            status="completed",
+            text='{"selected_agent":"fallback","confidence":1}',
+            usage=ModelUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
     async def close(self) -> None:
         return None
 
 
 class _FailingGateway:
+    provider = "scripted"
+    model = "scripted-v1"
+
+    async def classify_route(self, **kwargs) -> ModelCallResult:
+        return ModelCallResult(
+            provider=self.provider,
+            model=self.model,
+            operation="route",
+            trace_id=kwargs.get("trace_id"),
+            status="completed",
+            text='{"selected_agent":"fallback","confidence":1}',
+            usage=ModelUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
     async def stream_infer(self, **_kwargs):
         raise RuntimeError("synthetic provider failure")
         yield  # pragma: no cover
@@ -98,14 +124,19 @@ async def test_run_index_links_transcript_usage_and_environment(
     assert entry.case_id == case.id
     assert entry.run_id == result.run_id == "eval-real-model-tool-time"
     assert entry.trace_id == result.trace_id
+    assert entry.trace_path == result.trace_path
+    assert entry.trace_path is not None
+    assert Path(entry.trace_path).is_file()
+    trace_artifact = json.loads(Path(entry.trace_path).read_text(encoding="utf-8"))
+    assert trace_artifact["trace_id"] == entry.trace_id
     assert entry.transcript_path == result.transcript_path
     assert entry.message_count == 1
     assert entry.run_status == "completed"
     assert entry.outcome == "passed"
     assert entry.provider == "scripted"
     assert entry.model == "scripted-v1"
-    assert entry.usage.model_calls == 2
-    assert entry.usage.model_tokens == 4
+    assert entry.usage.model_calls == 3
+    assert entry.usage.model_tokens == 6
     assert entry.usage.latency_ms > 0
     assert entry.usage.estimated_cost_usd is None
     assert entry.error is None
@@ -146,7 +177,7 @@ async def test_provider_error_run_index_keeps_transcript_and_error(
     assert entry.error == "provider_error"
     assert entry.transcript_path is not None
     assert Path(entry.transcript_path).is_file()
-    assert entry.usage.model_calls == 0
+    assert entry.usage.model_calls == 1
 
 
 @pytest.mark.asyncio

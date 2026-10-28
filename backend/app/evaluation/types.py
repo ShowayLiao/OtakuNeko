@@ -113,6 +113,8 @@ class ExecutionResult(StrictModel):
     """Normalized result derived from actual orchestration events."""
 
     route: str
+    route_agent: str | None = None
+    route_observed: bool = False
     capabilities: list[str] = Field(default_factory=list)
     text: str = ""
     evidence: list[str] = Field(default_factory=list)
@@ -143,8 +145,14 @@ class ExecutionResult(StrictModel):
     models: list[str] = Field(default_factory=list)
     terminal_error_code: str | None = None
     termination_reason: str | None = None
+    provider_failure: dict[str, Any] | None = None
     step_count: int = Field(default=0, ge=0)
     tool_errors: list[ToolErrorSample] = Field(default_factory=list)
+    task_success: bool | None = None
+    benchmark_status: (
+        Literal["PASS", "FAIL", "ERROR", "SKIP", "UNSUPPORTED", "UNGRADED"] | None
+    ) = None
+    hard_checks: list[HardCheckResult] = Field(default_factory=list, exclude=True)
 
 
 class ToolExpectation(StrictModel):
@@ -188,10 +196,19 @@ class ToolErrorExpectation(StrictModel):
     required_error_codes: list[str] = Field(default_factory=list)
 
 
+class FinalAnswerExpectation(StrictModel):
+    """Opt-in acceptance of the final response, independent of tool success."""
+
+    required_text: list[str] = Field(default_factory=list)
+    forbidden_text: list[str] = Field(default_factory=list)
+    expected_json: dict[str, Any] | list[Any] | None = None
+
+
 class DeterministicCaseSpec(StrictModel):
     """Versioned, deterministic expectation bound to one evaluation case."""
 
     schema_version: Literal[1] = 1
+    final_answer: FinalAnswerExpectation | None = None
     tools: ToolExpectation = Field(default_factory=ToolExpectation)
     arguments: ArgumentExpectation = Field(default_factory=ArgumentExpectation)
     termination: TerminationExpectation = Field(default_factory=TerminationExpectation)
@@ -222,6 +239,7 @@ class EvalCase(StrictModel):
     user_fixture: UserFixture
     memory_fixtures: list[MemoryFixture] = Field(default_factory=list)
     expected_route: ExpectedRoute | None = None
+    expected_agent: str | None = None
     required_capabilities: list[str] = Field(default_factory=list)
     forbidden_capabilities: list[str] = Field(default_factory=list)
     forbidden_phrases: list[str] = Field(default_factory=list)
@@ -249,6 +267,14 @@ class MetricResult(StrictModel):
     metric: str
     value: float
     passed: bool
+    detail: str = ""
+
+
+class HardCheckResult(StrictModel):
+    """Safe, machine-readable result for one benchmark oracle check."""
+
+    rule: str
+    status: Literal["PASS", "FAIL", "UNSUPPORTED", "UNGRADED"]
     detail: str = ""
 
 
@@ -305,11 +331,12 @@ class RunUsage(StrictModel):
 
 
 class RunIndexEntry(StrictModel):
-    """Report-level pointer to one persisted Run and its transcript."""
+    """Report-level pointers to one persisted Run, Trace, and transcript."""
 
     case_id: str
     run_id: str | None = None
     trace_id: str | None = None
+    trace_path: str | None = None
     transcript_path: str | None = None
     message_count: int = Field(default=0, ge=0)
     run_status: str | None = None
@@ -366,20 +393,35 @@ class CaseResult(StrictModel):
     case_id: str
     category: str
     passed: bool
+    functional_passed: bool | None = None
+    functional_status: (
+        Literal["NOT_RUN", "EXECUTION_FAILED", "ASSERTION_FAILED", "PASSED"] | None
+    ) = None
+    quality_status: Literal["GRADED", "UNGRADED", "NOT_REQUESTED"] = "NOT_REQUESTED"
+    benchmark_status: (
+        Literal["PASS", "FAIL", "ERROR", "SKIP", "UNSUPPORTED", "UNGRADED"] | None
+    ) = None
+    hard_checks: list[HardCheckResult] = Field(default_factory=list)
     actual_route: str | None = None
+    route_agent: str | None = None
+    route_observed: bool = False
+    router_expected_agent: str | None = None
+    router_match: bool | None = None
     capabilities: list[str] = Field(default_factory=list)
     metrics: list[MetricResult] = Field(default_factory=list)
     judge: JudgeOutcome = Field(default_factory=JudgeOutcome)
     error: str | None = None
     run_id: str | None = None
     trace_id: str | None = None
+    trace_path: str | None = None
     run_status: str | None = None
     terminal_error_code: str | None = None
+    provider_failure: dict[str, Any] | None = None
     outcome: L6Outcome | None = None
     step_count: int | None = None
     tool_failure_count: int | None = None
     recovered: bool | None = None
-    observability: dict[str, float] = Field(default_factory=dict)
+    observability: dict[str, float | None] = Field(default_factory=dict)
     artifact_error: str | None = None
     tool_arguments: list[ArgumentSample] = Field(default_factory=list)
     tool_argument_keys: list[str] = Field(default_factory=list)
@@ -402,6 +444,10 @@ class AgentMetadata(StrictModel):
 class EvalReport(StrictModel):
     schema_version: int = 1
     task: str = "EVAL-001"
+    status: (
+        Literal["PASS", "FAIL", "ERROR", "SKIP", "UNSUPPORTED", "UNGRADED", "NOT_RUN"]
+        | None
+    ) = None
     dataset_version: str
     dataset_digest: str = ""
     config_name: str
@@ -410,13 +456,14 @@ class EvalReport(StrictModel):
     started_at: datetime = Field(default_factory=utc_now)
     completed_at: datetime | None = None
     cases: list[CaseResult] = Field(default_factory=list)
-    aggregates: dict[str, float] = Field(default_factory=dict)
+    aggregates: dict[str, float | None] = Field(default_factory=dict)
     review_queue: list[ReviewQueueEntry] = Field(default_factory=list)
     run_index: list[RunIndexEntry] = Field(default_factory=list)
     prompt_version: str = ""
     environment: dict[str, str] = Field(default_factory=dict)
     gate_failures: list[str] = Field(default_factory=list)
     baseline_failures: list[str] = Field(default_factory=list)
+    baseline_comparison: dict[str, Any] | None = None
     evaluation_budget: dict[str, Any] = Field(default_factory=dict)
 
     @property

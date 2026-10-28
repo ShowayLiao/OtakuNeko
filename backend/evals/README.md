@@ -1,5 +1,22 @@
 # Agent evaluations
 
+For a Chinese hands-on walkthrough, task templates, report inspection, and
+model/loop evidence boundaries, see [Agent evaluation guide](../../docs/architecture/agent-evaluation-guide.md).
+
+For the Anime Agent Benchmark v1 live-model workflow, scenario inputs, status
+meanings, repeat/baseline comparison, Trace links, and router changes, see the
+[Anime benchmark runbook](../../docs/architecture/anime-agent-benchmark-v1.md).
+
+On Windows, double-click [`run-live-task-benchmark.cmd`](../../run-live-task-benchmark.cmd)
+from the repository root to run the two-case live task benchmark and open its
+report. It uses a real provider and may incur charges; it does not update a
+baseline.
+
+For the Anime Agent Benchmark v1, double-click
+[`run-live-anime-benchmark.cmd`](../../run-live-anime-benchmark.cmd) from the
+repository root. It runs the six-case real-provider smoke suite and opens the
+run-scoped report; missing credentials produce `NOT_RUN` with no fake scores.
+
 Run the deterministic PR gate from `backend/`:
 
 ```bash
@@ -58,7 +75,7 @@ responses and credentials are never copied into reports.
 
 `evals/config/real-model.yaml` is the live-model entry for a manual,
 evidence-preserving run. It is narrower than `full.yaml`: no Judge, no committed
-baseline, four smoke cases, and an explicit case/model selector. Run it with:
+baseline, six smoke cases, and an explicit case/model selector. Run it with:
 
 ```bash
 uv run python -m app.evaluation.real_model --config evals/config/real-model.yaml
@@ -486,3 +503,42 @@ Eval and loop replay evidence for 14 days, including failed runs. Local pytest
 only saves a JUnit report when `--junitxml=...` is supplied. Remote repository
 rules must require `repository-quality` to prevent merging failed checks; that
 setting is external to this workflow file.
+
+## Task completion benchmark
+
+`task-benchmark-offline.yaml` is a scripted two-tool loop exercise with an exact
+final JSON assertion. It uses synthetic `entrypoint.echo` capabilities:
+
+```powershell
+uv run --directory backend python -m app.evaluation.runner --config evals/config/task-benchmark-offline.yaml
+```
+
+`task-benchmark.yaml` enables the shared specialist router and uses production
+read capabilities with isolated SQL and the `controlled-task-v1` fixture profile.
+It checks a two-tool final result and recommendation cold-start routing:
+
+```powershell
+uv run --directory backend python -m app.evaluation.real_model --config evals/config/task-benchmark.yaml
+```
+
+The latter command calls a real Provider and is opt-in. The cold-start specialist
+case itself may finish without a model call. `expected_agent` requires an observed
+Runtime routing decision; legacy `routing_accuracy` remains a compatibility
+classification. Use `router_accuracy` for declared router expectations.
+
+`deterministic.final_answer` accepts `required_text`, `forbidden_text`, and an
+optional `expected_json` object/array. JSON equality ignores object-key order but
+rejects missing/extra fields, wrong values, booleans in place of numbers, and
+nonfinite numbers. This is a fixed-result assertion, not semantic judging.
+
+The main completion metric is `loop_success_rate`: cases satisfying every
+configured acceptance condition divided by all attempts, including Provider and
+execution failures. Trend schema 2 additionally compares execution/cancellation
+errors, quality coverage/scores, and observed step means. The fixed synthetic
+loop gate's `loop_pass_rate` remains separate.
+
+Existing schema 1 trend baselines remain readable but cannot establish a schema 2
+comparison. Create a new baseline path explicitly after reviewing results; do not
+overwrite a published baseline to make a regression disappear. Baseline cost
+comparisons live in `diff.cost_trend`; `history_trend` compares the prior history
+entry and is diagnostic only.

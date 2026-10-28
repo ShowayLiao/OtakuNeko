@@ -9,6 +9,7 @@ from contextlib import nullcontext
 from datetime import datetime, timezone
 from decimal import Decimal
 from math import isfinite
+from time import perf_counter
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -70,11 +71,41 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_DECISION_REPAIR_PROMPT = (
-    "Your previous response was not a valid Decision. "
-    "Return one valid JSON Decision object only. "
-    "Do not include markdown, commentary, or reasoning outside the JSON object."
+_SAFE_FINISH_REASONS = frozenset(
+    {
+        "stop",
+        "length",
+        "tool_calls",
+        "function_call",
+        "content_filter",
+        "end_turn",
+        "max_tokens",
+        "stop_sequence",
+        "safety",
+        "recitation",
+        "other",
+    }
 )
+
+
+def _safe_finish_reason(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip().lower().replace(" ", "_")
+    return normalized if normalized in _SAFE_FINISH_REASONS else "other"
+
+
+def _decision_repair_prompt(error: DecisionParseError) -> str:
+    fields = ", ".join(error.field_paths) or "not identified"
+    return (
+        "Your previous response was rejected by Decision validation. "
+        f"Reason code: {error.reason_code}. Fields to correct: {fields}. "
+        "Correct this format issue and return exactly one JSON object matching "
+        "the Decision schema already provided in the system instructions. "
+        "Preserve the task intent. Do not include markdown, commentary, or "
+        "reasoning outside the JSON object."
+    )
+
 
 _TERMINAL_EVENTS = {"run_completed", "run_failed", "run_cancelled", "run_timeout"}
 _DURABLE_TERMINAL_EVENTS = {
@@ -1278,7 +1309,7 @@ class AgentRuntime:
                         parse_recovery_attempted = True
                         messages.append(_assistant_continuation_message(model_result))
                         messages.append(
-                            {"role": "system", "content": _DECISION_REPAIR_PROMPT}
+                            {"role": "system", "content": _decision_repair_prompt(exc)}
                         )
                         continue
                     return RunResult(
@@ -1596,6 +1627,8 @@ class AgentRuntime:
         pending_decision: AgentDecision | None = None
         pending_invocation_started = False
         parse_recovery_attempted = False
+        decision_repair_reason_code: str | None = None
+        decision_repair_fields: tuple[str, ...] = ()
         seen_decision_ids: set[str] = set()
 
         async def save_checkpoint(*, reserve_tool: str | None = None) -> None:
@@ -1791,20 +1824,217 @@ class AgentRuntime:
                 yield await emit("thinking_start")
 
             if pending_decision is None and self.specialist_router is not None:
-                route = self.specialist_router.route(task.goal, messages)
+                router_status: str | None = None
+                model_router = self.specialist_router.version == "model-v1"
+                if model_router:
+                    classify_route = getattr(self.model_gateway, "classify_route", None)
+                    if not callable(classify_route):
+                        route, router_status = (
+                            self.specialist_router.route_provider_failure()
+                        )
+                        router_status = "gateway_unavailable"
+                        validate_handoff(route)
+                        yield await emit(
+                            "route_decision",
+                            route=route.intent.value,
+                            agent=route.selected_agent,
+                            confidence=route.confidence,
+                            rationale=route.rationale,
+                            router_version=self.specialist_router.version,
+                            router_status=router_status,
+                        )
+                        state.status = "failed"
+                        state.terminal_result = RunResult(
+                            run_id=run_id,
+                            status="failed",
+                            error_code=ErrorCode.PERMANENT,
+                            termination_reason=router_status,
+                        )
+                        await save_checkpoint()
+                        yield await emit(
+                            "run_failed",
+                            error_code=ErrorCode.PERMANENT.value,
+                            termination_reason=router_status,
+                        )
+                        return
+
+                    run_budget.reserve_model_call()
+                    await save_checkpoint()
+                    router_call_id = f"{run_id}:router:{uuid4().hex}"
+                    router_call_started = perf_counter()
+                    try:
+                        route_result = await classify_route(
+                            goal=task.goal,
+                            allowed_agents=self.specialist_router.candidate_agent_names,
+                            run_id=run_id,
+                            trace_id=trusted_context.trace_id,
+                            call_id=router_call_id,
+                            cancellation=run_cancellation,
+                            deadline=run_budget.remaining_seconds(),
+                            budget=run_budget.snapshot(),
+                        )
+                    except RunCancellationError:
+                        route_status = "cancelled"
+                        latency_ms = int((perf_counter() - router_call_started) * 1000)
+                        await save_checkpoint()
+                        yield await emit(
+                            "model_call",
+                            call_id=router_call_id,
+                            trace_id=trusted_context.trace_id,
+                            provider=getattr(self.model_gateway, "provider", None),
+                            model=getattr(self.model_gateway, "model", None),
+                            usage={"latency_ms": latency_ms},
+                            latency_ms=latency_ms,
+                            status=route_status,
+                            error_code=ErrorCode.CANCELLED.value,
+                            operation="route",
+                            call_role="router",
+                        )
+                        route, router_status = (
+                            self.specialist_router.route_provider_failure(route_status)
+                        )
+                        validate_handoff(route)
+                        yield await emit(
+                            "route_decision",
+                            route=route.intent.value,
+                            agent=route.selected_agent,
+                            confidence=route.confidence,
+                            rationale=route.rationale,
+                            router_version=self.specialist_router.version,
+                            router_status=router_status,
+                        )
+                        raise
+                    except (DeadlineExceededError, asyncio.TimeoutError):
+                        route_status = "timeout"
+                        latency_ms = int((perf_counter() - router_call_started) * 1000)
+                        await save_checkpoint()
+                        yield await emit(
+                            "model_call",
+                            call_id=router_call_id,
+                            trace_id=trusted_context.trace_id,
+                            provider=getattr(self.model_gateway, "provider", None),
+                            model=getattr(self.model_gateway, "model", None),
+                            usage={"latency_ms": latency_ms},
+                            latency_ms=latency_ms,
+                            status=route_status,
+                            error_code=ErrorCode.TIMEOUT.value,
+                            operation="route",
+                            call_role="router",
+                        )
+                        route, router_status = (
+                            self.specialist_router.route_provider_failure(route_status)
+                        )
+                        validate_handoff(route)
+                        yield await emit(
+                            "route_decision",
+                            route=route.intent.value,
+                            agent=route.selected_agent,
+                            confidence=route.confidence,
+                            rationale=route.rationale,
+                            router_version=self.specialist_router.version,
+                            router_status=router_status,
+                        )
+                        raise
+                    usage_budget_error: BudgetExceededError | None = None
+                    try:
+                        run_budget.record_model_usage(
+                            getattr(route_result, "usage", None)
+                        )
+                    except BudgetExceededError as exc:
+                        usage_budget_error = exc
+                    router_call_event: dict[str, Any] = {
+                        "call_id": getattr(route_result, "call_id", router_call_id),
+                        "trace_id": getattr(route_result, "trace_id", None)
+                        or trusted_context.trace_id,
+                        "provider": getattr(route_result, "provider", None),
+                        "model": getattr(route_result, "model", None),
+                        "usage": route_result.usage.model_dump(mode="json"),
+                        "status": route_result.status,
+                        "error_code": route_result.error_code,
+                        "operation": "route",
+                        "call_role": "router",
+                    }
+                    provider_failure = getattr(route_result, "provider_failure", None)
+                    if provider_failure is not None:
+                        router_call_event["provider_failure"] = (
+                            provider_failure.model_dump(mode="json")
+                            if callable(getattr(provider_failure, "model_dump", None))
+                            else provider_failure
+                        )
+                    await save_checkpoint()
+                    yield await emit("model_call", **router_call_event)
+                    if usage_budget_error is not None:
+                        raise usage_budget_error
+
+                    terminal = self._model_terminal(run_id, route_result)
+                    if terminal is not None:
+                        router_terminal_status = (
+                            "cancelled"
+                            if terminal.status == "cancelled"
+                            else "timeout"
+                            if terminal.status == "timeout"
+                            else "provider_error"
+                        )
+                        route, router_status = (
+                            self.specialist_router.route_provider_failure(
+                                router_terminal_status
+                            )
+                        )
+                        validate_handoff(route)
+                        yield await emit(
+                            "route_decision",
+                            route=route.intent.value,
+                            agent=route.selected_agent,
+                            confidence=route.confidence,
+                            rationale=route.rationale,
+                            router_version=self.specialist_router.version,
+                            router_status=router_status,
+                        )
+                        state.status = terminal.status
+                        state.terminal_result = terminal
+                        await save_checkpoint()
+                        failure_event = (
+                            "run_cancelled"
+                            if terminal.status == "cancelled"
+                            else "run_timeout"
+                            if terminal.status == "timeout"
+                            else "run_failed"
+                        )
+                        yield await emit(
+                            failure_event,
+                            error_code=(
+                                terminal.error_code.value
+                                if terminal.error_code is not None
+                                else ErrorCode.PROVIDER_ERROR.value
+                            ),
+                        )
+                        return
+
+                    route, router_status = (
+                        self.specialist_router.route_from_model_output(
+                            route_result.text
+                        )
+                    )
+                else:
+                    route = self.specialist_router.route(task.goal, messages)
                 validate_handoff(route)
+                route_event = {
+                    "route": route.intent.value,
+                    "agent": route.selected_agent,
+                    "confidence": route.confidence,
+                    "rationale": route.rationale,
+                }
+                if model_router:
+                    route_event.update(
+                        router_version=self.specialist_router.version,
+                        router_status=router_status,
+                    )
+                yield await emit("route_decision", **route_event)
                 if route.selected_agent != "fallback":
                     # Specialist continuations do not yet have a persisted
                     # control contract. Keep their existing fail-closed recovery.
                     state.context["recovery_kind"] = "specialist"
                     await save_checkpoint()
-                    yield await emit(
-                        "route_decision",
-                        route=route.intent.value,
-                        agent=route.selected_agent,
-                        confidence=route.confidence,
-                        rationale=route.rationale,
-                    )
                     specialist = self.specialist_router.select(route)
                     binder = getattr(specialist, "bind_runtime", None)
                     if specialist is None or not callable(binder):
@@ -2088,16 +2318,33 @@ class AgentRuntime:
                     await self._observe_checkpoint_controls(run_id, run_cancellation)
                     run_budget.record_model_usage(getattr(model_result, "usage", None))
                     await save_checkpoint()
-                    yield await emit(
-                        "model_call",
-                        call_id=model_result.call_id,
-                        trace_id=model_result.trace_id or trusted_context.trace_id,
-                        provider=model_result.provider,
-                        model=model_result.model,
-                        usage=model_result.usage.model_dump(mode="json"),
-                        status=model_result.status,
-                        error_code=model_result.error_code,
-                    )
+                    model_call_event = {
+                        "call_id": model_result.call_id,
+                        "trace_id": model_result.trace_id or trusted_context.trace_id,
+                        "provider": model_result.provider,
+                        "model": model_result.model,
+                        "usage": model_result.usage.model_dump(mode="json"),
+                        "status": model_result.status,
+                        "error_code": model_result.error_code,
+                        "finish_reason": _safe_finish_reason(
+                            model_result.finish_reason
+                        ),
+                    }
+                    provider_failure = getattr(model_result, "provider_failure", None)
+                    if provider_failure is not None:
+                        model_call_event["provider_failure"] = (
+                            provider_failure.model_dump(mode="json")
+                            if callable(getattr(provider_failure, "model_dump", None))
+                            else provider_failure
+                        )
+                    if decision_repair_reason_code is not None:
+                        model_call_event.update(
+                            decision_repair_reason_code=decision_repair_reason_code,
+                            decision_repair_fields=list(decision_repair_fields),
+                        )
+                    decision_repair_reason_code = None
+                    decision_repair_fields = ()
+                    yield await emit("model_call", **model_call_event)
                     if not callable(stream_infer):
                         reasoning = getattr(model_result, "reasoning", "")
                         if reasoning:
@@ -2134,13 +2381,15 @@ class AgentRuntime:
                             and run_budget.model_calls_used < run_budget.max_model_calls
                         ):
                             parse_recovery_attempted = True
+                            decision_repair_reason_code = exc.reason_code
+                            decision_repair_fields = exc.field_paths
                             messages.append(
                                 _assistant_continuation_message(model_result)
                             )
                             messages.append(
                                 {
                                     "role": "system",
-                                    "content": _DECISION_REPAIR_PROMPT,
+                                    "content": _decision_repair_prompt(exc),
                                 }
                             )
                             continue
@@ -2155,6 +2404,8 @@ class AgentRuntime:
                         yield await emit(
                             "run_failed",
                             error_code=exc.error_code.value,
+                            decision_failure_reason_code=exc.reason_code,
+                            decision_failure_fields=list(exc.field_paths),
                         )
                         return
 
@@ -2215,6 +2466,9 @@ class AgentRuntime:
                             usage=memory_result.usage.model_dump(mode="json"),
                             status=memory_result.status,
                             error_code=memory_result.error_code,
+                            finish_reason=_safe_finish_reason(
+                                memory_result.finish_reason
+                            ),
                         )
                     yield await emit("message_start")
                     if content:

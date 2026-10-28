@@ -15,6 +15,8 @@ from app.trace import AgentTrace, TraceEvent, TraceEventType, TraceStep
 
 
 _EVENT_TYPES = {
+    "route_decision": TraceEventType.ROUTING_DECISION,
+    "agent_result": TraceEventType.AGENT_RESULT,
     "model_call": TraceEventType.MODEL_CALL,
     "tool_call_start": TraceEventType.TOOL_CALL_START,
     "tool_call_end": TraceEventType.TOOL_CALL_END,
@@ -40,12 +42,237 @@ _USAGE_INTEGER_FIELDS = (
 _USAGE_COST_FIELD = "estimated_cost_usd"
 _ERROR_CODE_PATTERN = re.compile(r"[a-z][a-z0-9_]{0,63}\Z")
 _EventStatus = Literal["running", "completed", "failed", "timeout", "cancelled"]
+_SAFE_DECISION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "decision_id",
+        "run_id",
+        "action",
+        "capability",
+        "capability_version",
+        "arguments",
+        "content",
+        "other",
+    }
+)
+_SAFE_DECISION_REASONS = frozenset(
+    {
+        "invalid_model_result",
+        "model_cancelled",
+        "provider_failure",
+        "invalid_decision_shape",
+        "schema_version_mismatch",
+        "run_identity_mismatch",
+        "authority_field_rejected",
+        "decision_schema_invalid",
+        "missing_capability",
+        "missing_capability_version",
+        "capability_version_mismatch",
+        "invalid_arguments",
+        "arguments_too_large",
+        "multiple_tool_proposals",
+        "invalid_tool_arguments",
+        "empty_model_output",
+        "invalid_json",
+        "invalid_decision",
+    }
+)
+_SAFE_FINISH_REASONS = frozenset(
+    {
+        "stop",
+        "length",
+        "tool_calls",
+        "function_call",
+        "content_filter",
+        "end_turn",
+        "max_tokens",
+        "stop_sequence",
+        "safety",
+        "recitation",
+        "other",
+    }
+)
+_SAFE_PROVIDER_CATEGORIES = frozenset(
+    {
+        "authentication",
+        "invalid_request",
+        "not_found",
+        "rate_limit",
+        "server_error",
+        "timeout",
+        "network",
+        "network_blocked",
+        "dns",
+        "endpoint_policy",
+        "cancelled",
+        "other",
+    }
+)
+_SAFE_PROVIDER_ERROR_CODES = frozenset(
+    {
+        "auth",
+        "rate_limited",
+        "timeout",
+        "invalid_request",
+        "not_found",
+        "server_error",
+        "transient",
+        "network_blocked",
+        "permanent",
+        "cancelled",
+        "dns",
+        "ssrf",
+    }
+)
+_SAFE_PROVIDER_STAGES = frozenset(
+    {
+        "connection_check",
+        "request",
+        "stream_iteration",
+        "response_normalization",
+        "gateway_stream",
+        "unknown",
+    }
+)
+_SAFE_PROVIDER_RESPONSE_CODES = frozenset(
+    {
+        "account_deactivated",
+        "billing_hard_limit_reached",
+        "context_length_exceeded",
+        "incorrect_api_key",
+        "insufficient_quota",
+        "invalid_api_key",
+        "invalid_parameter",
+        "invalid_request_error",
+        "model_not_found",
+        "not_found_error",
+        "overloaded_error",
+        "permission_denied",
+        "rate_limit_exceeded",
+        "server_error",
+        "unsupported_value",
+    }
+)
+_SAFE_PROVIDER_RESPONSE_TYPES = frozenset(
+    {
+        "authentication_error",
+        "invalid_request_error",
+        "not_found_error",
+        "permission_error",
+        "rate_limit_error",
+        "server_error",
+    }
+)
+_SAFE_PROVIDER_PARAMS = frozenset(
+    {
+        "input",
+        "max_tokens",
+        "messages",
+        "model",
+        "prompt",
+        "response_format",
+        "stream",
+        "temperature",
+        "tool_choice",
+        "tools",
+    }
+)
 
 
 def _safe_error_code(value: Any) -> str | None:
     if isinstance(value, str) and _ERROR_CODE_PATTERN.fullmatch(value):
         return value
     return None
+
+
+def _safe_trace_identifier(value: Any) -> str | None:
+    if (
+        isinstance(value, str)
+        and 1 <= len(value) <= 64
+        and re.fullmatch(r"[A-Za-z0-9_.-]+", value)
+    ):
+        return value
+    return None
+
+
+def _safe_decision_reason(value: Any) -> str | None:
+    if isinstance(value, str) and value in _SAFE_DECISION_REASONS:
+        return value
+    return None
+
+
+def _safe_decision_fields(value: Any) -> list[str]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    fields: set[str] = set()
+    for item in value[:8]:
+        field = (
+            item if isinstance(item, str) and item in _SAFE_DECISION_FIELDS else "other"
+        )
+        fields.add(field)
+    return sorted(fields)
+
+
+def _safe_finish_reason(value: Any) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    normalized = value.strip().lower().replace(" ", "_")
+    return normalized if normalized in _SAFE_FINISH_REASONS else "other"
+
+
+def _safe_provider_failure(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    category = value.get("category")
+    stage = value.get("call_stage")
+    if category not in _SAFE_PROVIDER_CATEGORIES or stage not in _SAFE_PROVIDER_STAGES:
+        return None
+
+    safe: dict[str, Any] = {"category": category, "call_stage": stage}
+    provider_error_code = value.get("provider_error_code")
+    if provider_error_code in _SAFE_PROVIDER_ERROR_CODES:
+        safe["provider_error_code"] = provider_error_code
+    exception_type = value.get("exception_type")
+    if (
+        isinstance(exception_type, str)
+        and 1 <= len(exception_type) <= 64
+        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", exception_type)
+    ):
+        safe["exception_type"] = exception_type
+    raw_chain = value.get("exception_chain")
+    if isinstance(raw_chain, list):
+        safe_chain = [
+            item
+            for item in raw_chain[:12]
+            if isinstance(item, str)
+            and 1 <= len(item) <= 64
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", item)
+        ]
+        if safe_chain:
+            safe["exception_chain"] = safe_chain
+    status = value.get("http_status")
+    if type(status) is int and 100 <= status <= 599:
+        safe["http_status"] = status
+    for field in ("os_error_number", "os_error_windows_code"):
+        os_code = value.get(field)
+        if type(os_code) is int and 0 <= os_code <= 65535:
+            safe[field] = os_code
+
+    raw_detail = value.get("response_detail")
+    if isinstance(raw_detail, dict):
+        detail: dict[str, str] = {}
+        code = raw_detail.get("code")
+        if code in _SAFE_PROVIDER_RESPONSE_CODES:
+            detail["code"] = code
+        response_type = raw_detail.get("type")
+        if response_type in _SAFE_PROVIDER_RESPONSE_TYPES:
+            detail["type"] = response_type
+        param = raw_detail.get("param")
+        if param in _SAFE_PROVIDER_PARAMS:
+            detail["param"] = param
+        if detail:
+            safe["response_detail"] = detail
+    return safe
 
 
 def _safe_number(value: Any) -> int | float | None:
@@ -169,12 +396,64 @@ class DecisionTraceProjection:
         if latency_ms is None:
             latency_ms = _safe_number(usage.get("latency_ms"))
 
+        trace_data: dict[str, Any] = {}
+        if event_type == "model_call":
+            for field in ("operation", "call_role"):
+                value = _safe_trace_identifier(event.get(field))
+                if value is not None:
+                    trace_data[field] = value
+            finish_reason = _safe_finish_reason(event.get("finish_reason"))
+            if finish_reason is not None:
+                trace_data["finish_reason"] = finish_reason
+            provider_failure = _safe_provider_failure(event.get("provider_failure"))
+            if provider_failure is not None:
+                trace_data["provider_failure"] = provider_failure
+            repair_reason = _safe_decision_reason(
+                event.get("decision_repair_reason_code")
+            )
+            if repair_reason is not None:
+                trace_data["decision_repair_reason_code"] = repair_reason
+                trace_data["decision_repair_fields"] = _safe_decision_fields(
+                    event.get("decision_repair_fields")
+                )
+        elif event_type == "run_failed":
+            failure_reason = _safe_decision_reason(
+                event.get("decision_failure_reason_code")
+            )
+            if failure_reason is not None:
+                trace_data["decision_failure_reason_code"] = failure_reason
+                trace_data["decision_failure_fields"] = _safe_decision_fields(
+                    event.get("decision_failure_fields")
+                )
+        elif event_type == "route_decision":
+            for field in ("agent", "route"):
+                value = _safe_trace_identifier(event.get(field))
+                if value is not None:
+                    trace_data[field] = value
+            for field in ("router_version", "router_status"):
+                value = _safe_trace_identifier(event.get(field))
+                if value is not None:
+                    trace_data[field] = value
+        elif event_type == "agent_result":
+            agent = _safe_trace_identifier(event.get("agent"))
+            result = event.get("result")
+            name = _safe_trace_identifier(
+                result.get("name") if isinstance(result, dict) else None
+            )
+            kind = result.get("kind") if isinstance(result, dict) else None
+            if agent is not None:
+                trace_data["agent"] = agent
+            if name is not None:
+                trace_data["name"] = name
+            if kind in {"capability", "subagent"}:
+                trace_data["kind"] = kind
+
         trace_event = TraceEvent(
             event_id=event_id or uuid4().hex,
             run_id=self.trace.run_id,
             sequence=sequence,
             event_type=trace_event_type,
-            data={},
+            data=trace_data,
             duration_ms=_safe_number(event.get("duration_ms")),
             latency_ms=latency_ms,
             status=_event_status(event_type, event.get("status")),

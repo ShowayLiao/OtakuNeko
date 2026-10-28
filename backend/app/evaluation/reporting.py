@@ -11,14 +11,43 @@ from app.trace.redaction import redact
 
 def report_payload(report: EvalReport) -> dict:
     payload = redact(report.model_dump(mode="json"))
-    payload.update(
-        {
-            "total": report.total,
-            "passed_count": report.passed_count,
-            "failed_count": report.failed_count,
-            "pass_rate": report.pass_rate,
-        }
-    )
+    if report.status == "NOT_RUN":
+        payload.update(
+            {
+                "total": report.total,
+                "passed_count": None,
+                "failed_count": None,
+                "pass_rate": None,
+            }
+        )
+    elif report.status is not None:
+        attempted = [
+            case
+            for case in report.cases
+            if case.benchmark_status in {"PASS", "FAIL", "ERROR", "UNGRADED"}
+        ]
+        passed = sum(case.benchmark_status == "PASS" for case in attempted)
+        payload.update(
+            {
+                "total": report.total,
+                "passed_count": passed,
+                "failed_count": sum(
+                    case.benchmark_status in {"FAIL", "ERROR"} for case in attempted
+                ),
+                "pass_rate": (
+                    report.aggregates.get("loop_success_rate") if attempted else None
+                ),
+            }
+        )
+    else:
+        payload.update(
+            {
+                "total": report.total,
+                "passed_count": report.passed_count,
+                "failed_count": report.failed_count,
+                "pass_rate": report.pass_rate,
+            }
+        )
     return payload
 
 

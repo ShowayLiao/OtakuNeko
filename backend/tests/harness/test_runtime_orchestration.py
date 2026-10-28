@@ -195,6 +195,7 @@ class RetryDecisionModelGateway(DecisionGatewayBase):
                 operation="decision",
                 status="completed",
                 text="not a decision",
+                finish_reason="length",
             )
         return ModelCallResult(
             provider="test",
@@ -202,6 +203,7 @@ class RetryDecisionModelGateway(DecisionGatewayBase):
             operation="decision",
             status="completed",
             decision={"action": "finish", "content": "done"},
+            finish_reason="stop",
         )
 
 
@@ -522,9 +524,87 @@ async def test_primary_decision_loop_retries_once_after_invalid_model_decision()
     repair_index = next(
         index
         for index, message in enumerate(retry_messages)
-        if "valid JSON Decision" in message["content"]
+        if "Reason code: invalid_json" in message["content"]
     )
     assert retry_messages[repair_index - 1]["role"] == "assistant"
+    assert "invalid_json" in retry_messages[repair_index]["content"]
+    retry_model_call = next(
+        chunk
+        for chunk in chunks
+        if chunk["type"] == "model_call"
+        and chunk.get("decision_repair_reason_code") == "invalid_json"
+    )
+    assert retry_model_call["finish_reason"] == "stop"
+
+
+@pytest.mark.asyncio
+async def test_primary_decision_loop_reports_safe_parse_failure_details():
+    class RepeatedInvalidDecisionModelGateway(DecisionGatewayBase):
+        def __init__(self):
+            self.calls = []
+
+        async def infer(self, **kwargs):
+            self.calls.append(kwargs)
+            return ModelCallResult(
+                provider="test",
+                model="test-model",
+                operation="decision",
+                status="completed",
+                decision={
+                    "schema_version": "v1",
+                    "decision_id": len(self.calls),
+                    "run_id": kwargs["run_id"],
+                    "action": "invoke",
+                    "capability": "catalog_lookup",
+                    "capability_version": 1,
+                    "arguments": [],
+                },
+                finish_reason="stop",
+            )
+
+    registry = CapabilityRegistry()
+    gateway = RepeatedInvalidDecisionModelGateway()
+    runtime = AgentRuntime(
+        None,
+        model_gateway=gateway,
+        dispatcher=Dispatcher(registry),
+    )
+    task = AgentTask(
+        user_id=1,
+        goal="finish",
+        task_metadata={
+            "run_id": "run-invalid-details",
+            "messages": [{"role": "user", "content": "finish"}],
+        },
+    )
+    context = ExecutionContext(
+        principal_id=1,
+        run_id="run-invalid-details",
+        trace_id="trace-invalid-details",
+    )
+
+    chunks = [chunk async for chunk in runtime.stream_decision(task, context=context)]
+
+    assert len(gateway.calls) == 2
+    assert chunks[-1]["type"] == "run_failed"
+    expected_fields = ["arguments", "capability_version", "decision_id"]
+    assert chunks[-1]["decision_failure_reason_code"] == "decision_schema_invalid"
+    assert chunks[-1]["decision_failure_fields"] == expected_fields
+    retry_model_call = next(
+        chunk
+        for chunk in chunks
+        if chunk["type"] == "model_call" and chunk.get("decision_repair_reason_code")
+    )
+    assert retry_model_call["decision_repair_reason_code"] == "decision_schema_invalid"
+    assert retry_model_call["decision_repair_fields"] == expected_fields
+    assert retry_model_call["finish_reason"] == "stop"
+    repair_prompt = next(
+        message["content"]
+        for message in gateway.calls[1]["messages"]
+        if message.get("role") == "system"
+        and "Reason code: decision_schema_invalid" in message.get("content", "")
+    )
+    assert "arguments, capability_version, decision_id" in repair_prompt
 
 
 @pytest.mark.asyncio

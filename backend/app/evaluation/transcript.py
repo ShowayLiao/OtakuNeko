@@ -57,6 +57,91 @@ _COT_KEYS = frozenset(
 _MAX_STRING_LENGTH = 2000
 _MAX_COLLECTION_ITEMS = 200
 _REDACTED = "[REDACTED]"
+_SAFE_PROVIDER_CATEGORIES = frozenset(
+    {
+        "authentication",
+        "invalid_request",
+        "not_found",
+        "rate_limit",
+        "server_error",
+        "timeout",
+        "network",
+        "network_blocked",
+        "dns",
+        "endpoint_policy",
+        "cancelled",
+        "other",
+    }
+)
+_SAFE_PROVIDER_ERROR_CODES = frozenset(
+    {
+        "auth",
+        "rate_limited",
+        "timeout",
+        "invalid_request",
+        "not_found",
+        "server_error",
+        "transient",
+        "network_blocked",
+        "permanent",
+        "cancelled",
+        "dns",
+        "ssrf",
+    }
+)
+_SAFE_PROVIDER_STAGES = frozenset(
+    {
+        "connection_check",
+        "request",
+        "stream_iteration",
+        "response_normalization",
+        "gateway_stream",
+        "unknown",
+    }
+)
+_SAFE_PROVIDER_RESPONSE_CODES = frozenset(
+    {
+        "account_deactivated",
+        "billing_hard_limit_reached",
+        "context_length_exceeded",
+        "incorrect_api_key",
+        "insufficient_quota",
+        "invalid_api_key",
+        "invalid_parameter",
+        "invalid_request_error",
+        "model_not_found",
+        "not_found_error",
+        "overloaded_error",
+        "permission_denied",
+        "rate_limit_exceeded",
+        "server_error",
+        "unsupported_value",
+    }
+)
+_SAFE_PROVIDER_RESPONSE_TYPES = frozenset(
+    {
+        "authentication_error",
+        "invalid_request_error",
+        "not_found_error",
+        "permission_error",
+        "rate_limit_error",
+        "server_error",
+    }
+)
+_SAFE_PROVIDER_PARAMS = frozenset(
+    {
+        "input",
+        "max_tokens",
+        "messages",
+        "model",
+        "prompt",
+        "response_format",
+        "stream",
+        "temperature",
+        "tool_choice",
+        "tools",
+    }
+)
 
 
 def _normalized_key(key: object) -> str:
@@ -82,8 +167,80 @@ def _safe(value: Any) -> Any:
     return value
 
 
+def _safe_provider_failure(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    category = value.get("category")
+    stage = value.get("call_stage")
+    if category not in _SAFE_PROVIDER_CATEGORIES or stage not in _SAFE_PROVIDER_STAGES:
+        return None
+    safe: dict[str, Any] = {"category": category, "call_stage": stage}
+    provider_error_code = value.get("provider_error_code")
+    if provider_error_code in _SAFE_PROVIDER_ERROR_CODES:
+        safe["provider_error_code"] = provider_error_code
+    exception_type = value.get("exception_type")
+    if (
+        isinstance(exception_type, str)
+        and 1 <= len(exception_type) <= 64
+        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", exception_type)
+    ):
+        safe["exception_type"] = exception_type
+    raw_chain = value.get("exception_chain")
+    if isinstance(raw_chain, list):
+        safe_chain = [
+            item
+            for item in raw_chain[:12]
+            if isinstance(item, str)
+            and 1 <= len(item) <= 64
+            and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", item)
+        ]
+        if safe_chain:
+            safe["exception_chain"] = safe_chain
+    status = value.get("http_status")
+    if type(status) is int and 100 <= status <= 599:
+        safe["http_status"] = status
+    for field in ("os_error_number", "os_error_windows_code"):
+        os_code = value.get(field)
+        if type(os_code) is int and 0 <= os_code <= 65535:
+            safe[field] = os_code
+    raw_detail = value.get("response_detail")
+    if isinstance(raw_detail, dict):
+        detail: dict[str, str] = {}
+        code = raw_detail.get("code")
+        if code in _SAFE_PROVIDER_RESPONSE_CODES:
+            detail["code"] = code
+        response_type = raw_detail.get("type")
+        if response_type in _SAFE_PROVIDER_RESPONSE_TYPES:
+            detail["type"] = response_type
+        param = raw_detail.get("param")
+        if param in _SAFE_PROVIDER_PARAMS:
+            detail["param"] = param
+        if detail:
+            safe["response_detail"] = detail
+    return safe
+
+
+def _safe_event(event: dict[str, Any]) -> dict[str, Any]:
+    safe = _safe(event)
+    if event.get("type") == "model_call":
+        provider_failure = _safe_provider_failure(event.get("provider_failure"))
+        safe.pop("provider_failure", None)
+        if provider_failure is not None:
+            safe["provider_failure"] = provider_failure
+    return safe
+
+
+def _is_thinking_chunk(event: dict[str, Any]) -> bool:
+    if any(event.get(field) == "thinking_chunk" for field in ("type", "event_type")):
+        return True
+    payload = event.get("payload")
+    return isinstance(payload, dict) and payload.get("type") == "thinking_chunk"
+
+
 def _events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [_safe(event) for event in events[:_MAX_COLLECTION_ITEMS]]
+    return [_safe_event(event) for event in events if not _is_thinking_chunk(event)][
+        :_MAX_COLLECTION_ITEMS
+    ]
 
 
 def _decisions(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -146,21 +303,39 @@ def _invocations(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _terminal(events: list[dict[str, Any]]) -> dict[str, Any]:
-    for event in reversed(events):
-        terminal_type = event.get("type")
-        if terminal_type in _TERMINAL_TYPES:
-            return {
-                "type": terminal_type,
-                "status": _TERMINAL_TYPES[str(terminal_type)],
-                "error_code": event.get("error_code"),
-                "termination_reason": event.get("termination_reason"),
-            }
-    return {
+    terminal = {
         "type": None,
         "status": "missing",
         "error_code": None,
         "termination_reason": None,
     }
+    terminal_event = None
+    for event in reversed(events):
+        terminal_type = event.get("type")
+        if terminal_type in _TERMINAL_TYPES:
+            terminal_event = event
+            terminal = {
+                "type": terminal_type,
+                "status": _TERMINAL_TYPES[str(terminal_type)],
+                "error_code": event.get("error_code"),
+                "termination_reason": event.get("termination_reason"),
+            }
+            break
+    if terminal_event is not None and terminal_event.get("type") == "run_failed":
+        for field in (
+            "decision_failure_reason_code",
+            "decision_failure_fields",
+        ):
+            if field in terminal_event:
+                terminal[field] = _safe(terminal_event[field])
+    for event in reversed(events):
+        if event.get("type") == "model_call" and "finish_reason" in event:
+            terminal["finish_reason"] = _safe(event["finish_reason"])
+            provider_failure = _safe_provider_failure(event.get("provider_failure"))
+            if provider_failure is not None:
+                terminal["provider_failure"] = provider_failure
+            break
+    return terminal
 
 
 def build_transcript(
@@ -181,6 +356,12 @@ def build_transcript(
             "category": type(root).__name__,
             "safe": safe_error(root, "execution_failed"),
         }
+    thinking_chunks_omitted = {
+        "events": sum(_is_thinking_chunk(event) for event in events),
+        "persisted_events": sum(
+            _is_thinking_chunk(event) for event in persisted_events
+        ),
+    }
     return {
         "schema_version": SCHEMA_VERSION,
         "case_id": case.id,
@@ -216,9 +397,10 @@ def build_transcript(
                 "sequence": event.get("sequence"),
                 "event_type": event.get("event_type"),
                 "invocation_id": event.get("invocation_id"),
-                "payload": _safe(event.get("payload") or {}),
+                "payload": _safe_persisted_payload(event),
             }
             for event in persisted_events
+            if not _is_thinking_chunk(event)
         ],
         "trace": redact(trace) if trace is not None else None,
         "terminal": _terminal(events),
@@ -227,11 +409,25 @@ def build_transcript(
             "policy": "transcript-v1",
             "secret_keys": "redacted",
             "chain_of_thought": "dropped",
+            "thinking_chunk_events_omitted": thinking_chunks_omitted,
             "argument_values": "omitted (keys only)",
             "provider_payload": "not exported",
             "trace_projection": "trace-redaction policy",
         },
     }
+
+
+def _safe_persisted_payload(event: dict[str, Any]) -> dict[str, Any]:
+    payload = event.get("payload") or {}
+    safe = _safe(payload)
+    if event.get("event_type") == "model_call" and isinstance(safe, dict):
+        provider_failure = _safe_provider_failure(
+            payload.get("provider_failure") if isinstance(payload, dict) else None
+        )
+        safe.pop("provider_failure", None)
+        if provider_failure is not None:
+            safe["provider_failure"] = provider_failure
+    return safe
 
 
 def _file_name(case_id: str) -> str:
@@ -241,6 +437,11 @@ def _file_name(case_id: str) -> str:
 def transcript_path(directory: str | Path, case_id: str) -> Path:
     """Stable per-case transcript path used by reports and review queues."""
     return Path(directory) / _file_name(case_id)
+
+
+def trace_artifact_path(directory: str | Path, case_id: str) -> Path:
+    """Stable path for the redacted Trace projection linked from a report."""
+    return Path(directory) / "traces" / f"{Path(_file_name(case_id)).stem}.trace.json"
 
 
 def write_transcript(
@@ -254,6 +455,23 @@ def write_transcript(
     temporary = target.with_suffix(target.suffix + ".tmp")
     temporary.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+    return target
+
+
+def write_trace(
+    directory: str | Path,
+    case_id: str,
+    payload: dict[str, Any],
+) -> Path:
+    """Persist the redacted Trace projection beside a case's transcript."""
+    target = trace_artifact_path(directory, case_id)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(redact(payload), ensure_ascii=False, indent=2, sort_keys=True),
         encoding="utf-8",
     )
     temporary.replace(target)

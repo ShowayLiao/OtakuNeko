@@ -57,6 +57,7 @@ def build_real_model_target(
     transcript_dir: str | Path | None = None,
     temperature: float = 0,
     deepseek_options: dict[str, Any] | None = None,
+    anime_benchmark_suite: Any | None = None,
 ) -> ProductionRuntimeTarget:
     """Build the only live target used by this entry.
 
@@ -76,6 +77,7 @@ def build_real_model_target(
         transcript_dir=transcript_dir,
         temperature=temperature,
         deepseek_options=deepseek_options,
+        anime_benchmark_suite=anime_benchmark_suite,
         allowed_public_names=(
             controlled.allowed_capabilities if controlled is not None else None
         ),

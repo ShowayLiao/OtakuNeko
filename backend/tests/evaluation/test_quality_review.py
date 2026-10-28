@@ -154,7 +154,7 @@ async def test_quality_score_does_not_change_l6_functional_outcome(
 
     assert case_result.judge.status == "available"
     assert case_result.judge.quality_passed is False
-    assert case_result.passed is False
+    assert case_result.passed is True
     assert case_result.l6 is not None
     assert case_result.l6.outcome == "passed"
     assert case_result.l6.scores["task_success"] == 1.0

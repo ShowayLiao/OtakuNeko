@@ -158,6 +158,70 @@ def test_invalid_invoke_shape_is_rejected_without_provider_payload(
     assert "fake" not in str(exc_info.value)
 
 
+def test_decision_parse_error_exposes_safe_reason_and_public_field() -> None:
+    payload = {
+        "schema_version": "v1",
+        "decision_id": 123,
+        "run_id": "run-1",
+        "action": "unsupported-action",
+        "content": ["not", "relevant"],
+    }
+
+    with pytest.raises(DecisionParseError) as exc_info:
+        DecisionParser().parse(_result(payload))
+
+    assert exc_info.value.reason_code == "decision_schema_invalid"
+    assert exc_info.value.field_paths == ("action", "content", "decision_id")
+    assert exc_info.value.__context__ is None
+
+
+def test_decision_parse_error_redacts_unrecognized_provider_field_names() -> None:
+    payload = {
+        "schema_version": "v1",
+        "decision_id": "decision-1",
+        "run_id": "run-1",
+        "action": "finish",
+        "content": "done",
+        "API_KEY_DO_NOT_EXPOSE": "synthetic-secret-value",
+    }
+
+    with pytest.raises(DecisionParseError) as exc_info:
+        DecisionParser().parse(_result(payload))
+
+    assert exc_info.value.reason_code == "decision_schema_invalid"
+    assert exc_info.value.field_paths == ("other",)
+    assert "API_KEY_DO_NOT_EXPOSE" not in str(exc_info.value.field_paths)
+    assert "synthetic-secret-value" not in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    ("missing", "reason_code"),
+    [
+        ("capability", "missing_capability"),
+        ("capability_version", "missing_capability_version"),
+    ],
+)
+def test_invoke_parse_errors_identify_missing_public_field(
+    missing: str, reason_code: str
+) -> None:
+    payload = {
+        "schema_version": "v1",
+        "decision_id": "decision-1",
+        "run_id": "run-1",
+        "action": "invoke",
+        "capability": "catalog.search",
+        "capability_version": "v1",
+        "arguments": {},
+    }
+    payload.pop(missing)
+
+    with pytest.raises(DecisionParseError) as exc_info:
+        DecisionParser().parse(_result(payload))
+
+    assert exc_info.value.reason_code == reason_code
+    assert exc_info.value.field_paths == (missing,)
+
+
 @pytest.mark.parametrize(
     "field", ["user_id", "principal_id", "tenant_id", "db", "token"]
 )
@@ -190,6 +254,8 @@ def test_provider_json_and_multiple_tool_calls_fail_closed() -> None:
     with pytest.raises(DecisionParseError) as invalid_info:
         DecisionParser().parse(invalid_json)
     assert invalid_info.value.error_code == ErrorCode.INVALID_REQUEST
+    assert invalid_info.value.reason_code == "invalid_json"
+    assert invalid_info.value.field_paths == ()
 
     multiple = ModelCallResult(
         provider="fake",

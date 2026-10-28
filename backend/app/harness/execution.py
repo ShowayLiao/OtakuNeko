@@ -11,6 +11,9 @@ from collections.abc import Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.agent_registry import AgentRegistry
+from app.agents.recommendation_agent import RecommendationAgent
+from app.agents.router import AgentRouter
 from app.capabilities.registry import CapabilityRegistry
 from app.harness.capability_adapter import CapabilityAdapter
 from app.harness.dispatcher import Dispatcher
@@ -23,6 +26,35 @@ from app.harness.runtime import AgentRuntime
 from app.harness.recovery import RecoveryPolicy
 from app.schemas.user import UserRead
 from app.trace.store import TraceStore
+
+
+def build_specialist_router(
+    registry: CapabilityRegistry,
+    memory_service: Any | None,
+    enabled: bool,
+    version: str = "keyword-v1",
+) -> AgentRouter | None:
+    """Build the configured specialist implementation from the shared registry."""
+    if not enabled:
+        return None
+    if version not in {"keyword-v1", "model-v1"}:
+        raise ValueError(f"unsupported specialist router version: {version}")
+
+    recommendation_owner = registry.find_action("generate_user_profile_tool")
+    anime_owner = registry.find_action("search_anime_advanced")
+    if recommendation_owner is None or anime_owner is None:
+        return None
+
+    agent_registry = AgentRegistry()
+    agent_registry.register(
+        "recommendation",
+        RecommendationAgent(
+            recommendation_owner[0],
+            anime_capability=anime_owner[0],
+            memory_service=memory_service,
+        ),
+    )
+    return AgentRouter(agent_registry, version=version)
 
 
 def capability_adapter_factory(

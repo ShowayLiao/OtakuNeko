@@ -23,7 +23,7 @@ from app.harness.checkpoint import (
     terminal_checkpoint_result,
 )
 from app.harness.contracts import ExecutionContext, RunEvent
-from app.harness.execution import build_runtime
+from app.harness.execution import build_runtime, build_specialist_router
 from app.harness.model_gateway import (
     OpenAICompatibleModelAdapter,
     OpenAIModelGateway,
@@ -38,9 +38,6 @@ from app.memory.sql_repository import SqlMemoryRepository
 from app.memory.extractor import LLMFactExtractor
 from app.api.deps import get_current_user, get_optional_user
 from app.db.database import get_session
-from app.agents.agent_registry import AgentRegistry
-from app.agents.recommendation_agent import RecommendationAgent
-from app.agents.router import AgentRouter
 from app.agents.thread_scope import (
     make_anonymous_thread,
     make_user_thread,
@@ -511,23 +508,11 @@ async def chat_endpoint(
                     run_id=run_id,
                 )
 
-            specialist_router: AgentRouter | None = None
-            if settings.ENABLE_MULTI_AGENT_ROUTING:
-                recommendation_owner = capability_registry.find_action(
-                    "generate_user_profile_tool"
-                )
-                anime_owner = capability_registry.find_action("search_anime_advanced")
-                if recommendation_owner is not None and anime_owner is not None:
-                    agent_registry = AgentRegistry()
-                    agent_registry.register(
-                        "recommendation",
-                        RecommendationAgent(
-                            recommendation_owner[0],
-                            anime_capability=anime_owner[0],
-                            memory_service=memory,
-                        ),
-                    )
-                    specialist_router = AgentRouter(agent_registry)
+            specialist_router = build_specialist_router(
+                capability_registry,
+                memory_service=memory,
+                enabled=settings.ENABLE_MULTI_AGENT_ROUTING,
+            )
 
             # The structured Decision loop is controlled by AgentRuntime and
             # does not require a separate adapter or graph object.
